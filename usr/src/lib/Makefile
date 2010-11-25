@@ -249,6 +249,7 @@ SUBDIRS += \
 	libidmap	\
 	libadutils	\
 	libdserv	\
+	libnfs		\
 	libipmi		\
 	libexacct/demo	\
 	libvrrpadm	\
@@ -496,6 +497,7 @@ HDRSUBDIRS=		\
 	smbsrv		\
 	libilb		\
 	libdserv	\
+	libnfs		\
 	scsi		\
 	hbaapi		\
 	smhba		\
@@ -645,6 +647,7 @@ libzfs_jni:	libdiskmgt libnvpair libzfs
 libzpool:	libavl libumem libnvpair libcmdutils
 libsec:		libavl libidmap
 libdserv:	libc libumem libuutil libscf
+libnfs:		libc libumem libuutil libscf libzfs
 brand:		libc libsocket
 libshare:	libscf libzfs libuuid libfsmgt libsecdb libumem libsmbfs
 libexacct/demo:	libexacct libproject libsocket libnsl

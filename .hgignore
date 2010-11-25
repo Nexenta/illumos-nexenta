@@ -26,4 +26,4 @@
 
 syntax: glob
 #*
-./closed
+.hgignore

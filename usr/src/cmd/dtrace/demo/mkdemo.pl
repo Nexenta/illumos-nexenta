@@ -207,13 +207,12 @@ sub chaps_process {
 
 		print HTML "</table></td></tr>\n";
 	}
-
 	print HTML "</table>\n</td>\n<p>\n\n";
 	print HTML "</td></tr>\n";
-	print HTML "<tr><td><hr><small>Copyright ";
+	print HTML "<tr><td><hr><img src=\"logo.gif\" alt=\"illumos logo\"/>";
+	print HTML "<small> Illumos Foundation `";
 	print HTML localtime->year() + 1900;
-	print HTML " Sun Microsystems</small>\n";
-	print HTML "</table>\n";
+	print HTML "</small>\n</table>\n";
 	print HTML "</body>\n</html>\n";
 	close HTML;
 }
