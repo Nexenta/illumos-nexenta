@@ -56,7 +56,10 @@
 #include <sys/dnlc.h>
 #include <sys/list.h>
 #include <sys/mntent.h>
+#include <sys/atomic.h>
 #include <sys/tsol/label.h>
+#include <sys/sdt.h>
+#include <sys/avl.h>
 
 #include <rpc/types.h>
 #include <rpc/auth.h>
@@ -73,6 +76,7 @@
 #include <nfs/nfs4.h>
 #include <nfs/rnode4.h>
 #include <nfs/nfs4_clnt.h>
+#include <nfs/nfs4_clnt_impl.h>
 #include <sys/fs/autofs.h>
 
 #include <sys/sdt.h>
@@ -103,21 +107,42 @@ extern void sec_clnt_freeinfo(struct sec_data *);
  * The order and contents of this structure must be kept in sync with that of
  * rfsreqcnt_v4_tmpl in nfs_stats.c
  */
-static char *rfsnames_v4[] = {
-	"null", "compound", "reserved",	"access", "close", "commit", "create",
-	"delegpurge", "delegreturn", "getattr",	"getfh", "link", "lock",
-	"lockt", "locku", "lookup", "lookupp", "nverify", "open", "openattr",
-	"open_confirm",	"open_downgrade", "putfh", "putpubfh", "putrootfh",
-	"read", "readdir", "readlink", "remove", "rename", "renew",
-	"restorefh", "savefh", "secinfo", "setattr", "setclientid",
-	"setclientid_confirm", "verify", "write"
+static char *v40_ops[] = {
+	"null", "compound", "reserved",	"access", "close", "commit",
+	"create", "delegpurge", "delegreturn", "getattr", "getfh", "link",
+	"lock", "lockt", "locku", "lookup", "lookupp", "nverify", "open",
+	"openattr", "open_confirm", "open_downgrade", "putfh", "putpubfh",
+	"putrootfh", "read", "readdir", "readlink", "remove", "rename",
+	"renew", "restorefh", "savefh", "secinfo", "setattr", "setclientid",
+	"setclientid_confirm", "verify", "write", "release_lockowner"
 };
 
 /*
- * nfs4_max_mount_retry is the number of times the client will redrive
- * a mount compound before giving up and returning failure.  The intent
- * is to redrive mount compounds which fail NFS4ERR_STALE so that
- * if a component of the server path being mounted goes stale, it can
+ * The order and contents of this structure must be kept in sync with that of
+ * rfsreqcnt_v41_tmpl in nfs_stats.c
+ */
+static char *v41_ops[] = {
+	"null", "compound", "reserved",	"access",
+	"close", "commit", "create", "delegpurge", "delegreturn",
+	"getattr",	"getfh", "link", "lock", "lockt", "locku",
+	"lookup", "lookupp", "nverify", "open", "openattr",
+	"open_confirm", "open_downgrade", "putfh", "putpubfh",
+	"putrootfh", "read", "readdir", "readlink", "remove", "rename",
+	"renew", "restorefh", "savefh", "secinfo", "setattr",
+	"setclientid", "setclientid_confirm", "verify", "write",
+	"release_lockowner", "backchannel_ctl", "bind_conn_to_session",
+	"exchange_id", "create_session", "destroy_session",
+	"free_stateid", "get_dir_delegation", "getdeviceinfo",
+	"getdevicelist", "layoutcommit", "layoutget", "layoutreturn",
+	"secinfo_no_name", "sequence", "set_ssv", "test_stateid",
+	"want_delegation", "destroy_clientid", "reclaim_complete"};
+
+static char **rfsnames_v4[NFS4_MINORVERSMAX + 1] = {v40_ops, v41_ops};
+/*
+ * nfs4_max_mount_retry is the number of times the client will redrive a
+ * mount compound before giving up and returning failure.  The intent is
+ * to redrive mount compounds which fail NFS4ERR_STALE so that if a
+ * component of the server path being mounted goes stale, it can
  * "recover" by redriving the mount compund (LOOKUP ops).  This recovery
  * code is needed outside of the recovery framework because mount is a
  * special case.  The client doesn't create vnodes/rnodes for components
@@ -127,10 +152,13 @@ static char *rfsnames_v4[] = {
  *
  * We could just fail the mount on the first time, but that would
  * instantly trigger failover (from nfs4_mount), and the client should
- * try to re-lookup the STALE FH before doing failover.  The easiest
- * way to "re-lookup" is to simply redrive the mount compound.
+ * try to re-lookup the STALE FH before doing failover.  The easiest way
+ * to "re-lookup" is to simply redrive the mount compound.
  */
 static int nfs4_max_mount_retry = 2;
+
+uint32_t nfs4_max_minor_version = NFS4_MINORVERSMAX;
+uint32_t nfs4_min_minor_version = 0;
 
 /*
  * nfs4 vfs operations.
@@ -151,10 +179,10 @@ vfsops_t	*nfs4_vfsops;
 
 int nfs4_vfsinit(void);
 void nfs4_vfsfini(void);
+void nfs4_minorops_init(void);
+
 static void nfs4setclientid_init(void);
 static void nfs4setclientid_fini(void);
-static void nfs4setclientid_otw(mntinfo4_t *, servinfo4_t *,  cred_t *,
-		struct nfs4_server *, nfs4_error_t *, int *);
 static void	destroy_nfs4_server(nfs4_server_t *);
 static void	remove_mi(nfs4_server_t *, mntinfo4_t *);
 
@@ -182,6 +210,8 @@ static int nfs4fstyp;
  * through /etc/system. Off by default.
  */
 extern int rdma_debug;
+
+extern int nfs41_birpc;
 
 int
 nfs4init(int fstyp, char *name)
@@ -229,6 +259,8 @@ nfs4init(int fstyp, char *name)
 	(void) nfs4_vfsinit();
 	(void) nfs4_init_dot_entries();
 
+	nfs4_minorops_init();
+
 out:
 	if (error) {
 		if (nfs4_trigger_vnodeops != NULL)
@@ -248,6 +280,18 @@ nfs4fini(void)
 {
 	(void) nfs4_destroy_dot_entries();
 	nfs4_vfsfini();
+}
+
+void
+nfs4_minorops_init(void)
+{
+	int nmops;
+
+	nmops = nfs4_max_minor_version + 1;
+
+	nfs4protosw = (nfs4_minorvers_ops_t **)kmem_alloc(
+	    nmops * sizeof (nfs4_minorvers_ops_t *), KM_SLEEP);
+	nfs4_protosw_init(nfs4protosw);
 }
 
 /*
@@ -708,7 +752,6 @@ nfs4_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	struct nfs_args *args = NULL;
 	int flags, addr_type, removed;
 	zone_t *zone = nfs_zone();
-	nfs4_error_t n4e;
 	zone_t *mntzone = NULL;
 
 	if (secpolicy_fs_mount(cr, mvp, vfsp) != 0)
@@ -1132,17 +1175,6 @@ proceed:
 	mi = VTOMI4(rtvp);
 
 	/*
-	 * Send client id to the server, if necessary
-	 */
-	nfs4_error_zinit(&n4e);
-	nfs4setclientid(mi, cr, FALSE, &n4e);
-
-	error = n4e.error;
-
-	if (error)
-		goto errout;
-
-	/*
 	 * Set option fields in the mount info record
 	 */
 
@@ -1228,14 +1260,9 @@ static int
 getlinktext_otw(mntinfo4_t *mi, nfs_fh4 *fh, char **linktextp, cred_t *cr,
     int flags)
 {
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	int doqueue;
-	nfs_argop4 argop[2];
-	nfs_resop4 *resop;
+	nfs4_call_t *cp;
 	READLINK4res *lr_res;
 	uint_t len;
-	bool_t needrecov = FALSE;
 	nfs4_recov_state_t recov_state;
 	nfs4_sharedfh_t *sfh;
 	nfs4_error_t e;
@@ -1247,44 +1274,37 @@ getlinktext_otw(mntinfo4_t *mi, nfs_fh4 *fh, char **linktextp, cred_t *cr,
 	recov_state.rs_num_retry_despite_err = 0;
 
 recov_retry:
+	cp = nfs4_call_init(TAG_GET_SYMLINK, OP_READLINK, OH_OTHER, FALSE,
+	    mi, NULL, NULL, cr);
 	nfs4_error_zinit(&e);
 
-	args.array_len = 2;
-	args.array = argop;
-	args.ctag = TAG_GET_SYMLINK;
-
 	if (! recovery) {
-		e.error = nfs4_start_op(mi, NULL, NULL, &recov_state);
+		e.error = nfs4_start_op(cp, &recov_state);
 		if (e.error) {
 			sfh4_rele(&sfh);
+			nfs4_call_rele(cp);
 			return (e.error);
 		}
 	}
 
 	/* 0. putfh symlink fh */
-	argop[0].argop = OP_CPUTFH;
-	argop[0].nfs_argop4_u.opcputfh.sfh = sfh;
+	(void) nfs4_op_cputfh(cp, sfh);
 
 	/* 1. readlink */
-	argop[1].argop = OP_READLINK;
+	lr_res = nfs4_op_readlink(cp);
 
-	doqueue = 1;
+	rfs4call(cp, &e);
 
-	rfs4call(mi, &args, &res, cr, &doqueue, 0, &e);
+	nfs4_needs_recovery(cp);
 
-	needrecov = nfs4_needs_recovery(&e, FALSE, mi->mi_vfsp);
-
-	if (needrecov && !recovery && num_retry-- > 0) {
+	if (cp->nc_needs_recovery && !recovery && num_retry-- > 0) {
 
 		NFS4_DEBUG(nfs4_client_recov_debug, (CE_NOTE,
 		    "getlinktext_otw: initiating recovery\n"));
 
-		if (nfs4_start_recovery(&e, mi, NULL, NULL, NULL, NULL,
-		    OP_READLINK, NULL, NULL, NULL) == FALSE) {
-			nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
-			if (!e.error)
-				(void) xdr_free(xdr_COMPOUND4res_clnt,
-				    (caddr_t)&res);
+		if (nfs4_start_recovery(cp) == FALSE) {
+			nfs4_end_op(cp, &recov_state);
+			nfs4_call_rele(cp);
 			goto recov_retry;
 		}
 	}
@@ -1294,33 +1314,31 @@ recov_retry:
 	 */
 	if (e.error != 0) {
 		if (! recovery)
-			nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+			nfs4_end_op(cp, &recov_state);
 		sfh4_rele(&sfh);
+		nfs4_call_rele(cp);
 		return (e.error);
 	}
 
-	if (res.status) {
-		e.error = geterrno4(res.status);
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	if (cp->nc_res.status) {
+		e.error = geterrno4(cp->nc_res.status);
 		if (! recovery)
-			nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+			nfs4_end_op(cp, &recov_state);
 		sfh4_rele(&sfh);
+		nfs4_call_rele(cp);
 		return (e.error);
 	}
 
-	/* res.status == NFS4_OK */
-	ASSERT(res.status == NFS4_OK);
-
-	resop = &res.array[1];  /* readlink res */
-	lr_res = &resop->nfs_resop4_u.opreadlink;
+	/* cp->nc_res.status == NFS4_OK */
+	ASSERT(cp->nc_res.status == NFS4_OK);
 
 	/* treat symlink name as data */
 	*linktextp = utf8_to_str(&lr_res->link, &len, NULL);
 
 	if (! recovery)
-		nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+		nfs4_end_op(cp, &recov_state);
 	sfh4_rele(&sfh);
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	nfs4_call_rele(cp);
 	return (0);
 }
 
@@ -1659,6 +1677,63 @@ bad:
 }
 
 /*
+ * Checks for minorversion mismatch and if we can retry.
+ * returns 1 with mi_minorversion downgraded if true
+ * or 0 otherwise
+ */
+
+int
+nfs4check_minorvers_mismatch(mntinfo4_t *mi, nfs4_error_t *ep)
+{
+	struct nfs_stats *nfsstatsp;
+
+	if (ep->stat == NFS4ERR_MINOR_VERS_MISMATCH ||
+	    ep->rpc_status == RPC_CANTDECODEARGS) {
+		mutex_enter(&mi->mi_lock);
+		if (NFS4_MINORVERSION(mi) > nfs4_min_minor_version) {
+			mi->mi_minorversion -= 1;
+			mi->mi_attrvers = mi->mi_minorversion;
+			nfsstatsp = zone_getspecific(nfsstat_zone_key,
+			    nfs_zone());
+			ASSERT(nfsstatsp != NULL);
+			/*
+			 * Update the mi fields to that of the correct
+			 * minor version.  Note that we are not adjusting
+			 * the kstat count for the previous MISMATCHED
+			 * compound since we want the mismatched compound
+			 * to be accounted against the mismatched
+			 * version.
+			 */
+			mi->mi_reqs = nfsstatsp->
+			    nfs_stats_v4[mi->mi_minorversion].rfsreqcnt_ptr;
+			mi->mi_rfsnames = rfsnames_v4[mi->mi_minorversion];
+			mutex_exit(&mi->mi_lock);
+			return (1);
+		}
+		mutex_exit(&mi->mi_lock);
+	}
+	return (0);
+}
+
+void
+nfs4_set_minorversion(mntinfo4_t *mi, int minorversion)
+{
+	struct nfs_stats *nfsstatsp;
+
+	mutex_enter(&mi->mi_lock);
+	mi->mi_minorversion = minorversion;
+	mi->mi_attrvers = minorversion;
+
+	nfsstatsp = zone_getspecific(nfsstat_zone_key, nfs_zone());
+	ASSERT(nfsstatsp != NULL);
+	mi->mi_reqs = nfsstatsp->
+	    nfs_stats_v4[mi->mi_minorversion].rfsreqcnt_ptr;
+	mi->mi_rfsnames = rfsnames_v4[mi->mi_minorversion];
+
+	mutex_exit(&mi->mi_lock);
+}
+
+/*
  * Get the root filehandle for the given filesystem and server, and update
  * svp.
  *
@@ -1672,21 +1747,16 @@ static void
 nfs4getfh_otw(struct mntinfo4 *mi, servinfo4_t *svp, vtype_t *vtp,
     int flags, cred_t *cr, nfs4_error_t *ep)
 {
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	int doqueue = 1;
-	nfs_argop4 *argop;
-	nfs_resop4 *resop;
+	nfs4_call_t *cp;
+	COMPOUND4node_clnt *node, *snode, *gna, *gnb;
 	nfs4_ga_res_t *garp;
-	int num_argops;
-	lookup4_param_t lookuparg;
 	nfs_fh4 *tmpfhp;
 	nfs_fh4 *resfhp;
-	bool_t needrecov = FALSE;
 	nfs4_recov_state_t recov_state;
-	int llndx;
 	int nthcomp;
 	int recovery = !(flags & NFS4_GETFH_NEEDSOP);
+	int versmismatch = 0;
+	int ctag;
 
 	(void) nfs_rw_enter_sig(&svp->sv_lock, RW_READER, 0);
 	ASSERT(svp->sv_path != NULL);
@@ -1696,6 +1766,22 @@ nfs4getfh_otw(struct mntinfo4 *mi, servinfo4_t *svp, vtype_t *vtp,
 		return;
 	}
 	nfs_rw_exit(&svp->sv_lock);
+
+	do {
+		nfs4_set_clientid(mi, NULL, cr, recovery, ep);
+
+		if (ep->error == 0)
+			break;
+		/*
+		 * Return if in recovery or if not a minorversion mismatch
+		 * error. Else retry.
+		 */
+
+		if (recovery ||
+		    !(versmismatch = nfs4check_minorvers_mismatch(mi, ep)))
+			return;
+
+	} while (versmismatch);
 
 	recov_state.rs_flags = 0;
 	recov_state.rs_num_retry_despite_err = 0;
@@ -1707,11 +1793,17 @@ recov_retry:
 		nfs4_error_init(ep, EINVAL);
 		return;
 	}
+	if (recovery)
+		ctag = TAG_REMAP_MOUNT;
+	else
+		ctag = TAG_MOUNT;
+	cp = nfs4_call_init(ctag, OP_GETFH, OH_MOUNT, FALSE, mi, NULL, NULL,
+	    cr);
+
 	nfs4_error_zinit(ep);
 
 	if (!recovery) {
-		ep->error = nfs4_start_fop(mi, NULL, NULL, OH_MOUNT,
-		    &recov_state, NULL);
+		ep->error = nfs4_start_op(cp, &recov_state);
 
 		/*
 		 * If recovery has been started and this request as
@@ -1734,6 +1826,7 @@ recov_retry:
 					    &mi->mi_lock);
 			}
 			mutex_exit(&mi->mi_lock);
+			nfs4_call_rele(cp);
 			return;
 		}
 
@@ -1752,69 +1845,49 @@ recov_retry:
 		}
 	}
 
-	if (recovery)
-		args.ctag = TAG_REMAP_MOUNT;
+	/* choose public or root filehandle */
+	if (flags & NFS4_GETFH_PUBLIC)
+		(void) nfs4_op_putpubfh(cp);
 	else
-		args.ctag = TAG_MOUNT;
+		(void) nfs4_op_putrootfh(cp);
 
-	lookuparg.l4_getattrs = LKP4_ALL_ATTRIBUTES;
-	lookuparg.argsp = &args;
-	lookuparg.resp = &res;
-	lookuparg.header_len = 2;	/* Putrootfh, getfh */
-	lookuparg.trailer_len = 0;
-	lookuparg.ga_bits = FATTR4_FSINFO_MASK;
-	lookuparg.mi = mi;
+	/* get fh */
+	(void) nfs4_op_getfh(cp);
 
 	(void) nfs_rw_enter_sig(&svp->sv_lock, RW_READER, 0);
 	ASSERT(svp->sv_path != NULL);
-	llndx = nfs4lookup_setup(svp->sv_path, &lookuparg, 0);
+	nfs4lookup_setup(cp, svp->sv_path, LKP4_ALL_ATTRIBUTES,
+	    MI4_FSINFO_ATTRMAP(mi), 0);
 	nfs_rw_exit(&svp->sv_lock);
-
-	argop = args.array;
-	num_argops = args.array_len;
-
-	/* choose public or root filehandle */
-	if (flags & NFS4_GETFH_PUBLIC)
-		argop[0].argop = OP_PUTPUBFH;
-	else
-		argop[0].argop = OP_PUTROOTFH;
-
-	/* get fh */
-	argop[1].argop = OP_GETFH;
 
 	NFS4_DEBUG(nfs4_client_call_debug, (CE_NOTE,
 	    "nfs4getfh_otw: %s call, mi 0x%p",
-	    needrecov ? "recov" : "first", (void *)mi));
+	    NFS4_RS_RECOVSTR(&recov_state), (void *)mi));
 
-	rfs4call(mi, &args, &res, cr, &doqueue, RFSCALL_SOFT, ep);
+	cp->nc_rfs4call_flags |= RFSCALL_SOFT;
+	rfs4call(cp, ep);
 
-	needrecov = nfs4_needs_recovery(ep, FALSE, mi->mi_vfsp);
+	nfs4_needs_recovery(cp);
 
-	if (needrecov) {
+	if (cp->nc_needs_recovery) {
 		bool_t abort;
 
 		if (recovery) {
-			nfs4args_lookup_free(argop, num_argops);
-			kmem_free(argop,
-			    lookuparg.arglen * sizeof (nfs_argop4));
-			if (!ep->error)
-				(void) xdr_free(xdr_COMPOUND4res_clnt,
-				    (caddr_t)&res);
+			nfs4args_lookup_free(cp);
+			nfs4_call_rele(cp);
 			return;
 		}
 
 		NFS4_DEBUG(nfs4_client_recov_debug,
 		    (CE_NOTE, "nfs4getfh_otw: initiating recovery\n"));
 
-		abort = nfs4_start_recovery(ep, mi, NULL,
-		    NULL, NULL, NULL, OP_GETFH, NULL, NULL, NULL);
+		abort = nfs4_start_recovery(cp);
 		if (!ep->error) {
-			ep->error = geterrno4(res.status);
-			(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+			ep->error = geterrno4(cp->nc_res.status);
 		}
-		nfs4args_lookup_free(argop, num_argops);
-		kmem_free(argop, lookuparg.arglen * sizeof (nfs_argop4));
-		nfs4_end_fop(mi, NULL, NULL, OH_MOUNT, &recov_state, needrecov);
+		nfs4args_lookup_free(cp);
+		nfs4_end_op(cp, &recov_state);
+		nfs4_call_rele(cp);
 		/* have another go? */
 		if (abort == FALSE)
 			goto recov_retry;
@@ -1825,26 +1898,23 @@ recov_retry:
 	 * No recovery, but check if error is set.
 	 */
 	if (ep->error)  {
-		nfs4args_lookup_free(argop, num_argops);
-		kmem_free(argop, lookuparg.arglen * sizeof (nfs_argop4));
+		nfs4args_lookup_free(cp);
 		if (!recovery)
-			nfs4_end_fop(mi, NULL, NULL, OH_MOUNT, &recov_state,
-			    needrecov);
+			nfs4_end_op(cp, &recov_state);
+		nfs4_call_rele(cp);
 		return;
 	}
 
 is_link_err:
 
 	/* for non-recovery errors */
-	if (res.status && res.status != NFS4ERR_SYMLINK &&
-	    res.status != NFS4ERR_MOVED) {
+	if (cp->nc_res.status && cp->nc_res.status != NFS4ERR_SYMLINK &&
+		cp->nc_res.status != NFS4ERR_MOVED) {
 		if (!recovery) {
-			nfs4_end_fop(mi, NULL, NULL, OH_MOUNT, &recov_state,
-			    needrecov);
+			nfs4_end_op(cp, &recov_state);
 		}
-		nfs4args_lookup_free(argop, num_argops);
-		kmem_free(argop, lookuparg.arglen * sizeof (nfs_argop4));
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+		nfs4args_lookup_free(cp);
+		nfs4_call_rele(cp);
 		return;
 	}
 
@@ -1852,16 +1922,9 @@ is_link_err:
 	 * If any intermediate component in the path is a symbolic link,
 	 * resolve the symlink, then try mount again using the new path.
 	 */
-	if (res.status == NFS4ERR_SYMLINK || res.status == NFS4ERR_MOVED) {
+	if (cp->nc_res.status == NFS4ERR_SYMLINK ||
+		cp->nc_res.status == NFS4ERR_MOVED) {
 		int where;
-
-		/*
-		 * Need to call nfs4_end_op before resolve_sympath to avoid
-		 * potential nfs4_start_op deadlock.
-		 */
-		if (!recovery)
-			nfs4_end_fop(mi, NULL, NULL, OH_MOUNT, &recov_state,
-			    needrecov);
 
 		/*
 		 * This must be from OP_LOOKUP failure. The (cfh) for this
@@ -1873,48 +1936,92 @@ is_link_err:
 		 * LOOKUP comp2, GETFH, GETATTR, LOOKUP comp3, GETFH, GETATTR
 		 *
 		 * LOOKUP comp3 fails with SYMLINK because comp2 is a symlink.
-		 * In this case, where = 7, nthcomp = 2.
+		 * In this case nthcomp = 2.
 		 */
-		where = res.array_len - 2;
-		ASSERT(where > 0);
-
-		if (res.status == NFS4ERR_SYMLINK) {
-
-			resop = &res.array[where - 1];
-			ASSERT(resop->resop == OP_GETFH);
-			tmpfhp = &resop->nfs_resop4_u.opgetfh.object;
-			nthcomp = res.array_len/3 - 1;
-			ep->error = resolve_sympath(mi, svp, nthcomp,
-			    tmpfhp, cr, flags);
-
-		} else if (res.status == NFS4ERR_MOVED) {
-
-			resop = &res.array[where - 2];
-			ASSERT(resop->resop == OP_GETFH);
-			tmpfhp = &resop->nfs_resop4_u.opgetfh.object;
-			nthcomp = res.array_len/3 - 1;
-			ep->error = resolve_referral(mi, svp, cr, nthcomp,
-			    tmpfhp);
+		snode = NULL;
+		nthcomp = 0;
+		for (node = list_head(&cp->nc_args.args);
+		    node != NULL;
+		    node = list_next(&cp->nc_args.args, node)) {
+			if (node->res.resop != OP_LOOKUP)
+				continue;
+			if (node->res.nfs_resop4_u.oplookup.status != NFS4_OK)
+				break;
+			snode = node;
+			nthcomp++;
 		}
 
-		nfs4args_lookup_free(argop, num_argops);
-		kmem_free(argop, lookuparg.arglen * sizeof (nfs_argop4));
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+		/*
+		 * Need to call nfs4_end_op before resolve_sympath to avoid
+		 * potential nfs4_start_op deadlock.
+		 */
+		if (!recovery)
+			nfs4_end_op(cp, &recov_state);
 
+		if (cp->nc_res.status == NFS4ERR_SYMLINK) {
+
+			/*
+			 * Make sure the symlink error is on the right compound op.
+			 * The right compound is a OP_LOOKUP node that failed
+			 * with NFS4ERR_SYMLINK, preceeded by a OP_GETFH node
+			 * that succeeded.
+			 * Otherwise do not try to resolve the symlink below.
+			 */
+			if ((node == NULL) ||
+				(snode == NULL) ||
+				((snode = list_next(&cp->nc_args.args, snode)) == NULL) ||
+				(snode->res.resop != OP_GETFH) ||
+				(snode->res.nfs_resop4_u.opgetfh.status != NFS4_OK))
+				ep->error = geterrno4(cp->nc_res.status);
+			else
+				tmpfhp = &snode->res.nfs_resop4_u.opgetfh.object;
+
+		} else if (cp->nc_res.status == NFS4ERR_MOVED) {
+
+			if ((node == NULL) ||
+				(snode == NULL) ||
+				((snode = list_next(&cp->nc_args.args, snode)) == NULL) ||
+				(snode->res.resop != OP_GETFH) ||
+				(snode->res.nfs_resop4_u.opgetfh.status != NFS4_OK))
+				ep->error = resolve_referral(mi, svp, cr, nthcomp,
+						tmpfhp);
+			else
+				tmpfhp = &snode->res.nfs_resop4_u.opgetfh.object;
+		}
+
+		if (!ep->error)
+			ep->error = resolve_sympath(mi, svp, nthcomp, tmpfhp,
+			    cr, flags);
+		nfs4args_lookup_free(cp);
+		nfs4_call_rele(cp);
 		if (ep->error)
 			return;
 
 		goto recov_retry;
 	}
 
-	/* getfh */
-	resop = &res.array[res.array_len - 2];
-	ASSERT(resop->resop == OP_GETFH);
-	resfhp = &resop->nfs_resop4_u.opgetfh.object;
-
 	/* getattr fsinfo res */
-	resop++;
-	garp = &resop->nfs_resop4_u.opgetattr.ga_res;
+	node = list_tail(&cp->nc_args.args);
+	ASSERT(node->res.resop == OP_GETATTR);
+	garp = &node->res.nfs_resop4_u.opgetattr.ga_res;
+
+	/* getfh */
+	node = list_prev(&cp->nc_args.args, node);
+	ASSERT(node->res.resop == OP_GETFH);
+	resfhp = &node->res.nfs_resop4_u.opgetfh.object;
+
+	/*
+	 * verify attrs successfully decoded before
+	 * referencing anything in n4g_ext_res.
+	 */
+	if (garp->n4g_attrerr != NFS4_GETATTR_OP_OK) {
+		if (!recovery)
+			nfs4_end_op(cp, &recov_state);
+		ep->error = garp->n4g_attrerr;
+		nfs4args_lookup_free(cp);
+		nfs4_call_rele(cp);
+		return;
+	}
 
 	*vtp = garp->n4g_va.va_type;
 
@@ -1925,7 +2032,20 @@ is_link_err:
 		mi->mi_flags |= MI4_LINK;
 	if (garp->n4g_ext_res->n4g_pc4.pc4_symlink_support)
 		mi->mi_flags |= MI4_SYMLINK;
-	if (garp->n4g_ext_res->n4g_suppattrs & FATTR4_ACL_MASK)
+
+	/*
+	 * XXX Currently does not handle change in server personas
+	 */
+	if (ATTR_ISSET(garp->n4g_ext_res->n4g_suppattrs, LAYOUT_TYPE) &&
+	    !(mi->mi_flags & MI4_PNFS)) {
+		DTRACE_PROBE4(nfsc__i_getfhotw, char *,
+		    "non pNFS server:", char *, svp->sv_hostname,
+		    char *, "supports FATTR4_FS_LAYOUTTYPE_MASK for ",
+		    char *, svp->sv_path);
+	}
+
+	/* XXX conditionalize lines above */
+	if (ATTR_ISSET(garp->n4g_ext_res->n4g_suppattrs, ACL))
 		mi->mi_flags |= MI4_ACL;
 	mutex_exit(&mi->mi_lock);
 
@@ -1958,32 +2078,30 @@ is_link_err:
 	 */
 	if (*vtp == VLNK) {
 		/*
-		 * nthcomp is the total result length minus
-		 * the 1st 2 OPs (PUTROOTFH, GETFH),
-		 * then divided by 3 (LOOKUP,GETFH,GETATTR)
-		 *
+		 * nthcomp is the number of components
 		 * e.g. PUTROOTFH GETFH LOOKUP 1st-comp GETFH GETATTR
 		 *	LOOKUP 2nd-comp GETFH GETATTR
-		 *
-		 *	(8 - 2)/3 = 2
 		 */
-		nthcomp = (res.array_len - 2)/3;
+		nthcomp = 0;
+		for (node = list_head(&cp->nc_args.args);
+		    node != NULL;
+		    node = list_next(&cp->nc_args.args, node)) {
+			if (node->res.resop == OP_LOOKUP)
+				nthcomp++;
+		}
 
 		/*
 		 * Need to call nfs4_end_op before resolve_sympath to avoid
 		 * potential nfs4_start_op deadlock. See RFE 4777612.
 		 */
 		if (!recovery)
-			nfs4_end_fop(mi, NULL, NULL, OH_MOUNT, &recov_state,
-			    needrecov);
+			nfs4_end_op(cp, &recov_state);
 
 		ep->error = resolve_sympath(mi, svp, nthcomp, resfhp, cr,
 		    flags);
 
-		nfs4args_lookup_free(argop, num_argops);
-		kmem_free(argop, lookuparg.arglen * sizeof (nfs_argop4));
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-
+		nfs4args_lookup_free(cp);
+		nfs4_call_rele(cp);
 		if (ep->error)
 			return;
 
@@ -1997,21 +2115,29 @@ is_link_err:
 	 * PUTROOTFH, GETFH.
 	 * If the object to be mounted is in the root, then the compound is:
 	 * PUTROOTFH, GETFH, LOOKUP, GETFH, GETATTR.
-	 * In either of these cases, the index of the GETFH is 1.
 	 * If it is not at the root, then it's something like:
 	 * PUTROOTFH, GETFH, LOOKUP, GETFH, GETATTR,
 	 * LOOKUP, GETFH, GETATTR
-	 * In this case, the index is llndx (last lookup index) - 2.
+	 * The algorithm below is:
+	 *	choose the next to last GETFH response if more than one
+	 *	otherwise choose the only GETFH response
 	 */
-	if (llndx == -1 || llndx == 2)
-		resop = &res.array[1];
-	else {
-		ASSERT(llndx > 2);
-		resop = &res.array[llndx-2];
+	gna = NULL;
+	gnb = NULL;
+	for (node = list_head(&cp->nc_args.args);
+	    node != NULL;
+	    node = list_next(&cp->nc_args.args, node)) {
+		if (node->res.resop == OP_GETFH) {
+			gna = gnb;
+			gnb = node;
+		}
 	}
+	if (gna == NULL)
+		gna = gnb;
+	ASSERT(gna != NULL);
 
-	ASSERT(resop->resop == OP_GETFH);
-	tmpfhp = &resop->nfs_resop4_u.opgetfh.object;
+	ASSERT(gna->res.resop == OP_GETFH);
+	tmpfhp = &gna->res.nfs_resop4_u.opgetfh.object;
 
 	/* save the filehandles for the replica */
 	(void) nfs_rw_enter_sig(&svp->sv_lock, RW_WRITER, 0);
@@ -2025,15 +2151,15 @@ is_link_err:
 
 	/* initialize fsid and supp_attrs for server fs */
 	svp->sv_fsid = garp->n4g_fsid;
-	svp->sv_supp_attrs =
-	    garp->n4g_ext_res->n4g_suppattrs | FATTR4_MANDATTR_MASK;
+	svp->sv_supp_attrs = garp->n4g_ext_res->n4g_suppattrs;
+	ATTRMAP_SET(svp->sv_supp_attrs, MI4_MAND_ATTRMAP(mi));
+	svp->sv_supp_exclcreat = garp->n4g_ext_res->n4g_supp_exclcreat;
 
 	nfs_rw_exit(&svp->sv_lock);
-	nfs4args_lookup_free(argop, num_argops);
-	kmem_free(argop, lookuparg.arglen * sizeof (nfs_argop4));
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
 	if (!recovery)
-		nfs4_end_fop(mi, NULL, NULL, OH_MOUNT, &recov_state, needrecov);
+		nfs4_end_op(cp, &recov_state);
+	nfs4args_lookup_free(cp);
+	nfs4_call_rele(cp);
 }
 
 /*
@@ -2272,16 +2398,17 @@ nfs4rootvp(vnode_t **rtvpp, vfs_t *vfsp, struct servinfo4 *svp_head,
 	vtype_t vtype = VNON;
 	vtype_t tmp_vtype = VNON;
 	struct servinfo4 *firstsvp = NULL, *svp = svp_head;
+	nfs4_server_t *np;
 	nfs4_oo_hash_bucket_t *bucketp;
 	nfs_fh4 fh;
 	char *droptext = "";
-	struct nfs_stats *nfsstatsp;
 	nfs4_fname_t *mfname;
 	nfs4_error_t e;
 	int num_retry, removed;
 	cred_t *lcr = NULL, *tcr = cr;
 	struct servinfo4 *origsvp;
 	char *resource;
+	struct nfs_stats *nfsstatsp;
 
 	nfsstatsp = zone_getspecific(nfsstat_zone_key, nfs_zone());
 	ASSERT(nfsstatsp != NULL);
@@ -2318,8 +2445,6 @@ nfs4rootvp(vnode_t **rtvpp, vfs_t *vfsp, struct servinfo4 *svp_head,
 		mi->mi_timeo = NFS_TIMEO;
 	mi->mi_prog = NFS_PROGRAM;
 	mi->mi_vers = NFS_V4;
-	mi->mi_rfsnames = rfsnames_v4;
-	mi->mi_reqs = nfsstatsp->nfs_stats_v4.rfsreqcnt_ptr;
 	cv_init(&mi->mi_failover_cv, NULL, CV_DEFAULT, NULL);
 	mi->mi_servers = svp;
 	mi->mi_curr_serv = svp;
@@ -2345,6 +2470,12 @@ nfs4rootvp(vnode_t **rtvpp, vfs_t *vfsp, struct servinfo4 *svp_head,
 		mi->mi_flags |= MI4_DIRECTIO;
 
 	mi->mi_flags |= MI4_MOUNTING;
+
+	/*
+	 * Until a time when the user can set minorversion, do auto
+	 * negotiation.
+	 */
+	nfs4_set_minorversion(mi, nfs4_max_minor_version);
 
 	/*
 	 * Make a vfs struct for nfs.  We do this here instead of below
@@ -2513,6 +2644,7 @@ nfs4rootvp(vnode_t **rtvpp, vfs_t *vfsp, struct servinfo4 *svp_head,
 			nfs_rw_exit(&svp->sv_lock);
 			mi->mi_flags &= ~MI4_RECOV_FAIL;
 			mi->mi_error = 0;
+			nfs4_remove_mi_from_server(mi, NULL);
 			continue;
 		}
 
@@ -2548,6 +2680,19 @@ nfs4rootvp(vnode_t **rtvpp, vfs_t *vfsp, struct servinfo4 *svp_head,
 	}
 
 	mi->mi_curr_serv = svp = firstsvp;
+
+	/*
+	 * Revert back the clientid to mi_curr_serv
+	 */
+	(void) nfs_rw_enter_sig(&mi->mi_recovlock, RW_READER, 0);
+	mutex_enter(&nfs4_server_lst_lock);
+	np = servinfo4_to_nfs4_server(svp); /* This locks np if it is found */
+	mutex_exit(&nfs4_server_lst_lock);
+	mi->mi_clientid = np->clientid;
+	mutex_exit(&np->s_lock);
+	nfs4_server_rele(np);
+	nfs_rw_exit(&mi->mi_recovlock);
+
 	(void) nfs_rw_enter_sig(&svp->sv_lock, RW_READER, 0);
 	ASSERT((mi->mi_curr_serv->sv_flags & SV4_NOTINUSE) == 0);
 	fh.nfs_fh4_len = svp->sv_fhandle.fh_len;
@@ -2708,6 +2853,12 @@ nfs4_unmount(vfs_t *vfsp, int flag, cred_t *cr)
 
 		return (0);
 	}
+#if 0
+	/*
+	 * return all layouts before nfs4_async_stop_sig() is called
+	 */
+	layoutreturn_all(vfsp, cr);
+#endif
 
 	/*
 	 * Wait until all asynchronous putpage operations on
@@ -2841,7 +2992,7 @@ nfs4_statfs_otw(vnode_t *vp, struct statvfs64 *sbp, cred_t *cr)
 	gar.n4g_ext_res = &ger;
 
 	if (error = nfs4_attr_otw(vp, TAG_FSINFO, &gar,
-	    NFS4_STATFS_ATTR_MASK, cr))
+	    &MI4_STATFS_ATTRMAP(VTOMI4(vp)), cr))
 		return (error);
 
 	*sbp = gar.n4g_ext_res->n4g_sb;
@@ -2955,10 +3106,8 @@ nfs4_mountroot(vfs_t *vfsp, whymountroot_t why)
 	struct pathname pn;
 	char *name;
 	cred_t *cr;
-	mntinfo4_t *mi;
 	struct nfs_args args;		/* nfs mount arguments */
 	static char token[10];
-	nfs4_error_t n4e;
 
 	bzero(&args, sizeof (args));
 
@@ -3051,21 +3200,7 @@ nfs4_mountroot(vfs_t *vfsp, whymountroot_t why)
 		return (error);
 	}
 
-	mi = VTOMI4(rtvp);
-
-	/*
-	 * Send client id to the server, if necessary
-	 */
-	nfs4_error_zinit(&n4e);
-	nfs4setclientid(mi, cr, FALSE, &n4e);
-	error = n4e.error;
-
 	crfree(cr);
-
-	if (error) {
-		pn_free(&pn);
-		goto errout;
-	}
 
 	error = nfs4_setopts(rtvp, DATAMODEL_NATIVE, &args);
 	if (error) {
@@ -3108,6 +3243,7 @@ nfs4_vfsinit(void)
 	mutex_init(&nfs4_syncbusy, NULL, MUTEX_DEFAULT, NULL);
 	nfs4setclientid_init();
 	nfs4_ephemeral_init();
+	nfs4session_init();
 	return (0);
 }
 
@@ -3160,29 +3296,135 @@ nfs4setclientid_fini(void)
 int nfs4_retry_sclid_delay = NFS4_RETRY_SCLID_DELAY;
 int nfs4_num_sclid_retries = NFS4_NUM_SCLID_RETRIES;
 
+
 /*
- * Set the clientid for the server for "mi".  No-op if the clientid is
- * already set.
+ * np->s_lock held before entry and return
+ */
+
+int
+nfs4bind_conn_to_session(nfs4_server_t *np, servinfo4_t *svp, mntinfo4_t *mi,
+    cred_t *cr, channel_dir_from_client4 dir)
+{
+	nfs4_call_t *cp;
+	nfs4_error_t e;
+
+	cp = nfs4_call_init(TAG_BIND_CONN_TO_SESSION, OP_BIND_CONN_TO_SESSION,
+	    OH_OTHER, FALSE, mi, NULL, NULL, cr);
+
+	(void) nfs4_op_bind_conn_to_session(cp, &np->ssx.sessionid, dir, FALSE);
+
+	mutex_exit(&np->s_lock);
+
+	/*
+	 * Avoid callback server setup, if this is a non
+	 * bi-directional rpc connection that is for fore channel only.
+	 */
+	if (dir != CDFC4_FORE)
+		cp->nc_rfs4call_flags |= RFS4CALL_SETCB;
+
+	cp->nc_svp = svp;
+	rfs4call(cp, &e);
+
+	/*
+	 * The errors we need to worry about involve a bad/dead
+	 * session. That is handled by the recovery action.
+	 */
+
+	nfs4_needs_recovery(cp);
+
+	if (e.error && !cp->nc_needs_recovery) {
+		mutex_enter(&np->s_lock);
+		nfs4_call_rele(cp);
+		return (e.error);
+	}
+
+	if (cp->nc_needs_recovery) {
+		(void) nfs4_start_recovery(cp);
+	}
+	mutex_enter(&np->s_lock);
+	nfs4_call_rele(cp);
+	return (e.error);
+}
+
+/*
+ * Initialize mi_lease_period.
  *
- * The recovery boolean should be set to TRUE if this function was called
- * by the recovery code, and FALSE otherwise.  This is used to determine
- * if we need to call nfs4_start/end_op as well as grab the mi_recovlock
- * for adding a mntinfo4_t to a nfs4_server_t.
+ * Keep track of the lease period for the mi's
+ * mi_msg_list.	 We need an appropiate time
+ * bound to associate past facts with a current
+ * event.  The lease period is perfect for this.
  *
- * Error is returned via 'n4ep'.  If there was a 'n4ep->stat' error, then
- * 'n4ep->error' is set to geterrno4(n4ep->stat).
+ * mi_lease_period is also used to inherit the
+ * lease time for a data server from the MDS.
+ */
+static void
+nfs4_setup_mi_lease_period(nfs4_server_t *np, mntinfo4_t *mi)
+{
+	ASSERT(MUTEX_HELD(&np->s_lock));
+	mutex_enter(&mi->mi_msg_list_lock);
+	mi->mi_lease_period = np->s_lease_time;
+	if (mi->mi_lease_period == 0)
+		cmn_err(CE_WARN, "nfs4_setup_mi_lease_period: lease time 0");
+	mutex_exit(&mi->mi_msg_list_lock);
+}
+
+static void
+nfs4_setup_pnfs_mi(nfs4_server_t *np, mntinfo4_t *mi, servinfo4_t *svp)
+{
+
+	if (np->s_flags & N4S_USE_PNFS_MDS) {
+		if ((mi->mi_flags & MI4_PNFS) == 0) {
+
+			mi->mi_flags |= MI4_PNFS;
+			nfs4_pnfs_init_mi(mi);
+
+			/* XXX for now cmn_err is handy, will go away later */
+			cmn_err(CE_NOTE, "enabling pNFS on %s",
+			    svp->sv_hostname);
+
+			DTRACE_PROBE2(nfsc__i_exchangeid, char *,
+			    "enabling pNFS on ", char *, svp->sv_hostname);
+		}
+	}
+	/*
+	 * In the future, we'll need to consider the server turning off
+	 * the MDS bit.  This could happen after a server restart with
+	 * PNFS disabled (after having been previously enabled).  The client
+	 * might interpret this to be like LAYOUTRECALL_ALL.
+	 */
+
+}
+
+
+/*
+ * Generic routine to set the clientid across
+ * minor versions.
  */
 void
-nfs4setclientid(mntinfo4_t *mi, cred_t *cr, bool_t recovery, nfs4_error_t *n4ep)
+nfs4_set_clientid(mntinfo4_t *mi, servinfo4_t *svp, cred_t *cr,
+		    bool_t recovery, nfs4_error_t *n4ep)
 {
-	struct nfs4_server *np;
-	struct servinfo4 *svp = mi->mi_curr_serv;
-	nfs4_recov_state_t recov_state;
-	int num_retries = 0;
-	bool_t retry;
-	cred_t *lcr = NULL;
-	int retry_inuse = 1; /* only retry once on NFS4ERR_CLID_INUSE */
-	time_t lease_time = 0;
+	struct nfs4_server	*np;
+	nfs4_call_t		*cp;
+	nfs4_recov_state_t	 recov_state;
+	int			 num_retries = 0;
+	bool_t			 retry;
+	bool_t			 is_dataserver;
+	cred_t			*lcr = NULL;
+	int			 retry_inuse = 1;	/* only retry once on */
+							/* NFS4ERR_CLID_INUSE */
+	time_t			 lease_time = 0;
+
+	/*
+	 * If svp is non-NULL, then we're setting the clientID on a pNFS
+	 * data server.  Otherwise, it's an MDS or non-pNFS server.
+	 */
+	if (svp == NULL) {
+		svp = mi->mi_curr_serv;
+		is_dataserver = FALSE;
+	} else {
+		is_dataserver = TRUE;
+	}
 
 	recov_state.rs_flags = 0;
 	recov_state.rs_num_retry_despite_err = 0;
@@ -3197,6 +3439,8 @@ recov_retry:
 	mutex_enter(&nfs4_server_lst_lock);
 	np = servinfo4_to_nfs4_server(svp); /* This locks np if it is found */
 	mutex_exit(&nfs4_server_lst_lock);
+
+	/* XXXrsb - Would we ever have np == NULL for the DS case? */
 	if (!np) {
 		struct nfs4_server *tnp;
 		np = new_nfs4_server(svp, cr);
@@ -3227,53 +3471,91 @@ recov_retry:
 	 * If we find the server already has N4S_CLIENTID_SET, then
 	 * just return, we've already done SETCLIENTID to that server
 	 */
-	if (np->s_flags & N4S_CLIENTID_SET) {
-		/* add mi to np's mntinfo4_list */
-		nfs4_add_mi_to_server(np, mi);
-		if (!recovery)
+	if (np->s_flags & N4S_CLIENTID_SET &&
+	    !(np->seqhb_flags & NFS4_SEQHB_EXIT)) {
+		/*
+		 * XXXrsb - We need to be careful of the MDS/DS combo in
+		 * this block.  That is, if a server is both an MDS and
+		 * DS, we need to do the right thing.  (We should probably
+		 * check the "use bits" on the nfs4_server_t, once we can
+		 * trust them.)
+		 */
+		if (is_dataserver == FALSE) {
+			/* add mi to np's mntinfo4_list */
+			nfs4_add_mi_to_server(np, mi);
+		}
+		if (!recovery) {
+			nfs4_set_minorversion(mi, np->s_minorversion);
+			/* See XXXrsb above */
+			if (is_dataserver == FALSE)
+				nfs4_setup_pnfs_mi(np, mi, svp);
+			nfs4_setup_mi_lease_period(np, mi);
+
 			nfs_rw_exit(&mi->mi_recovlock);
+		}
 		mutex_exit(&np->s_lock);
 		nfs4_server_rele(np);
 		return;
 	}
 	mutex_exit(&np->s_lock);
 
+	cp = nfs4_call_init(0, OP_SETCLIENTID, OH_OTHER, FALSE, mi, NULL, NULL,
+	    cr);
 
 	/*
 	 * Drop the mi_recovlock since nfs4_start_op will
 	 * acquire it again for us.
+	 *
+	 * XXXrsb - This gets called from the recovery framework (via
+	 * recov_clientid()) and from nfs4getfh_otw().  In the latter
+	 * case, this is done from an MDS/non-pNFS server and *not*
+	 * a data server.  Given that, we can use the "classic" start_op
+	 * and end_op interfaces.
 	 */
 	if (!recovery) {
 		nfs_rw_exit(&mi->mi_recovlock);
-
-		n4ep->error = nfs4_start_op(mi, NULL, NULL, &recov_state);
+		n4ep->error = nfs4_start_op(cp, &recov_state);
 		if (n4ep->error) {
+			nfs4_call_rele(cp);
 			nfs4_server_rele(np);
 			return;
 		}
 	}
 
 	mutex_enter(&np->s_lock);
-	while (np->s_flags & N4S_CLIENTID_PEND) {
+	while ((np->s_flags & N4S_CLIENTID_PEND) ||
+	    (np->seqhb_flags & NFS4_SEQHB_EXIT)) {
 		if (!cv_wait_sig(&np->s_clientid_pend, &np->s_lock)) {
 			mutex_exit(&np->s_lock);
 			nfs4_server_rele(np);
-			if (!recovery)
-				nfs4_end_op(mi, NULL, NULL, &recov_state,
-				    recovery);
+			/* XXXrsb - See comment above about start_op/end_op */
+			if (!recovery) {
+				nfs4_end_op(cp, &recov_state);
+			}
+			nfs4_call_rele(cp);
 			n4ep->error = EINTR;
 			return;
 		}
 	}
 
-	if (np->s_flags & N4S_CLIENTID_SET) {
+	if (np->s_flags & N4S_CLIENTID_SET &&
+	    !(np->seqhb_flags & NFS4_SEQHB_EXIT)) {
 		/* XXX copied/pasted from above */
 		/* add mi to np's mntinfo4_list */
-		nfs4_add_mi_to_server(np, mi);
+		if (is_dataserver == FALSE)
+			nfs4_add_mi_to_server(np, mi);
+		if (!recovery) {
+			nfs4_set_minorversion(mi, np->s_minorversion);
+			if (is_dataserver == FALSE)
+				nfs4_setup_pnfs_mi(np, mi, svp);
+			nfs4_setup_mi_lease_period(np, mi);
+		}
 		mutex_exit(&np->s_lock);
 		nfs4_server_rele(np);
-		if (!recovery)
-			nfs4_end_op(mi, NULL, NULL, &recov_state, recovery);
+		if (!recovery) {
+			nfs4_end_op(cp, &recov_state);
+		}
+		nfs4_call_rele(cp);
 		return;
 	}
 
@@ -3286,7 +3568,8 @@ recov_retry:
 	/* any failure must now clear this flag */
 	np->s_flags |= N4S_CLIENTID_PEND;
 	mutex_exit(&np->s_lock);
-	nfs4setclientid_otw(mi, svp, cr, np, n4ep, &retry_inuse);
+
+	NFS4_SET_CLIENTID(mi, svp, cr, np, n4ep, &retry_inuse);
 
 	if (n4ep->error == EACCES) {
 		/*
@@ -3306,8 +3589,7 @@ recov_retry:
 			crfree(np->s_cred);
 			np->s_cred = lcr;
 			mutex_exit(&np->s_lock);
-			nfs4setclientid_otw(mi, svp, lcr, np, n4ep,
-			    &retry_inuse);
+			NFS4_SET_CLIENTID(mi, svp, lcr, np, n4ep, &retry_inuse);
 		}
 	}
 	mutex_enter(&np->s_lock);
@@ -3326,8 +3608,8 @@ recov_retry:
 		 * retries).
 		 */
 		if (FAILOVER_MOUNT4(mi) && nfs4_try_failover(n4ep)) {
-			(void) nfs4_start_recovery(n4ep, mi, NULL,
-			    NULL, NULL, NULL, OP_SETCLIENTID, NULL, NULL, NULL);
+			cp->nc_e = *n4ep;
+			(void) nfs4_start_recovery(cp);
 			/*
 			 * Don't retry here, just return and let
 			 * recovery take over.
@@ -3365,11 +3647,22 @@ recov_retry:
 			np->s_refcnt++;
 			np->s_flags |= N4S_INSERTED;
 		}
+
+		if (is_dataserver == FALSE && !recovery)
+			nfs4_setup_pnfs_mi(np, mi, svp);
+
+		/*
+		 * In recovery or not, a new nfs4_server needs
+		 * to have the minorversion set.
+		 */
+		np->s_minorversion = mi->mi_minorversion;
 		mutex_exit(&np->s_lock);
 	}
 
-	if (!recovery)
-		nfs4_end_op(mi, NULL, NULL, &recov_state, recovery);
+	if (!recovery) {
+		nfs4_end_op(cp, &recov_state);
+	}
+	nfs4_call_rele(cp);
 
 
 	if (retry && num_retries++ < nfs4_num_sclid_retries) {
@@ -3390,244 +3683,6 @@ recov_retry:
 	/* broadcast before release in case no other threads are waiting */
 	cv_broadcast(&np->s_clientid_pend);
 	nfs4_server_rele(np);
-}
-
-int nfs4setclientid_otw_debug = 0;
-
-/*
- * This function handles the recovery of STALE_CLIENTID for SETCLIENTID_CONFRIM,
- * but nothing else; the calling function must be designed to handle those
- * other errors.
- */
-static void
-nfs4setclientid_otw(mntinfo4_t *mi, struct servinfo4 *svp,  cred_t *cr,
-    struct nfs4_server *np, nfs4_error_t *ep, int *retry_inusep)
-{
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	nfs_argop4 argop[3];
-	SETCLIENTID4args *s_args;
-	SETCLIENTID4resok *s_resok;
-	int doqueue = 1;
-	nfs4_ga_res_t *garp = NULL;
-	timespec_t prop_time, after_time;
-	verifier4 verf;
-	clientid4 tmp_clientid;
-
-	ASSERT(!MUTEX_HELD(&np->s_lock));
-
-	args.ctag = TAG_SETCLIENTID;
-
-	args.array = argop;
-	args.array_len = 3;
-
-	/* PUTROOTFH */
-	argop[0].argop = OP_PUTROOTFH;
-
-	/* GETATTR */
-	argop[1].argop = OP_GETATTR;
-	argop[1].nfs_argop4_u.opgetattr.attr_request = FATTR4_LEASE_TIME_MASK;
-	argop[1].nfs_argop4_u.opgetattr.mi = mi;
-
-	/* SETCLIENTID */
-	argop[2].argop = OP_SETCLIENTID;
-
-	s_args = &argop[2].nfs_argop4_u.opsetclientid;
-
-	mutex_enter(&np->s_lock);
-
-	s_args->client.verifier = np->clidtosend.verifier;
-	s_args->client.id_len = np->clidtosend.id_len;
-	ASSERT(s_args->client.id_len <= NFS4_OPAQUE_LIMIT);
-	s_args->client.id_val = np->clidtosend.id_val;
-
-	/*
-	 * Callback needs to happen on non-RDMA transport
-	 * Check if we have saved the original knetconfig
-	 * if so, use that instead.
-	 */
-	if (svp->sv_origknconf != NULL)
-		nfs4_cb_args(np, svp->sv_origknconf, s_args);
-	else
-		nfs4_cb_args(np, svp->sv_knconf, s_args);
-
-	mutex_exit(&np->s_lock);
-
-	rfs4call(mi, &args, &res, cr, &doqueue, 0, ep);
-
-	if (ep->error)
-		return;
-
-	/* getattr lease_time res */
-	if ((res.array_len >= 2) &&
-	    (res.array[1].nfs_resop4_u.opgetattr.status == NFS4_OK)) {
-		garp = &res.array[1].nfs_resop4_u.opgetattr.ga_res;
-
-#ifndef _LP64
-		/*
-		 * The 32 bit client cannot handle a lease time greater than
-		 * (INT32_MAX/1000000).  This is due to the use of the
-		 * lease_time in calls to drv_usectohz() in
-		 * nfs4_renew_lease_thread().  The problem is that
-		 * drv_usectohz() takes a time_t (which is just a long = 4
-		 * bytes) as its parameter.  The lease_time is multiplied by
-		 * 1000000 to convert seconds to usecs for the parameter.  If
-		 * a number bigger than (INT32_MAX/1000000) is used then we
-		 * overflow on the 32bit client.
-		 */
-		if (garp->n4g_ext_res->n4g_leasetime > (INT32_MAX/1000000)) {
-			garp->n4g_ext_res->n4g_leasetime = INT32_MAX/1000000;
-		}
-#endif
-
-		mutex_enter(&np->s_lock);
-		np->s_lease_time = garp->n4g_ext_res->n4g_leasetime;
-
-		/*
-		 * Keep track of the lease period for the mi's
-		 * mi_msg_list.  We need an appropiate time
-		 * bound to associate past facts with a current
-		 * event.  The lease period is perfect for this.
-		 */
-		mutex_enter(&mi->mi_msg_list_lock);
-		mi->mi_lease_period = np->s_lease_time;
-		mutex_exit(&mi->mi_msg_list_lock);
-		mutex_exit(&np->s_lock);
-	}
-
-
-	if (res.status == NFS4ERR_CLID_INUSE) {
-		clientaddr4 *clid_inuse;
-
-		if (!(*retry_inusep)) {
-			clid_inuse = &res.array->nfs_resop4_u.
-			    opsetclientid.SETCLIENTID4res_u.client_using;
-
-			zcmn_err(mi->mi_zone->zone_id, CE_NOTE,
-			    "NFS4 mount (SETCLIENTID failed)."
-			    "  nfs4_client_id.id is in"
-			    "use already by: r_netid<%s> r_addr<%s>",
-			    clid_inuse->r_netid, clid_inuse->r_addr);
-		}
-
-		/*
-		 * XXX - The client should be more robust in its
-		 * handling of clientid in use errors (regen another
-		 * clientid and try again?)
-		 */
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-		return;
-	}
-
-	if (res.status) {
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-		return;
-	}
-
-	s_resok = &res.array[2].nfs_resop4_u.
-	    opsetclientid.SETCLIENTID4res_u.resok4;
-
-	tmp_clientid = s_resok->clientid;
-
-	verf = s_resok->setclientid_confirm;
-
-#ifdef	DEBUG
-	if (nfs4setclientid_otw_debug) {
-		union {
-			clientid4	clientid;
-			int		foo[2];
-		} cid;
-
-		cid.clientid = s_resok->clientid;
-
-		zcmn_err(mi->mi_zone->zone_id, CE_NOTE,
-		"nfs4setclientid_otw: OK, clientid = %x,%x, "
-		"verifier = %" PRIx64 "\n", cid.foo[0], cid.foo[1], verf);
-	}
-#endif
-
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-
-	/* Confirm the client id and get the lease_time attribute */
-
-	args.ctag = TAG_SETCLIENTID_CF;
-
-	args.array = argop;
-	args.array_len = 1;
-
-	argop[0].argop = OP_SETCLIENTID_CONFIRM;
-
-	argop[0].nfs_argop4_u.opsetclientid_confirm.clientid = tmp_clientid;
-	argop[0].nfs_argop4_u.opsetclientid_confirm.setclientid_confirm = verf;
-
-	/* used to figure out RTT for np */
-	gethrestime(&prop_time);
-
-	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setlientid_otw: "
-	    "start time: %ld sec %ld nsec", prop_time.tv_sec,
-	    prop_time.tv_nsec));
-
-	rfs4call(mi, &args, &res, cr, &doqueue, 0, ep);
-
-	gethrestime(&after_time);
-	mutex_enter(&np->s_lock);
-	np->propagation_delay.tv_sec =
-	    MAX(1, after_time.tv_sec - prop_time.tv_sec);
-	mutex_exit(&np->s_lock);
-
-	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setlcientid_otw: "
-	    "finish time: %ld sec ", after_time.tv_sec));
-
-	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setclientid_otw: "
-	    "propagation delay set to %ld sec",
-	    np->propagation_delay.tv_sec));
-
-	if (ep->error)
-		return;
-
-	if (res.status == NFS4ERR_CLID_INUSE) {
-		clientaddr4 *clid_inuse;
-
-		if (!(*retry_inusep)) {
-			clid_inuse = &res.array->nfs_resop4_u.
-			    opsetclientid.SETCLIENTID4res_u.client_using;
-
-			zcmn_err(mi->mi_zone->zone_id, CE_NOTE,
-			    "SETCLIENTID_CONFIRM failed.  "
-			    "nfs4_client_id.id is in use already by: "
-			    "r_netid<%s> r_addr<%s>",
-			    clid_inuse->r_netid, clid_inuse->r_addr);
-		}
-
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-		return;
-	}
-
-	if (res.status) {
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-		return;
-	}
-
-	mutex_enter(&np->s_lock);
-	np->clientid = tmp_clientid;
-	np->s_flags |= N4S_CLIENTID_SET;
-
-	/* Add mi to np's mntinfo4 list */
-	nfs4_add_mi_to_server(np, mi);
-
-	if (np->lease_valid == NFS4_LEASE_NOT_STARTED) {
-		/*
-		 * Start lease management thread.
-		 * Keep trying until we succeed.
-		 */
-
-		np->s_refcnt++;		/* pass reference to thread */
-		(void) zthread_create(NULL, 0, nfs4_renew_lease_thread, np, 0,
-		    minclsyspri);
-	}
-	mutex_exit(&np->s_lock);
-
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
 }
 
 /*
@@ -3741,7 +3796,7 @@ nfs4_remove_mi_from_server_nolock(mntinfo4_t *mi, nfs4_server_t *sp)
 		/* last fs unmounted, kill the thread */
 		NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE,
 		    "remove_mi_from_nfs4_server_nolock: kill the thread"));
-		nfs4_mark_srv_dead(sp);
+		nfs4_mark_srv_dead(sp, 0);
 	}
 }
 
@@ -3854,12 +3909,52 @@ nfs4_fs_active(nfs4_server_t *sp)
  */
 
 void
-nfs4_mark_srv_dead(nfs4_server_t *sp)
+nfs4_mark_srv_dead(nfs4_server_t *sp, uint_t zone_shutdown)
 {
 	ASSERT(MUTEX_HELD(&sp->s_lock));
 
-	sp->s_thread_exit = NFS4_THREAD_EXIT;
+	sp->s_flags |= N4S_SRV_DEAD;
+
+	if (sp->s_minorversion > 0)
+		if (zone_shutdown)
+			sp->seqhb_flags |= NFS4_SEQHB_EXIT;
+		else
+			sp->seqhb_flags |= NFS4_SEQHB_EXITING;
+
+	/*
+	 * For 4.0 mounts, tell the renew threads to exit
+	 * immediately.  For 4.1 and greater, the various
+	 * heartbeat threads will hang around awhile.
+	 */
+	if (sp->s_minorversion < 1 || zone_shutdown == TRUE)
+		sp->s_thread_exit = NFS4_THREAD_EXIT;
 	cv_broadcast(&sp->cv_thread_exit);
+}
+
+/*
+ * Layout rnode by fsid avl tree compare function
+ */
+static int
+fsidcmp(const void *p1, const void *p2)
+{
+	const nfs4_fsidlt_t *lt1 = p1;
+	const nfs4_fsidlt_t *lt2 = p2;
+	int m;
+
+	m = memcmp(&lt1->lt_fsid, &lt2->lt_fsid, sizeof (&lt1->lt_fsid));
+	return (m == 0 ? 0 : m < 0 ? -1 : 1);
+}
+
+/*
+ * Layout rnode avl tree compare function
+ */
+int
+layoutcmp(const void *p1, const void *p2)
+{
+	const rnode4_t	*r1 = p1;
+	const rnode4_t	*r2 = p2;
+
+	return (nfs4cmpfh(&r1->r_fh->sfh_fh, &r2->r_fh->sfh_fh));
 }
 
 /*
@@ -3885,6 +3980,7 @@ new_nfs4_server(struct servinfo4 *svp, cred_t *cr)
 	 * a client that can handle an NFSv4 referral.
 	 */
 	char id_val[] = "Solaris: %s, NFSv4 kernel client +referrals";
+	char tag[] = "INITSESS%p";
 	int len;
 
 	np = kmem_zalloc(sizeof (struct nfs4_server), KM_SLEEP);
@@ -3892,6 +3988,14 @@ new_nfs4_server(struct servinfo4 *svp, cred_t *cr)
 	np->saddr.maxlen = svp->sv_addr.maxlen;
 	np->saddr.buf = kmem_alloc(svp->sv_addr.maxlen, KM_SLEEP);
 	bcopy(svp->sv_addr.buf, np->saddr.buf, svp->sv_addr.len);
+
+	/*
+	 * Initialize rnode avl tree.
+	 */
+	mutex_init(&np->s_lt_lock, NULL, MUTEX_DEFAULT, NULL);
+	avl_create(&np->s_fsidlt, fsidcmp, sizeof (nfs4_fsidlt_t),
+	    offsetof(nfs4_fsidlt_t, lt_node));
+	nfs4_pnfs_init_n4s(np);
 	np->s_refcnt = 1;
 
 	/*
@@ -3938,6 +4042,19 @@ new_nfs4_server(struct servinfo4 *svp, cred_t *cr)
 	np->zoneid = getzoneid();
 	np->zone_globals = nfs4_get_callback_globals();
 	ASSERT(np->zone_globals != NULL);
+
+	/*
+	 * Dummy session id untill CREATE_SESSION is completed
+	 */
+	(void) snprintf(np->ssx.sessionid, sizeof (sessionid4), tag, curthread);
+
+	/*
+	 * By default, we begin with bi-dir rpc
+	 */
+	if (nfs41_birpc) {
+		np->ssx.bi_rpc = 1;
+	}
+
 	return (np);
 }
 
@@ -3945,7 +4062,7 @@ new_nfs4_server(struct servinfo4 *svp, cred_t *cr)
  * Create a new nfs4_server_t structure and add it to the list.
  * Returns new node locked; reference must eventually be freed.
  */
-static struct nfs4_server *
+struct nfs4_server *
 add_new_nfs4_server(struct servinfo4 *svp, cred_t *cr)
 {
 	nfs4_server_t *sp;
@@ -4117,9 +4234,20 @@ servinfo4_to_nfs4_server(servinfo4_t *srv_p)
 		if (np->zoneid == zoneid &&
 		    np->saddr.len == srv_p->sv_addr.len &&
 		    bcmp(np->saddr.buf, srv_p->sv_addr.buf,
-		    np->saddr.len) == 0 &&
-		    np->s_thread_exit != NFS4_THREAD_EXIT) {
+		    np->saddr.len) == 0) {
 			mutex_enter(&np->s_lock);
+			/*
+			 * If there is an already created session
+			 * reuse this nfs4_server_t, even if
+			 * NFS4_THREAD_EXIT is set (which just means
+			 * no mounts exist to the server).
+			 */
+			if (np->s_thread_exit == NFS4_THREAD_EXIT &&
+			    (!(np->s_flags & N4S_SESSION_CREATED))) {
+				mutex_exit(&np->s_lock);
+				continue;
+			}
+			np->s_thread_exit = 0;
 			np->s_refcnt++;
 			return (np);
 		}
@@ -4168,6 +4296,27 @@ find_nfs4_server(mntinfo4_t *mi)
 }
 
 /*
+ * This is a special version of find_nfs4_server, which takes
+ * the mi_recovlock, activates the current nfs4_server_t for
+ * that mi, and drops the lock.  This function must be used
+ * with care, since after dropping mi_recovlock, the mi will
+ * may no longer refer to this structure.  Callers of this
+ * service must be aware of this and can never assume that
+ * the value returned remains the current target of the mi.
+ */
+nfs4_server_t *
+find_nfs4_server_nolock(mntinfo4_t *mi)
+{
+	nfs4_server_t *np;
+
+	(void) nfs_rw_enter_sig(&mi->mi_recovlock, RW_READER, 0);
+	np = find_nfs4_server(mi);
+	nfs_rw_exit(&mi->mi_recovlock);
+	/* either np is NULL OR n4sp->s_lock is held */
+	return (np);
+}
+
+/*
  * Same as above, but takes an "any_state" parameter which can be
  * set to 1 if the caller wishes to find nfs4_server_t's which
  * have been marked for termination by the exit of the renew
@@ -4183,6 +4332,35 @@ find_nfs4_server_all(mntinfo4_t *mi, int any_state)
 	return (lookup_nfs4_server(mi->mi_srv, any_state));
 }
 
+/* ARGSUSED */
+nfs4_server_t *
+find_nfs4_server_by_servinfo4(servinfo4_t *svp)
+{
+	nfs4_server_t *np;
+	zoneid_t zoneid = nfs_zoneid();
+
+	ASSERT(MUTEX_HELD(&nfs4_server_lst_lock));
+
+	for (np = nfs4_server_lst.forw; np != &nfs4_server_lst; np = np->forw) {
+		mutex_enter(&np->s_lock);
+
+		if (np->zoneid == zoneid &&
+		    np->saddr.len == svp->sv_addr.len &&
+		    bcmp(np->saddr.buf, svp->sv_addr.buf, np->saddr.len) == 0 &&
+		    (np->s_thread_exit != NFS4_THREAD_EXIT)) {
+			mutex_exit(&nfs4_server_lst_lock);
+			np->s_refcnt++;
+			return (np);
+		}
+		mutex_exit(&np->s_lock);
+	}
+	/*
+	 * NB - return holding lst_lock so caller can insert using
+	 * add_new_nfs4_server without a race.
+	 */
+	return (NULL);
+}
+
 /*
  * Lock sp, but only if it's still active (in the list and hasn't been
  * flagged as exiting) or 'any_state' is non-zero.
@@ -4195,13 +4373,32 @@ nfs4_server_vlock(nfs4_server_t *sp, int any_state)
 }
 
 /*
+ * Take a new reference to the nfs4_server.  Note that several
+ * routines need to do this inline in order to keep the lock.
+ */
+void
+nfs4_server_hold(nfs4_server_t *sp)
+{
+	mutex_enter(&sp->s_lock);
+	sp->s_refcnt++;
+	mutex_exit(&sp->s_lock);
+}
+
+/*
  * Release the reference to sp and destroy it if that's the last one.
  */
-
 void
 nfs4_server_rele(nfs4_server_t *sp)
 {
 	mutex_enter(&sp->s_lock);
+	nfs4_server_rele_lockt(sp);
+	/* s_lock has been released */
+}
+
+void
+nfs4_server_rele_lockt(nfs4_server_t *sp)
+{
+	ASSERT(MUTEX_HELD(&sp->s_lock));
 	ASSERT(sp->s_refcnt > 0);
 	sp->s_refcnt--;
 	if (sp->s_refcnt > 0) {
@@ -4223,9 +4420,166 @@ nfs4_server_rele(nfs4_server_t *sp)
 	destroy_nfs4_server(sp);
 }
 
+void
+nfs4session_teardown(mntinfo4_t *mi, servinfo4_t *svp, nfs4_server_t *np)
+{
+	nfs4_session_t *sess;
+	struct nfs41_cb_info *cbi;
+	struct nfs4_callback_globals *ncg = np->zone_globals;
+	int error;
+
+	/* Destroy the slot table cache's for fore and back channel. */
+	sess = &np->ssx;
+	if (sess->slot_table != NULL)
+		slot_table_destroy(sess->slot_table);
+	if (sess->cb_slot_table != NULL)
+		slot_table_destroy(sess->cb_slot_table);
+	sess->slot_table = sess->cb_slot_table = NULL;
+
+	mutex_enter(&np->s_lock);
+	if (sess->saddr.buf) {
+		kmem_free(sess->saddr.buf, sess->saddr.len);
+		sess->saddr.buf = NULL;
+	}
+	if (np->s_program == 0) {
+		mutex_exit(&np->s_lock);
+		return;
+	}
+
+	cbi = ncg->nfs4prog2cbinfo[np->s_program - NFS4_CALLBACK];
+	mutex_exit(&np->s_lock);
+
+	/*
+	 * Tell callback connection thread to exit.
+	 */
+	if (cbi->cb_client) {
+		mutex_enter(&cbi->cb_cbconn_lock);
+		cbi->cb_cbconn_exit = TRUE;
+		cv_broadcast(&cbi->cb_cbconn_wait);
+		mutex_exit(&cbi->cb_cbconn_lock);
+		mutex_enter(&cbi->cb_reflock);
+		while (cbi->cb_refcnt != 1)
+			cv_wait(&cbi->cb_destroy_wait, &cbi->cb_reflock);
+		mutex_exit(&cbi->cb_reflock);
+	} else
+		cbi->cb_cbconn_exit = TRUE;
+
+	/*
+	 * Tell the RPC callback thread to cleanup.
+	 */
+	if ((error = nfs4_tag_ctl(np, mi, svp, sess->sessionid,
+	    NFS4_CBSERVER_CLEANUP, np->s_cred)) != 0) {
+		zcmn_err(getzoneid(), CE_WARN, "Failed destroy rpc cbserver %d",
+		    error);
+	}
+
+	mutex_enter(&np->s_lock);
+	nfs4callback_destroy(np);
+	mutex_exit(&np->s_lock);
+}
+
+static void
+nfs4destroy_session_otw(mntinfo4_t *mi, servinfo4_t *svp, nfs4_server_t *np,
+	nfs4_error_t *ep)
+{
+	nfs4_session_t		*sessp = &np->ssx;
+	nfs4_call_t		*cp;
+	DESTROY_SESSION4res	*resp;
+	nfs4_recov_state_t	recov_state;
+
+	recov_state.rs_flags = 0;
+	recov_state.rs_num_retry_despite_err = 0;
+
+	cp = nfs4_call_init(TAG_DESTROY_SESSION, 0, OH_DESTROY_SESS,
+	    FALSE, mi, NULL, NULL, np->s_cred);
+	cp->nc_svp = cp->nc_ds_servinfo = svp;
+	cp->nc_rfs4call_flags = RFS4CALL_FORCE;
+
+	ep->error = nfs4_start_op(cp, &recov_state);
+	if (ep->error) {
+		cmn_err(CE_WARN, "nfs4destroy_session_otw: start op failed %d",
+		    ep->error);
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	(void) nfs4_op_sequence(cp);
+	resp = nfs4_op_destroy_session(cp, sessp->sessionid);
+
+	rfs4call(cp, ep);
+
+	nfs4_end_op(cp, &recov_state);
+
+	if (ep->error != 0 || ep->stat != NFS4_OK ||
+	    (ep->error == 0 && resp->dsr_status)) {
+		DTRACE_PROBE1(nfsc__i_destroysession, char *,
+		    "Destroy_session request failed, destroying anyways");
+		cmn_err(CE_WARN, "nfs4destroy_session_otw: rfs4call failed "
+		    " %d/%d", ep->error, ep->stat);
+	}
+	nfs4_call_rele(cp);
+}
+
+void
+nfs4destroy_session(nfs4_server_t *np, mntinfo4_t *mi, servinfo4_t *svp,
+    nfs4_error_t *ep, int flags)
+{
+	int held = 0;
+
+	mutex_enter(&np->s_lock);
+	/*
+	 * XXXrsb bandage: Will be removed with DS heartbeat changes
+	 * we really shouldn't be here if s_program == 0
+	 */
+	if (np->s_program == 0) {
+		mutex_exit(&np->s_lock);
+		return;
+	}
+
+	if (flags & N4DS_TERMINATE_HB_THREAD) {
+		if (np->seqhb_flags & NFS4_SEQHB_STARTED) {
+			/*
+			 * If not already signalled in start_recovery()
+			 * signal sequence_heartbeat_thread() to exit.
+			 */
+
+			if (!(np->seqhb_flags & NFS4_SEQHB_EXIT)) {
+				np->seqhb_flags |= NFS4_SEQHB_EXIT;
+				if (flags & N4DS_DESTROY_INZONE)
+					np->seqhb_flags |=
+					    NFS4_SEQHB_DESTROY_INZONE;
+				np->s_refcnt++;
+				held = 1;
+				cv_broadcast(&np->cv_thread_exit);
+			}
+
+			/* Wait for the sequence heartbeat thread to exit */
+
+			while (np->seqhb_flags & NFS4_SEQHB_EXIT) {
+				cv_wait(&np->ssx_wait, &np->s_lock);
+			}
+		}
+	}
+	mutex_exit(&np->s_lock);
+
+	/*
+	 * Now, destroy the session, although the HB thread already
+	 * beat us to it.
+	 */
+	if (flags & N4DS_DESTROY_OTW)
+		nfs4destroy_session_otw(mi, svp, np, ep);
+
+	nfs4session_teardown(mi, svp, np);
+	if (held)
+		nfs4_server_rele(np);
+}
+
 static void
 destroy_nfs4_server(nfs4_server_t *sp)
 {
+	nfs4_fsidlt_t *ltp = NULL;
+	void *cookie = NULL;
+
 	ASSERT(MUTEX_HELD(&sp->s_lock));
 	ASSERT(sp->s_refcnt == 0);
 	ASSERT(sp->s_otw_call_count == 0);
@@ -4236,6 +4590,13 @@ destroy_nfs4_server(nfs4_server_t *sp)
 	kmem_free(sp->saddr.buf, sp->saddr.maxlen);
 	kmem_free(sp->clidtosend.id_val, sp->clidtosend.id_len);
 	mutex_exit(&sp->s_lock);
+
+	while ((ltp = avl_destroy_nodes(&sp->s_fsidlt, &cookie)) != NULL) {
+		avl_destroy(&ltp->lt_rlayout_tree);
+		kmem_free(ltp, sizeof (*ltp));
+	}
+	avl_destroy(&sp->s_fsidlt);
+	pnfs_trash_devtree(sp);
 
 	/* destroy the nfs4_server */
 	nfs4callback_destroy(sp);

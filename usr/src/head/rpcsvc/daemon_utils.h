@@ -40,6 +40,7 @@ extern "C" {
 #define	NFS4CBD		"svc:/network/nfs/cbd:default"
 #define	NFSMAPID	"svc:/network/nfs/mapid:default"
 #define	RQUOTAD		"svc:/network/nfs/rquota:default"
+#define	SPED		"svc:/network/nfs/spe:default"
 #define	REPARSED	"svc:/system/filesystem/reparse:default"
 
 #define	DAEMON_UID	 1

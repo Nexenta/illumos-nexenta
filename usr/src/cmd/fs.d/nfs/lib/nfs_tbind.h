@@ -55,8 +55,15 @@ struct protob {
 	int versmin;		/* minimum version no. to be registered */
 	int versmax;		/* maximum version no. to be registered */
 	int program;		/* program no. to be registered */
+	int flags;
 	struct protob *next;	/* next entry on list */
 };
+
+/*
+ * The following used in a protob flags to indicate
+ * that we do not wish to register.
+ */
+#define	PROTOB_NO_REGISTER	1
 
 /*
  * Declarations for protocol types and comparison.

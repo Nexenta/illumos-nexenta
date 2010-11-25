@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -50,7 +50,12 @@ enum nfssys_op	{ OLD_NFS_SVC, OLD_ASYNC_DAEMON, EXPORTFS, OLD_NFS_GETFH,
     NFS4_SVC, RDMA_SVC_INIT, NFS4_CLR_STATE, NFS_IDMAP,
     NFS4_SVC_REQUEST_QUIESCE, NFS_GETFH, NFS4_DSS_SETPATHS,
     NFS4_DSS_SETPATHS_SIZE, NFS4_EPHEMERAL_MOUNT_TO, MOUNTD_ARGS,
-    NFSCMD_ARGS };
+    NFSCMD_ARGS, MDS_RECALL_LAYOUT, MDS_NOTIFY_DEVICE,
+    NFS_INIT_STATESTORE, NFS_FINI_STATESTORE, NFSSTAT_LAYOUT,
+    DSERV_DATASET_INFO, DSERV_SETPORT, DSERV_SETMDS, DSERV_REPORTAVAIL,
+    DSERV_DATASET_PROPS, DSERV_INSTANCE_SHUTDOWN, DSERV_SVC,
+    NFS_SPE
+};
 
 struct nfs_svc_args {
 	int		fd;		/* Connection endpoint */
@@ -59,6 +64,7 @@ struct nfs_svc_args {
 	int		versmin;	/* Min protocol version to offer */
 	int		versmax;	/* Max protocol version to offer */
 	int		delegation;	/* NFSv4 delegation on/off? */
+	int		dfd;		/* door file descriptor */
 };
 
 #ifdef _SYSCALL32
@@ -69,6 +75,7 @@ struct nfs_svc_args32 {
 	int32_t		versmin;	/* Min protocol version to offer */
 	int32_t		versmax;	/* Max protocol version to offer */
 	int32_t		delegation;	/* NFSv4 delegation on/off? */
+	int32_t		dfd;		/* door file descriptor */
 };
 #endif
 
@@ -99,6 +106,32 @@ struct nfs_getfh_args32 {
 	caddr32_t	fhp;
 };
 #endif
+
+/*
+ * Data structures related to nfssys system call for getting layout
+ * information. nfsstat -l
+ */
+struct pnfs_getflo_args {
+	char		*fname;
+	uint32_t	user_bufsize;
+	char		*layoutstats;
+	uint32_t	*kernel_bufsize;
+};
+
+#ifdef _SYSCALL32
+struct pnfs_getflo_args32 {
+	caddr32_t	fname;
+	uint32_t	user_bufsize;
+	caddr32_t	layoutstats;
+	caddr32_t	kernel_bufsize;
+};
+#endif
+
+/*
+ * Default size of the buffer passed to the kernel.
+ */
+#define	DEFAULT_LAYOUT_SIZE	2048
+
 
 struct nfs_revauth_args {
 	int		authtype;
@@ -180,6 +213,7 @@ struct rdma_svc_args {
 	int		nfs_versmin;	/* Min NFS version to offer */
 	int		nfs_versmax;	/* Max NFS version to offer */
 	int		delegation;	/* NFSv4 delegation on/off? */
+	int		dfd;		/* door file descriptor */
 };
 
 #ifdef _SYSCALL32
@@ -189,6 +223,7 @@ struct rdma_svc_args32 {
 	int32_t		nfs_versmin;	/* Min NFS version to offer */
 	int32_t		nfs_versmax;	/* Max NFS version to offer */
 	int32_t		delegation;	/* NFSv4 delegation on/off? */
+	int32_t		dfd;		/* door file descriptor */
 };
 #endif
 
@@ -208,6 +243,93 @@ struct nfs4clrst_args32 {
 };
 #endif
 
+struct mds_reclo_args {
+	char	*lo_fname;
+	int	lo_type;
+};
+
+#ifdef _SYSCALL32
+struct mds_reclo_args32 {
+	caddr32_t	*lo_fname;
+	int32_t		lo_type;
+};
+#endif
+
+
+/*
+ * DSERV__DATASET_INFO argruments
+ */
+
+#define	DSERV_MAX_NETID	32
+#define	DSERV_MAX_UADDR	128
+
+typedef struct dserv_dataset_props {
+	char ddp_name[MAXPATHLEN];
+	char ddp_mds_netid[DSERV_MAX_NETID];
+	char ddp_mds_uaddr[DSERV_MAX_UADDR];
+} dserv_dataset_props_t;
+
+typedef struct dserv_dataset_info {
+	char	dataset_name[MAXPATHLEN];
+} dserv_dataset_info_t;
+
+typedef struct dserv_setmds_args {
+	char dsm_mds_netid[DSERV_MAX_NETID];
+	char dsm_mds_uaddr[DSERV_MAX_UADDR];
+} dserv_setmds_args_t;
+
+
+/*
+ * DSERV_SVC arguments
+ * Note: DSERV_SVC will be removed when dservd merged with nfsd.
+ */
+/*
+ * XXX Lisa
+ * 1.) If netid is tcp or rdma(?), we'll use a sockaddr_in.  If netid
+ * is tcp6, we'll use a sockaddr_in6.  Note: we will only support tcp not udp.
+ * 2.) make sure this is packed correctly.
+ * 3.) May need versions.
+ */
+
+typedef struct dserv_svc_args {
+	int	fd;
+	int	poolid;
+	char	netid[KNC_STRSIZE];
+	union {
+		struct sockaddr_in	sin;
+		struct sockaddr_in6	sin6;
+	} sin;
+} dserv_svc_args_t;
+
+typedef struct dserv_setport_args {
+	char dsa_proto[32]; /* XXX use a constant */
+	char dsa_uaddr[128]; /* XXX use a constant */
+	char dsa_name[MAXPATHLEN];
+} dserv_setport_args_t;
+
+/*
+ * XXX: Description?
+ */
+struct mds_notifydev_args {
+	int	dev_id;
+	int	notify_how;
+	int	immediate;
+};
+
+/* SYSCALL32 version not needed, ABI invariant */
+
+struct nfs_state_init_args {
+	int	cap_flags;
+	char	*inst_name;
+};
+
+#ifdef _SYSCALL32
+struct nfs_state_init_args32 {
+	int32_t	  cap_flags;
+	caddr32_t inst_name;
+};
+#endif
+
 struct nfsidmap_args {
 	uint_t		state;	/* Flushes caches, set state up 1 or down 0 */
 	uint_t		did;	/* Door id to upcall */
@@ -216,6 +338,35 @@ struct nfsidmap_args {
 #define	NFSL_ALL	0x01		/* Flush all buffers */
 #define	NFSL_RENAME	0x02		/* Rename buffer(s) */
 #define	NFSL_SYNC	0x04		/* Perform operation synchronously? */
+
+typedef enum nfsspe_op {
+	SPE_OP_SET_DOOR,
+	SPE_OP_POLICY_POPULATE,
+	SPE_OP_POLICY_NUKE,
+	SPE_OP_POLICY_ADD,
+	SPE_OP_POLICY_DELETE,
+	SPE_OP_NPOOL_POPULATE,
+	SPE_OP_NPOOL_NUKE,
+	SPE_OP_NPOOL_ADD,
+	SPE_OP_NPOOL_DELETE,
+	SPE_OP_SCHEDULE
+} nfsspe_op_t;
+
+struct nfsspe_args {
+	nfsspe_op_t	nsa_opcode;	/* operation discriminator */
+	uint_t		nsa_did;	/* Door id to upcall */
+	char		*nsa_xdr;	/* XDR data */
+	size_t		nsa_xdr_len;	/* Size of XDR data */
+};
+
+#ifdef _SYSCALL32
+struct nfsspe_args32 {
+	nfsspe_op_t	nsa_opcode;	/* operation discriminator */
+	uint32_t	nsa_did;	/* Door id to upcall */
+	caddr32_t	nsa_xdr;	/* XDR data */
+	size32_t	nsa_xdr_len;	/* Size of XDR data */
+};
+#endif
 
 #ifdef _KERNEL
 union nfssysargs {
@@ -230,6 +381,9 @@ union nfssysargs {
 	struct svcpool_args	*svcpool_args_u;	/* svcpool args */
 	struct nfs4clrst_args   *nfs4clrst_u;		/* nfs4 clear state */
 	struct nfsidmap_args	*nfsidmap_u;		/* nfsidmap */
+	struct nfsspe_args	*nfsspe_u;		/* nfsspe */
+	struct mds_adddev_args  *adddev_u;
+	dserv_dataset_props_t	*ds_dset_props;		/* dataset props */
 };
 
 struct nfssysa {
@@ -246,6 +400,7 @@ struct nfssysa {
 #define	nfssysarg_svcpool	arg.svcpool_args_u
 #define	nfssysarg_nfs4clrst	arg.nfs4clrst_u
 #define	nfssysarg_nfsidmap	arg.nfsidmap_u
+#define	nfssysarg_nfsspe	arg.nfsspe_u
 
 #ifdef _SYSCALL32
 union nfssysargs32 {
@@ -259,6 +414,7 @@ union nfssysargs32 {
 	caddr32_t nfsl_flush_args_u;	/* nfsl_flush args */
 	caddr32_t svcpool_args_u;
 	caddr32_t nfs4clrst_u;
+	caddr32_t adddev_u;
 };
 struct nfssysa32 {
 	enum nfssys_op		opcode;	/* operation discriminator */
@@ -302,13 +458,60 @@ struct nfs4_svc_args32 {
 /* default storage dir */
 #define	NFS4_DSS_VAR_DIR	"/var/nfs"
 
+#define	NFS4_SS_VERSION 1
+
+/* values for stable storage cmd */
+#define	NFS4_SS_READ		1
+#define	NFS4_SS_WRITE		2
+#define	NFS4_SS_DELETE_CLNT	3
+#define	NFS4_SS_DELETE_OLD	4
+
+/* errors for stable storage door usage */
+#define	NFS_DR_SUCCESS	0
+#define	NFS_DR_BADARG	-1
+#define	NFS_DR_BADCMD	-2
+#define	NFS_DR_BADDIR	-3
+#define	NFS_DR_OVERFLOW	-4
+#define	NFS_DR_NOMEM	-5
+#define	NFS_DR_OPFAIL	-6
+
+/* state to be written out to stable storage */
+struct ss_state_rec {
+	uint64_t ss_fvers;
+	uint64_t ss_veri;
+	uint64_t ss_len;
+	char ss_val[1];
+};
+/* state returned from stable storage */
+struct ss_rd_state {
+	uint64_t ssr_veri;
+	uint64_t ssr_len;
+	char ssr_val[1];
+};
+/* stable storage door arg struct */
+struct ss_arg {
+	int cmd;
+	int rsz;
+	char path[MAXPATHLEN];
+	struct ss_state_rec rec;
+};
+/* stable storage door result struct */
+struct ss_res {
+	int status;
+	int nsize;	/* num of recs, or size needed */
+	struct ss_rd_state rec[1];
+};
+
 #ifdef _KERNEL
 
 #include <sys/systm.h>		/* for rval_t typedef */
 
-extern int	nfssys(enum nfssys_op opcode, void *arg);
+extern int	nfssys(enum nfssys_op, void *);
 extern int	exportfs(struct exportfs_args *, model_t, cred_t *);
 extern int	nfs_getfh(struct nfs_getfh_args *, model_t, cred_t *);
+extern int 	pnfs_collect_layoutstats(
+    struct pnfs_getflo_args *, model_t, cred_t *);
+extern int	dserv_svc(dserv_svc_args_t *);
 extern int	nfs_svc(struct nfs_svc_args *, model_t);
 extern int	lm_svc(struct lm_svc_args *uap);
 extern int	lm_shutdown(void);
@@ -317,8 +520,10 @@ extern int	nfs4_svc(struct nfs4_svc_args *, model_t);
 extern int 	rdma_start(struct rdma_svc_args *);
 extern void	rfs4_clear_client_state(struct nfs4clrst_args *);
 extern void	nfs_idmap_args(struct nfsidmap_args *);
+extern void	nfs41_spe_svc(void *);
 extern void	nfs4_ephemeral_set_mount_to(uint_t);
 extern void	mountd_args(uint_t);
+extern void (*rfs4_client_clrst)(struct nfs4clrst_args *);
 #endif
 
 #ifdef	__cplusplus

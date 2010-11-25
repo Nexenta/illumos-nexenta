@@ -299,8 +299,7 @@ nfslib_bindit(struct netconfig *nconf, struct netbuf **addr,
 
 	addrlist = (struct nd_addrlist *)NULL;
 
-	/* nfs4_callback service does not used a fieed port number */
-
+	/* nfs4_callback service does not used a fixed port number */
 	if (strcmp(hs->h_serv, "nfs4_callback") == 0) {
 		tb.addr.maxlen = 0;
 		tb.addr.len = 0;
@@ -308,12 +307,25 @@ nfslib_bindit(struct netconfig *nconf, struct netbuf **addr,
 		use_any = TRUE;
 		gzone = (getzoneid() == GLOBAL_ZONEID);
 	} else if (netdir_getbyname(nconf, hs, &addrlist) != 0) {
-
-		syslog(LOG_ERR,
-		"Cannot get address for transport %s host %s service %s",
-		    nconf->nc_netid, hs->h_host, hs->h_serv);
-		(void) t_close(fd);
-		return (-1);
+		/*
+		 * XXX - This goes away once dservd and nfsd are merged
+		 * if this service doesn't map to an address, then
+		 * use an ephemeral address
+		 */
+		if (strcmp(hs->h_serv, "dserv") == 0) {
+			tb.addr.maxlen = 0;
+			tb.addr.len = 0;
+			tb.addr.buf = 0;
+			use_any = TRUE;
+			gzone = (getzoneid() == GLOBAL_ZONEID);
+		} else {
+			syslog(LOG_ERR,
+			    "Cannot get address for transport %s"
+			    " host %s service %s",
+			    nconf->nc_netid, hs->h_host, hs->h_serv);
+			(void) t_close(fd);
+			return (-1);
+		}
 	}
 
 	if (strcmp(nconf->nc_proto, "tcp") == 0) {
@@ -404,8 +416,9 @@ nfslib_bindit(struct netconfig *nconf, struct netbuf **addr,
 	 */
 
 	if ((nconf->nc_semantics == NC_TPI_COTS ||
-	    nconf->nc_semantics == NC_TPI_COTS_ORD) && Mysvc4 != NULL)
+	    nconf->nc_semantics == NC_TPI_COTS_ORD) && Mysvc4 != NULL) {
 		(*Mysvc4)(fd, NULL, nconf, NFS4_SETPORT, &ntb->addr);
+	}
 
 	*addr = &ntb->addr;
 	netdir_free((void *)addrlist, ND_ADDRLIST);
@@ -591,6 +604,9 @@ do_one(char *provider, NETSELDECL(proto), struct protob *protobp0,
 			    protobp->program == NFS_ACL_PROGRAM) &&
 			    vers == NFS_V4 &&
 			    strncasecmp(retnconf->nc_proto, NC_UDP, l) == 0)
+				continue;
+
+			if (protobp->flags & PROTOB_NO_REGISTER)
 				continue;
 
 			(void) rpcb_unset(protobp->program, vers, retnconf);
@@ -1623,6 +1639,8 @@ serv_name_to_port_name(char *name)
 		return ("lockd");
 	} else if (strcmp(name, "NFS4_CALLBACK") == 0) {
 		return ("nfs4_callback");
+	} else if (strcmp(name, "DSERV") == 0) {
+		return ("dserv");
 	}
 
 	return ("unrecognized");
@@ -1726,7 +1744,7 @@ set_addrmask(fd, nconf, mask)
 		}
 
 		syslog(LOG_ERR, "set_addrmask: address size: %ld",
-			info.addr);
+		    info.addr);
 		return (-1);
 	}
 
@@ -1743,17 +1761,17 @@ set_addrmask(fd, nconf, mask)
 		 */
 		/* LINTED pointer alignment */
 		((struct sockaddr_in *)mask->buf)->sin_addr.s_addr =
-								(ulong_t)~0;
+		    (ulong_t)~0;
 		/* LINTED pointer alignment */
 		((struct sockaddr_in *)mask->buf)->sin_family =
-								(ushort_t)~0;
+		    (ushort_t)~0;
 	} else if (strcmp(nconf->nc_protofmly, NC_INET6) == 0) {
 		/* LINTED pointer alignment */
 		(void) memset(&((struct sockaddr_in6 *)mask->buf)->sin6_addr,
-			(uchar_t)~0, sizeof (struct in6_addr));
+		    (uchar_t)~0, sizeof (struct in6_addr));
 		/* LINTED pointer alignment */
 		((struct sockaddr_in6 *)mask->buf)->sin6_family =
-								(ushort_t)~0;
+		    (ushort_t)~0;
 	} else {
 
 		/*

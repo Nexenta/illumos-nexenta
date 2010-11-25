@@ -64,6 +64,11 @@ extern "C" {
 #define	NFS_PORT	2049
 
 /*
+ * Minor versioning support
+ */
+#define	NFS4_MINORVERSMAX 1
+
+/*
  * Used to determine registration and service handling of versions
  */
 #define	NFS_VERSMIN_DEFAULT	((rpcvers_t)2)
@@ -81,6 +86,7 @@ extern rpcvers_t nfs_versmax;
 #define	NFS_MAXDATA	8192
 #define	NFS_MAXNAMLEN	255
 #define	NFS_MAXPATHLEN	1024
+#define	NFS_MAX_IOVECS	12
 
 /*
  * Rpc retransmission parameters
@@ -103,6 +109,8 @@ extern rpcvers_t nfs_versmax;
  */
 #define	ECTSIZE	2048
 #define	IETSIZE	8192
+
+#define	NFS_MAX_IOVECS 12
 
 /*
  * WebNFS error status
@@ -155,6 +163,53 @@ enum nfsftype {
 	NFLNK,		/* symbolic link */
 	NFSOC		/* socket */
 };
+
+/*
+ * NFS_AVL_RETURN is used in comparison functions for AVL trees.  The usual
+ * pattern is:
+ *     rc = a->something - b->something;
+ *     NFS_AVL_RETURN(rc);
+ *     ... more comparisons between a and b may follow ...
+ * Only pass an ordinary scalar as an argument.  That is, don't pass in
+ * expressions with side effects, and/or function calls, as this macro
+ * evaluates rc twice.  It only returns if rc is not zero; if rc is
+ * zero, the function continues.
+ */
+#define	NFS_AVL_RETURN(rc) \
+	if (rc > 0) \
+		return (1); \
+	if (rc < 0) \
+		return (-1);
+
+/*
+ * NFS_AVL_RETURN optimized for 32-bit (signed or unsigned) values.
+ * Same caveat as NFS_AVL_RETURN(): don't pass in expressions with
+ * side effects, and/or function calls.  Just pass in signed 32-bit
+ * values.
+ */
+#define	NFS_AVL_RETURN_32(rc) \
+	rc = ((int32_t)rc >> 31) | (-((uint32_t)rc >> 31)); \
+	if (rc) \
+		return (rc);
+
+/*
+ * NFS_AVL_COMPARE is useful when there are no harmful side-effects from
+ * evaluating its arguments multiple times.  In other words, don't use
+ * function calls or expressions with side-effects (pre/post increment
+ * operators) as arguments for this.  (Yes, the author of this macro
+ * used to write Lisp.)
+ *
+ * An advantage of NFS_AVL_COMPARE() is that it's okay to pass unsigned
+ * values as arguments, e.g. it's good for comparing pointers.
+ *
+ * This only returns if a and b are not equal.  If a and b are equal,
+ * the function continues.
+ */
+#define	NFS_AVL_COMPARE(a, b) \
+	if (a > b) \
+		return (1); \
+	if (a < b) \
+		return (-1);
 
 /*
  * Macros for converting device numbers to and from the format
@@ -817,6 +872,8 @@ struct exportinfo;	/* defined in nfs/export.h */
 struct servinfo;	/* defined in nfs/nfs_clnt.h */
 struct mntinfo;		/* defined in nfs/nfs_clnt.h */
 
+extern int	sec_svc_getcred(struct svc_req *, cred_t *,  caddr_t *, int *);
+
 extern void rfs_getattr(fhandle_t *, struct nfsattrstat *,
 			struct exportinfo *, struct svc_req *, cred_t *);
 extern void *rfs_getattr_getfh(fhandle_t *);
@@ -909,6 +966,7 @@ extern int	setdirgid(vnode_t *, gid_t *, cred_t *);
 extern int	setdirmode(vnode_t *, mode_t *, cred_t *);
 extern int	newnum(void);
 extern char	*newname(void);
+extern int	nfs_atoi(char *);
 extern int	nfs_subrinit(void);
 extern void	nfs_subrfini(void);
 extern enum nfsstat puterrno(int);
@@ -984,7 +1042,7 @@ struct nfs_stats {
 	kstat_named_t		*nfs_stats_svstat_ptr[NFS_VERSMAX + 1];
 	struct nfs_version_stats	nfs_stats_v2;
 	struct nfs_version_stats	nfs_stats_v3;
-	struct nfs_version_stats	nfs_stats_v4;
+	struct nfs_version_stats	nfs_stats_v4[NFS4_MINORVERSMAX + 1];
 };
 
 /*
@@ -2270,6 +2328,7 @@ extern void	nfs3fini(void);
 extern int	nfs3_vfsinit(void);
 extern void	nfs3_vfsfini(void);
 extern void	vattr_to_post_op_attr(struct vattr *, post_op_attr *);
+extern void	vattr_to_wcc_data(struct vattr *, struct vattr *, wcc_data *);
 extern void	mblk_to_iov(mblk_t *, int, struct iovec *);
 extern int	rfs_publicfh_mclookup(char *, vnode_t *, cred_t *,
 			vnode_t **, struct exportinfo **, struct sec_ol *);
@@ -2302,7 +2361,8 @@ extern void		nfs4_clnt_fini(void);
 /*
  * Does NFS4 server have a vnode delegated?  TRUE if so, FALSE if not.
  */
-extern bool_t rfs4_check_delegated(int mode, vnode_t *, bool_t trunc);
+extern bool_t rfs4_check_delegated(int mode, vnode_t *, bool_t trunc,
+    bool_t do_delay, bool_t is_rm, void *);
 /*
  * VOP_GETATTR call. If a NFS4 delegation is present on the supplied vnode
  * call back to the delegated client to get attributes for AT_MTIME and
@@ -2310,8 +2370,6 @@ extern bool_t rfs4_check_delegated(int mode, vnode_t *, bool_t trunc);
  * if no delegation is present.
  */
 extern int rfs4_delegated_getattr(vnode_t *, vattr_t *, int, cred_t *);
-extern void rfs4_hold_deleg_policy(void);
-extern void rfs4_rele_deleg_policy(void);
 
 extern int do_xattr_exists_check(vnode_t *, ulong_t *, cred_t *);
 

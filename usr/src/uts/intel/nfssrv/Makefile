@@ -21,10 +21,9 @@
 #
 # uts/intel/nfssrv/Makefile
 #
-# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-#ident	"%Z%%M%	%I%	%E% SMI"
 #
 #	This makefile drives the production of the nfs server-specific
 #	kernel module.
@@ -36,14 +35,18 @@
 #	Path to the base of the uts directory tree (usually /usr/src/uts).
 #
 UTSBASE	= ../..
-
 #
 #	Define the module and object file sets.
 #
 MODULE		= nfssrv
-OBJECTS		= $(NFSSRV_OBJS:%=$(OBJS_DIR)/%)
+OBJECTS		= $(NFSSRV_OBJS:%=$(OBJS_DIR)/%) $(OBJS_DIR)/mds_odl_xdr.o
 LINTS		= $(NFSSRV_OBJS:%.o=$(LINTS_DIR)/%.ln)
 ROOTMODULE	= $(ROOT_MISC_DIR)/$(MODULE)
+
+PROTOCOL_DIR	= $(UTSBASE)/../head/rpcsvc
+NFSHDR		= $(UTSBASE)/common/nfs
+DERIVED_HDRS	= $(NFSHDR)/mds_odl.h 
+DERIVED_FILES	= mds_odl_xdr.c $(DERIVED_HDRS)
 
 #
 #	Include common rules.
@@ -62,6 +65,9 @@ INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 #
 LDFLAGS         += -dy -Nstrmod/rpcmod -Nfs/nfs -Nmisc/rpcsec
 LDFLAGS		+= -Nmisc/klmmod
+LDFLAGS		+= -Nfs/zfs
+
+INC_PATH	+= -I$(UTSBASE)/common/fs/zfs
 
 #
 # For now, disable these lint checks; maintainers should endeavor
@@ -84,8 +90,10 @@ def:		$(DEF_DEPS)
 all:		$(ALL_DEPS)
 
 clean:		$(CLEAN_DEPS)
+	$(RM)	$(DERIVED_FILES)
 
 clobber:	$(CLOBBER_DEPS)
+	$(RM)	$(DERIVED_FILES)
 
 lint:		$(LINT_DEPS)
 
@@ -94,6 +102,24 @@ modlintlib:	$(MODLINTLIB_DEPS)
 clean.lint:	$(CLEAN_LINT_DEPS)
 
 install:	$(INSTALL_DEPS)
+
+$(NFSHDR)/mds_odl.h: $(PROTOCOL_DIR)/mds_odl.x
+	cd $(NFSHDR); $(MAKE) $(@F)
+
+mds_odl_xdr.c: $(PROTOCOL_DIR)/mds_odl.x
+	$(RPCGEN) -i 0 -C -c $(PROTOCOL_DIR)/mds_odl.x | \
+		$(EGREP) -v '^#include.+/mds_odl\.h"' > $@
+
+$(OBJS_DIR)/mds_odl_xdr.o: mds_odl_xdr.c $(NFSHDR)/mds_odl.h
+	$(COMPILE.c) -o $@ mds_odl_xdr.c
+	$(CTFCONVERT_O)
+
+
+$(NFSHDR)/ds_prot.h: $(PROTOCOL_DIR)/ds_prot.x
+	cd $(NFSHDR); $(MAKE) $(@F)
+
+$(NFSHDR)/ds_nfs_xdr.h: $(PROTOCOL_DIR)/ds_nfs_com.x
+	cd $(NFSHDR); $(MAKE) $(@F)
 
 #
 #	Include common targets.

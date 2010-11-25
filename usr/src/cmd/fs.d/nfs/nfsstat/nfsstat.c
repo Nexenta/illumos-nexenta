@@ -31,13 +31,14 @@
  * nfsstat: Network File System statistics
  *
  */
-
+#include "nfsstat_layout.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
+#include <netdb.h>
 #include <fcntl.h>
 #include <kvm.h>
 #include <kstat.h>
@@ -49,23 +50,31 @@
 #include <sys/mntent.h>
 #include <sys/mnttab.h>
 #include <sys/sysmacros.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/mkdev.h>
 #include <rpc/types.h>
 #include <rpc/xdr.h>
 #include <rpc/auth.h>
 #include <rpc/clnt.h>
+#include <rpc/rpc.h>
+#include <netdir.h>
 #include <nfs/nfs.h>
 #include <nfs/nfs_clnt.h>
 #include <nfs/nfs_sec.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <time.h>
-#include <sys/time.h>
 #include <strings.h>
 #include <ctype.h>
 #include <locale.h>
+#include <assert.h>
 
 #include "statcommon.h"
+#include <nfs/nfssys.h>
+extern int _nfssys(int, void *);
 
 static kstat_ctl_t *kc = NULL;		/* libkstat cookie */
 static kstat_t *rpc_clts_client_kstat, *rpc_clts_server_kstat;
@@ -75,8 +84,10 @@ static kstat_t *nfs_client_kstat, *nfs_server_v2_kstat, *nfs_server_v3_kstat;
 static kstat_t *nfs4_client_kstat, *nfs_server_v4_kstat;
 static kstat_t *rfsproccnt_v2_kstat, *rfsproccnt_v3_kstat, *rfsproccnt_v4_kstat;
 static kstat_t *rfsreqcnt_v2_kstat, *rfsreqcnt_v3_kstat, *rfsreqcnt_v4_kstat;
+static kstat_t *nfs41_client_kstat, *rfsproccnt_v41_kstat, *rfsreqcnt_v41_kstat;
 static kstat_t *aclproccnt_v2_kstat, *aclproccnt_v3_kstat;
 static kstat_t *aclreqcnt_v2_kstat, *aclreqcnt_v3_kstat;
+static kstat_t *nfs4_debug_kstat, *nfs_debug_kstat;
 static kstat_t *ksum_kstat;
 
 static void handle_sig(int);
@@ -86,6 +97,8 @@ static int getstats_rfsproc(int);
 static int getstats_rfsreq(int);
 static int getstats_aclproc(void);
 static int getstats_aclreq(void);
+static void print_layoutstats(char *, struct  pnfs_getflo_args *);
+static int getflostats_pnfs(char *);
 static void putstats(void);
 static void setup(void);
 static void cr_print(int);
@@ -95,9 +108,9 @@ static void sn_print(int, int);
 static void ca_print(int, int);
 static void sa_print(int, int);
 static void req_print(kstat_t *, kstat_t *, int, int, int);
-static void req_print_v4(kstat_t *, kstat_t *, int, int);
+static void req_print_v4(kstat_t *, kstat_t *, int, int, int);
 static void stat_print(const char *, kstat_t *, kstat_t *, int, int);
-static void nfsstat_kstat_sum(kstat_t *, kstat_t *, kstat_t *);
+static void nfsstat_kstat_sum(kstat_t *, kstat_t *, kstat_t *, kstat_t *);
 static void stats_timer(int);
 static void safe_zalloc(void **, uint_t, int);
 static int safe_strtoi(char const *, char *);
@@ -112,7 +125,22 @@ static void mi_print(void);
 static int ignore(char *);
 static int interval;		/* interval between stats */
 static int count;		/* number of iterations the stat is printed */
+
+/*
+ * NFS ops that are not supported in NFS version 4, minor version 1, must
+ * be included here as follows.
+ */
+#define	NUM_OPS_TOSKIP 5
+nfs_opnum4 ops_toskip_v41[NUM_OPS_TOSKIP] =  {
+	OP_OPEN_CONFIRM,
+	OP_RENEW,
+	OP_SETCLIENTID,
+	OP_SETCLIENTID_CONFIRM,
+	OP_RELEASE_LOCKOWNER
+};
+
 #define	MAX_COLUMNS	80
+#define	ALL_ONES	0xffffffffffffffffull
 #define	MAX_PATHS	50	/* max paths that can be taken by -m */
 
 /*
@@ -142,10 +170,13 @@ static old_kstat_t old_rpc_cots_client_kstat, old_rpc_cots_server_kstat;
 static old_kstat_t old_rpc_rdma_client_kstat, old_rpc_rdma_server_kstat;
 static old_kstat_t old_nfs_client_kstat, old_nfs_server_v2_kstat;
 static old_kstat_t old_nfs_server_v3_kstat, old_ksum_kstat;
-static old_kstat_t old_nfs4_client_kstat, old_nfs_server_v4_kstat;
-static old_kstat_t old_rfsproccnt_v2_kstat, old_rfsproccnt_v3_kstat;
-static old_kstat_t old_rfsproccnt_v4_kstat, old_rfsreqcnt_v2_kstat;
+static old_kstat_t old_nfs4_client_kstat, old_nfs41_client_kstat;
+static old_kstat_t old_nfs4_debug_kstat, old_nfs_debug_kstat;
+static old_kstat_t old_nfs_server_v4_kstat, old_rfsproccnt_v2_kstat;
+static old_kstat_t old_rfsproccnt_v3_kstat, old_rfsproccnt_v4_kstat;
+static old_kstat_t old_rfsreqcnt_v2_kstat;
 static old_kstat_t old_rfsreqcnt_v3_kstat, old_rfsreqcnt_v4_kstat;
+static old_kstat_t old_rfsreqcnt_v41_kstat;
 static old_kstat_t old_aclproccnt_v2_kstat, old_aclproccnt_v3_kstat;
 static old_kstat_t old_aclreqcnt_v2_kstat, old_aclreqcnt_v3_kstat;
 
@@ -167,6 +198,8 @@ main(int argc, char *argv[])
 	int aflag = 0;		/* print acl statistics */
 	int vflag = 0;		/* version specified, 0 specifies all */
 	int zflag = 0;		/* zero stats after printing */
+	int lflag = 0;		/* layout stats */
+	char *fname;		/* filename for the layout */
 	char *split_line = "*******************************************"
 	    "*************************************";
 
@@ -177,8 +210,12 @@ main(int argc, char *argv[])
 	(void) setlocale(LC_ALL, "");
 	(void) textdomain(TEXT_DOMAIN);
 
-	while ((c = getopt(argc, argv, "cnrsmzav:T:")) != EOF) {
+	while ((c = getopt(argc, argv, "cnrsmzav:T:l:")) != EOF) {
 		switch (c) {
+		case 'l':
+			lflag++;
+			fname = optarg;
+			break;
 		case 'c':
 			cflag++;
 			break;
@@ -204,8 +241,11 @@ main(int argc, char *argv[])
 			break;
 		case 'v':
 			vflag = atoi(optarg);
-			if ((vflag < 2) || (vflag > 4))
-				fail(0, "Invalid version number\n");
+			if (vflag != 41) {
+				if ((vflag < 2) || (vflag > 4)) {
+					fail(0, "Invalid version number\n");
+				}
+			}
 			break;
 		case 'T':
 			if (optarg) {
@@ -223,6 +263,9 @@ main(int argc, char *argv[])
 		default:
 			usage();
 		}
+	}
+	if (lflag) {
+		return (getflostats_pnfs(fname));
 	}
 
 	if (((argc - optind) > 0) && !mflag) {
@@ -250,10 +293,11 @@ main(int argc, char *argv[])
 			go_forever = 1;
 		stats_timer(interval);
 	} else if (mflag) {
-
-		if (cflag || rflag || sflag || zflag || nflag || aflag || vflag)
-			fail(0,
-			    "The -m flag may not be used with any other flags");
+		if (lflag || cflag || rflag || sflag || zflag || nflag ||
+		    aflag || vflag) {
+			fail(0, "The -m flag may not be used"
+			    " with any other flags");
+		}
 
 		for (j = 0; (argc - optind > 0) && (j < (MAX_PATHS - 1)); j++) {
 			path[j] =  argv[optind];
@@ -326,6 +370,356 @@ main(int argc, char *argv[])
 }
 
 
+
+static int getflostats_pnfs(char *fname) {
+
+	int buf_length = DEFAULT_LAYOUT_SIZE;
+	struct  pnfs_getflo_args plo_args;
+	layoutstats_t *stats;
+
+	if (fname == NULL) {
+		fail(0, "Filename must be provided");
+	}
+	plo_args.fname = fname;
+	plo_args.kernel_bufsize = malloc(sizeof (uint32_t));
+	if (plo_args.kernel_bufsize == NULL) {
+		fail(0, "Cannot allocate memory");
+	}
+
+retry:
+	plo_args.layoutstats = malloc(buf_length);
+	if (plo_args.layoutstats == NULL) {
+		fail(0, "Cannot allocate memory");
+	}
+	plo_args.user_bufsize = buf_length;
+
+	/*
+	 * Make a system call to collect layout statistics
+	 */
+	_nfssys(NFSSTAT_LAYOUT, &plo_args);
+
+	switch (errno) {
+
+	case 0:	/* SUCCESS! */
+		print_layoutstats(fname, &plo_args);
+		break;
+
+	case EOVERFLOW: /* Increase size of buffer and retry */
+		free(plo_args.layoutstats);
+		buf_length = *(plo_args.kernel_bufsize);
+		/* Reset errno or else we will be looping forever. */
+		errno = 0;
+		goto retry;
+
+	case ENOLAYOUT:
+		fprintf(stderr, "Layout unacquired\n");
+		break;
+
+	case ENOTAFILE:
+		fprintf(stderr, "Not a regular file\n");
+		break;
+
+	case ENOPNFSSERV:
+		fprintf(stderr, "Not a pNFS file\n");
+		break;
+
+	case ESYSCALL:
+		fprintf(stderr, "System call error\n");
+		break;
+
+	case ENONFS:
+		fprintf(stderr, "Not an NFS v4 file\n");
+		break;
+
+	default: /* Other things went wrong */
+		if (errno > 0) {
+			fprintf(stderr, strerror(errno));
+			fprintf(stderr, "\n");
+		} else {
+			fprintf(stderr, "Unknown error");
+		}
+
+	}
+
+	free(plo_args.layoutstats);
+	free(plo_args.kernel_bufsize);
+
+	return (errno);
+}
+
+/*
+ * Appends microseconds to the string returned by the ctime function.
+ */
+static
+void append_musec(int64_t timestamp_sec, int64_t timestamp_musec,
+    char *str_time)
+{
+	int unit, i, new_str_count;
+	int str_len;
+	char record[MAX_COLUMNS];
+	char str_musec[MAX_COLUMNS], *str_musec_begin, *str_musec_end;
+	/*
+	 * ctime library function takes pointer to a long.
+	 */
+	long timestamp_sec_long = timestamp_sec;
+	unit = 0;
+	new_str_count = 0;
+	sprintf(record, ctime(&timestamp_sec_long));
+	str_len = strlen(record);
+	for (i = 0; i <= str_len; i++) {
+		str_time[new_str_count] = record[i];
+		new_str_count++;
+		if (record[i] == ':') {
+			unit++;
+			continue;
+		}
+		if (unit == 2 && record[i + 1] == ' ') {
+			str_time[new_str_count] = ':';
+			str_musec_begin = lltostr(
+			    timestamp_musec, &str_musec[MAX_COLUMNS - 1]);
+			str_musec[MAX_COLUMNS - 1] = '\0';
+			strcpy(str_time + new_str_count + 1, str_musec_begin);
+			new_str_count = strlen(str_time);
+			unit++;
+		}
+	}
+}
+
+static void
+print_layoutstats(char *filename, struct  pnfs_getflo_args *plo_args)
+{
+	layoutstats_t *stats;
+	layoutstats_t *decoded_stats;
+	layoutspecs_t	*los;
+	stripe_info_t *si_list_val;
+	netaddr4 *mpl_list_val;
+	layoutiomode4 iomode;
+	XDR xdr;
+	netaddr4 *na;
+	enum clnt_stat ds_status;
+	long port;
+	uint32_t kernel_bufsize, si_list_len;
+	uint32_t lo_status;
+	int cur_rec_size, j, error;
+	int mpl_len;
+	char record[4096], str_time[MAX_COLUMNS], *buf_pos;
+	char hostname[2048], ipaddress[1024], netid[1024];
+	int lonum, i = 0;
+
+	/*
+	 * XDR decode the buffer that came from the kernel
+	 */
+	kernel_bufsize = *(plo_args->kernel_bufsize);
+	stats = (layoutstats_t *)(plo_args->layoutstats);
+	if (stats == NULL) {
+		fprintf(stderr, "Unable to gather statistics"
+		    " from the kernel\n");
+		return;
+	}
+	xdrmem_create(&xdr, (char *)stats, kernel_bufsize, XDR_DECODE);
+	decoded_stats = malloc(kernel_bufsize);
+	if (decoded_stats == NULL) {
+		fprintf(stderr, "Unable to allocate memory\n");
+		return;
+	}
+	if (! xdr_layoutstats_t(&xdr, decoded_stats)) {
+		free(decoded_stats);
+		fprintf(stderr, "Failure in decoding kernel data structures\n");
+		return;
+	}
+
+
+	/*
+	 * Print out the details embedded in the decoded structure.
+	 */
+	sprintf(record, "Number of layouts: %d",
+	    decoded_stats->plo_data.total_layouts);
+	printf("%-s\n", record);
+	sprintf(record, "Proxy I/O count: %" PRIu64,
+	    decoded_stats->proxy_iocount);
+	printf("%-s\n", record);
+	sprintf(record, "DS I/O count: %" PRIu64,
+	    decoded_stats->ds_iocount);
+	printf("%-s\n", record);
+	if (decoded_stats->plo_data.total_layouts == 0) {
+		free(decoded_stats);
+		return;
+	}
+
+	for (lonum = 0; lonum < decoded_stats->plo_data.total_layouts;
+	    lonum++) {
+		sprintf(record, "Layout [%d]:", lonum);
+		printf("%s\n", record);
+
+		los = &decoded_stats->plo_data.lo_specs[lonum];
+
+		if (los->plo_creation_sec != 0 &&
+		    los->plo_creation_musec != 0) {
+			append_musec(los->plo_creation_sec,
+			    los->plo_creation_musec, str_time);
+			printf("\tLayout obtained at: %s", str_time);
+		}
+		iomode = los->iomode;
+		lo_status = los->plo_status;
+		if (lo_status & (PLO_UNAVAIL | PLO_GET | PLO_BAD |
+		    PLO_RETURN | PLO_RECALL)) {
+			sprintf(record, "status: UNAVAILABLE");
+		} else {
+			sprintf(record, "status: AVAILABLE");
+		}
+		if (lo_status & PLO_TRYLATER) {
+			sprintf(record, "status: TRYLATER");
+		}
+
+		cur_rec_size = strlen(record);
+		buf_pos = record;
+		record[cur_rec_size] = ',';
+		buf_pos += cur_rec_size + 1;
+		switch (iomode) {
+		case LAYOUTIOMODE4_READ:
+			sprintf(buf_pos, " iomode: LAYOUTIOMODE_READ");
+			break;
+		case LAYOUTIOMODE4_RW:
+			sprintf(buf_pos, " iomode: LAYOUTIOMODE_RW");
+			break;
+		case LAYOUTIOMODE4_ANY:
+			sprintf(buf_pos, " iomode: LAYOUTIOMODE_ANY");
+			break;
+		default:
+			sprintf(buf_pos, "iomode INVALID");
+			break;
+		}
+
+		printf("\t%-s\n", record);
+		if (los->plo_length == ALL_ONES) {
+			sprintf(record, "offset: %" PRIu64 ", length: EOF",
+			    los->plo_offset);
+		} else {
+			sprintf(record, "offset: %" PRIu64 ", length: %"
+			    PRIu64, los->plo_offset, los->plo_length);
+		}
+		printf("\t%-s\n", record);
+		sprintf(record, "num stripes: %d, stripe unit: %d",
+		    los->plo_stripe_count, los->plo_stripe_unit);
+		printf("\t%-s\n", record);
+
+		/*
+		 * Print data server specific information for each stripe of
+		 * the layout.
+		 */
+		si_list_val = los->plo_stripe_info_list.
+		    plo_stripe_info_list_val;
+		if (los->plo_stripe_count == 0 || si_list_val == NULL) {
+			printf("los stcnt %d, list cnt %d, listval %p",
+			    los->plo_stripe_count,
+			    los->plo_stripe_info_list.plo_stripe_info_list_len,
+			    los->plo_stripe_info_list.
+			    plo_stripe_info_list_val);
+			sprintf(record, "Data server information not"
+			    " available");
+			printf("\t%s\n", record);
+			continue;
+		}
+		do {
+			sprintf(record, "\tStripe [%d]:", i);
+			printf("%-s\n", record);
+			mpl_len = si_list_val[i].multipath_list.
+			    multipath_list_len;
+			mpl_list_val = si_list_val[i].
+			    multipath_list.multipath_list_val;
+			if (mpl_len != 0 && mpl_list_val != NULL) {
+				for (j = 0; j < mpl_len; j++) {
+					na = &(mpl_list_val[j]);
+					error = lookup_name_port(na, &port,
+					    hostname, ipaddress);
+					if (error == 0) {
+						sprintf(record, "%s:%s:%s:%ld",
+						    na->na_r_netid,
+						    hostname, ipaddress,
+						    port);
+					}
+					if (error == EADDRDEC) {
+						sprintf(record,
+						    "Decoding of universal"
+						    " address failed\n");
+						printf("\t\t%-s", record);
+						sprintf(record, "%s:%s",
+						    na->na_r_netid,
+						    na->na_r_addr);
+					}
+					if (error == EADDRTRAN) {
+						sprintf(record,
+						    "IP address to "
+						    "hostname"
+						    " translation failed");
+						printf("\t\t%-s", record);
+						sprintf(record, "%s:%s:%s",
+						    na->na_r_netid,
+						    ipaddress, port);
+					}
+					printf("\t\t%-s", record);
+
+					/*
+					 * Do a NULL procedure ping to check
+					 * the status of the data server.
+					 */
+					error = null_procedure_ping(
+					    hostname,
+					    na->na_r_netid,
+					    &ds_status);
+					if (error == 0) {
+						record[strlen(record)] = ' ';
+						if (ds_status == RPC_SUCCESS) {
+							sprintf(record, " OK");
+						} else {
+							sprintf(record,
+							    "FAILED (%s)",
+							    clnt_sperrno(
+							    ds_status));
+						}
+					} else {
+						sprintf(record,
+						    " STATUS UNKNOWN %d",
+						    error);
+						switch (error) {
+						case ETLI:
+							clnt_pcreateerror(
+							    "\t\tnfsstat");
+							break;
+						case ENETCONF:
+							fprintf(stderr,
+							    "\t\tNetwork"
+							    " address "
+							    "error\n");
+							break;
+						case ENETADDR:
+							netdir_perror(
+							    "\t\tnfsstat");
+							break;
+						default:
+							fprintf(stderr,
+							    "Unknown "
+							    "error\n");
+						}
+					}
+					printf("%-s\n", record);
+				}
+			} else {
+				sprintf(record, "Data server information"
+				    " not available");
+				printf("\t\t%-s\n", record);
+				break;
+			}
+			i++;
+		} while (i < los->plo_stripe_count);
+		i = 0;
+	}
+	/*
+	 * Free memory
+	 */
+	xdr_free((xdrproc_t)xdr_layoutstats_t, (char *)decoded_stats);
+}
+
 static int
 getstats_rpc(void)
 {
@@ -370,9 +764,21 @@ getstats_nfs(void)
 		safe_kstat_read(kc, nfs_client_kstat, NULL);
 		field_width = stat_width(nfs_client_kstat, field_width);
 	}
+	if (nfs_debug_kstat != NULL) {
+		safe_kstat_read(kc, nfs_debug_kstat, NULL);
+		field_width = stat_width(nfs_debug_kstat, field_width);
+	}
 	if (nfs4_client_kstat != NULL) {
 		safe_kstat_read(kc, nfs4_client_kstat, NULL);
 		field_width = stat_width(nfs4_client_kstat, field_width);
+	}
+	if (nfs4_debug_kstat != NULL) {
+		safe_kstat_read(kc, nfs4_debug_kstat, NULL);
+		field_width = stat_width(nfs4_debug_kstat, field_width);
+	}
+	if (nfs41_client_kstat != NULL) {
+		safe_kstat_read(kc, nfs41_client_kstat, NULL);
+		field_width = stat_width(nfs41_client_kstat, field_width);
 	}
 	if (nfs_server_v2_kstat != NULL) {
 		safe_kstat_read(kc, nfs_server_v2_kstat, NULL);
@@ -425,6 +831,11 @@ getstats_rfsreq(int ver)
 		safe_kstat_read(kc, rfsreqcnt_v4_kstat, NULL);
 		field_width = req_width(rfsreqcnt_v4_kstat, field_width);
 	}
+	if ((ver == 41) && (rfsreqcnt_v41_kstat != NULL)) {
+		safe_kstat_read(kc, rfsreqcnt_v41_kstat, NULL);
+		field_width = req_width(rfsreqcnt_v41_kstat, field_width);
+	}
+
 	return (field_width);
 }
 
@@ -469,8 +880,14 @@ putstats(void)
 		safe_kstat_write(kc, rpc_rdma_client_kstat, NULL);
 	if (nfs_client_kstat != NULL)
 		safe_kstat_write(kc, nfs_client_kstat, NULL);
+	if (nfs_debug_kstat != NULL)
+		safe_kstat_write(kc, nfs_debug_kstat, NULL);
 	if (nfs4_client_kstat != NULL)
 		safe_kstat_write(kc, nfs4_client_kstat, NULL);
+	if (nfs4_debug_kstat != NULL)
+		safe_kstat_write(kc, nfs4_debug_kstat, NULL);
+	if (nfs41_client_kstat != NULL)
+		safe_kstat_write(kc, nfs41_client_kstat, NULL);
 	if (rpc_clts_server_kstat != NULL)
 		safe_kstat_write(kc, rpc_clts_server_kstat, NULL);
 	if (rpc_cots_server_kstat != NULL)
@@ -495,6 +912,8 @@ putstats(void)
 		safe_kstat_write(kc, rfsreqcnt_v3_kstat, NULL);
 	if (rfsreqcnt_v4_kstat != NULL)
 		safe_kstat_write(kc, rfsreqcnt_v4_kstat, NULL);
+	if (rfsreqcnt_v41_kstat != NULL)
+		safe_kstat_write(kc, rfsreqcnt_v41_kstat, NULL);
 	if (aclproccnt_v2_kstat != NULL)
 		safe_kstat_write(kc, aclproccnt_v2_kstat, NULL);
 	if (aclproccnt_v3_kstat != NULL)
@@ -513,6 +932,11 @@ setup(void)
 
 	/* alloc space for our temporary kstat */
 	safe_zalloc((void **)&ksum_kstat, sizeof (kstat_t), 0);
+	/*
+	 * kstat_sum function assumes implicitly that ks_data is NULL. It may
+	 * not always be the case.
+	 */
+	ksum_kstat->ks_data = NULL;
 	rpc_clts_client_kstat = kstat_lookup(kc, "unix", 0, "rpc_clts_client");
 	rpc_clts_server_kstat = kstat_lookup(kc, "unix", 0, "rpc_clts_server");
 	rpc_cots_client_kstat = kstat_lookup(kc, "unix", 0, "rpc_cots_client");
@@ -521,15 +945,25 @@ setup(void)
 	rpc_rdma_server_kstat = kstat_lookup(kc, "unix", 0, "rpc_rdma_server");
 	nfs_client_kstat = kstat_lookup(kc, "nfs", 0, "nfs_client");
 	nfs4_client_kstat = kstat_lookup(kc, "nfs", 0, "nfs4_client");
+	/*
+	 * Holds the debug stats as the sum across the minor versions for v4.
+	 * No easy way to separate them in the kernel on the basis of minor
+	 * version as of now.
+	 */
+	nfs4_debug_kstat = kstat_lookup(kc, "nfs", 0, "nfs4_client_debug");
+	nfs_debug_kstat = kstat_lookup(kc, "nfs", 0, "nfs_client_debug");
+	nfs41_client_kstat = kstat_lookup(kc, "nfs", 0, "nfs41_client");
 	nfs_server_v2_kstat = kstat_lookup(kc, "nfs", 2, "nfs_server");
 	nfs_server_v3_kstat = kstat_lookup(kc, "nfs", 3, "nfs_server");
 	nfs_server_v4_kstat = kstat_lookup(kc, "nfs", 4, "nfs_server");
 	rfsproccnt_v2_kstat = kstat_lookup(kc, "nfs", 0, "rfsproccnt_v2");
 	rfsproccnt_v3_kstat = kstat_lookup(kc, "nfs", 0, "rfsproccnt_v3");
 	rfsproccnt_v4_kstat = kstat_lookup(kc, "nfs", 0, "rfsproccnt_v4");
+	rfsproccnt_v41_kstat = kstat_lookup(kc, "nfs", 0, "rfsproccnt_v41");
 	rfsreqcnt_v2_kstat = kstat_lookup(kc, "nfs", 0, "rfsreqcnt_v2");
 	rfsreqcnt_v3_kstat = kstat_lookup(kc, "nfs", 0, "rfsreqcnt_v3");
 	rfsreqcnt_v4_kstat = kstat_lookup(kc, "nfs", 0, "rfsreqcnt_v4");
+	rfsreqcnt_v41_kstat = kstat_lookup(kc, "nfs", 0, "rfsreqcnt_v41");
 	aclproccnt_v2_kstat = kstat_lookup(kc, "nfs_acl", 0, "aclproccnt_v2");
 	aclproccnt_v3_kstat = kstat_lookup(kc, "nfs_acl", 0, "aclproccnt_v3");
 	aclreqcnt_v2_kstat = kstat_lookup(kc, "nfs_acl", 0, "aclreqcnt_v2");
@@ -641,19 +1075,47 @@ cn_print(int zflag, int vflag)
 
 	if (vflag == 0) {
 		nfsstat_kstat_sum(nfs_client_kstat, nfs4_client_kstat,
-		    ksum_kstat);
-		stat_print("\nClient nfs:", ksum_kstat, &old_ksum_kstat.kst,
-		    field_width, zflag);
+		    nfs41_client_kstat, ksum_kstat);
+		stat_print("\nClient nfs (sum):", ksum_kstat,
+		    &old_ksum_kstat.kst, field_width, zflag);
+		if (zflag) {
+			/*
+			 * The following statements ensure that the
+			 * individual client counts are also zeroed when
+			 * -z flag is issued without any version.
+			 */
+			stat_print("\nClient nfs (v2/3):", nfs_client_kstat,
+			    &old_nfs_client_kstat.kst, field_width, zflag);
+			stat_print("\nClient nfs (v4):", nfs4_client_kstat,
+			    &old_nfs4_client_kstat.kst, field_width, zflag);
+			stat_print("\nClient nfs (v41):", nfs41_client_kstat,
+			    &old_nfs41_client_kstat.kst, field_width, zflag);
+		}
 	}
 
 	if (vflag == 2 || vflag == 3) {
 		stat_print("\nClient nfs:", nfs_client_kstat,
 		    &old_nfs_client_kstat.kst, field_width, zflag);
+		if (nfs_debug_kstat != NULL) {
+		stat_print("\nClient nfs debug statistics:", nfs_debug_kstat,
+		    &old_nfs_debug_kstat.kst, field_width, zflag);
+		}
 	}
 
 	if (vflag == 4) {
 		stat_print("\nClient nfs:", nfs4_client_kstat,
 		    &old_nfs4_client_kstat.kst, field_width, zflag);
+		if (nfs4_debug_kstat != NULL) {
+			stat_print("\nClient nfs debug statistics "
+			    "across minor versions:", nfs4_debug_kstat,
+			    &old_nfs4_debug_kstat.kst,
+			    field_width, zflag);
+		}
+	}
+
+	if (vflag == 41) {
+		stat_print("\nClient nfs:", nfs41_client_kstat,
+		    &old_nfs41_client_kstat.kst, field_width, zflag);
 	}
 
 	if (vflag == 2 || vflag == 0) {
@@ -664,15 +1126,22 @@ cn_print(int zflag, int vflag)
 
 	if (vflag == 3 || vflag == 0) {
 		field_width = getstats_rfsreq(3);
-		req_print(rfsreqcnt_v3_kstat, &old_rfsreqcnt_v3_kstat.kst, 3,
-		    field_width, zflag);
+		req_print(rfsreqcnt_v3_kstat, &old_rfsreqcnt_v3_kstat.kst,
+		    3, field_width, zflag);
 	}
 
 	if (vflag == 4 || vflag == 0) {
 		field_width = getstats_rfsreq(4);
 		req_print_v4(rfsreqcnt_v4_kstat, &old_rfsreqcnt_v4_kstat.kst,
-		    field_width, zflag);
+		    4, field_width, zflag);
 	}
+
+	if (vflag == 41 || vflag == 0) {
+		field_width = getstats_rfsreq(41);
+		req_print_v4(rfsreqcnt_v41_kstat, &old_rfsreqcnt_v41_kstat.kst,
+		    41, field_width, zflag);
+	}
+
 }
 
 static void
@@ -714,7 +1183,7 @@ sn_print(int zflag, int vflag)
 	if (vflag == 4 || vflag == 0) {
 		field_width = getstats_rfsproc(4);
 		req_print_v4(rfsproccnt_v4_kstat, &old_rfsproccnt_v4_kstat.kst,
-		    field_width, zflag);
+		    4, field_width, zflag);
 	}
 }
 
@@ -847,7 +1316,8 @@ req_print(kstat_t *req, kstat_t *req_old, int ver, int field_width,
 #define	COUNT	2
 
 static void
-req_print_v4(kstat_t *req, kstat_t *req_old, int field_width, int zflag)
+req_print_v4
+(kstat_t *req, kstat_t *req_old, int ver, int field_width, int zflag)
 {
 	int i, j, nreq, per, ncolumns;
 	uint64_t tot, tot_ops, old_tot, old_tot_ops;
@@ -855,6 +1325,8 @@ req_print_v4(kstat_t *req, kstat_t *req_old, int field_width, int zflag)
 	kstat_named_t *kptr;
 	kstat_named_t *knp;
 	kstat_named_t *kptr_old;
+	nfs_opnum4 op_toskip;
+	int skip_count = 0;
 
 	if (req == NULL)
 		return;
@@ -886,7 +1358,7 @@ req_print_v4(kstat_t *req, kstat_t *req_old, int field_width, int zflag)
 		tot_ops -= old_tot_ops;
 	}
 
-	printf("Version 4: (%" PRIu64 " calls)\n", tot);
+	printf("Version %d: (%" PRIu64 " calls)\n", ver, tot);
 
 	knp = kstat_data_lookup(req, "null");
 	nreq = req->ks_ndata - (knp - KSTAT_NAMED_PTR(req));
@@ -913,12 +1385,15 @@ req_print_v4(kstat_t *req, kstat_t *req_old, int field_width, int zflag)
 		printf("\n");
 	}
 
-	printf("Version 4: (%" PRIu64 " operations)\n", tot_ops);
+	op_toskip = ops_toskip_v41[skip_count];
+	printf("Version %d: (%" PRIu64 " operations)\n", ver, tot_ops);
 	for (i = 2; i < nreq; i += ncolumns) {
 		for (j = i; j < MIN(i + ncolumns, nreq); j++) {
 			printf("%-*s", field_width, knp[j].name);
 		}
 		printf("\n");
+
+
 		for (j = i; j < MIN(i + ncolumns, nreq); j++) {
 			if (tot_ops && interval && kptr_old != NULL)
 				per = (int)((knp[j].value.ui64 -
@@ -927,10 +1402,21 @@ req_print_v4(kstat_t *req, kstat_t *req_old, int field_width, int zflag)
 				per = (int)(knp[j].value.ui64 * 100 / tot_ops);
 			else
 				per = 0;
-			(void) sprintf(fixlen, "%" PRIu64 " %d%% ",
-			    ((interval && kptr_old != NULL) ?
-			    (knp[j].value.ui64 - kptr_old[j].value.ui64)
-			    : knp[j].value.ui64), per);
+			if (ver == 41 && j == op_toskip) {
+				(void) sprintf(fixlen, "%" PRIu64 " n/a",
+				    ((interval && kptr_old != NULL) ?
+				    (knp[j].value.ui64 - kptr_old[j].value.ui64)
+				    : knp[j].value.ui64), per);
+				skip_count++;
+				if (skip_count < NUM_OPS_TOSKIP) {
+					op_toskip = ops_toskip_v41[skip_count];
+				}
+			} else {
+				(void) sprintf(fixlen, "%" PRIu64 " %d%% ",
+				    ((interval && kptr_old != NULL) ?
+				    (knp[j].value.ui64 - kptr_old[j].value.ui64)
+				    : knp[j].value.ui64), per);
+			}
 			printf("%-*s", field_width, fixlen);
 		}
 		printf("\n");
@@ -997,21 +1483,29 @@ stat_print(const char *title_string, kstat_t *req, kstat_t  *req_old,
 }
 
 static void
-nfsstat_kstat_sum(kstat_t *kstat1, kstat_t *kstat2, kstat_t *sum)
+nfsstat_kstat_sum(kstat_t *kstat1, kstat_t *kstat2, kstat_t *kstat3,
+    kstat_t *sum)
 {
 	int i;
-	kstat_named_t *knp1, *knp2, *knpsum;
-	if (kstat1 == NULL || kstat2 == NULL)
+	kstat_named_t *knp1, *knp2, *knp3, *knpsum;
+
+	if (kstat1 == NULL || kstat2 == NULL || kstat3 == NULL) {
 		return;
+	}
 
 	knp1 = KSTAT_NAMED_PTR(kstat1);
 	knp2 = KSTAT_NAMED_PTR(kstat2);
-	if (sum->ks_data == NULL)
+	knp3 = KSTAT_NAMED_PTR(kstat3);
+
+	if (sum->ks_data == NULL) {
 		nfsstat_kstat_copy(kstat1, sum, 0);
+	}
 	knpsum = KSTAT_NAMED_PTR(sum);
 
-	for (i = 0; i < (kstat1->ks_ndata); i++)
-		knpsum[i].value.ui64 =  knp1[i].value.ui64 + knp2[i].value.ui64;
+	for (i = 0; i < (kstat1->ks_ndata); i++) {
+		knpsum[i].value.ui64 =  knp1[i].value.ui64 +
+		    knp2[i].value.ui64 + knp3[i].value.ui64;
+	}
 }
 
 /*
@@ -1325,6 +1819,7 @@ usage(void)
 	fprintf(stderr, "Usage: nfsstat [-cnrsza [-v version] "
 	    "[-T d|u] [interval [count]]\n");
 	fprintf(stderr, "Usage: nfsstat -m [pathname..]\n");
+	fprintf(stderr, "Usage: nfsstat -l filename\n");
 	exit(1);
 }
 

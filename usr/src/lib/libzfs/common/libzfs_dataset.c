@@ -74,6 +74,10 @@ zfs_type_to_name(zfs_type_t type)
 		return (dgettext(TEXT_DOMAIN, "snapshot"));
 	case ZFS_TYPE_VOLUME:
 		return (dgettext(TEXT_DOMAIN, "volume"));
+	case ZFS_TYPE_PNFS:
+		return (dgettext(TEXT_DOMAIN, "pnfsdata"));
+	case ZFS_TYPE_PNFSOBJS:
+		return (dgettext(TEXT_DOMAIN, "pnfsdata"));
 	}
 
 	return (NULL);
@@ -97,6 +101,10 @@ path_to_str(const char *path, int types)
 		return (dgettext(TEXT_DOMAIN, "filesystem"));
 	if (types == ZFS_TYPE_VOLUME)
 		return (dgettext(TEXT_DOMAIN, "volume"));
+	if (types == ZFS_TYPE_PNFS)
+		return (dgettext(TEXT_DOMAIN, "pnfsdata"));
+	if (types == ZFS_TYPE_PNFSOBJS)
+		return (dgettext(TEXT_DOMAIN, "pnfsdata"));
 
 	/*
 	 * The user is requesting more than one type of dataset.  If this is the
@@ -111,12 +119,19 @@ path_to_str(const char *path, int types)
 	}
 
 	/*
-	 * The user has requested either filesystems or volumes.
+	 * The user has requested either filesystems, pNFS datasets or volumes.
 	 * We have no way of knowing a priori what type this would be, so always
-	 * report it as "filesystem" or "volume", our two primitive types.
+	 * report it as "filesystem", "pnfsdata" or "volume", our three
+	 * primative types.
 	 */
 	if (types & ZFS_TYPE_FILESYSTEM)
 		return (dgettext(TEXT_DOMAIN, "filesystem"));
+
+	if (types & ZFS_TYPE_PNFS)
+		return (dgettext(TEXT_DOMAIN, "pnfsdata"));
+
+	if (types & ZFS_TYPE_PNFSOBJS)
+		return (dgettext(TEXT_DOMAIN, "pnfsdata"));
 
 	assert(types & ZFS_TYPE_VOLUME);
 	return (dgettext(TEXT_DOMAIN, "volume"));
@@ -447,6 +462,10 @@ make_dataset_handle_common(zfs_handle_t *zhp, zfs_cmd_t *zc)
 	 */
 	if (zhp->zfs_dmustats.dds_type == DMU_OST_ZVOL)
 		zhp->zfs_head_type = ZFS_TYPE_VOLUME;
+	else if (zhp->zfs_dmustats.dds_type == DMU_OST_PNFS)
+		zhp->zfs_head_type = ZFS_TYPE_PNFS;
+	else if (zhp->zfs_dmustats.dds_type == DMU_OST_PNFSOBJS)
+		zhp->zfs_head_type = ZFS_TYPE_PNFSOBJS;
 	else if (zhp->zfs_dmustats.dds_type == DMU_OST_ZFS)
 		zhp->zfs_head_type = ZFS_TYPE_FILESYSTEM;
 	else
@@ -454,6 +473,10 @@ make_dataset_handle_common(zfs_handle_t *zhp, zfs_cmd_t *zc)
 
 	if (zhp->zfs_dmustats.dds_is_snapshot)
 		zhp->zfs_type = ZFS_TYPE_SNAPSHOT;
+	else if (zhp->zfs_dmustats.dds_type == DMU_OST_PNFS)
+		zhp->zfs_type = ZFS_TYPE_PNFS;
+	else if (zhp->zfs_dmustats.dds_type == DMU_OST_PNFSOBJS)
+		zhp->zfs_type = ZFS_TYPE_PNFSOBJS;
 	else if (zhp->zfs_dmustats.dds_type == DMU_OST_ZVOL)
 		zhp->zfs_type = ZFS_TYPE_VOLUME;
 	else if (zhp->zfs_dmustats.dds_type == DMU_OST_ZFS)
@@ -2211,6 +2234,12 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 		case ZFS_TYPE_SNAPSHOT:
 			str = "snapshot";
 			break;
+		case ZFS_TYPE_PNFS:
+			str = "pnfsdata";
+			break;
+		case ZFS_TYPE_PNFSOBJS:
+			str = "pnfsdata";
+			break;
 		default:
 			abort();
 		}
@@ -2778,9 +2807,9 @@ check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
 	}
 
 	/* make sure parent is a filesystem */
-	if (zfs_get_type(zhp) != ZFS_TYPE_FILESYSTEM) {
+	if ((zfs_get_type(zhp) != ZFS_TYPE_FILESYSTEM)) {
 		zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
-		    "parent is not a filesystem"));
+		    "parent is not a filesystem or pnfs dataset"));
 		(void) zfs_error(hdl, EZFS_BADTYPE, errbuf);
 		zfs_close(zhp);
 		return (-1);
@@ -2960,6 +2989,8 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 
 	if (type == ZFS_TYPE_VOLUME)
 		zc.zc_objset_type = DMU_OST_ZVOL;
+	else if (type == ZFS_TYPE_PNFS)
+		zc.zc_objset_type = DMU_OST_PNFS;
 	else
 		zc.zc_objset_type = DMU_OST_ZFS;
 

@@ -55,6 +55,7 @@
 #include <sys/policy.h>
 #include <sys/list.h>
 #include <sys/zone.h>
+#include <sys/sdt.h>
 
 #include <rpc/types.h>
 #include <rpc/auth.h>
@@ -73,6 +74,7 @@
 #include <nfs/rnode4.h>
 #include <nfs/nfs4_clnt.h>
 #include <nfs/nfssys.h>
+#include <nfs/nfs4_pnfs.h>
 
 #ifdef	DEBUG
 /*
@@ -80,6 +82,7 @@
  * match any delegation state ID or file handled.  This
  * is for testing purposes only.
  */
+
 
 stateid4 nfs4_deleg_any = { 0x7FFFFFF0 };
 char nfs4_deleg_fh[] = "\0377\0376\0375\0374";
@@ -92,6 +95,8 @@ int nfs4_recall_debug;
 int nfs4_drat_debug;
 
 #endif
+
+int	nfs41_birpc = 1;	/* Use bidirectional rpc */
 
 #define	CB_NOTE(x)	NFS4_DEBUG(nfs4_callback_debug, (CE_NOTE, x))
 #define	CB_WARN(x)	NFS4_DEBUG(nfs4_callback_debug, (CE_WARN, x))
@@ -137,7 +142,8 @@ static const struct nfs4_callback_stats nfs4_callback_stats_tmpl = {
 	{ "return_limit_write",	KSTAT_DATA_UINT64 },
 	{ "return_limit_addmap", KSTAT_DATA_UINT64 },
 	{ "deleg_recover",	KSTAT_DATA_UINT64 },
-	{ "cb_illegal",		KSTAT_DATA_UINT64 }
+	{ "cb_illegal",		KSTAT_DATA_UINT64 },
+	{ "cb_sequence",	KSTAT_DATA_UINT64 }
 };
 
 struct nfs4_cb_port {
@@ -156,16 +162,310 @@ struct cb_recall_pass {
 	bool_t		truncate;
 };
 
+struct cb_lor {
+	nfs4_server_t		*lor_np;
+	nfs4_fsidlt_t		*lor_ltp;
+	rnode4_t		*lor_rp;
+	pnfs_lo_matches_t	*lor_lom;
+	int			lor_type;
+};
+
+
+static void layoutrecall_file_thread(struct cb_lor *);
+static void layoutrecall_bulk_thread(struct cb_lor *);
 static nfs4_open_stream_t *get_next_deleg_stream(rnode4_t *, int);
 static void nfs4delegreturn_thread(struct cb_recall_pass *);
 static int deleg_reopen(vnode_t *, bool_t *, struct nfs4_callback_globals *,
     int);
-static void nfs4_dlistadd(rnode4_t *, struct nfs4_callback_globals *, int);
 static void nfs4_dlistclean_impl(struct nfs4_callback_globals *, int);
 static int nfs4delegreturn_impl(rnode4_t *, int,
     struct nfs4_callback_globals *);
 static void nfs4delegreturn_cleanup_impl(rnode4_t *, nfs4_server_t *,
     struct nfs4_callback_globals *);
+static void cb_slrc_epilogue(nfs4_server_t *, CB_COMPOUND4res *,
+    slotid4);
+static void cb_compound_free(CB_COMPOUND4res *);
+/*
+ * Only used for non-bidirectional RPC --Performs a BC2S and
+ * starts the cbconn_thread.
+ * (expects np->s_lock to be held)
+ */
+
+void
+nfs41set_callback(nfs4_server_t *np, servinfo4_t *svp, mntinfo4_t *mi,
+    cred_t *cr)
+{
+	struct nfs41_cb_info	*cbi;
+	CLIENT			*client;
+	struct nfs4_clnt	*nfscl;
+	int			error;
+
+	ASSERT(MUTEX_HELD(&np->s_lock));
+
+	if (nfs4bind_conn_to_session(np, svp, mi, cr, CDFC4_BACK)) {
+		zcmn_err(getzoneid(), CE_WARN,
+		    "Callback Channel Binding Failed");
+		return;
+	}
+
+	/*
+	 * The following below is to create a client handle
+	 * used only by the cbconn_thread to send out NFSPROC4_NULL
+	 * and should not be used for anything else.
+	 */
+	cbi = np->zone_globals->nfs4prog2cbinfo[np->s_program-NFS4_CALLBACK];
+	ASSERT(cbi != NULL);
+	client = cbi->cb_client;
+
+	/*
+	 * If client from a previous session, destroy it first
+	 */
+	if (client) {
+		AUTH_DESTROY(client->cl_auth);
+		CLNT_DESTROY(client);
+	}
+
+	nfscl = zone_getspecific(nfs4clnt_zone_key, nfs_zone());
+	ASSERT(nfscl != NULL);
+
+	/* Get a CLIENT handle */
+	error = clnt_tli_kcreate(svp->sv_knconf, &svp->sv_addr,
+	    NFS4_PROGRAM, NFS_V4, 0, 0, np->s_cred, &client);
+
+	if (error != 0) {
+		zcmn_err(getzoneid(), CE_WARN,
+		    "Failed to get handle for callback");
+		cbi->cb_client = NULL;
+		return;
+	}
+
+	/* Define this handle as a back channel handle */
+	if (!(CLNT_CONTROL(client, CLSET_BACKCHANNEL, NULL))) {
+		zcmn_err(getzoneid(), CE_WARN,
+		    "Failed to set client handle as callback");
+		CLNT_DESTROY(client);
+		cbi->cb_client = NULL;
+		return;
+	}
+
+	/* Associate it with the session */
+	if (!CLNT_CONTROL(client, CLSET_TAG, (char *)(np->ssx.sessionid))) {
+		zcmn_err(getzoneid(), CE_WARN,
+		    "Failed to set tag on client handle");
+		CLNT_DESTROY(client);
+		cbi->cb_client = NULL;
+		return;
+	}
+
+	cbi->cb_nfscl = nfscl;
+	cbi->cb_client = client;
+
+	/*
+	 * Now start the cbconn_thread
+	 */
+
+	np->s_refcnt++;
+	mutex_enter(&cbi->cb_reflock);
+	cbi->cb_refcnt++;
+	mutex_exit(&cbi->cb_reflock);
+	(void) zthread_create(NULL, 0, nfs4_cbconn_thread, np, 0,
+	    minclsyspri);
+}
+
+/*
+ * nfs4_cbconn_thread is used to send a null op to the server over the
+ * backchannel connection, to keep the back channel connection up.
+ * This is not needed for bidirectional rpc as the op_sequence
+ * heartbeat thread is doing the same thing.
+ */
+void
+nfs4_cbconn_thread(nfs4_server_t *np)
+{
+	clock_t 		tick_delay;
+	callb_cpr_t 		cpr_info;
+	kmutex_t 		cpr_lock;
+	struct nfs41_cb_info	*cbi;
+	uint32_t		zilch = 0;
+	int			timeo;
+	struct timeval		wait;
+	enum clnt_stat		rpc_stat;
+
+	cbi = np->zone_globals->nfs4prog2cbinfo[np->s_program-NFS4_CALLBACK];
+	mutex_init(&cpr_lock, NULL, MUTEX_DEFAULT, NULL);
+	CALLB_CPR_INIT(&cpr_info, &cpr_lock, callb_generic_cpr, "nfsv4cbconn");
+
+	timeo = (NFS_TIMEO * hz) / 10;
+	timeo = (MIN(NFS_TIMEO, (NFS_COTS_TIMEO / 10)) * hz) / 10;
+	TICK_TO_TIMEVAL(timeo, &wait);
+	tick_delay = MSEC_TO_TICK((4 * (60 * 1000L)));
+
+	while (!(cbi->cb_cbconn_exit)) {
+		if (!(CLNT_CONTROL(cbi->cb_client, CLSET_XID,
+		    (char *)&zilch))) {
+			zcmn_err(getzoneid(), CE_WARN,
+			    "Failed to zero xid, cbconn thread exiting");
+			break;
+		}
+		/* Execute remote NULL procedure to establish the connection */
+		rpc_stat = CLNT_CALL(cbi->cb_client, NFSPROC4_NULL,
+		    xdr_void, NULL, xdr_void, NULL, wait);
+		if (rpc_stat != RPC_SUCCESS) {
+			zcmn_err(getzoneid(), CE_WARN,
+			    "OP_NULL failed to transmit "
+			    " on callback connection "
+			    "status: 0x%x, cbconn thread exiting", rpc_stat);
+			break;
+		}
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_BEGIN(&cpr_info);
+		mutex_exit(&cpr_lock);
+
+		mutex_enter(&cbi->cb_cbconn_lock);
+		(void) cv_timedwait(&cbi->cb_cbconn_wait,
+		    &cbi->cb_cbconn_lock, tick_delay + ddi_get_lbolt());
+		mutex_exit(&cbi->cb_cbconn_lock);
+
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_END(&cpr_info, &cpr_lock);
+		mutex_exit(&cpr_lock);
+	}
+
+	nfs4_server_rele(np);
+	nfs41_cbinfo_rele(cbi);
+	mutex_enter(&cpr_lock);
+	CALLB_CPR_EXIT(&cpr_info);
+	cv_signal(&cbi->cb_destroy_wait);
+	mutex_destroy(&cpr_lock);
+	zthread_exit();
+}
+
+/*
+ * Returns 0 if no race's detected.
+ */
+static int
+cb_rcl_markslots(nfs4_server_t *np, referring_call_list4 *rcl)
+{
+	referring_call4 *rc;
+	int rc_len;
+	int i = 0;
+	int race_found = 0;
+
+	if (bcmp(&np->ssx.sessionid, &rcl->rcl_sessionid,
+	    sizeof (np->ssx.sessionid)) != 0) {
+		return (0);
+	}
+	rc_len = rcl->rcl_referring_calls.rcl_referring_calls_len;
+	rc = rcl->rcl_referring_calls.rcl_referring_calls_val;
+
+	for (i = 0; i < rc_len; i++, rc++) {
+		/*
+		 * Mark the slot if a cb_recall race is detected.
+		 */
+		if (slot_mark(np->ssx.slot_table, rc->rc_slotid,
+		    rc->rc_sequenceid))
+			race_found++;
+	}
+	return (race_found);
+}
+
+
+CB_COMPOUND4res *
+cb_sequence(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
+    struct compound_state *cs, struct nfs4_callback_globals *ncg, int *cb_racep)
+{
+	nfs4_server_t	*np;
+	slot_ent_t	*cslot = NULL;
+	stok_t		*st;
+	nfs4_session_t	*ssp;
+	int		ret = 0;
+	int		xx, rc_len;
+	referring_call_list4 *rcl;
+
+	CB_SEQUENCE4args *args = &argop->nfs_cb_argop4_u.opcbsequence;
+	CB_SEQUENCE4res *resp = &resop->nfs_cb_resop4_u.opcbsequence;
+
+	ncg->nfs4_callback_stats.cb_getattr.value.ui64++;
+
+	mutex_enter(&ncg->nfs4_cb_lock);
+	np = ncg->nfs4prog2server[req->rq_prog - NFS4_CALLBACK];
+	mutex_exit(&ncg->nfs4_cb_lock);
+	if (nfs4_server_vlock(np, 0) == FALSE) {
+		CB_WARN("cb_sequence: cannot find server\n");
+		*cs->statusp = resp->csr_status = NFS4ERR_BADHANDLE;
+		return (NULL);
+	}
+
+	bcopy(&args->csa_sessionid,
+	    &resp->CB_SEQUENCE4res_u.csr_resok4.csr_sessionid,
+	    sizeof (args->csa_sessionid));
+	resp->CB_SEQUENCE4res_u.csr_resok4.csr_slotid = args->csa_slotid;
+	resp->CB_SEQUENCE4res_u.csr_resok4.csr_sequenceid =
+	    args->csa_sequenceid;
+	resp->CB_SEQUENCE4res_u.csr_resok4.csr_highest_slotid =
+	    args->csa_highest_slotid;
+	resp->CB_SEQUENCE4res_u.csr_resok4.csr_target_highest_slotid =
+	    args->csa_highest_slotid;
+
+	if (bcmp(&args->csa_sessionid, &np->ssx.sessionid,
+	    sizeof (np->ssx.sessionid)) != 0) {
+		CB_WARN("cb_sequence: Bad Sequence Id\n");
+		*cs->statusp = resp->csr_status = NFS4ERR_BADSESSION;
+		mutex_exit(&np->s_lock);
+		nfs4_server_rele(np);
+		return (NULL);
+	}
+
+	ssp = &np->ssx;
+	st = ssp->cb_slot_table;
+	if (args->csa_slotid >= st->st_currw) {
+		CB_WARN("cb_sequence: Bad Slotid\n");
+		*cs->statusp = resp->csr_status = NFS4ERR_BADSLOT;
+		mutex_exit(&np->s_lock);
+		nfs4_server_rele(np);
+		return (NULL);
+	}
+
+	rc_len = args->csa_referring_call_lists.csa_referring_call_lists_len;
+	rcl = args->csa_referring_call_lists.csa_referring_call_lists_val;
+	for (xx = 0; xx < rc_len; xx++, rcl++) {
+		if (cb_rcl_markslots(np, rcl))
+			*cb_racep = 1;
+	}
+
+	ret = slrc_slot_alloc(st, args->csa_slotid, args->csa_sequenceid,
+	    &cslot);
+	switch (ret) {
+		case SEQRES_NEWREQ:
+			break;
+		case SEQRES_REPLAY:
+			/* If its replay, send the same result. */
+			if (cslot != NULL) {
+				*cs->statusp = resp->csr_status = NFS4_OK;
+				mutex_exit(&np->s_lock);
+				nfs4_server_rele(np);
+				return ((CB_COMPOUND4res *)&cslot->se_buf);
+			}
+		default:
+			CB_WARN("cb_sequence: Bad Sequence\n");
+			*cs->statusp = resp->csr_status =
+			    NFS4ERR_SEQ_MISORDERED;
+			mutex_exit(&np->s_lock);
+			nfs4_server_rele(np);
+			return (NULL);
+	}
+	mutex_enter(&cslot->se_lock);
+	cslot->se_seqid = args->csa_sequenceid;
+	mutex_exit(&cslot->se_lock);
+	/*
+	 * todo: need to set inuse and deal with server having
+	 * multiple callbacks in-flight.
+	 */
+
+	*cs->statusp = resp->csr_status = NFS4_OK;
+	mutex_exit(&np->s_lock);
+	nfs4_server_rele(np);
+	return (NULL);
+}
 
 static void
 cb_getattr(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
@@ -197,7 +497,8 @@ cb_getattr(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
 	}
 #endif
 
-	resp->obj_attributes.attrmask = 0;
+	resp->obj_attributes.attrmask =
+	    NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
 
 	mutex_enter(&ncg->nfs4_cb_lock);
 	sp = ncg->nfs4prog2server[req->rq_prog - NFS4_CALLBACK];
@@ -301,70 +602,67 @@ cb_getattr(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
 	 */
 	fap = &resp->obj_attributes;
 
-	fap->attrmask = 0;
+	fap->attrmask = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
 	/* attrlist4_len starts at 0 and increases as attrs are processed */
 	fap->attrlist4 = (char *)fdata;
 	fap->attrlist4_len = 0;
 
-	/* don't supply attrs if request was zero */
-	if (args->attr_request != 0) {
-		if (args->attr_request & FATTR4_CHANGE_MASK) {
-			/*
-			 * If the file is mmapped, then increment the change
-			 * attribute and return it.  This will guarantee that
-			 * the server will perceive that the file has changed
-			 * if there is any chance that the client application
-			 * has changed it.  Otherwise, just return the change
-			 * attribute as it has been updated by nfs4write_deleg.
-			 */
+	if (ATTR_ISSET(args->attr_request, CHANGE)) {
+		/*
+		 * If the file is mmapped, then increment the change
+		 * attribute and return it.  This will guarantee that
+		 * the server will perceive that the file has changed
+		 * if there is any chance that the client application
+		 * has changed it.  Otherwise, just return the change
+		 * attribute as it has been updated by nfs4write_deleg.
+		 */
 
-			mutex_enter(&rp->r_statelock);
-			mapcnt = rp->r_mapcnt;
-			rflag = rp->r_flags;
-			mutex_exit(&rp->r_statelock);
+		mutex_enter(&rp->r_statelock);
+		mapcnt = rp->r_mapcnt;
+		rflag = rp->r_flags;
+		mutex_exit(&rp->r_statelock);
 
-			mutex_enter(&rp->r_statev4_lock);
-			/*
-			 * If object mapped, then always return new change.
-			 * Otherwise, return change if object has dirty
-			 * pages.  If object doesn't have any dirty pages,
-			 * then all changes have been pushed to server, so
-			 * reset change to grant change.
-			 */
-			if (mapcnt)
-				rp->r_deleg_change++;
-			else if (! (rflag & R4DIRTY))
-				rp->r_deleg_change = rp->r_deleg_change_grant;
-			change = rp->r_deleg_change;
-			mutex_exit(&rp->r_statev4_lock);
+		mutex_enter(&rp->r_statev4_lock);
+		/*
+		 * If object mapped, then always return new change.
+		 * Otherwise, return change if object has dirty
+		 * pages.  If object doesn't have any dirty pages,
+		 * then all changes have been pushed to server, so
+		 * reset change to grant change.
+		 */
+		if (mapcnt)
+			rp->r_deleg_change++;
+		else if (! (rflag & R4DIRTY))
+		rp->r_deleg_change = rp->r_deleg_change_grant;
+		change = rp->r_deleg_change;
+		mutex_exit(&rp->r_statev4_lock);
 
-			/*
-			 * Use inline XDR code directly, we know that we
-			 * going to a memory buffer and it has enough
-			 * space so it cannot fail.
-			 */
-			IXDR_PUT_U_HYPER(fdata, change);
-			fap->attrlist4_len += 2 * BYTES_PER_XDR_UNIT;
-			fap->attrmask |= FATTR4_CHANGE_MASK;
-		}
+		/*
+		 * Use inline XDR code directly, we know that we
+		 * going to a memory buffer and it has enough
+		 * space so it cannot fail.
+		 */
+		IXDR_PUT_U_HYPER(fdata, change);
+		fap->attrlist4_len += 2 * BYTES_PER_XDR_UNIT;
+		ATTR_SET(fap->attrmask, CHANGE);
+	}
 
-		if (args->attr_request & FATTR4_SIZE_MASK) {
-			/*
-			 * Use an atomic add of 0 to fetch a consistent view
-			 * of r_size; this avoids having to take rw_lock
-			 * which could cause a deadlock.
-			 */
-			size = atomic_add_64_nv((uint64_t *)&rp->r_size, 0);
+	if (ATTR_ISSET(args->attr_request, SIZE)) {
+		/*
+		 * Use an atomic add of 0 to fetch a consistent view
+		 * of r_size; this avoids having to take rw_lock
+		 * which could cause a deadlock.
+		 */
+		size = atomic_add_64_nv((uint64_t *)&rp->r_size, 0);
 
-			/*
-			 * Use inline XDR code directly, we know that we
-			 * going to a memory buffer and it has enough
-			 * space so it cannot fail.
-			 */
-			IXDR_PUT_U_HYPER(fdata, size);
-			fap->attrlist4_len += 2 * BYTES_PER_XDR_UNIT;
-			fap->attrmask |= FATTR4_SIZE_MASK;
-		}
+		/*
+		 * Use inline XDR code directly, we know that we
+		 * going to a memory buffer and it has enough
+		 * space so it cannot fail.
+		 */
+		IXDR_PUT_U_HYPER(fdata, size);
+		fap->attrlist4_len += 2 * BYTES_PER_XDR_UNIT;
+		ATTR_SET(fap->attrmask, SIZE);
 	}
 
 	VN_RELE(vp);
@@ -380,9 +678,604 @@ cb_getattr_free(nfs_cb_resop4 *resop)
 		    obj_attributes.attrlist4, cb_getattr_bytes);
 }
 
+int
+nfs4layoutrecall_thread(nfs4_server_t *np, nfs4_fsidlt_t *ltp, rnode4_t *rp,
+	pnfs_lo_matches_t *lom, int recalltype)
+{
+	struct cb_lor	*cl;
+
+	cl = kmem_alloc(sizeof (*cl), KM_NOSLEEP);
+	if (cl == NULL)
+		return (NFS4ERR_DELAY);
+
+	cl->lor_np = np;
+	cl->lor_ltp = ltp;
+	cl->lor_rp = rp;
+	cl->lor_type = recalltype;
+	cl->lor_lom = lom;
+
+	/*
+	 * Grab a reference on the nfs4_server_t, for the thread created
+	 * below.  These threads are responsible for dropping this reference.
+	 */
+	nfs4_server_hold(np);
+	if (recalltype == PNFS_LAYOUTRECALL_FILE) {
+		(void) zthread_create(NULL, 0, layoutrecall_file_thread,
+		    cl, 0, minclsyspri);
+	} else {
+		(void) zthread_create(NULL, 0, layoutrecall_bulk_thread,
+		    cl, 0, minclsyspri);
+	}
+	return (NFS4_OK);
+}
+
+static nfsstat4
+layoutrecall_all(nfs4_server_t *np)
+{
+	int	error;
+
+	/*
+	 * Walk thru all of the layout trees, and discard all
+	 * all the layouts, effectively discarding all the layouts
+	 * from this particular server, then do LAYOUTRETURN4_ALL.
+	 */
+	mutex_enter(&np->s_lt_lock);
+	if (np->s_locnt == 0) {
+		mutex_exit(&np->s_lt_lock);
+		return (NFS4ERR_NOMATCHING_LAYOUT);
+	}
+
+	if (np->s_lobulkblock > 0) {
+		mutex_exit(&np->s_lt_lock);
+		return (NFS4ERR_DELAY);
+	}
+
+	np->s_lobulkblock++;
+	np->s_loflags |= PNFS_CBLORECALL;
+	mutex_exit(&np->s_lt_lock);
+
+	error = nfs4layoutrecall_thread(np, NULL, NULL, NULL,
+	    PNFS_LAYOUTRECALL_ALL);
+
+	return (error);
+}
+
+
+void
+layoutrecall_bulk_thread(struct cb_lor *cl)
+{
+	nfs4_server_t		*np = cl->lor_np;
+	nfs4_fsidlt_t		*savedltp = NULL, *ltp = cl->lor_ltp;
+	callb_cpr_t		cpr_info;
+	kmutex_t		cpr_lock;
+	vnode_t			*vp;
+	rnode4_t		*rp;
+	mntinfo4_t		*mi = NULL;
+	pnfs_layout_t		*layout, *next;
+	rnode4_t		*found;
+
+	mutex_init(&cpr_lock, NULL, MUTEX_DEFAULT, NULL);
+
+	CALLB_CPR_INIT(&cpr_info, &cpr_lock, callb_generic_cpr,
+	    "cblorall");
+
+	if (cl->lor_type == PNFS_LAYOUTRECALL_FSID) {
+		mutex_enter(&ltp->lt_rlt_lock);
+		while (ltp->lt_loinuse > 0) {
+			cv_wait(&ltp->lt_lowait, &ltp->lt_rlt_lock);
+		}
+		ASSERT(ltp->lt_loinuse == 0);
+	} else {
+		mutex_enter(&np->s_lt_lock);
+		while (np->s_loinuse > 0) {
+			cv_wait(&np->s_lowait, &np->s_lt_lock);
+		}
+		ASSERT(np->s_loinuse == 0);
+		ltp = avl_first(&np->s_fsidlt);
+		mutex_enter(&ltp->lt_rlt_lock);
+	}
+
+	while (ltp) {
+		rp = avl_first(&ltp->lt_rlayout_tree);
+		while (rp) {
+			vp = RTOV4(rp);
+			VN_HOLD(vp);
+
+			/*
+			 * Grab a hold of the mi here so it does not
+			 * get removed before layoutreturn
+			 * can use it for the rfs4call.
+			 */
+			if (mi == NULL) {
+				mi = VTOMI4(vp);
+				MI4_HOLD(mi);
+			}
+			mutex_enter(&rp->r_lo_lock);
+
+			layout = list_head(&rp->r_layout);
+			ASSERT(rp->r_fsidlt == ltp);
+			/*
+			 * Grab the next rnode in the tree now because
+			 * pnfs_trim_fsid_tree should remove this one.
+			 */
+			found = AVL_NEXT(&ltp->lt_rlayout_tree, rp);
+
+			while (layout) {
+				ASSERT(layout->plo_inusecnt == 0);
+				layout->plo_flags |= PLO_BAD;
+				next = list_next(&rp->r_layout, layout);
+				pnfs_decr_layout_refcnt(rp, layout);
+				pnfs_trim_fsid_tree(rp, ltp, FALSE);
+				bzero(&rp->r_lostateid,
+				    sizeof (rp->r_lostateid));
+				layout = next;
+			}
+			mutex_exit(&rp->r_lo_lock);
+			VN_RELE(vp);
+
+			rp = found;
+		}
+
+		mutex_exit(&ltp->lt_rlt_lock);
+		if (cl->lor_type == PNFS_LAYOUTRECALL_FSID) {
+			savedltp = ltp;
+			ltp = NULL;
+		} else {
+			ltp = AVL_NEXT(&np->s_fsidlt, ltp);
+			if (ltp)
+				mutex_enter(&ltp->lt_rlt_lock);
+			else
+				mutex_exit(&np->s_lt_lock);
+		}
+	}
+
+	pnfs_layoutreturn_bulk(mi, kcred, cl->lor_type, np, savedltp);
+
+	MI4_RELE(mi);
+
+	mutex_enter(&np->s_lt_lock);
+	np->s_lobulkblock--;
+	np->s_loflags &= ~PNFS_CBLORECALL;
+	if (cl->lor_type == PNFS_LAYOUTRECALL_FSID) {
+		ASSERT(savedltp != NULL);
+		mutex_enter(&savedltp->lt_rlt_lock);
+		savedltp->lt_lobulkblock--;
+		savedltp->lt_flags &= ~PNFS_CBLORECALL;
+		mutex_exit(&savedltp->lt_rlt_lock);
+		mutex_exit(&np->s_lt_lock);
+	} else {
+		mutex_exit(&np->s_lt_lock);
+	}
+
+	kmem_free(cl, sizeof (*cl));
+	nfs4_server_rele(np);
+
+	mutex_enter(&cpr_lock);
+	CALLB_CPR_EXIT(&cpr_info);
+	mutex_destroy(&cpr_lock);
+
+	zthread_exit();
+}
+
+static nfsstat4
+layoutrecall_fsid(fsid4 *recallfsid, nfs4_server_t *np)
+{
+	nfs4_fsidlt_t 	*ltp, lt;
+	rnode4_t	*rp;
+	int		error;
+
+	lt.lt_fsid.major = recallfsid->major;
+	lt.lt_fsid.minor = recallfsid->minor;
+
+	mutex_enter(&np->s_lt_lock);
+
+	/*
+	 * If a layoutrecall_all is active or pending, then delay.
+	 */
+	if (np->s_loflags & PNFS_CBLORECALL) {
+		mutex_exit(&np->s_lt_lock);
+		return (NFS4ERR_DELAY);
+	}
+
+	ltp = avl_find(&np->s_fsidlt, &lt, NULL);
+	mutex_enter(&ltp->lt_rlt_lock);
+
+	/*
+	 * If no matching fsid layout tree is found, then no layouts exist
+	 * for this fsid.
+	 */
+	if (ltp->lt_locnt == 0) {
+		mutex_exit(&ltp->lt_rlt_lock);
+		mutex_exit(&np->s_lt_lock);
+		return (NFS4ERR_NOMATCHING_LAYOUT);
+	}
+
+	/*
+	 * If we are handling another fsid lorecall for this fsid
+	 * return DELAY.
+	 */
+	if (ltp->lt_flags & PNFS_CBLORECALL) {
+		mutex_exit(&ltp->lt_rlt_lock);
+		mutex_exit(&np->s_lt_lock);
+		return (NFS4ERR_DELAY);
+	}
+
+	/*
+	 * Found a matching fsid tree, return and free all
+	 * layouts on this tree.
+	 */
+
+	rp = avl_first(&ltp->lt_rlayout_tree);
+	if (rp == NULL) {
+		mutex_exit(&ltp->lt_rlt_lock);
+		mutex_exit(&np->s_lt_lock);
+		return (NFS4ERR_NOMATCHING_LAYOUT);
+	}
+
+
+	/*
+	 * Increment lobulkblock in nfs4_server indicating that
+	 * a layoutrecall_all can not execute now and must return DELAY.
+	 */
+	np->s_lobulkblock++;
+
+	/*
+	 * Mark the fsidlt also as bulkblocking, we can not execute another
+	 * layoutrecall_fsid for this fsid now.  And mark that we are
+	 * currently executing an fsid bulk layoutrecall for this fsid.
+	 */
+	ltp->lt_lobulkblock++;
+	ltp->lt_flags |= PNFS_CBLORECALL;
+
+	/*
+	 * Release All locks, return success, so success can be
+	 * sent as the reply to this cb_layoutrecall op, and
+	 * spawn a thread to handle the actual layoutreturns.
+	 */
+	mutex_exit(&np->s_lt_lock);
+	mutex_exit(&ltp->lt_rlt_lock);
+
+	error = nfs4layoutrecall_thread(np, ltp, NULL, NULL,
+	    PNFS_LAYOUTRECALL_FSID);
+
+	return (error);
+}
+
+/*
+ * XXXKLR, the CB_LAYOUTRECALL4args will have to be passed to these
+ * layoutrecall functions, so they have knowledge of the iomode, and
+ * clora_changed bits.
+ *
+ * XXXKLR - Clora changes functionality must also be added.
+ */
+static nfsstat4
+layoutrecall_file(layoutrecall_file4 *lrf, nfs4_server_t *np)
+{
+	nfs_fh4			*rawfh = &lrf->lor_fh;
+	nfs4_sharedfh_t 	sfh;
+	vnode_t			*vp;
+	rnode4_t		lrp, *rp;
+	nfs4_fsidlt_t		*ltp;
+	pnfs_lo_matches_t	*lom = NULL;
+	nfsstat4 		nstatus = NFS4ERR_NOMATCHING_LAYOUT;
+
+	bcopy(rawfh, &sfh, sizeof (*rawfh));
+	lrp.r_fh = &sfh;
+
+	mutex_enter(&np->s_lock);
+
+	mutex_enter(&np->s_lt_lock);
+	if (np->s_loflags & PNFS_CBLORECALL) {
+		mutex_exit(&np->s_lt_lock);
+		mutex_exit(&np->s_lock);
+		return (NFS4ERR_DELAY);
+	}
+
+	if (avl_first(&np->s_fsidlt) == NULL) {
+		mutex_exit(&np->s_lt_lock);
+		mutex_exit(&np->s_lock);
+		return (NFS4ERR_NOMATCHING_LAYOUT);
+	}
+
+	np->s_lobulkblock++;
+
+	/*
+	 * Look thru the fsid layout trees until we find a matching
+	 * rnode on an fsid layout tree's rnode layout tree.  We don't
+	 * have the matching fsid to directly lookup the fsidlt structure.
+	 */
+	for (ltp = avl_first(&np->s_fsidlt); ltp;
+	    ltp = AVL_NEXT(&np->s_fsidlt, ltp)) {
+		/*
+		 * Look at this fsid layout tree's rnode layout tree
+		 * and see if it has the rnode we want based on the
+		 * file handle.
+		 */
+		mutex_enter(&ltp->lt_rlt_lock);
+
+		rp = avl_find(&ltp->lt_rlayout_tree, &lrp, NULL);
+
+		if (rp == NULL) {
+			mutex_exit(&ltp->lt_rlt_lock);
+			continue;
+		}
+
+		if (ltp->lt_flags & PNFS_CBLORECALL) {
+			np->s_lobulkblock--;
+			mutex_exit(&ltp->lt_rlt_lock);
+			mutex_exit(&np->s_lt_lock);
+			mutex_exit(&np->s_lock);
+			return (nstatus);
+		}
+		ltp->lt_lobulkblock++;
+		mutex_exit(&ltp->lt_rlt_lock);
+		mutex_exit(&np->s_lt_lock);
+
+		vp = RTOV4(rp);
+		VN_HOLD(vp);
+		mutex_exit(&np->s_lock);
+
+		/*
+		 * Since this client will never ask for a layout that
+		 * it already holds, if we get a
+		 * layoutrecall, the stateid it has should match
+		 * ours!.
+		 */
+		mutex_enter(&rp->r_statelock);
+		if (lrf->lor_stateid.seqid !=
+		    rp->r_lostateid.seqid + 1) {
+			cmn_err(CE_PANIC, "our layout stateids are"
+			    "out of sync! rnode: %p %p %p", (void *)rp,
+			    (void *)&lrf->lor_stateid,
+			    (void *)&rp->r_lostateid);
+		}
+
+		rp->r_lostateid = lrf->lor_stateid;
+		mutex_exit(&rp->r_statelock);
+
+		lom = pnfs_find_layouts(np, rp, kcred, LAYOUTIOMODE4_RW,
+		    lrf->lor_offset, lrf->lor_length, LOM_RECALL);
+
+		if (lom == NULL || (lom != NULL &&
+		    !(lom->lm_flags & LOMSTAT_MATCHFOUND))) {
+			pnfs_release_layouts(np, rp, lom, LOM_RECALL);
+
+			mutex_enter(&np->s_lt_lock);
+			mutex_enter(&ltp->lt_rlt_lock);
+			np->s_lobulkblock--;
+			ltp->lt_lobulkblock--;
+			mutex_exit(&ltp->lt_rlt_lock);
+			mutex_exit(&np->s_lt_lock);
+			VN_RELE(vp);
+			return (nstatus);
+		}
+
+		if (lom->lm_flags & LOMSTAT_DELAY) {
+			pnfs_release_layouts(np, rp, lom, LOM_RECALL);
+
+			mutex_enter(&np->s_lt_lock);
+			mutex_enter(&ltp->lt_rlt_lock);
+			np->s_lobulkblock--;
+			ltp->lt_lobulkblock--;
+			mutex_exit(&ltp->lt_rlt_lock);
+			mutex_exit(&np->s_lt_lock);
+			VN_RELE(vp);
+			return (NFS4ERR_DELAY);
+		}
+
+		nstatus = nfs4layoutrecall_thread(np, ltp, rp,
+		    lom, PNFS_LAYOUTRECALL_FILE);
+		break;
+	}
+
+	return (nstatus);
+}
+
+
+void
+layoutrecall_file_thread(struct cb_lor *cl)
+{
+	rnode4_t		*rp = cl->lor_rp;
+	pnfs_lo_matches_t	*lom = cl->lor_lom;
+	vnode_t			*vp = RTOV4(cl->lor_rp);
+	nfs4_fsidlt_t		*fsidlt = cl->lor_ltp;
+	callb_cpr_t		cpr_info;
+	kmutex_t		cpr_lock;
+	pnfs_lol_t		*lol;
+	pnfs_layout_t		*layout;
+
+	mutex_init(&cpr_lock, NULL, MUTEX_DEFAULT, NULL);
+	CALLB_CPR_INIT(&cpr_info, &cpr_lock, callb_generic_cpr, "cblorfile");
+
+	if (cl->lor_rp == NULL || cl->lor_np == NULL || rp->r_fsidlt == NULL)
+		cmn_err(CE_WARN, "cl %p", (void *)cl);
+	ASSERT(cl->lor_rp != NULL);
+	ASSERT(cl->lor_np != NULL);
+	ASSERT(rp->r_fsidlt != NULL);
+
+	mutex_enter(&rp->r_lo_lock);
+	if (lom->lm_flags & LOMSTAT_NEEDSWAIT) {
+		/*
+		 * We can't just return the layout because when the
+		 * list was created we had layouts in use by I/O.
+		 * Check for those here, and wait for the I/O to complete.
+		 */
+		for (lol = list_head(&lom->lm_layouts); lol != NULL;
+		    lol = list_next(&lom->lm_layouts, lol)) {
+			layout = lol->l_layout;
+			if (layout->plo_inusecnt > 0) {
+				layout->plo_flags |= PLO_LOWAITER;
+				while (layout->plo_inusecnt > 0) {
+					cv_wait(&layout->plo_wait,
+					    &rp->r_lo_lock);
+				}
+				layout->plo_flags &= ~PLO_LOWAITER;
+			}
+		}
+	}
+	mutex_exit(&rp->r_lo_lock);
+
+	/*
+	 * Must grab the fsidlt here because pnfs_layout_return can
+	 * zero this field when removing the layout from the rnode, and
+	 * then removing the rnode from the fsidlt.  The fsidlt itself
+	 * will exist until the file system is unmounted.
+	 */
+
+	pnfs_layout_return(vp, kcred, LR_SYNC, lom,
+	    PNFS_LAYOUTRECALL_FILE);
+
+	pnfs_release_layouts(cl->lor_np, rp, lom, LOM_RECALL);
+	VN_RELE(vp);
+
+	mutex_enter(&cl->lor_np->s_lt_lock);
+	mutex_enter(&fsidlt->lt_rlt_lock);
+	cl->lor_np->s_lobulkblock--;
+	fsidlt->lt_lobulkblock--;
+	mutex_exit(&fsidlt->lt_rlt_lock);
+	mutex_exit(&cl->lor_np->s_lt_lock);
+
+	nfs4_server_rele(cl->lor_np);
+
+	mutex_enter(&cpr_lock);
+	CALLB_CPR_EXIT(&cpr_info);
+	mutex_destroy(&cpr_lock);
+	zthread_exit();
+
+}
+
+
+static void
+cb_layoutrecall(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
+	struct compound_state *cs, struct nfs4_callback_globals *ncg)
+{
+	CB_LAYOUTRECALL4args *args = &argop->nfs_cb_argop4_u.opcblayoutrecall;
+	CB_LAYOUTRECALL4res *resp = &resop->nfs_cb_resop4_u.opcblayoutrecall;
+	struct nfs4_server *sp;
+
+	if (args->clora_type != LAYOUT4_NFSV4_1_FILES) {
+		DTRACE_PROBE1(nfsc__i__badlayoutype, int32_t,
+		    args->clora_type);
+		*cs->statusp = resp->clorr_status = NFS4ERR_INVAL;
+		return;
+	}
+
+	mutex_enter(&ncg->nfs4_cb_lock);
+	sp = ncg->nfs4prog2server[req->rq_prog - NFS4_CALLBACK];
+	mutex_exit(&ncg->nfs4_cb_lock);
+
+	if (nfs4_server_vlock(sp, 0) == FALSE) {
+		DTRACE_PROBE1(nfsc__i__bad_prog, int, req->rq_prog);
+		*cs->statusp = resp->clorr_status = NFS4ERR_NOMATCHING_LAYOUT;
+		return;
+	}
+	mutex_exit(&sp->s_lock);
+
+	switch (args->clora_recall.lor_recalltype) {
+	case LAYOUTRECALL4_FILE:
+		*cs->statusp = resp->clorr_status =
+		    layoutrecall_file(&args->clora_recall.
+		    layoutrecall4_u.lor_layout, sp);
+		break;
+	case LAYOUTRECALL4_FSID:
+		*cs->statusp = resp->clorr_status =
+		    layoutrecall_fsid(&args->clora_recall.
+		    layoutrecall4_u.lor_fsid, sp);
+		break;
+	case LAYOUTRECALL4_ALL:
+		*cs->statusp = resp->clorr_status = layoutrecall_all(sp);
+		break;
+	default:
+		*cs->statusp = resp->clorr_status = NFS4ERR_INVAL;
+	}
+	nfs4_server_rele(sp);
+
+	if (resp->clorr_status != NFS4_OK)
+		DTRACE_PROBE2(nfsc__i__cblayouterr,
+		    nfs4_server_t *, sp, nfsstat, resp->clorr_status);
+}
+
+static nfsstat4
+cb_notify_device(nfs4_server_t *sp, notify4 *no)
+{
+	nfsstat4 stat = NFS4_OK;
+	XDR x;
+	notify_deviceid_change4 ndc;
+	notify_deviceid_delete4 ndd;
+
+	/* check for missing or extra bits */
+	if ((no->notify_mask &
+	    ~(NOTIFY_DEVICEID4_CHANGE_MASK|NOTIFY_DEVICEID4_DELETE_MASK)) ||
+	    (no->notify_mask == 0))
+		DTRACE_PROBE1(nfsc__i__bad_mask, bitmap4 *, no->notify_mask);
+
+	xdrmem_create(&x, no->notify_vals.notifylist4_val,
+	    no->notify_vals.notifylist4_len, XDR_DECODE);
+	/*
+	 * The order of checking is significant.  Oddly, both bits
+	 * could be set.
+	 */
+	if (no->notify_mask & NOTIFY_DEVICEID4_CHANGE_MASK) {
+
+		if (!xdr_notify_deviceid_change4(&x, &ndc))
+			stat = NFS4ERR_BADXDR;
+		else {
+			stat = pnfs_change_device(sp, &ndc);
+			xdr_free(xdr_notify_deviceid_change4, (caddr_t)&ndc);
+		}
+	}
+	if (stat == NFS4_OK &&
+	    (no->notify_mask & NOTIFY_DEVICEID4_DELETE_MASK)) {
+
+		if (!xdr_notify_deviceid_delete4(&x, &ndd))
+			stat = NFS4ERR_BADXDR;
+		else {
+			stat = pnfs_delete_device(sp, &ndd);
+			xdr_free(xdr_notify_deviceid_change4, (caddr_t)&ndd);
+		}
+	}
+
+	return (stat);
+}
+
+static void
+cb_notify_deviceid(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop,
+    struct svc_req *req, struct compound_state *cs,
+    struct nfs4_callback_globals *ncg)
+{
+	CB_NOTIFY_DEVICEID4args *args =
+	    &argop->nfs_cb_argop4_u.opcbnotify_deviceid;
+	CB_NOTIFY_DEVICEID4res *resp =
+	    &resop->nfs_cb_resop4_u.opcbnotify_deviceid;
+	struct nfs4_server *sp;
+	int i;
+	nfsstat4 stat;
+
+	mutex_enter(&ncg->nfs4_cb_lock);
+	sp = ncg->nfs4prog2server[req->rq_prog - NFS4_CALLBACK];
+	mutex_exit(&ncg->nfs4_cb_lock);
+
+	if (nfs4_server_vlock(sp, 0) == FALSE) {
+		DTRACE_PROBE1(nfsc__i__bad_prog, int, req->rq_prog);
+		*cs->statusp = resp->cndr_status = NFS4ERR_INVAL;
+		return;
+	}
+	mutex_exit(&sp->s_lock);
+
+	stat = NFS4_OK;
+	for (i = 0; i < args->cnda_changes.cnda_changes_len; i++)
+		if ((stat = cb_notify_device(sp,
+		    &args->cnda_changes.cnda_changes_val[i])) != NFS4_OK)
+			break;
+
+	*cs->statusp = resp->cndr_status = stat;
+	nfs4_server_rele(sp);
+}
+
+
 static void
 cb_recall(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
-	struct compound_state *cs, struct nfs4_callback_globals *ncg)
+    struct compound_state *cs, struct nfs4_callback_globals *ncg, int cb_race)
 {
 	CB_RECALL4args * args = &argop->nfs_cb_argop4_u.opcbrecall;
 	CB_RECALL4res *resp = &resop->nfs_cb_resop4_u.opcbrecall;
@@ -472,10 +1365,18 @@ cb_recall(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
 	nfs4_server_rele(sp);
 
 	if (found == FALSE) {
-
-		CB_WARN("cb_recall: bad stateid\n");
-
-		*cs->statusp = resp->status = NFS4ERR_BAD_STATEID;
+		/*
+		 * If we know that there is a callback race in
+		 * progress, then return DELAY. The delegation
+		 * will be returned by the thread which
+		 * requested it.
+		 */
+		if (cb_race) {
+			*cs->statusp = resp->status = NFS4ERR_DELAY;
+		} else {
+			CB_WARN("cb_recall: bad stateid\n");
+			*cs->statusp = resp->status = NFS4ERR_BAD_STATEID;
+		}
 		return;
 	}
 
@@ -546,6 +1447,45 @@ cb_illegal(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
 }
 
 static void
+cb_slrc_epilogue(nfs4_server_t *np, CB_COMPOUND4res *res, slotid4 slot)
+{
+	stok_t *handle;
+	slot_ent_t *slt;
+	nfs4_session_t *ssp;
+	CB_COMPOUND4res *bres;
+
+	ssp = &np->ssx;
+	handle = ssp->cb_slot_table;
+	slt = slrc_slot_get(handle, slot);
+	ASSERT(slt != NULL);
+	bres = (CB_COMPOUND4res*)&slt->se_buf;
+	mutex_enter(&slt->se_lock);
+	switch (slt->se_state) {
+		case SLRC_INPROG_NEWREQ:
+			if (res->status == NFS4_OK) {
+				if (slt->se_buf.array != NULL) {
+					cb_compound_free(bres);
+				}
+				slt->se_status = NFS4_OK;
+				slt->se_buf = *(COMPOUND4res_srv *)res;
+				slt->se_state = SLRC_CACHED_OKAY;
+			} else {
+				slt->se_state = SLRC_EMPTY_SLOT;
+			}
+			break;
+		case SLRC_INPROG_REPLAY:
+			slt->se_state = SLRC_CACHED_OKAY;
+			slt->se_status = NFS4_OK;
+			break;
+		default:
+			slt->se_state = SLRC_EMPTY_SLOT;
+			break;
+	}
+	cv_signal(&slt->se_wait);
+	mutex_exit(&slt->se_lock);
+}
+
+static void
 cb_compound(CB_COMPOUND4args *args, CB_COMPOUND4res *resp, struct svc_req *req,
 	struct nfs4_callback_globals *ncg)
 {
@@ -553,7 +1493,13 @@ cb_compound(CB_COMPOUND4args *args, CB_COMPOUND4res *resp, struct svc_req *req,
 	struct compound_state cs;
 	nfs_cb_argop4 *argop;
 	nfs_cb_resop4 *resop, *new_res;
-	uint_t op;
+	uint_t op, mvers_0;
+	boolean_t	sequenced = FALSE;
+	slotid4 slot;
+	CB_SEQUENCE4args *seq_args;
+	CB_COMPOUND4res *sbuf = NULL;
+	nfs4_server_t *np;
+	int cb_race = 0;
 
 	bzero(&cs, sizeof (cs));
 	cs.statusp = &resp->status;
@@ -569,14 +1515,25 @@ cb_compound(CB_COMPOUND4args *args, CB_COMPOUND4res *resp, struct svc_req *req,
 	    args->tag.utf8string_len);
 
 	/*
-	 * XXX for now, minorversion should be zero
+	 * minorversion should be zero or one
 	 */
-	if (args->minorversion != CB4_MINORVERSION) {
+	if (args->minorversion != CB4_MINOR_v0 &&
+	    args->minorversion != CB4_MINOR_v1) {
 		resp->array_len = 0;
 		resp->array = NULL;
 		resp->status = NFS4ERR_MINOR_VERS_MISMATCH;
 		return;
 	}
+
+	/*
+	 * The XDR code for CB_COMPOUND decodes all cb ops regardless
+	 * of the minorversion of the compound containing the ops.
+	 *
+	 * mvers_0 is used to validate ops according to minor version:
+	 * - only mvers 0 cb ops are allowed in mv 0 cb compounds
+	 * - "is sequenced" checks only apply to mv 1 cb compunds
+	 */
+	mvers_0 = (args->minorversion == CB4_MINOR_v0);
 
 #ifdef DEBUG
 	/*
@@ -605,18 +1562,83 @@ cb_compound(CB_COMPOUND4args *args, CB_COMPOUND4res *resp, struct svc_req *req,
 
 		switch (op) {
 
+		case OP_CB_SEQUENCE:
+
+			if (mvers_0) {
+				op = OP_CB_ILLEGAL;
+				cb_illegal(argop, resop, req, &cs, ncg);
+				break;
+			}
+			sbuf = cb_sequence(argop, resop, req, &cs, ncg,
+			    &cb_race);
+			if (*cs.statusp == NFS4_OK)
+				sequenced = TRUE;
+			else
+				break;
+			if (!mvers_0) {
+				seq_args = &argop->nfs_cb_argop4_u.opcbsequence;
+				slot = seq_args->csa_slotid;
+			}
+			if ((sbuf != NULL) && !mvers_0) {
+				/* this is a replay */
+				resp = sbuf;
+				goto epilogue;
+			}
+			break;
+
 		case OP_CB_GETATTR:
 
+			if (!sequenced && !mvers_0) {
+				*cs.statusp = resp->status =
+				    NFS4ERR_SEQUENCE_POS;
+				break;
+			}
 			cb_getattr(argop, resop, req, &cs, ncg);
 			break;
 
 		case OP_CB_RECALL:
+			if (!sequenced && !mvers_0) {
+				*cs.statusp = resp->status =
+				    NFS4ERR_SEQUENCE_POS;
+				break;
+			}
+			cb_recall(argop, resop, req, &cs, ncg, cb_race);
+			break;
 
-			cb_recall(argop, resop, req, &cs, ncg);
+		case OP_CB_LAYOUTRECALL:
+			if (mvers_0) {
+				op = OP_CB_ILLEGAL;
+				cb_illegal(argop, resop, req, &cs, ncg);
+				break;
+			}
+			if (!sequenced) {
+				*cs.statusp = resp->status =
+				    NFS4ERR_SEQUENCE_POS;
+				break;
+			}
+			cb_layoutrecall(argop, resop, req, &cs, ncg);
+			break;
+
+		case OP_CB_NOTIFY_DEVICEID:
+			if (mvers_0) {
+				op = OP_CB_ILLEGAL;
+				cb_illegal(argop, resop, req, &cs, ncg);
+				break;
+			}
+			if (!sequenced) {
+				*cs.statusp = resp->status =
+				    NFS4ERR_SEQUENCE_POS;
+				break;
+			}
+			cb_notify_deviceid(argop, resop, req, &cs, ncg);
 			break;
 
 		case OP_CB_ILLEGAL:
-
+			if (!sequenced && !mvers_0) {
+				*cs.statusp = resp->status =
+				    NFS4ERR_SEQUENCE_POS;
+				break;
+			}
 			/* fall through */
 
 		default:
@@ -650,7 +1672,21 @@ cb_compound(CB_COMPOUND4args *args, CB_COMPOUND4res *resp, struct svc_req *req,
 			resp->array = new_res;
 		}
 	}
-
+epilogue:
+	if (!mvers_0) {
+		mutex_enter(&ncg->nfs4_cb_lock);
+		np = ncg->nfs4prog2server[req->rq_prog - NFS4_CALLBACK];
+		mutex_exit(&ncg->nfs4_cb_lock);
+		if (nfs4_server_vlock(np, 0) == FALSE) {
+			CB_WARN("cb_compound: cannot find server\n");
+			*cs.statusp = resp->status = NFS4ERR_BADHANDLE;
+		} else {
+			if (sequenced)
+				cb_slrc_epilogue(np, resp, slot);
+			mutex_exit(&np->s_lock);
+			nfs4_server_rele(np);
+		}
+	}
 }
 
 static void
@@ -747,8 +1783,10 @@ cb_dispatch(struct svc_req *req, SVCXPRT *xprt)
 		svcerr_systemerr(xprt);
 	}
 
-	if (freeproc)
-		(*freeproc)(&res);
+	if (args.minorversion != CB4_MINOR_v1) {
+		if (freeproc)
+			(*freeproc)(&res);
+	}
 
 	if (!SVC_FREEARGS(xprt, xdr_args, (caddr_t)&args)) {
 
@@ -780,12 +1818,15 @@ void
 nfs4callback_destroy(nfs4_server_t *np)
 {
 	struct nfs4_callback_globals *ncg;
+	struct nfs41_cb_info *cbi;
 	int i;
 
 	if (np->s_program == 0)
 		return;
 
 	ncg = np->zone_globals;
+	cbi = ncg->nfs4prog2cbinfo[np->s_program - NFS4_CALLBACK];
+
 	i = np->s_program - NFS4_CALLBACK;
 
 	mutex_enter(&ncg->nfs4_cb_lock);
@@ -793,11 +1834,43 @@ nfs4callback_destroy(nfs4_server_t *np)
 	ASSERT(ncg->nfs4prog2server[i] == np);
 
 	ncg->nfs4prog2server[i] = NULL;
+	ncg->nfs4prog2cbinfo[i] = NULL;
 
 	if (i < ncg->nfs4_program_hint)
 		ncg->nfs4_program_hint = i;
 
 	mutex_exit(&ncg->nfs4_cb_lock);
+	np->s_program = 0;
+	if (cbi != NULL)
+		nfs41_cbinfo_rele(cbi);
+}
+
+void
+nfs41_cbinfo_rele(struct nfs41_cb_info *cbi)
+{
+	mutex_enter(&cbi->cb_reflock);
+	cbi->cb_refcnt--;
+	if (cbi->cb_refcnt > 0) {
+		mutex_exit(&cbi->cb_reflock);
+		return;
+	}
+	mutex_exit(&cbi->cb_reflock);
+
+	if (cbi->cb_client) {
+		ASSERT(cbi->cb_cbconn_exit);
+		if (!(CLNT_CONTROL(cbi->cb_client,
+		    CLSET_BACKCHANNEL_CLEAR, NULL))) {
+			zcmn_err(getzoneid(), CE_WARN,
+			    "Failed To Clear Client Handle Callback %p",
+			    (void *)cbi->cb_client);
+		}
+		CLNT_DESTROY(cbi->cb_client);
+	}
+	mutex_destroy(&cbi->cb_cbconn_lock);
+	cv_destroy(&cbi->cb_destroy_wait);
+	cv_destroy(&cbi->cb_cbconn_wait);
+	mutex_destroy(&cbi->cb_reflock);
+	kmem_free(cbi, sizeof (*cbi));
 }
 
 /*
@@ -900,6 +1973,72 @@ nfs4_cb_args(nfs4_server_t *np, struct knetconfig *knc, SETCLIENTID4args *args)
 	np->s_program = pgm;
 
 	mutex_exit(&ncg->nfs4_cb_lock);
+}
+
+/*
+ * nfs4_cb_args - This function is used to construct the callback
+ * portion of the arguments needed for create_session.
+ */
+/* ARGSUSED */
+void
+nfs41_cb_args(nfs4_server_t *np, struct knetconfig *knc,
+	CREATE_SESSION4args *args)
+{
+	rpcprog_t pgm;
+	struct nfs4_callback_globals *ncg = np->zone_globals;
+	struct nfs41_cb_info	*cbi;
+
+	/*
+	 * This server structure may already have a program number
+	 * assigned to it.  This happens when the client has to
+	 * re-issue SETCLIENTID.  Just re-use the information.
+	 */
+	if (np->s_program >= NFS4_CALLBACK &&
+	    np->s_program < NFS4_CALLBACK + nfs4_num_prognums)
+		nfs4callback_destroy(np);
+
+	mutex_enter(&ncg->nfs4_cb_lock);
+
+	if ((pgm = nfs4_getnextprogram(ncg)) == 0) {
+		CB_WARN("nfs4_cb_args: out of program numbers\n");
+
+		args->csa_cb_program = 0;
+		args->csa_sec_parms.csa_sec_parms_len = 0;
+		args->csa_sec_parms.csa_sec_parms_val = NULL;
+		mutex_exit(&ncg->nfs4_cb_lock);
+		return;
+	}
+
+	if (ncg->nfs4prog2cbinfo[pgm-NFS4_CALLBACK] == NULL)
+		cbi = kmem_zalloc(sizeof (struct nfs41_cb_info), KM_SLEEP);
+	else
+		cbi = ncg->nfs4prog2cbinfo[pgm-NFS4_CALLBACK];
+
+	cbi->cb_prog = pgm;
+	cbi->cb_dispatch = cb_dispatch;
+
+	cv_init(&cbi->cb_destroy_wait, NULL, CV_DEFAULT, NULL);
+	mutex_init(&cbi->cb_reflock, NULL, MUTEX_DEFAULT, NULL);
+
+	cv_init(&cbi->cb_cbconn_wait, NULL, CV_DEFAULT, NULL);
+	mutex_init(&cbi->cb_cbconn_lock, NULL, MUTEX_DEFAULT, NULL);
+
+	/*
+	 * set cb_refcnt to 1, to account for it being in the
+	 * nfs4prog2cbinfo table
+	 */
+	cbi->cb_refcnt = 1;
+
+	ncg->nfs4prog2cbinfo[pgm-NFS4_CALLBACK] = cbi;
+	ncg->nfs4prog2server[pgm-NFS4_CALLBACK] = np;
+	np->s_program = pgm;
+	mutex_exit(&ncg->nfs4_cb_lock);
+
+	args->csa_cb_program = pgm;
+	args->csa_sec_parms.csa_sec_parms_len = 1;
+	args->csa_sec_parms.csa_sec_parms_val = (callback_sec_parms4 *)
+	    kmem_zalloc(sizeof (callback_sec_parms4), KM_SLEEP);
+	args->csa_sec_parms.csa_sec_parms_val->cb_secflavor = AUTH_NONE;
 }
 
 static int
@@ -1075,6 +2214,9 @@ nfs4_callback_init_zone(zoneid_t zoneid)
 
 	ncg->nfs4prog2server = kmem_zalloc(nfs4_num_prognums *
 	    sizeof (struct nfs4_server *), KM_SLEEP);
+
+	ncg->nfs4prog2cbinfo = kmem_zalloc(nfs4_num_prognums *
+	    sizeof (struct nfs4_cb_info *), KM_SLEEP);
 
 	/* initialize the dlist */
 	mutex_init(&ncg->nfs4_dlist_lock, NULL, MUTEX_DEFAULT, NULL);
@@ -1400,46 +2542,26 @@ nfs4delegreturn_save_lost_rqst(int error, nfs4_lost_rqst_t *lost_rqstp,
 }
 
 static void
-nfs4delegreturn_otw(rnode4_t *rp, cred_t *cr, nfs4_error_t *ep)
+nfs4delegreturn_otw(rnode4_t *rp, nfs4_call_t *cp, nfs4_error_t *ep)
 {
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	nfs_argop4 argops[3];
-	nfs4_ga_res_t *garp = NULL;
 	hrtime_t t;
-	int numops;
-	int doqueue = 1;
+	GETATTR4res *getattr_res;
 
-	args.ctag = TAG_DELEGRETURN;
-
-	numops = 3;		/* PUTFH, GETATTR, DELEGRETURN */
-
-	args.array = argops;
-	args.array_len = numops;
-
-	argops[0].argop = OP_CPUTFH;
-	argops[0].nfs_argop4_u.opcputfh.sfh = rp->r_fh;
-
-	argops[1].argop = OP_GETATTR;
-	argops[1].nfs_argop4_u.opgetattr.attr_request = NFS4_VATTR_MASK;
-	argops[1].nfs_argop4_u.opgetattr.mi = VTOMI4(RTOV4(rp));
-
-	argops[2].argop = OP_DELEGRETURN;
-	argops[2].nfs_argop4_u.opdelegreturn.deleg_stateid =
-	    rp->r_deleg_stateid;
+	/* PUTFH, GETATTR, DELEGRETURN */
+	(void) nfs4_op_cputfh(cp, rp->r_fh);
+	getattr_res = nfs4_op_getattr(cp, MI4_DEFAULT_ATTRMAP(cp->nc_mi));
+	(void) nfs4_op_delegreturn(cp, &rp->r_deleg_stateid);
 
 	t = gethrtime();
-	rfs4call(VTOMI4(RTOV4(rp)), &args, &res, cr, &doqueue, 0, ep);
+	rfs4call(cp, ep);
 
 	if (ep->error)
 		return;
 
-	if (res.status == NFS4_OK) {
-		garp = &res.array[1].nfs_resop4_u.opgetattr.ga_res;
-		nfs4_attr_cache(RTOV4(rp), garp, t, cr, TRUE, NULL);
-
+	if (cp->nc_res.status == NFS4_OK) {
+		nfs4_attr_cache(RTOV4(rp), &getattr_res->ga_res, t, cp->nc_cr,
+		    TRUE, NULL);
 	}
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
 }
 
 int
@@ -1450,14 +2572,16 @@ nfs4_do_delegreturn(rnode4_t *rp, int flags, cred_t *cr,
 	mntinfo4_t *mi = VTOMI4(vp);
 	nfs4_lost_rqst_t lost_rqst;
 	nfs4_recov_state_t recov_state;
-	bool_t needrecov = FALSE, recovonly, done = FALSE;
+	bool_t done = FALSE;
 	nfs4_error_t e = { 0, NFS4_OK, RPC_SUCCESS };
+	nfs4_call_t *cp;
 
 	ncg->nfs4_callback_stats.delegreturn.value.ui64++;
 
 	while (!done) {
-		e.error = nfs4_start_fop(mi, vp, NULL, OH_DELEGRETURN,
-		    &recov_state, &recovonly);
+		cp = nfs4_call_init(TAG_DELEGRETURN, OP_DELEGRETURN, OH_OTHER,
+		    TRUE, mi, NULL, NULL, cr);
+		e.error = nfs4_start_op(cp, &recov_state);
 
 		if (e.error) {
 			if (flags & NFS4_DR_FORCE) {
@@ -1477,11 +2601,12 @@ nfs4_do_delegreturn(rnode4_t *rp, int flags, cred_t *cr,
 		 */
 		if (rp->r_deleg_type == OPEN_DELEGATE_NONE) {
 			e.error = 0;
-			nfs4_end_op(mi, vp, NULL, &recov_state, needrecov);
+			nfs4_end_op(cp, &recov_state);
+			nfs4_call_rele(cp);
 			break;
 		}
 
-		if (recovonly) {
+		if (cp->nc_start_recov) {
 			/*
 			 * Delegation will be returned via the
 			 * recovery framework.  Build a lost request
@@ -1490,16 +2615,16 @@ nfs4_do_delegreturn(rnode4_t *rp, int flags, cred_t *cr,
 			nfs4_error_init(&e, EINTR);
 			nfs4delegreturn_save_lost_rqst(e.error, &lost_rqst,
 			    cr, vp);
-			(void) nfs4_start_recovery(&e, mi, vp,
-			    NULL, &rp->r_deleg_stateid,
-			    lost_rqst.lr_op == OP_DELEGRETURN ?
-			    &lost_rqst : NULL, OP_DELEGRETURN, NULL,
-			    NULL, NULL);
-			nfs4_end_op(mi, vp, NULL, &recov_state, needrecov);
+			if (lost_rqst.lr_op == OP_DELEGRETURN)
+				cp->nc_lost_rqst = &lost_rqst;
+			cp->nc_e = e;
+			(void) nfs4_start_recovery(cp);
+			nfs4_end_op(cp, &recov_state);
+			nfs4_call_rele(cp);
 			break;
 		}
 
-		nfs4delegreturn_otw(rp, cr, &e);
+		nfs4delegreturn_otw(rp, cp, &e);
 
 		/*
 		 * Ignore some errors on delegreturn; no point in marking
@@ -1507,25 +2632,27 @@ nfs4_do_delegreturn(rnode4_t *rp, int flags, cred_t *cr,
 		 */
 		if (e.error == 0 && (nfs4_recov_marks_dead(e.stat) ||
 		    e.stat == NFS4ERR_BADHANDLE ||
-		    e.stat == NFS4ERR_STALE))
-			needrecov = FALSE;
-		else
-			needrecov = nfs4_needs_recovery(&e, TRUE, vp->v_vfsp);
+		    e.stat == NFS4ERR_STALE)) {
+			cp->nc_needs_recovery = FALSE;
+		} else {
+			cp->nc_e = e;
+			nfs4_needs_recovery(cp);
+		}
 
-		if (needrecov) {
+		if (cp->nc_needs_recovery) {
 			nfs4delegreturn_save_lost_rqst(e.error, &lost_rqst,
 			    cr, vp);
-			(void) nfs4_start_recovery(&e, mi, vp,
-			    NULL, &rp->r_deleg_stateid,
-			    lost_rqst.lr_op == OP_DELEGRETURN ?
-			    &lost_rqst : NULL, OP_DELEGRETURN, NULL,
-			    NULL, NULL);
+			if (lost_rqst.lr_op == OP_DELEGRETURN)
+				cp->nc_lost_rqst = &lost_rqst;
+			cp->nc_e = e;
+			(void) nfs4_start_recovery(cp);
 		} else {
 			nfs4delegreturn_cleanup_impl(rp, NULL, ncg);
 			done = TRUE;
 		}
 
-		nfs4_end_op(mi, vp, NULL, &recov_state, needrecov);
+		nfs4_end_op(cp, &recov_state);
+		nfs4_call_rele(cp);
 	}
 	return (e.error);
 }
@@ -1539,6 +2666,8 @@ nfs4_resend_delegreturn(nfs4_lost_rqst_t *lorp, nfs4_error_t *ep,
 	nfs4_server_t *np)
 {
 	rnode4_t *rp = VTOR4(lorp->lr_vp);
+	mntinfo4_t *mi = VTOMI4(RTOV4(rp));
+	nfs4_call_t *cp;
 
 	/* If the file failed recovery, just quit. */
 	mutex_enter(&rp->r_statelock);
@@ -1547,8 +2676,11 @@ nfs4_resend_delegreturn(nfs4_lost_rqst_t *lorp, nfs4_error_t *ep,
 	}
 	mutex_exit(&rp->r_statelock);
 
+	cp = nfs4_call_init(TAG_DELEGRETURN, OP_DELEGRETURN, OH_OTHER, TRUE,
+	    mi, NULL, NULL, lorp->lr_cr);
+
 	if (!ep->error)
-		nfs4delegreturn_otw(rp, lorp->lr_cr, ep);
+		nfs4delegreturn_otw(rp, cp, ep);
 
 	/*
 	 * If recovery is now needed, then return the error
@@ -1556,12 +2688,17 @@ nfs4_resend_delegreturn(nfs4_lost_rqst_t *lorp, nfs4_error_t *ep,
 	 * including re-driving another delegreturn.  Otherwise,
 	 * just give up and clean up the delegation.
 	 */
-	if (nfs4_needs_recovery(ep, TRUE, lorp->lr_vp->v_vfsp))
+	cp->nc_e = *ep;
+	nfs4_needs_recovery(cp);
+	if (cp->nc_needs_recovery) {
+		nfs4_call_rele(cp);
 		return;
+	}
 
 	if (rp->r_deleg_type != OPEN_DELEGATE_NONE)
 		nfs4delegreturn_cleanup(rp, np);
 
+	nfs4_call_rele(cp);
 	nfs4_error_zinit(ep);
 }
 
@@ -1883,11 +3020,11 @@ deleg_reopen(vnode_t *vp, bool_t *recovp, struct nfs4_callback_globals *ncg,
 {
 	nfs4_open_stream_t *osp;
 	nfs4_recov_state_t recov_state;
-	bool_t needrecov = FALSE;
 	mntinfo4_t *mi;
 	rnode4_t *rp;
 	nfs4_error_t e = { 0, NFS4_OK, RPC_SUCCESS };
 	int claimnull;
+	nfs4_call_t *cp;
 
 	mi = VTOMI4(vp);
 	rp = VTOR4(vp);
@@ -1896,7 +3033,10 @@ deleg_reopen(vnode_t *vp, bool_t *recovp, struct nfs4_callback_globals *ncg,
 	recov_state.rs_num_retry_despite_err = 0;
 
 retry:
-	if ((e.error = nfs4_start_op(mi, vp, NULL, &recov_state)) != 0) {
+	cp = nfs4_call_init(0, OP_OPEN, OH_OTHER, TRUE, mi, vp, NULL, CRED());
+
+	if ((e.error = nfs4_start_op(cp, &recov_state)) != 0) {
+		nfs4_call_rele(cp);
 		return (e.error);
 	}
 
@@ -1926,7 +3066,9 @@ retry:
 		}
 
 		if (e.error == EAGAIN) {
-			nfs4_end_op(mi, vp, NULL, &recov_state, TRUE);
+			cp->nc_needs_recovery = TRUE;
+			nfs4_end_op(cp, &recov_state);
+			nfs4_call_rele(cp);
 			goto retry;
 		}
 
@@ -1940,9 +3082,10 @@ retry:
 			break;
 		}
 
-		needrecov = nfs4_needs_recovery(&e, TRUE, vp->v_vfsp);
+		cp->nc_e = e;
+		nfs4_needs_recovery(cp);
 
-		if (e.error != 0 && !needrecov) {
+		if (e.error != 0 && !cp->nc_needs_recovery) {
 			/*
 			 * Recovery is not possible, but don't give up yet;
 			 * we'd still like to do delegreturn after
@@ -1952,13 +3095,12 @@ retry:
 
 			ncg->nfs4_callback_stats.recall_failed.value.ui64++;
 
-		} else if (needrecov) {
+		} else if (cp->nc_needs_recovery) {
 			/*
 			 * Start recovery and bail out.  The recovery
 			 * thread will take it from here.
 			 */
-			(void) nfs4_start_recovery(&e, mi, vp, NULL, NULL,
-			    NULL, OP_OPEN, NULL, NULL, NULL);
+			(void) nfs4_start_recovery(cp);
 			open_stream_rele(osp, rp);
 			*recovp = TRUE;
 			break;
@@ -1967,7 +3109,8 @@ retry:
 		open_stream_rele(osp, rp);
 	}
 
-	nfs4_end_op(mi, vp, NULL, &recov_state, needrecov);
+	nfs4_end_op(cp, &recov_state);
+	nfs4_call_rele(cp);
 
 	return (e.error);
 }
@@ -2320,7 +3463,7 @@ nfs4_delegation_accept(rnode4_t *rp, open_claim_type4 claim, OPEN4res *res,
 			else
 				dr_flags = NFS4_DR_PUSH|NFS4_DR_DISCARD;
 
-			nfs4_dlistadd(rp, ncg, dr_flags);
+			nfs4_dlistadd(rp, dr_flags);
 			dr_flags = 0;
 		} else {
 			/*
@@ -2455,11 +3598,14 @@ wait_for_recall(vnode_t *vp1, vnode_t *vp2, nfs4_op_hint_t op,
  * nfs4_dlistadd - Add this rnode to a list of rnodes to be
  * DELEGRETURN'd at the end of recovery.
  */
-
-static void
-nfs4_dlistadd(rnode4_t *rp, struct nfs4_callback_globals *ncg, int flags)
+void
+nfs4_dlistadd(rnode4_t *rp, int flags)
 {
 	struct nfs4_dnode *dp;
+	struct nfs4_callback_globals *ncg;
+
+	ncg = zone_getspecific(nfs4_callback_zone_key, nfs_zone());
+	ASSERT(ncg != NULL);
 
 	ASSERT(mutex_owned(&rp->r_statev4_lock));
 	/*

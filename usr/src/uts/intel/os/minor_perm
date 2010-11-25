@@ -4,3 +4,4 @@ asy:* 0666 root sys
 asy:*,cu 0600 uucp uucp
 md:* 0640 root sys
 md:admin 0644 root sys
+dserv:* 0666 root sys

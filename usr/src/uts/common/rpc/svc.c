@@ -575,8 +575,14 @@ svc_pool_register(struct svc_globals *svc, SVCPOOL *pool, int id)
 	 */
 	mutex_enter(&svc->svc_plock);
 
-	if (old_pool = svc_pool_find(svc, id))
+	if (id == UNIQUE_SVCPOOL_ID) {
+		for (old_pool = svc_pool_find(svc, id);
+		    old_pool != NULL;
+		    old_pool = svc_pool_find(svc, id))
+			++id;
+	} if (old_pool = svc_pool_find(svc, id)) {
 		svc_pool_unregister(svc, old_pool);
+	}
 
 	/* Insert into the doubly linked list */
 	pool->p_id = id;
@@ -702,6 +708,7 @@ svc_pool_create(struct svcpool_args *args)
 
 	/* Register the pool with the global pool list */
 	svc_pool_register(svc, pool, args->id);
+	args->id = pool->p_id;
 
 	return (0);
 }
@@ -1448,6 +1455,15 @@ svc_clone_init(void)
 	clone_xprt = kmem_zalloc(sizeof (SVCXPRT), KM_SLEEP);
 	clone_xprt->xp_cred = crget();
 	return (clone_xprt);
+}
+
+void
+svc_init_clone_xprt(SVCXPRT *clone_xprt, queue_t *wq)
+{
+	extern struct svc_ops svc_cots_op;
+	clone_xprt->xp_ops = &svc_cots_op;
+	clone_xprt->xp_wq = wq;
+
 }
 
 /*

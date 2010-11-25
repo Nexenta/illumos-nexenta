@@ -211,7 +211,9 @@ get_usage(zfs_help_t idx)
 		return (gettext("\tcreate [-p] [-o property=value] ... "
 		    "<filesystem>\n"
 		    "\tcreate [-ps] [-b blocksize] [-o property=value] ... "
-		    "-V <size> <volume>\n"));
+		    "-V <size> <volume>\n"
+		    "\tcreate [-o property=value] -t pnfsdata "
+		    "<pnfsdata>\n"));
 	case HELP_DESTROY:
 		return (gettext("\tdestroy [-fnpRrv] <filesystem|volume>\n"
 		    "\tdestroy [-dnpRrv] "
@@ -232,7 +234,7 @@ get_usage(zfs_help_t idx)
 		return (gettext("\tlist [-rH][-d max] "
 		    "[-o property[,...]] [-t type[,...]] [-s property] ...\n"
 		    "\t    [-S property] ... "
-		    "[filesystem|volume|snapshot] ...\n"));
+		    "[filesystem|volume|snapshot|pnfsdata] ...\n"));
 	case HELP_MOUNT:
 		return (gettext("\tmount\n"
 		    "\tmount [-vO] [-o opts] <-a | filesystem>\n"));
@@ -680,6 +682,10 @@ usage:
  * SPA_VERSION_REFRESERVATION, we set a refreservation instead.
  *
  * The '-p' flag creates all the non-existing ancestors of the target first.
+ *
+ * The '-t' flag allows the user to input a dataset type.  This will be used
+ * to specify the creation of a pNFS dataset, and indicates that the dataset
+ * being created will be used as for storing data in a pNFS configuration.
  */
 static int
 zfs_do_create(int argc, char **argv)
@@ -700,7 +706,7 @@ zfs_do_create(int argc, char **argv)
 		nomem();
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":V:b:so:p")) != -1) {
+	while ((c = getopt(argc, argv, ":V:b:so:t:p")) != -1) {
 		switch (c) {
 		case 'V':
 			type = ZFS_TYPE_VOLUME;
@@ -715,6 +721,15 @@ zfs_do_create(int argc, char **argv)
 			    zfs_prop_to_name(ZFS_PROP_VOLSIZE), intval) != 0)
 				nomem();
 			volsize = intval;
+			break;
+		case 't':
+			/* Validate type - the only valid type is pnfsdata */
+			if (strcmp("pnfsdata", optarg) != 0) {
+				(void) fprintf(stderr, gettext("bad type "
+				    "'%s'\n"), optarg);
+				goto error;
+			}
+			type = ZFS_TYPE_PNFS;
 			break;
 		case 'p':
 			parents = B_TRUE;
@@ -755,6 +770,17 @@ zfs_do_create(int argc, char **argv)
 		(void) fprintf(stderr, gettext("'-s' and '-b' can only be "
 		    "used when creating a volume\n"));
 		goto badusage;
+	}
+
+	/*
+	 * We don't allow the -p (create parent) option
+	 * to be specified with creation of a pNFS dataset.
+	 */
+	if (type == ZFS_TYPE_PNFS && parents) {
+		(void) fprintf(stderr, gettext("-p option not "
+		    "supported with creation of pNFS dataset\n"));
+		nvlist_free(props);
+		return (1);
 	}
 
 	argc -= optind;
@@ -2970,7 +2996,8 @@ zfs_do_list(int argc, char **argv)
 			flags &= ~ZFS_ITER_PROP_LISTSNAPS;
 			while (*optarg != '\0') {
 				static char *type_subopts[] = { "filesystem",
-				    "volume", "snapshot", "all", NULL };
+				    "volume", "snapshot", "pnfsdata", "all",
+				    NULL };
 
 				switch (getsubopt(&optarg, type_subopts,
 				    &value)) {
@@ -2984,9 +3011,11 @@ zfs_do_list(int argc, char **argv)
 					types |= ZFS_TYPE_SNAPSHOT;
 					break;
 				case 3:
+					types |= ZFS_TYPE_PNFS;
+					break;
+				case 4:
 					types = ZFS_TYPE_DATASET;
 					break;
-
 				default:
 					(void) fprintf(stderr,
 					    gettext("invalid type '%s'\n"),

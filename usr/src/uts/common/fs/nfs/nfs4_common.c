@@ -194,13 +194,15 @@ nfs4_setopts(vnode_t *vp, model_t model, struct nfs_args *buf)
 int
 nfs4_need_to_bump_seqid(COMPOUND4res_clnt *res)
 {
-	int i, seqid_dep_op = 0;
-	nfs_resop4 *resop;
+	COMPOUND4node_clnt *nodep;
+	uint32_t len;
+	int seqid_dep_op = 0;
 
-	resop = res->array;
-
-	for (i = 0; i < res->array_len; i++) {
-		switch (resop[i].resop) {
+	len = 0;
+	for (nodep = list_head(&res->argsp->args);
+	    nodep != NULL && len < res->decode_len;
+	    nodep = list_next(&res->argsp->args, nodep)) {
+		switch (nodep->res.resop) {
 		case OP_CLOSE:
 		case OP_OPEN:
 		case OP_OPEN_CONFIRM:
@@ -212,6 +214,7 @@ nfs4_need_to_bump_seqid(COMPOUND4res_clnt *res)
 		default:
 			continue;
 		}
+		len++;
 	}
 
 	if (!seqid_dep_op)
@@ -521,6 +524,44 @@ nfs4_op_to_str(nfs_opnum4 op)
 		return ("OP_WRITE");
 	case OP_RELEASE_LOCKOWNER:
 		return ("OP_RELEASE_LOCKOWNER");
+	case OP_BACKCHANNEL_CTL:
+		return ("OP_BACKCHANNEL_CTL");
+	case OP_BIND_CONN_TO_SESSION:
+		return ("OP_BIND_CONN_TO_SESSION");
+	case OP_EXCHANGE_ID:
+		return ("OP_EXCHANGEID");
+	case OP_CREATE_SESSION:
+		return ("OP_CREATE_SESSION");
+	case OP_DESTROY_SESSION:
+		return ("OP_DESTROY_SESSION");
+	case OP_FREE_STATEID:
+		return ("OP_FREE_STATEID");
+	case OP_GET_DIR_DELEGATION:
+		return ("OP_GET_DIR_DELEGATION");
+	case OP_GETDEVICEINFO:
+		return ("OP_GETDEVICEINFO");
+	case OP_GETDEVICELIST:
+		return ("OP_GETDEVICELIST");
+	case OP_LAYOUTCOMMIT:
+		return ("OP_LAYOUTCOMMIT");
+	case OP_LAYOUTGET:
+		return ("OP_LAYOUTGET");
+	case OP_LAYOUTRETURN:
+		return ("OP_LAYOUTRETURN");
+	case OP_SECINFO_NO_NAME:
+		return ("OP_SECINFO_NO_NAME");
+	case OP_SEQUENCE:
+		return ("OP_SEQUENCE");
+	case OP_SET_SSV:
+		return ("OP_SET_SSV");
+	case OP_TEST_STATEID:
+		return ("OP_TEST_STATEID");
+	case OP_WANT_DELEGATION:
+		return ("OP_WANT_DELEGATION");
+	case OP_DESTROY_CLIENTID:
+		return ("OP_DESTROY_CLIENTID");
+	case OP_RECLAIM_COMPLETE:
+		return ("OP_RECLAIM_COMPLETE");
 	case OP_ILLEGAL:
 		return ("OP_ILLEGAL");
 	default:

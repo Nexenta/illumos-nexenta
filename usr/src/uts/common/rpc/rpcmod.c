@@ -72,6 +72,7 @@
 #include <rpc/svc.h>
 #include <rpc/rpcsys.h>
 #include <rpc/rpc_rdma.h>
+#include <sys/sdt.h>
 
 /*
  * This is the loadable module wrapper.
@@ -418,6 +419,7 @@ typedef struct mir_s {
 	kmutex_t	mir_mutex;	/* Mutex and condvar for close */
 	kcondvar_t	mir_condvar;	/* synchronization. */
 	kcondvar_t	mir_timer_cv;	/* Timer routine sync. */
+	void		*mir_cb;	/* For callbacks */
 } mir_t;
 
 void tmp_rput(queue_t *q, mblk_t *mp);
@@ -1098,6 +1100,7 @@ static void	mir_wsrv(queue_t *q);
 static	void	mir_disconnect(queue_t *, mir_t *ir);
 static	int	mir_check_len(queue_t *, int32_t, mblk_t *);
 static	void	mir_timer(void *);
+static	void	mir_callback_thread(SVCCB *);
 
 extern void	(*mir_rele)(queue_t *, mblk_t *);
 extern void	(*mir_start)(queue_t *);
@@ -1117,6 +1120,239 @@ extern	uint_t	*svc_max_msg_sizep;
 uint_t	clnt_max_msg_size = RPC_MAXDATASIZE;
 uint_t	svc_max_msg_size = RPC_MAXDATASIZE;
 uint_t	mir_krpc_cell_null;
+
+
+static void
+mir_callback_server(SVCCB *svc_cb)
+{
+	callb_cpr_t	cprinfo;
+	kmutex_t	cpr_lock;
+
+	mutex_init(&cpr_lock, NULL, MUTEX_DEFAULT, NULL);
+	CALLB_CPR_INIT(&cprinfo, &cpr_lock, callb_generic_cpr,
+	    "mir_callback_server");
+
+	mutex_enter(&svc_cb->r_lock);
+
+	while (!(svc_cb->r_flags & SVCCB_NFS41_CB_THREAD_EXIT)) {
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_BEGIN(&cprinfo);
+		mutex_exit(&cpr_lock);
+
+		cv_wait(&svc_cb->r_cbwait, &svc_cb->r_lock);
+
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_END(&cprinfo, &cpr_lock);
+		mutex_exit(&cpr_lock);
+
+		if (svc_cb->r_flags & SVCCB_NFS41_CB_THREAD_EXIT)
+			break;
+		svc_cb->r_tcount++;
+		zthread_create(NULL, 0, mir_callback_thread, svc_cb, 0,
+		    minclsyspri);
+	}
+
+	/*
+	 * If thread count is not zero, there are worker threads active.
+	 * The last worker thread will signal the mir_clear_cbinfo()
+	 * thread on completion.
+	 */
+	if (svc_cb->r_tcount == 0) {
+		mutex_exit(&svc_cb->r_lock);
+		cv_signal(&svc_cb->r_cbexit);
+	} else {
+		mutex_exit(&svc_cb->r_lock);
+	}
+
+	mutex_enter(&cpr_lock);
+	CALLB_CPR_EXIT(&cprinfo);
+
+	zthread_exit();
+
+}
+
+static void
+mir_callback_thread(SVCCB *svc_cb)
+{
+	SVCXPRT		*clone_xprt;
+	struct rpc_msg	msg;
+	struct svc_req	r;
+	char		*cred_area;
+	int		rqcred_size = 400;	/* RQCRED_SIZE */
+	mblk_t		*mp;
+	queue_t		*q;
+	SVC_DISPATCH	*cb_dispatch;
+
+	mutex_enter(&svc_cb->r_lock);
+	mp = svc_cb->r_mp;
+	svc_cb->r_mp = mp->b_next;
+	mp->b_next = (mblk_t *)0;
+	q = svc_cb->r_q;
+	cb_dispatch = svc_cb->r_dispatch;
+	mutex_exit(&svc_cb->r_lock);
+
+	clone_xprt = svc_clone_init();
+
+	svc_init_clone_xprt(clone_xprt, q);
+	clone_xprt->xp_master = NULL;
+	clone_xprt->xp_msg_size = 2048; /* COTS_MAX_ALLOCSIZE */
+	cred_area = kmem_zalloc(2 * MAX_AUTH_BYTES + rqcred_size,
+	    KM_SLEEP);
+	msg.rm_call.cb_cred.oa_base = cred_area;
+	msg.rm_call.cb_verf.oa_base = &(cred_area[MAX_AUTH_BYTES]);
+	r.rq_clntcred = &(cred_area[2 * MAX_AUTH_BYTES]);
+
+	/*
+	 * underlying transport recv routine may modify mblk data
+	 * and make it difficult to extract label afterwards. So
+	 * get the label from the raw mblk data now.
+	 */
+	if (is_system_labeled()) {
+		mblk_t *lmp;
+
+		r.rq_label = kmem_alloc(sizeof (bslabel_t), KM_NOSLEEP);
+		if (r.rq_label == NULL) {
+			freemsg(mp);
+			goto done;
+		}
+		if (DB_CRED(mp) != NULL)
+			lmp = mp;
+		else {
+			ASSERT(mp->b_cont != NULL);
+			lmp = mp->b_cont;
+			ASSERT(DB_CRED(lmp) != NULL);
+		}
+		bcopy(label2bslabel(crgetlabel(DB_CRED(lmp))),
+		    r.rq_label, sizeof (bslabel_t));
+	} else {
+		r.rq_label = NULL;
+	}
+
+	/*
+	 * Now receive the message.
+	 */
+	if (SVC_RECV(clone_xprt, mp, &msg)) {
+
+		bool_t no_dispatch;
+		enum auth_stat why;
+
+		/*
+		 * Find the registered program and call its
+		 * dispatch routine.
+		 */
+		r.rq_xprt = clone_xprt;
+		r.rq_prog = msg.rm_call.cb_prog;
+		r.rq_vers = msg.rm_call.cb_vers;
+		r.rq_proc = msg.rm_call.cb_proc;
+		r.rq_cred = msg.rm_call.cb_cred;
+
+		if ((why = sec_svc_msg(&r, &msg, &no_dispatch)) !=
+		    AUTH_OK) {
+			svcerr_auth(clone_xprt, why);
+			(void) SVC_FREEARGS(clone_xprt, NULL, NULL);
+		} else if (no_dispatch) {
+			(void) SVC_FREEARGS(clone_xprt, NULL, NULL);
+		} else {
+			(*cb_dispatch) (&r, clone_xprt);
+			(void) SVC_FREEARGS(clone_xprt, NULL, NULL);
+		}
+		if (r.rq_cred.oa_flavor == RPCSEC_GSS)
+			rpc_gss_cleanup(clone_xprt);
+	}
+	if (r.rq_label != NULL)
+		kmem_free(r.rq_label, sizeof (bslabel_t));
+
+done:
+
+	/*
+	 * If thread count is 0 and the callback server existed,
+	 * signal the thread waiting on our exit.
+	 */
+	mutex_enter(&svc_cb->r_lock);
+	svc_cb->r_tcount--;
+	if ((svc_cb->r_flags & SVCCB_NFS41_CB_THREAD_EXIT) &&
+	    (svc_cb->r_tcount == 0)) {
+		mutex_exit(&svc_cb->r_lock);
+		cv_signal(&svc_cb->r_cbexit);
+	} else {
+		mutex_exit(&svc_cb->r_lock);
+	}
+
+	zthread_exit();
+}
+
+void
+mir_set_cbinfo(queue_t *wq, void *info)
+{
+
+	CBSERVER_ARGS	*cbsrv_args = (CBSERVER_ARGS *)info;
+	mir_t	*mir = (mir_t *)wq->q_ptr;
+	SVCCB *scb;
+
+	scb = kmem_zalloc(sizeof (SVCCB), KM_SLEEP);
+	mutex_enter(&mir->mir_mutex);
+	if (mir->mir_cb != NULL) {
+		/* shouldn't this be an ASSERT? */
+		cmn_err(CE_WARN, "mir_set_cbinfo: scb != NULL");
+		kmem_free(mir->mir_cb, sizeof (SVCCB));
+		mir->mir_cb = NULL;
+	}
+	mutex_init(&scb->r_lock, NULL, MUTEX_DEFAULT, NULL);
+	cv_init(&scb->r_cbwait, NULL, CV_DEFAULT, NULL);
+	cv_init(&scb->r_cbexit, NULL, CV_DEFAULT, NULL);
+	scb->r_prog = cbsrv_args->prog;
+	scb->r_dispatch = cbsrv_args->callback;
+	scb->r_q = wq;
+	mir->mir_cb = scb;
+
+	scb->r_thread =
+	    zthread_create(NULL, 0, mir_callback_server, scb, 0, minclsyspri);
+	ASSERT(scb->r_thread != NULL);
+	mutex_exit(&mir->mir_mutex);
+}
+
+void
+mir_clear_cbinfo(queue_t *wq)
+{
+	mir_t	*mir = (mir_t *)wq->q_ptr;
+	SVCCB	*scb;
+
+	mutex_enter(&mir->mir_mutex);
+	scb = mir->mir_cb;
+	if (scb == NULL) {
+		mutex_exit(&mir->mir_mutex);
+		return;
+	}
+
+	mir->mir_cb = NULL;
+	mutex_exit(&mir->mir_mutex);
+
+	mutex_enter(&scb->r_lock);
+	scb->r_flags |= SVCCB_NFS41_CB_THREAD_EXIT;
+	cv_signal(&scb->r_cbwait);
+
+	cv_wait(&scb->r_cbexit, &scb->r_lock);
+	mutex_exit(&scb->r_lock);
+	mutex_destroy(&scb->r_lock);
+	cv_destroy(&scb->r_cbwait);
+	cv_destroy(&scb->r_cbexit);
+	kmem_free(scb, sizeof (SVCCB));
+}
+
+void
+mir_check_cb(void *handlecb, queue_t *wq)
+{
+	ASSERT(handlecb == ((mir_t *)wq->q_ptr)->mir_cb);
+}
+
+
+SVCCB *
+mir_get_svccb(queue_t *wq)
+{
+	mir_t	*mir;
+	mir = (mir_t *)wq->q_ptr;
+	return ((SVCCB *)mir->mir_cb);
+}
 
 static void
 mir_timer_stop(mir_t *mir)
@@ -1254,6 +1490,10 @@ mir_close(queue_t *q)
 		}
 
 		mutex_exit(&mir->mir_mutex);
+		/*
+		 * Destroy the cm_entry
+		 */
+		connmgr_cb_destroy(WR(q));
 		qprocsoff(q);
 
 		/* Notify KRPC that this stream is going away. */
@@ -1262,6 +1502,9 @@ mir_close(queue_t *q)
 		mutex_exit(&mir->mir_mutex);
 		qprocsoff(q);
 	}
+
+	if (mir->mir_cb)
+		mir_clear_cbinfo(q);
 
 	mutex_destroy(&mir->mir_mutex);
 	cv_destroy(&mir->mir_condvar);
@@ -1399,6 +1642,114 @@ mir_open(queue_t *q, dev_t *devp, int flag, int sflag, cred_t *credp)
 	qprocson(q);
 	return (0);
 }
+void
+mir_queue_rele(queue_t *q)
+{
+	mir_t	*mir;
+
+	ASSERT(q != NULL);
+	mir = (mir_t *)q->q_ptr;
+	ASSERT(mir != NULL);
+
+	mutex_enter(&mir->mir_mutex);
+	mir->mir_ref_cnt--;
+
+	/*
+	 * Wake up the thread waiting to close.
+	 */
+
+	if ((mir->mir_ref_cnt == 0) && mir->mir_closing)
+		cv_signal(&mir->mir_condvar);
+
+	mutex_exit(&mir->mir_mutex);
+}
+
+void
+mir_queue_hold(queue_t *q)
+{
+	mir_t	*mir;
+
+	ASSERT(q != NULL);
+	mir = (mir_t *)q->q_ptr;
+	ASSERT(mir != NULL);
+
+	mutex_enter(&mir->mir_mutex);
+	mir->mir_ref_cnt++;
+	mutex_exit(&mir->mir_mutex);
+}
+
+/*
+ * Copy out the RPC transaction id and RPC Direction
+ * from the mblk chain. Leave the mblk intact.
+ */
+bool_t
+mir_dir_xid(mblk_t *mp, uint32_t *dir, uint32_t *xid)
+{
+	unsigned char	*p;
+	unsigned char	*rptr;
+	mblk_t		*tmp;
+	int		 i, get_rpcdir;
+	uint32_t	 d_tmp = 0;
+
+	/*
+	 * If we can just grab the XID and RPC direction flag great.
+	 */
+	if ((IS_P2ALIGNED(mp->b_rptr, (sizeof (uint64_t)))) &&
+	    (mp->b_wptr - mp->b_rptr) >= (sizeof (uint64_t))) {
+		*xid = *((uint32_t *)mp->b_rptr);
+		*dir = ntohl(*((uint32_t *)(mp->b_rptr + sizeof (uint32_t))));
+		return (TRUE);
+	}
+
+	/*
+	 * Otherwise we need to copy byte-by-byte
+	 */
+	DTRACE_PROBE(krpc__i__bytecopy);
+
+	i = get_rpcdir = 0;
+	p = (unsigned char *)xid;
+	tmp = mp;
+
+	/*
+	 * While we have not exhausted the entire mblk chain:
+	 * copy the first sizeof uint32_t value into xid, and
+	 * then the second sizeof uint32_t value into a temporary
+	 * so that we can convert from network byte order.
+	 *
+	 * Should we exhaust the entire mblk chain in attempting
+	 * to do this, return FALSE.
+	 */
+	while (tmp) {
+		rptr = tmp->b_rptr;
+		while (rptr < tmp->b_wptr) {
+			*p++ = *rptr++;
+			/*
+			 * Have we collected enough bytes for
+			 * a uint32_t ?
+			 */
+			if (++i == sizeof (uint32_t)) {
+				/*
+				 * If yes, do we need to switch to
+				 * RPC Direction or are we all done ?
+				 */
+				if (get_rpcdir) {
+					/* Got it all */
+					*dir = ntohl(d_tmp);
+					return (TRUE);
+				}
+				/* start to collect RPC Direction */
+				get_rpcdir++;
+				i = 0;
+				p = (unsigned char *)&d_tmp;
+			}
+		}
+		tmp = tmp->b_cont;
+	}
+
+	/* We didn't get both of them.. */
+	DTRACE_PROBE(krpc__e__mblk_exhausted);
+	return (FALSE);
+}
 
 /*
  * Read-side put routine for both the client and server side.  Does the
@@ -1413,6 +1764,8 @@ mir_rput(queue_t *q, mblk_t *mp)
 	mblk_t	*cont_mp, *head_mp, *tail_mp, *mp1;
 	mir_t	*mir = q->q_ptr;
 	boolean_t stop_timer = B_FALSE;
+	uint32_t	xid;
+	uint32_t	dir;
 
 	ASSERT(mir != NULL);
 
@@ -1609,35 +1962,102 @@ mir_rput(queue_t *q, mblk_t *mp)
 		frag_header = 0;
 
 		/*
+		 * Get msg direction and handle to the appropriate ctxt
+		 */
+		if (!mir_dir_xid(head_mp, &dir, &xid)) {
+			/* XXX - if we can't get the dir, we're hosed */
+			mutex_exit(&mir->mir_mutex);
+			freemsg(head_mp);
+			return;
+		}
+
+		/*
 		 * We've got a complete RPC message; pass it to the
 		 * appropriate consumer.
 		 */
 		switch (mir->mir_type) {
 		case RPC_CLIENT:
-			if (clnt_dispatch_notify(head_mp, mir->mir_zoneid)) {
-				/*
-				 * Mark this stream as active.  This marker
-				 * is used in mir_timer().
-				 */
-				mir->mir_clntreq = 1;
-				mir->mir_use_timestamp = ddi_get_lbolt();
-			} else {
-				freemsg(head_mp);
+			switch (dir) {
+			case REPLY:
+				if (clnt_dispatch_notify(head_mp,
+				    mir->mir_zoneid, xid)) {
+					/*
+					 * Mark this stream as active.
+					 * This marker is used in mir_timer().
+					 */
+					mir->mir_clntreq = 1;
+					mir->mir_use_timestamp = ddi_get_lbolt();
+				} else
+					freemsg(head_mp);
+				break;
+
+			case CALL:
+				/* client is now a callback server */
+			default:
+			{
+				SVCCB	*svccb;
+				ASSERT(dir == CALL);
+
+				svccb = (SVCCB *)mir->mir_cb;
+				if (svccb != NULL) {
+					mutex_enter(&svccb->r_lock);
+					if (!(svccb->r_flags &
+					    SVCCB_NFS41_CB_THREAD_EXIT)) {
+						/*
+						 * Queue the message and signal
+						 * the callback server.
+						 */
+						if (svccb->r_mp != NULL)
+							svccb->r_mp->b_next =
+							    head_mp;
+						else
+							svccb->r_mp = head_mp;
+
+						cv_signal(&svccb->r_cbwait);
+					} else {
+						freemsg(head_mp);
+					}
+					mutex_exit(&svccb->r_lock);
+				} else {
+					freemsg(head_mp);
+				}
+				break;
+			}
+
 			}
 			break;
 
 		case RPC_SERVER:
-			/*
-			 * Check for flow control before passing the
-			 * message to KRPC.
-			 */
-			if (!mir->mir_hold_inbound) {
-				if (mir->mir_krpc_cell) {
+			switch (dir) {
+			case REPLY:
+				/*
+				 * RPC Server initiated a Callback RPC and
+				 * is receiving a reply from the RPC Client.
+				 */
+				if (clnt_dispatch_notify(head_mp,
+				    global_zone->zone_id, xid)) {
+					/*
+					 * Mark this stream as active.
+					 * This marker is used in mir_timer().
+					 */
+					mir->mir_clntreq = 0;
+				} else
+					freemsg(head_mp);
+				break;
+
+			case CALL:
+			default:
+				/*
+				 * Check for flow control before
+				 * passing the message to KRPC.
+				 */
+				if (!mir->mir_hold_inbound) {
+					if (mir->mir_krpc_cell) {
 					/*
 					 * If the reference count is 0
 					 * (not including this request),
 					 * then the stream is transitioning
-					 * from idle to non-idle.  In this case,
+					 * from idle to non-idle. In this case,
 					 * we cancel the idle timer.
 					 */
 					if (mir->mir_ref_cnt++ == 0)
@@ -1646,26 +2066,31 @@ mir_rput(queue_t *q, mblk_t *mp)
 					    (int32_t)msgdsize(mp), mp))
 						return;
 					svc_queuereq(q, head_mp); /* to KRPC */
-				} else {
+					} else {
 					/*
-					 * Count # of times this happens. Should
-					 * be never, but experience shows
-					 * otherwise.
+					 * Count # of times this happens.
+					 * Should be never, but experience
+					 * shows otherwise.
 					 */
 					mir_krpc_cell_null++;
 					freemsg(head_mp);
+					}
+
+				} else {
+					/*
+					 * If the outbound side of the stream
+					 * is flow controlled, then hold this
+					 * message until client catches up.
+					 * mir_hold_inbound is set in mir_wput
+					 * and cleared in mir_wsrv.
+					 */
+					(void) putq(q, head_mp);
+					mir->mir_inrservice = B_TRUE;
 				}
-			} else {
-				/*
-				 * If the outbound side of the stream is
-				 * flow controlled, then hold this message
-				 * until client catches up. mir_hold_inbound
-				 * is set in mir_wput and cleared in mir_wsrv.
-				 */
-				(void) putq(q, head_mp);
-				mir->mir_inrservice = B_TRUE;
+				break;
 			}
-			break;
+			break; /* RPC_SERVER */
+
 		default:
 			RPCLOG(1, "mir_rput: unknown mir_type %d\n",
 			    mir->mir_type);
@@ -1855,6 +2280,7 @@ mir_rput_proto(queue_t *q, mblk_t *mp)
 
 			if (mir->mir_listen_stream)
 				break;
+
 
 			mutex_enter(&mir->mir_mutex);
 
@@ -2395,9 +2821,11 @@ printf("mir_timer[%d]: doing client timeout\n", now / hz);
 static void
 mir_wput(queue_t *q, mblk_t *mp)
 {
-	uint_t	frag_header;
-	mir_t	*mir = (mir_t *)q->q_ptr;
-	uchar_t	*rptr = mp->b_rptr;
+	uint_t		 frag_header;
+	mir_t		*mir = (mir_t *)q->q_ptr;
+	uchar_t		*rptr = mp->b_rptr;
+	uint32_t	 xid;
+	uint32_t	 dir;
 
 	if (!mir) {
 		freemsg(mp);
@@ -2464,6 +2892,16 @@ mir_wput(queue_t *q, mblk_t *mp)
 		return;
 	}
 
+	/*
+	 * Get msg direction and handle to the appropriate ctxt
+	 */
+	if (!mir_dir_xid(mp, &dir, &xid)) {
+		/* XXX - if we can't get the dir, we're hosed */
+		mutex_exit(&mir->mir_mutex);
+		freemsg(mp);
+		return;
+	}
+
 	switch (mir->mir_type) {
 	case RPC_CLIENT:
 		/*
@@ -2481,15 +2919,32 @@ mir_wput(queue_t *q, mblk_t *mp)
 			return;
 		}
 		break;
+
 	case RPC_SERVER:
-		/*
-		 * Set mir_hold_inbound so that new inbound RPC
-		 * messages will be held until the client catches
-		 * up on the earlier replies.  This flag is cleared
-		 * in mir_wsrv after flow control is relieved;
-		 * the read-side queue is also enabled at that time.
-		 */
-		mir->mir_hold_inbound = 1;
+		switch (dir) {
+		case CALL:
+			/*
+			 * RPC Server doing Callball RPC
+			 */
+			if (mir_clnt_dup_request(q, mp)) {
+				mutex_exit(&mir->mir_mutex);
+				freemsg(mp);
+				return;
+			}
+			break;
+
+		case REPLY:
+		default:
+			/*
+			 * Set mir_hold_inbound so that new inbound RPC
+			 * messages will be held until the client catches
+			 * up on the earlier replies.  This flag is cleared
+			 * in mir_wsrv after flow control is relieved;
+			 * the read-side queue is also enabled at that time.
+			 */
+			mir->mir_hold_inbound = 1;
+			break;
+		}
 		break;
 	default:
 		RPCLOG(1, "mir_wput: unexpected mir_type %d\n", mir->mir_type);

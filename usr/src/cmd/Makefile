@@ -133,6 +133,7 @@ COMMON_SUBDIRS=		\
 	du		\
 	dumpadm		\
 	dumpcs		\
+	dserv		\
 	echo		\
 	ed		\
 	eeprom		\
@@ -574,6 +575,7 @@ MSGSUBDIRS=		\
 	dlstat		\
 	du		\
 	dumpcs		\
+	dserv		\
 	ed		\
 	eject		\
 	env		\

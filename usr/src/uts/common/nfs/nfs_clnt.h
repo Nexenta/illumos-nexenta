@@ -602,6 +602,13 @@ struct nfs_owner {
 #define	NFS_OWNER_MAGIC	0x1D81E
 
 /*
+ * Error flags used to pass information about certain special errors
+ * which need to be handled specially.
+ */
+#define	NFS_EOF			(-98)
+#define	NFS_VERF_MISMATCH	(-97)
+
+/*
  * Support for extended attributes
  */
 #define	XATTR_DIR_NAME	"/@/"		/* used for DNLC entries */
@@ -644,12 +651,6 @@ struct clstat {
 	kstat_named_t	badcalls;		/* rpc failures */
 	kstat_named_t	clgets;			/* client handle gets */
 	kstat_named_t	cltoomany;		/* client handle cache misses */
-#ifdef DEBUG
-	kstat_named_t	clalloc;		/* number of client handles */
-	kstat_named_t	noresponse;		/* server not responding cnt */
-	kstat_named_t	failover;		/* server failover count */
-	kstat_named_t	remap;			/* server remap count */
-#endif
 };
 
 struct nfs_clnt {

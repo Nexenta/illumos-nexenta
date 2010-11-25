@@ -42,21 +42,36 @@
 #include <rpc/auth.h>
 #include <rpc/rpcsys.h>
 #include <rpc/svc.h>
+#include <rpc/xdr.h>
+#include <sys/cmn_err.h>
+#include <sys/sdt.h>
+#include <nfs/dserv_impl.h>
 
 /*
  * This is filled in with an appropriate address for the
  * function that will traverse the rfs4_client_t table
  * and mark any matching IP Address as "forced_expire".
  *
- * It is the server init() function that plops the
+ * It is the server module load init() function that plops the
  * function pointer.
  */
 void (*rfs4_client_clrst)(struct nfs4clrst_args *) = NULL;
+
+/* Temp: used by mdsadm */
+int (*mds_recall_lo)(struct mds_reclo_args *, cred_t *) = NULL;
+int (*mds_notify_device)(struct mds_notifydev_args *, cred_t *) = NULL;
 
 /* This filled in by nfssrv:_init() */
 void (*nfs_srv_quiesce_func)(void) = NULL;
 
 extern void nfscmd_args(uint_t);
+
+/*
+ * Time period in seconds for DS_RENEW requests from the heartbeat thread
+ * between DS and MDS
+ */
+#define	DS_MDS_HEARTBEAT_TIME 5
+time_t rfs4_ds_mds_hb_time = DS_MDS_HEARTBEAT_TIME;
 
 /*
  * These will be reset by klmmod:lm_svc(), when lockd starts NLM service,
@@ -72,6 +87,7 @@ time_t rfs4_grace_period = RFS4_LEASETIME;
 
 /* DSS: distributed stable storage */
 size_t nfs4_dss_buflen = 0;
+
 /* This filled in by nfssrv:_init() */
 int (*nfs_srv_dss_func)(char *, size_t) = NULL;
 
@@ -92,13 +108,128 @@ nfs_export(void *arg)
 int
 nfssys(enum nfssys_op opcode, void *arg)
 {
+/* XXX - jw - need to create this routine. */
+#ifdef NotDoneYet
+	extern void rfs4_inst_init(struct nfs_state_init_args *);
+#endif
+
 	int error = 0;
 
-	if (!(opcode == NFS_REVAUTH || opcode == NFS4_SVC) &&
-	    secpolicy_nfs(CRED()) != 0)
+	if (!(opcode == NFS_REVAUTH ||
+	    opcode == NFS4_SVC ||
+	    opcode == NFSSTAT_LAYOUT) &&
+	    secpolicy_nfs(CRED()) != 0) {
 		return (set_errno(EPERM));
+	}
 
 	switch (opcode) {
+/* XXX - jw - need to finish this stuff */
+#ifdef NotDoneYet
+	case NFS_INIT_STATESTORE: {
+		struct nfs_state_init_args nsi_args;
+		STRUCT_DECL(nfs_state_init_args, ua);
+
+		if (mds_recall_lo == NULL) {
+			printf(":-P .. NFS server is not loaded\n");
+			break;
+		}
+
+		if (!INGLOBALZONE(curproc))
+			return (set_errno(EPERM));
+
+		STRUCT_INIT(ua, get_udatamodel());
+
+		nsi_args.inst_name = kmem_alloc(MAXNAMELEN, KM_SLEEP);
+
+		error = copyinstr(nsi_args.inst_name,
+		    STRUCT_FGETP(ua, inst_name), MAXNAMELEN, NULL);
+
+		if (error != 0) {
+			kmem_free(nsi_args.inst_name, MAXNAMELEN);
+			return (set_errno(EFAULT));
+		}
+		nsi_args.cap_flags = STRUCT_FGET(ua, cap_flags);
+
+		rfs4_inst_init(&nsi_args);
+
+		break;
+	}
+
+	case NFS_FINI_STATESTORE: {
+		struct nfs_state_init_args nsi_args;
+		STRUCT_DECL(nfs_state_init_args, ua);
+
+		if (mds_recall_lo == NULL) {
+			printf(":-P .. NFS server is not loaded\n");
+			break;
+		}
+
+		if (!INGLOBALZONE(curproc))
+			return (set_errno(EPERM));
+
+		STRUCT_INIT(ua, get_udatamodel());
+
+		nsi_args.inst_name = kmem_alloc(MAXNAMELEN, KM_SLEEP);
+
+		error = copyinstr(nsi_args.inst_name,
+		    STRUCT_FGETP(ua, inst_name), MAXNAMELEN, NULL);
+
+		if (error != 0) {
+			kmem_free(nsi_args.inst_name, MAXNAMELEN);
+			return (set_errno(EFAULT));
+		}
+		rfs4_inst_finit(&nsi_args);
+
+		break;
+	}
+#endif
+
+	case MDS_RECALL_LAYOUT: {
+		struct mds_reclo_args rargs;
+		int plen = 0;
+		int buf[2] = {0, 0};
+		XDR xdrs;
+
+		if (mds_recall_lo == NULL)
+			return (set_errno(ENOTSUP));
+
+		if (copyin(arg, (char *)buf, sizeof (buf)))
+			return (set_errno(EFAULT));
+
+		xdrmem_create(&xdrs, (char *)buf, sizeof (buf), XDR_DECODE);
+
+		if (! xdr_int(&xdrs, &rargs.lo_type) ||
+		    ! xdr_int(&xdrs, &plen) || (plen > MAXNAMELEN))
+			return (set_errno(EINVAL));
+
+		rargs.lo_fname = kmem_alloc(plen + 1, KM_SLEEP);
+		rargs.lo_fname[plen] = '\0';
+		error = copyin((char *)arg + BYTES_PER_XDR_UNIT * 2,
+		    rargs.lo_fname, plen);
+
+		if (error) {
+			kmem_free(rargs.lo_fname, plen + 1);
+			return (set_errno(EFAULT));
+		}
+
+		error = mds_recall_lo(&rargs, CRED());
+		kmem_free(rargs.lo_fname, plen + 1);
+		break;
+	}
+
+	case MDS_NOTIFY_DEVICE: {
+		struct mds_notifydev_args dargs;
+
+		if (mds_notify_device == NULL)
+			return (set_errno(ENOTSUP));
+
+		if (copyin(arg, (char *)&dargs, sizeof (dargs)))
+			return (set_errno(EFAULT));
+
+		error = mds_notify_device(&dargs, CRED());
+		break;
+	}
+
 	case NFS4_CLR_STATE: { /* Clear NFS4 client state */
 		struct nfs4clrst_args clr;
 		STRUCT_DECL(nfs4clrst_args, u_clr);
@@ -137,6 +268,9 @@ nfssys(enum nfssys_op opcode, void *arg)
 			return (set_errno(EFAULT));
 
 		error = svc_pool_create(&p);
+
+		if (copyout(&p, arg, sizeof (p)))
+			return (set_errno(EFAULT));
 		break;
 	}
 
@@ -177,6 +311,7 @@ nfssys(enum nfssys_op opcode, void *arg)
 			rsa.nfs_versmin = STRUCT_FGET(ursa, nfs_versmin);
 			rsa.nfs_versmax = STRUCT_FGET(ursa, nfs_versmax);
 			rsa.delegation = STRUCT_FGET(ursa, delegation);
+			rsa.dfd = STRUCT_FGET(ursa, dfd);
 		} else {
 			if (copyin(arg, &rsa, sizeof (rsa)))
 				return (set_errno(EFAULT));
@@ -218,6 +353,21 @@ nfssys(enum nfssys_op opcode, void *arg)
 		error = nfs_getfh(STRUCT_BUF(nga), get_udatamodel(), CRED());
 		break;
 	}
+
+	case NFSSTAT_LAYOUT: {
+		STRUCT_DECL(pnfs_getflo_args, pla);
+
+		STRUCT_INIT(pla, get_udatamodel());
+		if (copyin(arg, STRUCT_BUF(pla), STRUCT_SIZE(pla))) {
+			error = EFAULT;
+		} else {
+			error = pnfs_collect_layoutstats(
+			    STRUCT_BUF(pla), get_udatamodel(), CRED());
+		}
+		break;
+	}
+
+
 
 	case NFS_REVAUTH: { /* revoke the cached credentials for the uid */
 		STRUCT_DECL(nfs_revauth_args, nra);
@@ -317,6 +467,12 @@ nfssys(enum nfssys_op opcode, void *arg)
 		break;
 	}
 
+	case NFS_SPE: {
+		nfs41_spe_svc(arg);
+		error = 0;
+		break;
+	}
+
 	case NFS4_DSS_SETPATHS_SIZE: {
 		/* crosses ILP32/LP64 boundary */
 		uint32_t nfs4_dss_bufsize = 0;
@@ -398,6 +554,86 @@ nfssys(enum nfssys_op opcode, void *arg)
 			return (set_errno(EFAULT));
 		nfscmd_args(did);
 		error = 0;
+		break;
+	}
+
+	case DSERV_DATASET_INFO: {
+		dserv_dataset_info_t dinfo;
+
+		error = copyin((void *)arg, &dinfo,
+		    sizeof (dserv_dataset_info_t));
+		if (error)
+			return (EFAULT);
+
+		error = dserv_mds_addobjset(dinfo.dataset_name);
+		break;
+	}
+
+	case DSERV_DATASET_PROPS: {
+		dserv_dataset_props_t dprops;
+
+		error = copyin((void *)arg, &dprops,
+		    sizeof (dserv_dataset_props_t));
+		if (error)
+			return (EFAULT);
+		DTRACE_PROBE3(dserv__i__dataset_props,
+		    char *, dprops.ddp_name,
+		    char *, dprops.ddp_mds_netid,
+		    char *, dprops.ddp_mds_uaddr);
+		break;
+	}
+
+	case DSERV_INSTANCE_SHUTDOWN: {
+		error = dserv_mds_instance_teardown();
+		break;
+	}
+
+	case DSERV_REPORTAVAIL: {
+		error = dserv_mds_reportavail();
+		break;
+	}
+
+	case DSERV_SVC: {
+		dserv_svc_args_t svcargs;
+
+		error = copyin((void *)arg, &svcargs,
+		    sizeof (dserv_svc_args_t));
+		if (error)
+			return (EFAULT);
+
+		error =	dserv_svc(&svcargs);
+		break;
+	}
+
+	case DSERV_SETMDS: {
+		dserv_setmds_args_t smargs;
+
+		error = copyin((void *)arg, &smargs,
+		    sizeof (dserv_setmds_args_t));
+		if (error)
+			return (EFAULT);
+
+		DTRACE_PROBE2(dserv__i__setmds,
+		    char *, smargs.dsm_mds_uaddr, char *, smargs.dsm_mds_netid);
+
+		error = dserv_mds_setmds(smargs.dsm_mds_netid,
+		    smargs.dsm_mds_uaddr);
+		break;
+	}
+
+	case DSERV_SETPORT: {
+		dserv_setport_args_t spargs;
+
+		error = copyin((void *)arg, &spargs,
+		    sizeof (dserv_setport_args_t));
+		if (error)
+			return (EFAULT);
+
+		DTRACE_PROBE2(dserv__i__setport, char *, spargs.dsa_uaddr,
+		    char *, spargs.dsa_proto);
+
+		error = dserv_mds_addport(spargs.dsa_uaddr, spargs.dsa_proto,
+		    spargs.dsa_name);
 		break;
 	}
 

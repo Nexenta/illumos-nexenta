@@ -19,24 +19,63 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
 /* Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T */
 /* All Rights Reserved */
 
-
+#include <sys/disp.h>
 #include <nfs/nfs4_clnt.h>
+#include <nfs/nfs4_clnt_impl.h>
 #include <nfs/rnode4.h>
 #include <sys/systm.h>
 #include <sys/cmn_err.h>
+#include <sys/sdt.h>
 #include <sys/atomic.h>
+#include <nfs/nfs41_sessions.h>
+
+#define	NFSv4_0	"4.0"
+#define	NFSv4_1	"4.1"
 
 static void	nfs4_free_open_owner(nfs4_open_owner_t *, mntinfo4_t *);
 static nfs4_open_owner_t *find_freed_open_owner(cred_t *,
 				nfs4_oo_hash_bucket_t *, mntinfo4_t *);
 static open_delegation_type4 get_dtype(rnode4_t *);
+
+static void nfs4setclientid_otw(mntinfo4_t *, struct servinfo4 *,  cred_t *,
+	struct nfs4_server *, nfs4_error_t *, int *);
+
+static uint32_t nfs4_op_oseqid(nfs4_open_owner_t *, mntinfo4_t *,
+				minorop_type_t, seqid4, nfs4_tag_type_t);
+static uint32_t nfs4_op_lseqid(nfs4_lock_owner_t *, mntinfo4_t *,
+						minorop_type_t, seqid4);
+static clientid4 nfs4_op_clientid(mntinfo4_t *, minorop_type_t,
+				servinfo4_t *, cred_t *, nfs4_server_t *,
+				nfs4_error_t *, int *);
+
+static uint32_t nfs41_op_oseqid(nfs4_open_owner_t *, mntinfo4_t *,
+				minorop_type_t, seqid4, nfs4_tag_type_t);
+static uint32_t nfs41_op_lseqid(nfs4_lock_owner_t *, mntinfo4_t *,
+						minorop_type_t, seqid4);
+static clientid4 nfs41_op_clientid(mntinfo4_t *, minorop_type_t,
+				servinfo4_t *, cred_t *, nfs4_server_t *,
+				nfs4_error_t *, int *);
+
+nfs4_minorvers_ops_t nfsv4_ops = {
+	NFSv4_0,
+	nfs4_op_oseqid,
+	nfs4_op_lseqid,
+	nfs4_op_clientid
+};
+
+nfs4_minorvers_ops_t nfsv41_ops = {
+	NFSv4_1,
+	nfs41_op_oseqid,
+	nfs41_op_lseqid,
+	nfs41_op_clientid
+};
 
 #ifdef DEBUG
 int nfs4_client_foo_debug = 0x0;
@@ -61,6 +100,13 @@ stateid4 clnt_special1 = {
 		(char)0xff, (char)0xff, (char)0xff, (char)0xff
 	}
 };
+
+void
+nfs4_protosw_init(nfs4_minorvers_ops_t **swp)
+{
+	swp[0] = &nfsv4_ops;
+	swp[1] = &nfsv41_ops;
+}
 
 /* finds hash bucket and locks it */
 static nfs4_oo_hash_bucket_t *
@@ -552,9 +598,10 @@ nfs4_get_open_stateid(rnode4_t *rp, cred_t *cr, mntinfo4_t *mi, stateid4 *sid)
  */
 stateid4
 nfs4_get_w_stateid(cred_t *cr, rnode4_t *rp, pid_t pid, mntinfo4_t *mi,
-	nfs_opnum4 op, nfs4_stateid_types_t *sid_tp)
+	nfs_opnum4 op, nfs4_stateid_types_t *sid_tp, int flags)
 {
 	stateid4 sid;
+	nfs4_open_stream_t *osp;
 
 	if (nfs4_get_deleg_stateid(rp, op, &sid)) {
 		if (!stateid4_cmp(&sid, &sid_tp->d_sid)) {
@@ -574,6 +621,41 @@ nfs4_get_w_stateid(cred_t *cr, rnode4_t *rp, pid_t pid, mntinfo4_t *mi,
 			return (sid);
 		}
 	}
+
+	/*
+	 * If we failed to find a valid stateid to use,
+	 * this could be, because the write request is coming
+	 * from entities like fsflush.  In this case if there are
+	 * no delegations, then there are no delgation stateid's to use.
+	 * And no lock state ids will be found.  And the kcred is being
+	 * used here, so we have not found any open owners, and thus do not
+	 * have an open state id.  In V4.0, and in V4.1 to the MDS, the
+	 * special stateid can be used.  However in V4.1, it is illegal to
+	 * use the special stateid to writes to a data server.
+	 * In this case, simply use the first open owner stateid found.
+	 * XXXKLR - Still need to handle:
+	 * o If not kcred, and no stateid found and pNFS:
+	 *   - return with special stateid and let pnfs_write
+	 *	fail this back to proxy I/O
+	 */
+	if (cr == kcred && (flags & NFS4_WSID_PNFS)) {
+		mutex_enter(&rp->r_os_lock);
+		osp = list_head(&rp->r_open_streams);
+		if (osp != NULL) {
+			mutex_enter(&osp->os_sync_lock);
+			mutex_exit(&rp->r_os_lock);
+			if (osp->os_failed_reopen == 0 && osp->os_valid != 0) {
+				sid = osp->open_stateid;
+				sid_tp->cur_sid_type = OPEN_SID;
+				mutex_exit(&osp->os_sync_lock);
+				return (sid);
+			}
+			mutex_exit(&osp->os_sync_lock);
+		} else {
+			mutex_exit(&rp->r_os_lock);
+		}
+	}
+
 	bzero(&sid, sizeof (stateid4));
 	sid_tp->cur_sid_type = SPEC_SID;
 	return (sid);
@@ -596,16 +678,16 @@ nfs4_get_w_stateid(cred_t *cr, rnode4_t *rp, pid_t pid, mntinfo4_t *mi,
  */
 stateid4
 nfs4_get_stateid(cred_t *cr, rnode4_t *rp, pid_t pid, mntinfo4_t *mi,
-	nfs_opnum4 op, nfs4_stateid_types_t *sid_tp, bool_t async_read)
+	nfs_opnum4 op, nfs4_stateid_types_t *sid_tp, int flags)
 {
 	stateid4 sid;
 
 	/*
-	 * For asynchronous READs, do not attempt to retry from the start of
+	 * When GETSID_TRYNEXT, do not attempt to retry from the start of
 	 * the stateid priority list, just continue from where you last left
 	 * off.
 	 */
-	if (async_read) {
+	if (flags & GETSID_TRYNEXT) {
 		switch (sid_tp->cur_sid_type) {
 		case NO_SID:
 			break;
@@ -614,10 +696,12 @@ nfs4_get_stateid(cred_t *cr, rnode4_t *rp, pid_t pid, mntinfo4_t *mi,
 		case LOCK_SID:
 			goto open_stateid;
 		case OPEN_SID:
-			goto special_stateid;
+			if (!(flags & GETSID_TRYNEXT))
+				goto special_stateid;
+			/*FALLTHROUGH*/
 		case SPEC_SID:
 		default:
-			cmn_err(CE_PANIC, "nfs4_get_stateid: illegal current "
+			cmn_err(CE_WARN, "nfs4_get_stateid: illegal current "
 			    "stateid type %d", sid_tp->cur_sid_type);
 		}
 	}
@@ -655,7 +739,6 @@ nfs4_set_lock_stateid(nfs4_lock_owner_t *lop, stateid4 stateid)
 	    "nfs4_set_lock_stateid"));
 
 	ASSERT(lop);
-	ASSERT(lop->lo_flags & NFS4_LOCK_SEQID_INUSE);
 
 	mutex_enter(&lop->lo_lock);
 	lop->lock_stateid = stateid;
@@ -729,7 +812,7 @@ create_open_stream(nfs4_open_owner_t *oop, rnode4_t *rp)
 
 #ifdef DEBUG
 	mutex_enter(&oop->oo_lock);
-	ASSERT(oop->oo_seqid_inuse);
+	VERS40_ASSERT(oop->oo_seqid_inuse, VTOMI4(RTOV4(rp)));
 	mutex_exit(&oop->oo_lock);
 #endif
 
@@ -786,7 +869,7 @@ find_or_create_open_stream(nfs4_open_owner_t *oop, rnode4_t *rp,
 
 #ifdef DEBUG
 	mutex_enter(&oop->oo_lock);
-	ASSERT(oop->oo_seqid_inuse);
+	VERS40_ASSERT(oop->oo_seqid_inuse, VTOMI4(RTOV4(rp)));
 	mutex_exit(&oop->oo_lock);
 #endif
 
@@ -1068,7 +1151,8 @@ nfs4_is_otw_open_necessary(nfs4_open_owner_t *oop, int flag, vnode_t *vp,
 			 * non-recoverable error, and before we could retry
 			 * the CLOSE, OPENed the file again.
 			 */
-			ASSERT(osp->os_open_owner->oo_seqid_inuse);
+			VERS40_ASSERT(osp->os_open_owner->oo_seqid_inuse,
+			    VTOMI4(vp));
 			osp->os_final_close = 0;
 			osp->os_force_close = 0;
 
@@ -1176,14 +1260,16 @@ get_dtype(rnode4_t *rp)
 /*
  * Fill in *locker with the lock state arguments for a LOCK call.  If
  * lop->lo_just_created == NFS4_JUST_CREATED, oop and osp must be non-NULL.
- * Caller must already hold the necessary seqid sync lock(s).
+ * For NFSv4.0 clients, caller must already hold the necessary seqid
+ * sync lock(s).
  */
 
+/* ARGSUSED */
 void
 nfs4_setup_lock_args(nfs4_lock_owner_t *lop, nfs4_open_owner_t *oop,
-	nfs4_open_stream_t *osp, clientid4 clientid, locker4 *locker)
+	nfs4_open_stream_t *osp, mntinfo4_t *mi, locker4 *locker)
 {
-	ASSERT(lop->lo_flags & NFS4_LOCK_SEQID_INUSE);
+	VERS40_ASSERT((lop->lo_flags & NFS4_LOCK_SEQID_INUSE), mi);
 	if (lop->lo_just_created == NFS4_JUST_CREATED) {
 		/* this is a new lock request */
 		open_to_lock_owner4 *nown;
@@ -1193,13 +1279,20 @@ nfs4_setup_lock_args(nfs4_lock_owner_t *lop, nfs4_open_owner_t *oop,
 
 		locker->new_lock_owner = TRUE;
 		nown = &locker->locker4_u.open_owner;
-		nown->open_seqid = nfs4_get_open_seqid(oop) + 1;
+		nown->open_seqid = NFS4_GET_OSEQID(oop, mi);
+
 		mutex_enter(&osp->os_sync_lock);
 		nown->open_stateid = osp->open_stateid;
 		mutex_exit(&osp->os_sync_lock);
+
+		/*
+		 * lock_seqid must be 0 for nfsv4.1, but it is already
+		 * the case here
+		 */
+		ASSERT(lop->lock_seqid == 0);
 		nown->lock_seqid = lop->lock_seqid; /* initial, so no +1 */
 
-		nown->lock_owner.clientid = clientid;
+		nown->lock_owner.clientid = NFS4_GET_CLIENTID(mi);
 		nown->lock_owner.owner_len = sizeof (lop->lock_owner_name);
 		nown->lock_owner.owner_val =
 		    kmem_alloc(nown->lock_owner.owner_len, KM_SLEEP);
@@ -1214,7 +1307,7 @@ nfs4_setup_lock_args(nfs4_lock_owner_t *lop, nfs4_open_owner_t *oop,
 		mutex_enter(&lop->lo_lock);
 		eown->lock_stateid = lop->lock_stateid;
 		mutex_exit(&lop->lo_lock);
-		eown->lock_seqid = lop->lock_seqid + 1;
+		eown->lock_seqid = NFS4_GET_LSEQID(lop, mi);
 	}
 }
 
@@ -1358,14 +1451,14 @@ nfs4_find_or_create_lock_owner(pid_t pid, rnode4_t *rp, cred_t *cr,
 		*oopp = find_open_owner(cr, NFS4_PERM_CREATED, mi);
 		if (*oopp == NULL)
 			goto kill_new_lop;
-		error = nfs4_start_open_seqid_sync(*oopp, mi);
+		error = NFS4_START_OSEQID_SYNC(*oopp, mi);
 		if (error == EAGAIN) {
 			stat = NFS4ERR_DELAY;
 			goto failed;
 		}
 		*ospp = find_open_stream(*oopp, rp);
 		if (*ospp == NULL) {
-			nfs4_end_open_seqid_sync(*oopp);
+			NFS4_END_OSEQID_SYNC(*oopp, mi);
 			goto kill_new_lop;
 		}
 		if ((*ospp)->os_failed_reopen) {
@@ -1375,7 +1468,7 @@ nfs4_find_or_create_lock_owner(pid_t pid, rnode4_t *rp, cred_t *cr,
 			    "nfs4_find_or_create_lock_owner: os_failed_reopen;"
 			    "osp %p, cr %p, rp %s", (void *)(*ospp),
 			    (void *)cr, rnode4info(rp)));
-			nfs4_end_open_seqid_sync(*oopp);
+			NFS4_END_OSEQID_SYNC(*oopp, mi);
 			stat = NFS4ERR_IO;
 			goto failed;
 		}
@@ -1387,7 +1480,7 @@ nfs4_find_or_create_lock_owner(pid_t pid, rnode4_t *rp, cred_t *cr,
 		 */
 		mutex_enter(&lop->lo_lock);
 		if (lop->lo_just_created != NFS4_JUST_CREATED) {
-			nfs4_end_open_seqid_sync(*oopp);
+			NFS4_END_OSEQID_SYNC(*oopp, mi);
 			open_stream_rele(*ospp, rp);
 			open_owner_rele(*oopp);
 			*oopp = NULL;
@@ -1396,10 +1489,10 @@ nfs4_find_or_create_lock_owner(pid_t pid, rnode4_t *rp, cred_t *cr,
 	}
 	mutex_exit(&lop->lo_lock);
 
-	error = nfs4_start_lock_seqid_sync(lop, mi);
+	error = NFS4_START_LSEQID_SYNC(lop, mi);
 	if (error == EAGAIN) {
 		if (*oopp != NULL)
-			nfs4_end_open_seqid_sync(*oopp);
+			NFS4_END_OSEQID_SYNC(*oopp, mi);
 		stat = NFS4ERR_DELAY;
 		goto failed;
 	}
@@ -1543,19 +1636,6 @@ nfs4_set_open_seqid(seqid4 seqid, nfs4_open_owner_t *oop,
 	ASSERT(oop->oo_seqid_inuse);
 	oop->oo_seqid = seqid;
 	oop->oo_last_good_seqid = seqid;
-	oop->oo_last_good_op = tag_type;
-}
-
-/*
- * This bumps the current open seqid for the open owner 'oop'.
- */
-void
-nfs4_get_and_set_next_open_seqid(nfs4_open_owner_t *oop,
-    nfs4_tag_type_t tag_type)
-{
-	ASSERT(oop->oo_seqid_inuse);
-	oop->oo_seqid++;
-	oop->oo_last_good_seqid = oop->oo_seqid;
 	oop->oo_last_good_op = tag_type;
 }
 
@@ -1799,42 +1879,39 @@ nfs4_open_downgrade(int access_close, int deny_close, nfs4_open_owner_t *oop,
 	nfs4_open_stream_t *osp, vnode_t *vp, cred_t *cr, nfs4_lost_rqst_t *lrp,
 	nfs4_error_t *ep, cred_t **recov_credpp, seqid4 *recov_seqidp)
 {
+	nfs4_call_t		*cp;
+	int			ctag;
 	mntinfo4_t		*mi;
 	int			downgrade_acc, downgrade_deny;
 	int			new_acc, new_deny;
-	COMPOUND4args_clnt	args;
-	COMPOUND4res_clnt	res;
+	GETATTR4res		*getattr_res;
 	OPEN_DOWNGRADE4res	*odg_res;
-	nfs_argop4		argop[3];
-	nfs_resop4		*resop;
 	rnode4_t		*rp;
-	bool_t			needrecov = FALSE;
-	int			doqueue = 1;
 	seqid4			seqid = 0;
 	cred_t			*cred_otw;
 	hrtime_t		t;
 
+	mi = VTOMI4(vp);
+	rp = VTOR4(vp);
+
 	ASSERT(mutex_owned(&osp->os_sync_lock));
-#if DEBUG
+#ifdef DEBUG
 	mutex_enter(&oop->oo_lock);
-	ASSERT(oop->oo_seqid_inuse);
+	VERS40_ASSERT(oop->oo_seqid_inuse, mi);
 	mutex_exit(&oop->oo_lock);
 #endif
-
 
 	if (access_close == 0 && deny_close == 0) {
 		nfs4_error_zinit(ep);
 		return;
 	}
 
-	cred_otw = nfs4_get_otw_cred(cr, VTOMI4(vp), oop);
+	cred_otw = nfs4_get_otw_cred(cr, mi, oop);
 
 cred_retry:
 	nfs4_error_zinit(ep);
 	downgrade_acc = 0;
 	downgrade_deny = 0;
-	mi = VTOMI4(vp);
-	rp = VTOR4(vp);
 
 	/*
 	 * Check to see if the open stream got closed before we go OTW,
@@ -1856,7 +1933,7 @@ cred_retry:
 	}
 	mutex_exit(&rp->r_statelock);
 
-	seqid = nfs4_get_open_seqid(oop) + 1;
+	seqid = NFS4_GET_OSEQID(oop, mi);
 
 	NFS4_DEBUG(nfs4_client_open_dg, (CE_NOTE, "nfs4_open_downgrade:"
 	    "access_close %d, acc_read %"PRIu64" acc_write %"PRIu64"",
@@ -1925,63 +2002,53 @@ cred_retry:
 
 	/* setup the COMPOUND args */
 	if (lrp)
-		args.ctag = TAG_OPEN_DG_LOST;
+		ctag = TAG_OPEN_DG_LOST;
 	else
-		args.ctag = TAG_OPEN_DG;
+		ctag = TAG_OPEN_DG;
+	cp = nfs4_call_init(ctag, OP_OPEN_DOWNGRADE, OH_OTHER, TRUE, mi,
+	    NULL, NULL, cred_otw);
 
-	args.array_len = 3;
-	args.array = argop;
+	/* 0: putfh */
+	(void) nfs4_op_cputfh(cp, rp->r_fh);
 
-	/* putfh */
-	argop[0].argop = OP_CPUTFH;
-	argop[0].nfs_argop4_u.opcputfh.sfh = rp->r_fh;
-
-	argop[1].argop = OP_GETATTR;
-	argop[1].nfs_argop4_u.opgetattr.attr_request = NFS4_VATTR_MASK;
-	argop[1].nfs_argop4_u.opgetattr.mi = mi;
+	/* 1: getattr */
+	getattr_res = nfs4_op_getattr(cp, MI4_DEFAULT_ATTRMAP(mi));
 
 	ASSERT(mutex_owned(&osp->os_sync_lock));
 	ASSERT(osp->os_delegation == FALSE);
 
-	/* open downgrade */
-	argop[2].argop = OP_OPEN_DOWNGRADE;
-	argop[2].nfs_argop4_u.opopen_downgrade.open_stateid = osp->open_stateid;
-	argop[2].nfs_argop4_u.opopen_downgrade.share_access = new_acc;
-	argop[2].nfs_argop4_u.opopen_downgrade.share_deny = new_deny;
-	argop[2].nfs_argop4_u.opopen_downgrade.seqid = seqid;
+	/* 2: open downgrade */
+	odg_res = nfs4_op_open_downgrade(cp, &osp->open_stateid, seqid,
+	    new_acc, new_deny);
 
 	t = gethrtime();
 
-	rfs4call(mi, &args, &res, cred_otw, &doqueue, 0, ep);
+	rfs4call(cp, ep);
 
-	if (ep->error == 0 && nfs4_need_to_bump_seqid(&res))
-		nfs4_set_open_seqid(seqid, oop, args.ctag);
+	if (ep->error == 0 && nfs4_need_to_bump_seqid(&cp->nc_res))
+		NFS4_SET_OSEQID(oop, mi, seqid, ctag);
 
 	if ((ep->error == EACCES ||
-	    (ep->error == 0 && res.status == NFS4ERR_ACCESS)) &&
+	    (ep->error == 0 && cp->nc_res.status == NFS4ERR_ACCESS)) &&
 	    cred_otw != cr) {
 		crfree(cred_otw);
 		cred_otw = cr;
 		crhold(cred_otw);
-		if (!ep->error)
-			(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+		nfs4_call_rele(cp);
 		goto cred_retry;
 	}
 
-	needrecov = nfs4_needs_recovery(ep, TRUE, mi->mi_vfsp);
+	nfs4_needs_recovery(cp);
 
-	if (needrecov && recov_credpp) {
+	if (cp->nc_needs_recovery && recov_credpp) {
 		*recov_credpp = cred_otw;
 		crhold(*recov_credpp);
 		if (recov_seqidp)
 			*recov_seqidp = seqid;
 	}
 
-	if (!ep->error && !res.status) {
+	if (!ep->error && !cp->nc_res.status) {
 		/* get the open downgrade results */
-		resop = &res.array[2];
-		odg_res = &resop->nfs_resop4_u.opopen_downgrade;
-
 		osp->open_stateid = odg_res->open_stateid;
 
 		/* set the open streams new access/deny bits */
@@ -1992,13 +2059,11 @@ cred_retry:
 		osp->os_share_deny_none--;
 		osp->os_dc_openacc = new_acc;
 
-		nfs4_attr_cache(vp,
-		    &res.array[1].nfs_resop4_u.opgetattr.ga_res,
-		    t, cred_otw, TRUE, NULL);
+		nfs4_attr_cache(vp, &getattr_res->ga_res, t, cred_otw, TRUE,
+		    NULL);
 	}
 
-	if (!ep->error)
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	nfs4_call_rele(cp);
 
 no_args_out:
 	crfree(cred_otw);
@@ -2014,12 +2079,11 @@ void
 nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 	nfs4_error_t *ep)
 {
-	COMPOUND4args_clnt	args;
-	COMPOUND4res_clnt	res;
-	nfs_argop4		argop[4];
-	GETFH4res		*gf_res = NULL;
+	nfs4_call_t *cp;
+	GETFH4res		*gf_res;
 	OPEN4cargs		*open_args;
 	OPEN4res		*op_res;
+	GETATTR4res		*getattr_res;
 	char			*destcfp;
 	int			destclen;
 	nfs4_ga_res_t		*garp;
@@ -2032,13 +2096,14 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 	component4		*srcfp;
 	open_claim_type4	claim;
 	mntinfo4_t		*mi;
-	int			doqueue = 1;
 	bool_t			retry_open = FALSE;
 	int			created_osp = 0;
 	hrtime_t		t;
 	char 			*failed_msg = "";
 	int			fh_different;
 	int			reopen = 0;
+	nfs4_sharedfh_t		*sfh;
+	int			ctag;
 
 	nfs4_error_zinit(ep);
 
@@ -2078,11 +2143,6 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 	claim = resend_rqstp->lr_oclaim;
 	ASSERT(claim == CLAIM_NULL || claim == CLAIM_DELEGATE_CUR);
 
-	args.ctag = TAG_OPEN_LOST;
-	args.array_len = 4;
-	args.array = argop;
-
-	argop[0].argop = OP_CPUTFH;
 	if (reopen) {
 		ASSERT(vp != NULL);
 
@@ -2091,17 +2151,23 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 		 * if this is a file mount then
 		 * use the mntinfo parentfh
 		 */
-		argop[0].nfs_argop4_u.opcputfh.sfh =
-		    (vp->v_flag & VROOT) ? mi->mi_srvparentfh :
+		sfh = (vp->v_flag & VROOT) ? mi->mi_srvparentfh :
 		    VTOSV(vp)->sv_dfh;
-		args.ctag = TAG_REOPEN_LOST;
+		ctag = TAG_REOPEN_LOST;
 	} else {
-		argop[0].nfs_argop4_u.opcputfh.sfh = VTOR4(dvp)->r_fh;
 		mi = VTOMI4(dvp);
+		sfh = VTOR4(dvp)->r_fh;
+		ctag = TAG_OPEN_LOST;
 	}
 
-	argop[1].argop = OP_COPEN;
-	open_args = &argop[1].nfs_argop4_u.opcopen;
+	cp = nfs4_call_init(ctag, OP_OPEN, OH_OTHER, FALSE, mi, NULL, NULL, cr);
+
+	/* 0: putfh */
+	(void) nfs4_op_cputfh(cp, sfh);
+
+
+	/* 1: open */
+	op_res = nfs4_op_copen(cp, &open_args);
 	open_args->claim = claim;
 
 	/*
@@ -2132,56 +2198,66 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 	oop = resend_rqstp->lr_oop;
 	ASSERT(oop != NULL);
 
-	open_args->owner.clientid = mi2clientid(mi);
+	open_args->owner.clientid = NFS4_GET_CLIENTID(mi);
+
 	/* this length never changes */
 	open_args->owner.owner_len = sizeof (oop->oo_name);
 	open_args->owner.owner_val =
 	    kmem_alloc(open_args->owner.owner_len, KM_SLEEP);
 
-	ep->error = nfs4_start_open_seqid_sync(oop, mi);
-	ASSERT(ep->error == 0);		/* recov thread always succeeds */
+	ep->error = NFS4_START_OSEQID_SYNC(oop, mi);
+	ASSERT(ep->error == 0);	/* recov thread always succeeds */
+
 	/*
 	 * We can get away with not saving the seqid upon detection
 	 * of a lost request, and now just use the open owner's current
 	 * seqid since we only allow one op OTW per seqid and lost
-	 * requests are saved FIFO.
+	 * requests are saved FIFO. (For NFSv4.0 clients only)
 	 */
-	seqid = nfs4_get_open_seqid(oop) + 1;
+	seqid = NFS4_GET_OSEQID(oop, mi);
 	open_args->seqid = seqid;
 
 	bcopy(&oop->oo_name, open_args->owner.owner_val,
 	    open_args->owner.owner_len);
 
-	/* getfh */
-	argop[2].argop = OP_GETFH;
+	/* 2: getfh */
+	gf_res = nfs4_op_getfh(cp);
 
-	/* Construct the getattr part of the compound */
-	argop[3].argop = OP_GETATTR;
-	argop[3].nfs_argop4_u.opgetattr.attr_request = NFS4_VATTR_MASK;
-	argop[3].nfs_argop4_u.opgetattr.mi = mi;
+	/* 3: getattr */
+	getattr_res = nfs4_op_getattr(cp, MI4_DEFAULT_ATTRMAP(mi));
 
-	res.array = NULL;
+	/* reuse slot */
+	if (resend_rqstp->lr_slot_srv) {
+		ASSERT(resend_rqstp->lr_slot_ent != NULL);
+		ASSERT((cp->nc_flags & NFS4_CALL_FLAG_SLOT_HELD) == 0);
+		cp->nc_slot_srv = resend_rqstp->lr_slot_srv;
+		cp->nc_slot_ent = resend_rqstp->lr_slot_ent;
+		cp->nc_flags |= NFS4_CALL_FLAG_SLOT_HELD;
+		slot_error_to_inuse(cp->nc_slot_ent);
+		resend_rqstp->lr_slot_srv = NULL;
+		resend_rqstp->lr_slot_ent = NULL;
+	}
 
 	t = gethrtime();
 
-	rfs4call(mi, &args, &res, cr, &doqueue, 0, ep);
+	cp->nc_rfs4call_flags = RFS4CALL_SHOLD;
+	rfs4call(cp, ep);
 
-	if (ep->error == 0 && nfs4_need_to_bump_seqid(&res))
-		nfs4_set_open_seqid(seqid, oop, args.ctag);
+	if (ep->error == 0 && nfs4_need_to_bump_seqid(&cp->nc_res)) {
+		NFS4_SET_OSEQID(oop, mi, seqid, ctag);
+	}
 
 	NFS4_DEBUG(nfs4_lost_rqst_debug, (CE_NOTE,
-	    "nfs4_resend_open_otw: error %d stat %d", ep->error, res.status));
+	    "nfs4_resend_open_otw: error %d stat %d",
+	    ep->error, cp->nc_res.status));
 
-	if (ep->error || res.status)
+	if (ep->error || cp->nc_res.status)
 		goto err_out;
 
-	op_res = &res.array[1].nfs_resop4_u.opopen;
-	gf_res = &res.array[2].nfs_resop4_u.opgetfh;
-	garp = &res.array[3].nfs_resop4_u.opgetattr.ga_res;
+	garp = &getattr_res->ga_res;
 
 	if (!vp) {
 		int rnode_err = 0;
-		nfs4_sharedfh_t *sfh;
 
 		/*
 		 * If we can't decode all the attributes they are not usable,
@@ -2244,12 +2320,11 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 					    "(no expire on open) file handle "
 					    "changed";
 
-				nfs4_end_open_seqid_sync(oop);
+				NFS4_END_OSEQID_SYNC(oop, mi);
 				kmem_free(destcfp, destclen + 1);
 				nfs4args_copen_free(open_args);
-				(void) xdr_free(xdr_COMPOUND4res_clnt,
-				    (caddr_t)&res);
 				nfs_rw_exit(&mi->mi_fh_lock);
+				nfs4_call_rele(cp);
 				nfs4_fail_recov(vp, failed_msg, ep->error,
 				    ep->stat);
 				return;
@@ -2276,12 +2351,11 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 					failed_msg =
 					    "Couldn't reopen: file handle "
 					    "changed due to mismatched fids";
-					nfs4_end_open_seqid_sync(oop);
+					NFS4_END_OSEQID_SYNC(oop, mi);
 					kmem_free(destcfp, destclen + 1);
 					nfs4args_copen_free(open_args);
-					(void) xdr_free(xdr_COMPOUND4res_clnt,
-					    (caddr_t)&res);
 					nfs_rw_exit(&mi->mi_fh_lock);
+					nfs4_call_rele(cp);
 					nfs4_fail_recov(vp, failed_msg,
 					    ep->error, ep->stat);
 					return;
@@ -2311,15 +2385,16 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 
 	ASSERT(nfs4_consistent_type(vp));
 
-	if (op_res->rflags & OPEN4_RESULT_CONFIRM)
+	if (op_res->rflags & OPEN4_RESULT_CONFIRM) {
+		ASSERT(NFS4_MINORVERSION(mi) == 0);
 		nfs4open_confirm(vp, &seqid, &op_res->stateid, cr, TRUE,
 		    &retry_open, oop, TRUE, ep, NULL);
+	}
 	if (ep->error || ep->stat) {
-		nfs4_end_open_seqid_sync(oop);
+		NFS4_END_OSEQID_SYNC(oop, mi);
 		kmem_free(destcfp, destclen + 1);
 		nfs4args_copen_free(open_args);
-		if (!ep->error)
-			(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+		nfs4_call_rele(cp);
 		return;
 	}
 
@@ -2360,7 +2435,8 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 	 * going to OTW CLOSE the file, got a non-recoverable error, and before
 	 * we could retry the CLOSE, OPENed the file again.
 	 */
-	ASSERT(osp->os_open_owner->oo_seqid_inuse);
+
+	VERS40_ASSERT(osp->os_open_owner->oo_seqid_inuse, mi);
 	osp->os_final_close = 0;
 	osp->os_force_close = 0;
 
@@ -2377,10 +2453,15 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 		nfs4_inc_state_ref_count(mi);
 	open_stream_rele(osp, rp);
 
-	nfs4_end_open_seqid_sync(oop);
+	NFS4_END_OSEQID_SYNC(oop, mi);
 
 	/* accept delegation, if any */
 	nfs4_delegation_accept(rp, claim, op_res, garp, cr);
+
+	/* release the slot, add delegation to return list if recalled */
+	nfs4_call_slot_release(cp);
+	if (cp->nc_flags & NFS4_CALL_FLAG_SLOT_RECALLED)
+		nfs4_dlistadd(rp, NFS4_DR_PUSH | NFS4_DR_RECALL);
 
 	kmem_free(destcfp, destclen + 1);
 	nfs4args_copen_free(open_args);
@@ -2390,16 +2471,780 @@ nfs4_resend_open_otw(vnode_t **vpp, nfs4_lost_rqst_t *resend_rqstp,
 	else
 		PURGE_ATTRCACHE4(vp);
 
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	nfs4_call_rele(cp);
 
 	ASSERT(nfs4_consistent_type(vp));
 
 	return;
 
 err_out:
-	nfs4_end_open_seqid_sync(oop);
+	NFS4_END_OSEQID_SYNC(oop, mi);
 	kmem_free(destcfp, destclen + 1);
 	nfs4args_copen_free(open_args);
-	if (!ep->error)
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	nfs4_call_rele(cp);
+}
+
+static void
+nfs4get_lease_time(mntinfo4_t *mi, struct nfs4_server *np,
+	nfs4_error_t *ep, cred_t *cr)
+{
+	nfs4_call_t		*cp;
+	GETATTR4res		*getattr_res;
+	nfs4_ga_res_t		*garp;
+	attrmap4		attr_request;
+
+	/* Use a GETATTR operation to retrieve the lease time */
+
+	cp = nfs4_call_init(TAG_GETATTR, OP_PUTROOTFH, OH_OTHER, FALSE, mi,
+	    NULL, NULL, cr);
+
+	/* 0: putrootfh */
+	(void) nfs4_op_putrootfh(cp);
+
+	/* 1: getattr */
+	attr_request = MI4_EMPTY_ATTRMAP(mi);
+	ATTR_SET(attr_request, LEASE_TIME);
+	getattr_res = nfs4_op_getattr(cp, attr_request);
+
+	rfs4call(cp, ep);
+
+	if (ep->error || ep->stat) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	/* grab the lease time out of the getattr response */
+	if (getattr_res->status == NFS4_OK) {
+		garp = &getattr_res->ga_res;
+
+		/*
+		 * verify getattr reply decoded successfully before
+		 * referencing anything in n4g_ext_res.
+		 */
+		if (garp->n4g_attrerr != NFS4_GETATTR_OP_OK) {
+			ep->error = garp->n4g_attrerr;
+			nfs4_call_rele(cp);
+			return;
+		}
+#ifndef _LP64
+		/*
+		 * The 32 bit client cannot handle a lease time greater than
+		 * (INT32_MAX/1000000).  This is due to the use of the
+		 * lease_time in calls to drv_usectohz() in
+		 * nfs4_renew_lease_thread().  The problem is that
+		 * drv_usectohz() takes a time_t (which is just a long = 4
+		 * bytes) as its parameter.  The lease_time is multiplied by
+		 * 1000000 to convert seconds to usecs for the parameter.  If
+		 * a number bigger than (INT32_MAX/1000000) is used then we
+		 * overflow on the 32bit client.
+		 */
+		if (garp->n4g_ext_res->n4g_leasetime > (INT32_MAX/1000000)) {
+			garp->n4g_ext_res->n4g_leasetime = INT32_MAX/1000000;
+		}
+#endif
+
+		mutex_enter(&np->s_lock);
+		np->s_lease_time = garp->n4g_ext_res->n4g_leasetime;
+		mutex_exit(&np->s_lock);
+	}
+	nfs4_call_rele(cp);
+}
+
+/*
+ * Start the heartbeat thread for this nfs4_server.  For metadata
+ * servers to a GETATTR on the root file handle to get the lease
+ * time.  For data servers, use the lease time for the MDS.
+ */
+void
+nfs4start_hb_thread(mntinfo4_t *mi, servinfo4_t *svp,
+	struct nfs4_server *np, nfs4_error_t *ep, cred_t *cr)
+{
+	/* SV4_ISA_DS is set when the target server is ONLY a DS.  */
+	if (svp->sv_flags & SV4_ISA_DS) {
+		mutex_enter(&np->s_lock);
+		mutex_enter(&mi->mi_msg_list_lock);
+		np->s_lease_time = mi->mi_lease_period;
+		mutex_exit(&mi->mi_msg_list_lock);
+		mutex_exit(&np->s_lock);
+	} else {
+		nfs4get_lease_time(mi, np, ep, cr);
+		if (ep->error || ep->stat)
+			return;
+	}
+
+	mutex_enter(&np->s_lock);
+	if (!(np->seqhb_flags & NFS4_SEQHB_STARTED)) {
+		/*
+		 * Start lease management thread.
+		 * Keep trying until we succeed.
+		 */
+
+		np->s_refcnt++;		/* pass reference to thread */
+		/*
+		 * Pass a reference to the mi to the new thread.  This
+		 * reference will remain as long as the thread remains
+		 * active, even if the file system is unmounted.  Once
+		 * the thread terminates, it will release the reference
+		 * This reference does not interfere with unmount.
+		 */
+		MI4_HOLD(mi);
+		np->s_hb_mi = mi;
+		np->s_hb_svp = svp;
+
+		(void) zthread_create(NULL, 0, nfs4_sequence_heartbeat_thread,
+		    np, 0, minclsyspri);
+
+	}
+	mutex_exit(&np->s_lock);
+}
+
+int nfs4createclientid_otw_debug = 0;
+
+/*
+ * Issues EXCHANGE_ID, CREATE_SESSION, and then attempts to
+ * get the lease time from the server provided the session is created.
+ */
+/* ARGSUSED */
+void
+nfs4exchange_id_otw(mntinfo4_t *mi, servinfo4_t *svp, cred_t *cr,
+	nfs4_server_t *np, nfs4_error_t *ep, int *retry_inusep)
+{
+	nfs4_call_t		*cp;
+	EXCHANGE_ID4args	*argp;
+	EXCHANGE_ID4res		*exch_res;
+	EXCHANGE_ID4resok	*resp;
+
+	ASSERT(!MUTEX_HELD(&np->s_lock));
+
+	cp = nfs4_call_init(TAG_EXCHANGE_ID, OP_EXCHANGE_ID, OH_OTHER, FALSE,
+	    mi, NULL, NULL, cr);
+
+	/* EXCHANGE_ID */
+	exch_res = nfs4_op_exchange_id(cp, &argp);
+
+	mutex_enter(&np->s_lock);
+	argp->eia_clientowner.co_verifier = np->clidtosend.verifier;
+	argp->eia_clientowner.co_ownerid.co_ownerid_len = np->clidtosend.id_len;
+	ASSERT(np->clidtosend.id_len <= NFS4_OPAQUE_LIMIT);
+	argp->eia_clientowner.co_ownerid.co_ownerid_val = np->clidtosend.id_val;
+
+	if (svp->sv_flags & SV4_ISA_DS) {
+		argp->eia_flags = EXCHGID4_FLAG_USE_PNFS_DS;
+	} else {
+		/*
+		 * Query for all of server's roles in one try and let
+		 * the server tell us its capabilities.
+		 */
+		argp->eia_flags =
+		    (EXCHGID4_FLAG_USE_PNFS_MDS|EXCHGID4_FLAG_USE_NON_PNFS|
+		    EXCHGID4_FLAG_USE_PNFS_DS);
+	}
+
+	argp->eia_state_protect.spa_how = SP4_NONE;
+	argp->eia_client_impl_id.eia_client_impl_id_len = 0;
+	argp->eia_client_impl_id.eia_client_impl_id_val = 0;
+	mutex_exit(&np->s_lock);
+
+	cp->nc_rfs4call_flags |= RFS4CALL_NOSEQ;
+	cp->nc_svp = svp;
+	rfs4call(cp, ep);
+
+	/*
+	 * Bit of a hack to check for version mismatch here.
+	 * But need to destroy underlying RPC tags on failure
+	 * and this is a good place, while we still have reference
+	 * to the nfs4_server_t.
+	 */
+	if (ep->error || ep->stat == NFS4ERR_MINOR_VERS_MISMATCH) {
+		(void) nfs4_tag_ctl(np, mi, svp, NULL, NFS4_TAG_DESTROY, cr);
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	if (cp->nc_res.status == NFS4ERR_CLID_INUSE) {
+		zcmn_err(mi->mi_zone->zone_id, CE_NOTE, "NFS4 mount "
+		    "(EXCHANGE_ID failed): Clientid already in use");
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	if (cp->nc_res.status) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	resp = &exch_res->EXCHANGE_ID4res_u.eir_resok4;
+
+	/*
+	 * Sanity check the results
+	 */
+
+	if (resp->eir_state_protect.spr_how != SP4_NONE) {
+		zcmn_err(mi->mi_zone->zone_id, CE_NOTE, "NFS4 mount "
+		    "(EXCHANGE_ID problem): server wants protection %d",
+		    resp->eir_state_protect.spr_how);
+		/* XXX continue for now; pretend everything is okay */
+	}
+
+	mutex_enter(&np->s_lock);
+	np->clientid = resp->eir_clientid;
+	np->csa_seqid = resp->eir_sequenceid;
+
+	/*
+	 * A server cannot have both MDS and non-PNFS roles concurrently.
+	 * In the case of an errant server returning non-acceptable combination
+	 * of roles set, we prefer pNFS over non-pNFS below.
+	 */
+
+	if (resp->eir_flags & EXCHGID4_FLAG_USE_PNFS_MDS) {
+		np->s_flags |= N4S_USE_PNFS_MDS;
+	} else if (resp->eir_flags & EXCHGID4_FLAG_USE_NON_PNFS) {
+		np->s_flags |= N4S_USE_NON_PNFS;
+	}
+
+	if (resp->eir_flags & EXCHGID4_FLAG_USE_PNFS_DS)
+		np->s_flags |= N4S_USE_PNFS_DS;
+
+	np->s_minorversion = mi->mi_minorversion;
+
+	/*
+	 * XXX - The following response fields are ignored for now.
+	 * eir_server_owner, eir_server_scope, eir_server_impl_id
+	 */
+
+#ifdef	DEBUG
+	if (nfs4createclientid_otw_debug) {
+		union {
+			clientid4	clientid;
+			int		foo[2];
+		} cid;
+
+		cid.clientid = resp->eir_clientid;
+
+		zcmn_err(mi->mi_zone->zone_id, CE_NOTE,
+		    "nfs4createclientid_otw: OK, clientid = %x,%x, "
+		    "sequenceid = %x" PRIx64 "\n", cid.foo[0], cid.foo[1],
+		    np->csa_seqid);
+	}
+#endif
+
+	mutex_exit(&np->s_lock);
+
+	nfs4_call_rele(cp);
+
+	/* Now try to create the session */
+
+	nfs4create_session(mi, svp, cr, np, ep);
+}
+
+void
+nfs4create_session(mntinfo4_t *mi, servinfo4_t *svp, cred_t *cr,
+	nfs4_server_t *np, nfs4_error_t *ep)
+{
+	nfs4_call_t		*cp;
+	sessionid4		tmp_sessid;
+	CREATE_SESSION4args	*sargp;
+	CREATE_SESSION4res	*sess_res;
+	CREATE_SESSION4resok	*s_resok;
+	timespec_t		 prop_time;
+	timespec_t		 after_time;
+	int			flags = RFS4CALL_NOSEQ;
+	int			max_slots = 0;
+
+	cp = nfs4_call_init(TAG_CREATE_SESSION, OP_CREATE_SESSION, OH_OTHER,
+	    FALSE, mi, NULL, NULL, cr);
+
+	sess_res = nfs4_op_create_session(cp, &sargp);
+
+	sargp->csa_clientid = np->clientid;
+	sargp->csa_sequence = np->csa_seqid;
+	sargp->csa_flags = CREATE_SESSION4_FLAG_PERSIST;
+
+	if (nfs41_birpc) {
+		sargp->csa_flags |= CREATE_SESSION4_FLAG_CONN_BACK_CHAN;
+		flags |= RFS4CALL_SETCB;
+	}
+
+	/* Fore Channel Attributes */
+	sargp->csa_fore_chan_attrs.ca_headerpadsize = 0;
+	sargp->csa_fore_chan_attrs.ca_maxrequestsize = NFS4_DATA_LIMIT;
+	sargp->csa_fore_chan_attrs.ca_maxresponsesize = NFS4_DATA_LIMIT;
+	sargp->csa_fore_chan_attrs.ca_maxresponsesize_cached = NFS4_DATA_LIMIT;
+	sargp->csa_fore_chan_attrs.ca_maxoperations = NFS4_COMPOUND_LIMIT;
+	sargp->csa_fore_chan_attrs.ca_maxrequests = 200;
+	sargp->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
+	sargp->csa_fore_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = 0;
+
+	/* Back  Channel Attributes */
+	sargp->csa_back_chan_attrs.ca_headerpadsize = 0;
+	sargp->csa_back_chan_attrs.ca_maxrequestsize = NFS4_DATA_LIMIT;
+	sargp->csa_back_chan_attrs.ca_maxresponsesize = NFS4_DATA_LIMIT;
+	sargp->csa_back_chan_attrs.ca_maxresponsesize_cached = NFS4_DATA_LIMIT;
+	sargp->csa_back_chan_attrs.ca_maxoperations = NFS4_COMPOUND_LIMIT;
+	sargp->csa_back_chan_attrs.ca_maxrequests = 200;
+	sargp->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_len = 0;
+	sargp->csa_back_chan_attrs.ca_rdma_ird.ca_rdma_ird_val = 0;
+
+	mutex_enter(&np->s_lock);
+
+	/*
+	 * Callback needs to happen on non-RDMA transport
+	 * Check if we have saved the original knetconfig
+	 * if so, use that instead.
+	 */
+	if (svp->sv_origknconf != NULL)
+		nfs41_cb_args(np, svp->sv_origknconf, sargp);
+	else
+		nfs41_cb_args(np, svp->sv_knconf, sargp);
+
+	mutex_exit(&np->s_lock);
+
+
+	/* used to figure out RTT for np */
+	gethrestime(&prop_time);
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE,
+	    "nfs4exchange_id_otw: start time: %ld sec %ld nsec",
+	    prop_time.tv_sec, prop_time.tv_nsec));
+
+	cp->nc_rfs4call_flags |= flags;
+	cp->nc_svp = svp;
+	rfs4call(cp, ep);
+
+	gethrestime(&after_time);
+	mutex_enter(&np->s_lock);
+	np->propagation_delay.tv_sec =
+	    MAX(1, after_time.tv_sec - prop_time.tv_sec);
+	mutex_exit(&np->s_lock);
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setlcientid_otw: "
+	    "finish time: %ld sec ", after_time.tv_sec));
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setclientid_otw: "
+	    "propagation delay set to %ld sec",
+	    np->propagation_delay.tv_sec));
+
+	if (ep->error) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	/*
+	 * Error in session create. We started off the callback
+	 * server above: clean it up before we abort, nfs4destroy_session()
+	 * does this job (by the way, we don't need to go over the wire for
+	 * destroying this session).
+	 */
+	if (cp->nc_res.status) {
+		nfs4_call_rele(cp);
+		nfs4destroy_session(np, mi, svp, ep, 0);
+		return;
+	}
+
+	s_resok = &sess_res->CREATE_SESSION4res_u.csr_resok4;
+	mutex_enter(&np->s_lock);
+
+	np->csa_seqid++;
+
+	if (nfs41_birpc) {
+		/* make sure the server allows bi-rpc as well */
+		np->ssx.bi_rpc =
+		    (s_resok->csr_flags & CREATE_SESSION4_FLAG_CONN_BACK_CHAN);
+	}
+
+	/*
+	 * If we had set cbinfo in the RPC layer, clear
+	 * it before doing a bc2s.
+	 */
+	if (nfs41_birpc && !np->ssx.bi_rpc)
+		(void) nfs4_tag_ctl(np, mi, svp, NULL,
+		    NFS4_CBSERVER_CLEANUP, cr);
+
+	/*
+	 * Copy the current sessid to swap tags in RPC.
+	 * (if this is the first CREATE_SESSION after an EXCHANGEID
+	 * ssx.sessionid is really a dummy sessid)
+	 */
+
+	bcopy(np->ssx.sessionid, tmp_sessid, sizeof (sessionid4));
+
+	bcopy(&s_resok->csr_sessionid, &np->ssx.sessionid, sizeof (sessionid4));
+	/* Setup fore channel slot cache. */
+	max_slots = s_resok->csr_fore_chan_attrs.ca_maxrequests;
+	slot_table_create(&np->ssx.slot_table, max_slots);
+
+	np->ssx.fore_chan_attr = s_resok->csr_fore_chan_attrs;
+	np->ssx.back_chan_attr = s_resok->csr_back_chan_attrs;
+
+	/* Set up back channel slot cache */
+	if (np->ssx.back_chan_attr.ca_maxrequests > 0 &&
+	    np->ssx.back_chan_attr.ca_maxrequests <= NFS41_CLNT_DEFAULT_SLOTS)
+		max_slots = np->ssx.back_chan_attr.ca_maxrequests;
+	else
+		max_slots = NFS41_CLNT_DEFAULT_SLOTS;
+
+	slot_table_create(&np->ssx.cb_slot_table, max_slots);
+
+	/* Add mi to np's mntinfo4 list */
+	if (!(svp->sv_flags & SV4_ISA_DS))
+		nfs4_add_mi_to_server(np, mi);
+
+	/*
+	 * Before we make any otw calls, swap rpc tags
+	 */
+	(void) nfs4_tag_ctl(np, mi, svp, tmp_sessid, NFS4_TAG_SWAP, cr);
+
+	/*
+	 * In case of non-bidirectional rpc, send a bc2s.
+	 * The cb server thread's been already started by
+	 * nfs41_cb_args()
+	 */
+
+	if (!np->ssx.bi_rpc)
+		nfs41set_callback(np, svp, mi, cr);
+
+	mutex_exit(&np->s_lock);
+
+	nfs4_call_rele(cp);
+
+	/* KLR - need SET_SSV and BIND_CONN_TO_SESSION here when ready */
+
+	/* Start a thread to keep the lease active. */
+	nfs4start_hb_thread(mi, svp, np, ep, cr);
+	if (ep->error || ep->stat) {
+		cmn_err(CE_WARN, "nfs4 hb_thread start failed-stat %d er %d",
+		    ep->stat, ep->error);
+#if 0
+		nfs4destroy_session(np, mi, svp, ep, N4DS_DESTROY_OTW);
+#endif
+		return;
+	}
+	mutex_enter(&np->s_lock);
+
+	/*
+	 * Handle the case where recovery for bc2s ended up
+	 * in creating a new session
+	 */
+	np->s_flags &= ~N4S_NEED_BC2S;
+
+	np->s_flags |= (N4S_CLIENTID_SET|N4S_SESSION_CREATED);
+	cv_broadcast(&np->s_clientid_pend);
+	mutex_exit(&np->s_lock);
+
+}
+
+
+/*
+ * This function handles the recovery of STALE_CLIENTID for SETCLIENTID_CONFRIM,
+ * but nothing else; the calling function must be designed to handle those
+ * other errors.
+ */
+static void
+nfs4setclientid_otw(mntinfo4_t *mi, struct servinfo4 *svp, cred_t *cr,
+    struct nfs4_server *np, nfs4_error_t *ep, int *retry_inusep)
+{
+	nfs4_call_t *cp;
+	SETCLIENTID4args *s_args;
+	SETCLIENTID4res *scid_res;
+	SETCLIENTID4resok *s_resok;
+	nfs4_ga_res_t *garp = NULL;
+	timespec_t prop_time, after_time;
+	verifier4 verf;
+	clientid4 tmp_clientid;
+	GETATTR4res *getattr_res;
+	attrmap4 attr_request;
+
+	ASSERT(!MUTEX_HELD(&np->s_lock));
+
+	cp = nfs4_call_init(TAG_SETCLIENTID, OP_SETCLIENTID, OH_OTHER, FALSE,
+	    mi, NULL, NULL, cr);
+
+	/* 0: putrootfh */
+	(void) nfs4_op_putrootfh(cp);
+
+	/* 1: getattr */
+	attr_request = MI4_EMPTY_ATTRMAP(mi);
+	ATTR_SET(attr_request, LEASE_TIME);
+	getattr_res = nfs4_op_getattr(cp, attr_request);
+
+	/* 2: setclientid */
+	scid_res = nfs4_op_setclientid(cp, &s_args);
+
+	mutex_enter(&np->s_lock);
+
+	s_args->client.verifier = np->clidtosend.verifier;
+	s_args->client.id_len = np->clidtosend.id_len;
+	ASSERT(s_args->client.id_len <= NFS4_OPAQUE_LIMIT);
+	s_args->client.id_val = np->clidtosend.id_val;
+
+	/*
+	 * Callback needs to happen on non-RDMA transport
+	 * Check if we have saved the original knetconfig
+	 * if so, use that instead.
+	 */
+	if (svp->sv_origknconf != NULL)
+		nfs4_cb_args(np, svp->sv_origknconf, s_args);
+	else
+		nfs4_cb_args(np, svp->sv_knconf, s_args);
+
+	mutex_exit(&np->s_lock);
+
+	rfs4call(cp, ep);
+
+	if (ep->error) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	/* getattr lease_time res */
+	if (getattr_res->status == NFS4_OK) {
+		garp = &getattr_res->ga_res;
+
+#ifndef _LP64
+		/*
+		 * The 32 bit client cannot handle a lease time greater than
+		 * (INT32_MAX/1000000).  This is due to the use of the
+		 * lease_time in calls to drv_usectohz() in
+		 * nfs4_renew_lease_thread().  The problem is that
+		 * drv_usectohz() takes a time_t (which is just a long = 4
+		 * bytes) as its parameter.  The lease_time is multiplied by
+		 * 1000000 to convert seconds to usecs for the parameter.  If
+		 * a number bigger than (INT32_MAX/1000000) is used then we
+		 * overflow on the 32bit client.
+		 */
+		if (garp->n4g_ext_res->n4g_leasetime > (INT32_MAX/1000000)) {
+			garp->n4g_ext_res->n4g_leasetime = INT32_MAX/1000000;
+		}
+#endif
+
+		mutex_enter(&np->s_lock);
+		np->s_lease_time = garp->n4g_ext_res->n4g_leasetime;
+		mutex_exit(&np->s_lock);
+	}
+
+	/* setclientid result */
+	if (scid_res->status == NFS4ERR_CLID_INUSE) {
+		clientaddr4 *clid_inuse;
+
+		if (!(*retry_inusep)) {
+			clid_inuse = &scid_res->SETCLIENTID4res_u.client_using;
+
+			zcmn_err(mi->mi_zone->zone_id, CE_NOTE,
+			    "NFS4 mount (SETCLIENTID failed)."
+			    "  nfs4_client_id.id is in"
+			    "use already by: r_netid<%s> r_addr<%s>",
+			    clid_inuse->r_netid, clid_inuse->r_addr);
+		}
+
+		/*
+		 * XXX - The client should be more robust in its
+		 * handling of clientid in use errors (regen another
+		 * clientid and try again?)
+		 */
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	if (cp->nc_res.status) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	s_resok = &scid_res->SETCLIENTID4res_u.resok4;
+	tmp_clientid = s_resok->clientid;
+	verf = s_resok->setclientid_confirm;
+
+#ifdef	DEBUG
+	if (nfs4createclientid_otw_debug) {
+		union {
+			clientid4	clientid;
+			int		foo[2];
+		} cid;
+
+		cid.clientid = s_resok->clientid;
+
+		zcmn_err(mi->mi_zone->zone_id, CE_NOTE,
+		"nfs4setclientid_otw: OK, clientid = %x,%x, "
+		"verifier = %" PRIx64 "\n", cid.foo[0], cid.foo[1], verf);
+	}
+#endif
+
+	nfs4_call_rele(cp);
+
+	/* Confirm the client id and get the lease_time attribute */
+
+	cp = nfs4_call_init(TAG_SETCLIENTID_CF, OP_SETCLIENTID_CONFIRM,
+	    OH_OTHER, FALSE, mi, NULL, NULL, cr);
+
+	/* 0: setclientid_confirm */
+	(void) nfs4_op_setclientid_confirm(cp, tmp_clientid, verf);
+
+	/* used to figure out RTT for np */
+	gethrestime(&prop_time);
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setlientid_otw: "
+	    "start time: %ld sec %ld nsec", prop_time.tv_sec,
+	    prop_time.tv_nsec));
+
+	rfs4call(cp, ep);
+
+	gethrestime(&after_time);
+	mutex_enter(&np->s_lock);
+	np->propagation_delay.tv_sec =
+	    MAX(1, after_time.tv_sec - prop_time.tv_sec);
+	mutex_exit(&np->s_lock);
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setlcientid_otw: "
+	    "finish time: %ld sec ", after_time.tv_sec));
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4setclientid_otw: "
+	    "propagation delay set to %ld sec",
+	    np->propagation_delay.tv_sec));
+
+	if (ep->error) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	if (cp->nc_res.status == NFS4ERR_CLID_INUSE) {
+		if (!(*retry_inusep)) {
+			zcmn_err(mi->mi_zone->zone_id, CE_NOTE,
+			    "SETCLIENTID_CONFIRM failed.");
+		}
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	if (cp->nc_res.status) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	mutex_enter(&np->s_lock);
+	np->clientid = tmp_clientid;
+	np->s_flags |= N4S_CLIENTID_SET;
+
+	/* Add mi to np's mntinfo4 list */
+	nfs4_add_mi_to_server(np, mi);
+
+	if (np->lease_valid == NFS4_LEASE_NOT_STARTED) {
+		/*
+		 * Start lease management thread.
+		 * Keep trying until we succeed.
+		 */
+
+		np->s_refcnt++;		/* pass reference to thread */
+		(void) zthread_create(NULL, 0, nfs4_renew_lease_thread, np, 0,
+		    minclsyspri);
+	}
+	mutex_exit(&np->s_lock);
+
+	nfs4_call_rele(cp);
+}
+
+uint32_t
+nfs4_op_oseqid(nfs4_open_owner_t *oop, mntinfo4_t *mi,
+		minorop_type_t optype, seqid4 seqid, nfs4_tag_type_t ctag)
+{
+	uint32_t rseqid;
+
+	switch (optype) {
+	case MINOROP_GET:
+		/*
+		 * Note: returns current open seqid + 1
+		 */
+		rseqid = nfs4_get_open_seqid(oop) + 1;
+		return (rseqid);
+
+	case MINOROP_SET:
+		nfs4_set_open_seqid(seqid, oop, ctag);
+		return (0);
+
+	case MINOROP_SYNC_START:
+		return (nfs4_start_open_seqid_sync(oop, mi));
+
+	case MINOROP_SYNC_END:
+		nfs4_end_open_seqid_sync(oop);
+		return (0);
+	default:
+		return (0);
+	}
+}
+
+uint32_t
+nfs4_op_lseqid(nfs4_lock_owner_t *lop, mntinfo4_t *mi,
+			minorop_type_t optype, seqid4 seqid)
+{
+	switch (optype) {
+	case MINOROP_GET:
+		/*
+		 * Note: returns current lock seqid + 1
+		 */
+		return (lop->lock_seqid + 1);
+
+	case MINOROP_SET:
+		nfs4_set_lock_seqid(seqid, lop);
+		return (0);
+
+	case MINOROP_SYNC_START:
+		return (nfs4_start_lock_seqid_sync(lop, mi));
+
+	case MINOROP_SYNC_END:
+		nfs4_end_lock_seqid_sync(lop);
+		return (0);
+	default:
+		return (0);
+	}
+}
+
+clientid4
+nfs4_op_clientid(mntinfo4_t *mi, minorop_type_t optype, servinfo4_t *svp,
+	cred_t *cr, nfs4_server_t *np, nfs4_error_t *n4ep, int *retry_inuse)
+{
+	switch (optype) {
+	case MINOROP_GET:
+		return (mi2clientid(mi));
+	case MINOROP_SET:
+		nfs4setclientid_otw(mi, svp, cr, np, n4ep, retry_inuse);
+	default:
+		return (0);
+	}
+}
+
+
+/*
+ * NFSv4.1 dummy ops
+ */
+
+/* ARGSUSED */
+
+uint32_t
+nfs41_op_oseqid(nfs4_open_owner_t *oop, mntinfo4_t *mi,
+		minorop_type_t optype, seqid4 seqid, nfs4_tag_type_t ctag)
+{
+	return (0);
+}
+
+/* ARGSUSED */
+
+uint32_t
+nfs41_op_lseqid(nfs4_lock_owner_t *lop, mntinfo4_t *mi,
+			minorop_type_t optype, seqid4 seqid)
+{
+	return (0);
+}
+
+/* ARGSUSED */
+
+clientid4
+nfs41_op_clientid(mntinfo4_t *mi, minorop_type_t optype, servinfo4_t *svp,
+	cred_t *cr, nfs4_server_t *np, nfs4_error_t *n4ep, int *retry_inuse)
+{
+	switch (optype) {
+	case MINOROP_GET:
+		return (0);
+	case MINOROP_SET:
+		nfs4exchange_id_otw(mi, svp, cr, np, n4ep, retry_inuse);
+	}
+	return (0);
 }

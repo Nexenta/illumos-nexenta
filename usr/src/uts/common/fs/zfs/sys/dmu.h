@@ -139,6 +139,19 @@ typedef enum dmu_object_type {
 	DMU_OT_DEADLIST_HDR,		/* UINT64 */
 	DMU_OT_DSL_CLONES,		/* ZAP */
 	DMU_OT_BPOBJ_SUBOBJ,		/* UINT64 */
+	/* List of dummy fields to stop flag days */
+	DMU_OT_DUMMY_01,
+	DMU_OT_DUMMY_02,
+	DMU_OT_DUMMY_03,
+	DMU_OT_DUMMY_04,
+	DMU_OT_DUMMY_05,
+	DMU_OT_DUMMY_06,
+	DMU_OT_DUMMY_07,
+	DMU_OT_DUMMY_08,
+	/* pNFS Data Server: */
+	DMU_OT_PNFS_DATA,
+	DMU_OT_PNFS_INFO,		/* ZAP */
+	DMU_OT_NNODE,			/* NFS NODE */
 	DMU_OT_NUMTYPES
 } dmu_object_type_t;
 
@@ -149,6 +162,8 @@ typedef enum dmu_objset_type {
 	DMU_OST_ZVOL,
 	DMU_OST_OTHER,			/* For testing only! */
 	DMU_OST_ANY,			/* Be careful! */
+	DMU_OST_PNFS,			/* pNFS dserv data store container */
+	DMU_OST_PNFSOBJS,		/* pNFS dserv data store objects */
 	DMU_OST_NUMTYPES
 } dmu_objset_type_t;
 
@@ -234,6 +249,13 @@ typedef void dmu_buf_evict_func_t(struct dmu_buf *db, void *user_ptr);
 #define	DMU_POOL_CREATION_VERSION	"creation_version"
 #define	DMU_POOL_SCAN			"scan"
 #define	DMU_POOL_FREE_BPOBJ		"free_bpobj"
+
+/*
+ * pNFS Object ID "claims"
+ */
+#define	DMU_PNFS_METADATA_OBJECT	1	/* DMU_OT_PNFS_DATA */
+#define	DMU_PNFS_FID_TO_OBJID_OBJECT	1	/* ZAP - DMU_OT_PNFS_INFO */
+#define	DMU_PNFS_SID_TO_DSGUID_OBJECT	1	/* ZAP - DMU_OT_PNFS_INFO */
 
 /*
  * Allocate an object from this objset.  The range of object numbers

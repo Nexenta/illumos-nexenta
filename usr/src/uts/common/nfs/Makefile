@@ -33,11 +33,24 @@ HDRS=	export.h	lm.h						\
 	nfs_clnt.h	nfs_log.h 	nfs_sec.h	nfs4.h		\
 	nfs4_attr.h	nfs4_clnt.h	rnode.h		rnode4.h	\
 	nfs4_kprot.h	nfs4_db_impl.h	nfs4_idmap_impl.h \
-	nfsid_map.h	auth.h		nfs_cmd.h
+	nfsid_map.h	auth.h		nfs_cmd.h dserv_impl.h \
+	nfs41_fhtype.h nfs41_filehandle.h nnode.h \
+	spe_impl.h mds_state.h nfs4_ext_defs.h     \
+	nfs41_kprot.h nfs_serv_inst.h nfs4_pnfs.h     \
+	nfs41_sessions.h nfs4_clnt_impl.h ds_filehandle.h     \
+	nfs4_attrmap.h nfs4_srv_readdir.h nfs4_srv_attr.h     \
+	ds.h ctl_mds_clnt.h range.h range_impl.h nnode_impl.h \
+	nnode_vn.h nnode_proxy.h spe.h spe_attr.h
+
+
+PROTOCOL_DIR = $(SRC)/head/rpcsvc
+DERIVED_FILES = ds_prot.h ds_nfs_xdr.h mds_odl.h spe_prot.h
+
+CLEANFILES += $(DERIVED_FILES)
 
 $(CLOSED_BUILD)CLOSEDHDRS=	lm_impl.h	lm_nlm.h	lm_server.h
 
-ALLHDRS= $(HDRS) $(CLOSEDHDRS)
+ALLHDRS= $(HDRS) $(CLOSEDHDRS) $(DERIVED_FILES)
 
 ROOTDIRS= $(ROOT)/usr/include/nfs
 
@@ -56,9 +69,26 @@ $(ROOTDIRS)/%: $(CLOSED)/uts/common/nfs/%
 
 .PARALLEL: $(CHECKHDRS)
 
-install_h: $(ROOTDIRS) $(ROOTHDRS)
+install_h: $(ROOTDIRS) $(ROOTHDRS) $(DERIVED_FILES)
 
 $(ROOTDIRS):
 	$(INS.dir)
 
 check:	$(CHECKHDRS)
+
+clean clobber:
+	$(RM) $(DERIVED_FILES)
+	$(RM) $(ROOTHDRS)
+
+ds_prot.h: $(PROTOCOL_DIR)/ds_prot.x
+	$(RPCGEN) -C -h $(PROTOCOL_DIR)/ds_prot.x >$@ 
+
+mds_odl.h: $(PROTOCOL_DIR)/mds_odl.x
+	$(RPCGEN) -C -h $(PROTOCOL_DIR)/mds_odl.x >$@ 
+
+ds_nfs_xdr.h: $(PROTOCOL_DIR)/ds_nfs_com.x
+	$(RPCGEN) -C -h $(PROTOCOL_DIR)/ds_nfs_com.x | \
+	egrep 'bool_t xdr_.+\(XDR \*\, ' >$@ 
+
+spe_prot.h: $(PROTOCOL_DIR)/spe_prot.x
+	$(RPCGEN) -C -h $(PROTOCOL_DIR)/spe_prot.x >$@

@@ -100,6 +100,16 @@ const dmu_object_type_info_t dmu_ot[DMU_OT_NUMTYPES] = {
 	{	byteswap_uint64_array,	TRUE,	"DSL deadlist map hdr"	},
 	{	zap_byteswap,		TRUE,	"DSL dir clones"	},
 	{	byteswap_uint64_array,	TRUE,	"bpobj subobj"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 01"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 02"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 03"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 04"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 05"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 06"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 07"		},
+	{	zap_byteswap,		TRUE,	"pNFS Dummy 08"		},
+	{	byteswap_uint8_array,	FALSE,	"pNFS Data"		},
+	{	zap_byteswap,		TRUE,	"pNFS FH Map"		}
 };
 
 int

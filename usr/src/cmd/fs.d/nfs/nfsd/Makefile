@@ -29,7 +29,7 @@ ATTMK=		$(TYPEPROG)
 
 include		../../Makefile.fstype
 
-LDLIBS +=	-lnsl -lnvpair  -lscf
+LDLIBS +=	-lnfs -lnsl -lnvpair  -lscf
 
 LOCAL=		nfsd.o
 OBJS=		$(LOCAL) nfs_tbind.o thrpool.o daemon.o smfcfg.o

@@ -129,6 +129,8 @@ zfs_callback(zfs_handle_t *zhp, void *data)
 		cb->cb_depth++;
 		if (zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM)
 			(void) zfs_iter_filesystems(zhp, zfs_callback, data);
+		if (zfs_get_type(zhp) == ZFS_TYPE_PNFS)
+			(void) zfs_iter_pnfs(zhp, zfs_callback, data);
 		if ((zfs_get_type(zhp) != ZFS_TYPE_SNAPSHOT) && include_snaps)
 			(void) zfs_iter_snapshots(zhp, zfs_callback, data);
 		cb->cb_depth--;

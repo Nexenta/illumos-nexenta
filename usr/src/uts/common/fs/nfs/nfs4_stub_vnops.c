@@ -1376,20 +1376,20 @@ out:
  * Returns
  * 	1	 for success
  * 	0	 for failure
+ *
+ * 	DIMA: this function was heavily modified to use new ATTR API
  */
 int
 nfs4_fetch_locations(mntinfo4_t *mi, nfs4_sharedfh_t *sfh, char *nm,
     cred_t *cr, nfs4_ga_res_t *garp, COMPOUND4res_clnt *callres, bool_t lock)
 {
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	nfs_argop4 *argop;
-	int argoplist_size = 3 * sizeof (nfs_argop4);
 	nfs4_server_t *sp = NULL;
-	int doqueue = 1;
-	nfs4_error_t e = { 0, NFS4_OK, RPC_SUCCESS };
+	nfs4_error_t ep = { 0, NFS4_OK, RPC_SUCCESS };
 	int retval = 1;
 	struct nfs4_clnt *nfscl;
+	nfs4_call_t *cp;
+	GETATTR4res *getattr_res;
+	attrmap4 attr_request;
 
 	if (lock == TRUE)
 		(void) nfs_rw_enter_sig(&mi->mi_recovlock, RW_READER, 0);
@@ -1428,30 +1428,26 @@ nfs4_fetch_locations(mntinfo4_t *mi, nfs4_sharedfh_t *sfh, char *nm,
 	 * kind of FH error, we should fail the mount.
 	 *
 	 * We may want to re-visited this at a later time.
+	 *
+	 * PUTFH LOOKUP GETATTR
 	 */
-	argop = kmem_alloc(argoplist_size, KM_SLEEP);
-
-	args.ctag = TAG_GETATTR_FSLOCATION;
-	/* PUTFH LOOKUP GETATTR */
-	args.array_len = 3;
-	args.array = argop;
+	cp = nfs4_call_init(TAG_GETATTR_FSLOCATION, OP_CLOSE, OH_OTHER, TRUE,
+			mi, NULL, NULL, cr);
 
 	/* 0. putfh file */
-	argop[0].argop = OP_CPUTFH;
-	argop[0].nfs_argop4_u.opcputfh.sfh = sfh;
+	(void) nfs4_op_cputfh(cp, sfh);
 
 	/* 1. lookup name, can't be dotdot */
-	argop[1].argop = OP_CLOOKUP;
-	argop[1].nfs_argop4_u.opclookup.cname = nm;
+	(void) nfs4_op_clookup(cp, nm);
 
 	/* 2. file attrs */
-	argop[2].argop = OP_GETATTR;
-	argop[2].nfs_argop4_u.opgetattr.attr_request =
-	    FATTR4_FSID_MASK | FATTR4_FS_LOCATIONS_MASK |
-	    FATTR4_MOUNTED_ON_FILEID_MASK;
-	argop[2].nfs_argop4_u.opgetattr.mi = mi;
+	attr_request = MI4_EMPTY_ATTRMAP(mi);
+	ATTR_SET(attr_request, FSID);
+	ATTR_SET(attr_request, FS_LOCATIONS);
+	ATTR_SET(attr_request, MOUNTED_ON_FILEID);
+	getattr_res = nfs4_op_getattr(cp, attr_request);
 
-	rfs4call(mi, &args, &res, cr, &doqueue, 0, &e);
+	rfs4call(cp, &ep);
 
 	if (lock == TRUE) {
 		nfs_rw_exit(&mi->mi_recovlock);
@@ -1460,14 +1456,13 @@ nfs4_fetch_locations(mntinfo4_t *mi, nfs4_sharedfh_t *sfh, char *nm,
 	}
 
 	nfscl = zone_getspecific(nfs4clnt_zone_key, nfs_zone());
-	nfscl->nfscl_stat.referrals.value.ui64++;
+	nfscl->nfscl_stat[NFS4_MINORVERSION(mi)].referrals.value.ui64++;
 	DTRACE_PROBE3(nfs4clnt__func__referral__fsloc,
-	    nfs4_sharedfh_t *, sfh, char *, nm, nfs4_error_t *, &e);
+	    nfs4_sharedfh_t *, sfh, char *, nm, nfs4_error_t *, &ep);
 
-	if (e.error != 0) {
+	if (ep.error != 0) {
 		if (sp != NULL)
 			nfs4_server_rele(sp);
-		kmem_free(argop, argoplist_size);
 		return (0);
 	}
 
@@ -1476,8 +1471,7 @@ nfs4_fetch_locations(mntinfo4_t *mi, nfs4_sharedfh_t *sfh, char *nm,
 	 * For valid replies without an ops array or for illegal
 	 * replies, return a failure.
 	 */
-	if (res.status != NFS4_OK || res.array_len < 3 ||
-	    res.array[2].nfs_resop4_u.opgetattr.status != NFS4_OK) {
+	if (cp->nc_res.status != NFS4_OK || getattr_res->status != NFS4_OK) {
 		retval = 0;
 		goto exit;
 	}
@@ -1488,7 +1482,7 @@ nfs4_fetch_locations(mntinfo4_t *mi, nfs4_sharedfh_t *sfh, char *nm,
 	 * encountered very frequently, so just make them
 	 * available to the caller.
 	 */
-	*garp = res.array[2].nfs_resop4_u.opgetattr.ga_res;
+	*garp = getattr_res->ga_res;
 
 	DTRACE_PROBE2(nfs4clnt__debug__referral__fsloc,
 	    nfs4_ga_res_t *, garp, char *, "nfs4_fetch_locations");
@@ -1504,17 +1498,13 @@ nfs4_fetch_locations(mntinfo4_t *mi, nfs4_sharedfh_t *sfh, char *nm,
 		retval = 0;
 
 exit:
-	if (retval == 0) {
-		/* the call was ok but failed validating the call results */
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-	} else {
+	if (retval != 0) {
 		ASSERT(callres != NULL);
-		*callres = res;
+		*callres = cp->nc_res;
 	}
 
 	if (sp != NULL)
 		nfs4_server_rele(sp);
-	kmem_free(argop, argoplist_size);
 	return (retval);
 }
 

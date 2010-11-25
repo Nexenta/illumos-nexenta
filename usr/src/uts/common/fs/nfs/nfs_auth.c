@@ -435,7 +435,7 @@ retry:
 	 * info _or_ properly encode the arguments, there's really no
 	 * point in continuting, so we fail the request.
 	 */
-	DTRACE_PROBE1(nfsserv__func__nfsauth__varg, varg_t *, &varg);
+	DTRACE_PROBE1(nfss__i__nfsauth_varg, varg_t *, &varg);
 	if ((absz = xdr_sizeof(xdr_varg, (void *)&varg)) == 0) {
 		door_ki_rele(dh);
 		*access = NFSAUTH_DENIED;
@@ -473,7 +473,7 @@ retry:
 				 * get control of the thread (and exit
 				 * gracefully).
 				 */
-				DTRACE_PROBE1(nfsserv__func__nfsauth__door__nil,
+				DTRACE_PROBE1(nfss__i__nfsauth_door_nil,
 				    door_arg_t *, &da);
 				door_ki_rele(dh);
 				goto fail;
@@ -583,7 +583,7 @@ retry:
 		goto fail;
 	XDR_DESTROY(&xdrs_r);
 
-	DTRACE_PROBE1(nfsserv__func__nfsauth__results, nfsauth_res_t *, &res);
+	DTRACE_PROBE1(nfss__i__nfsauth_results, nfsauth_res_t *, &res);
 	switch (res.stat) {
 		case NFSAUTH_DR_OKAY:
 			*access = res.ares.auth_perm;
@@ -796,6 +796,8 @@ nfsauth_cache_get(struct exportinfo *exi, struct svc_req *req, int flavor)
 	if (taddrmask)
 		addrmask(&addr, taddrmask);
 
+	DTRACE_PROBE1(nfss__i__nfsauth_clnt, char *, addr.buf);
+
 	rw_enter(&exi->exi_cache_lock, RW_READER);
 	head = &exi->exi_cache[hash(&addr)];
 	for (p = *head; p; p = p->auth_next) {
@@ -895,6 +897,7 @@ nfsauth_cache_get(struct exportinfo *exi, struct svc_req *req, int flavor)
 
 	if (!nfsauth_retrieve(exi, svc_getnetid(req->rq_xprt), flavor,
 	    &addr, &access)) {
+		DTRACE_PROBE1(nfss__i__nfsauth_cached, int, access);
 		kmem_free(addr.buf, addr.len);
 		return (access);
 	}

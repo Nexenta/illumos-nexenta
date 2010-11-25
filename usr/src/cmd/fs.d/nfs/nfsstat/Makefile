@@ -29,9 +29,9 @@ PROG=		nfsstat
 include		../../../Makefile.cmd
 
 CFLAGS +=	$(CCVERBOSE)
-COMMON=	nfs_sec.o
+COMMON=	nfs_sec.o nfsstat_layout.o
 OBJS=	nfsstat.o $(COMMON)
-SRCS=	nfsstat.c ../lib/nfs_sec.c
+SRCS=	nfsstat.c nfsstat_layout.c ../lib/nfs_sec.c
 
 STATCOMMONDIR = $(SRC)/cmd/stat/common
 
@@ -58,6 +58,9 @@ nfs_sec.o:	../lib/nfs_sec.c
 
 %.o:    $(STATCOMMONDIR)/%.c
 	$(COMPILE.c) $<
+
+nfsstat_layout.o:nfsstat_layout.c
+		$(COMPILE.c) nfsstat_layout.c
 
 install:	all $(ROOTPROG)
 

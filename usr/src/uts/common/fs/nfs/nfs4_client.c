@@ -1,3 +1,4 @@
+
 /*
  * CDDL HEADER START
  *
@@ -69,6 +70,7 @@
 #include <nfs/nfs4.h>
 #include <nfs/rnode4.h>
 #include <nfs/nfs4_clnt.h>
+#include <nfs/nfs41_sessions.h>
 
 #include <vm/hat.h>
 #include <vm/as.h>
@@ -90,6 +92,7 @@ typedef struct {
 
 #ifdef DEBUG
 int nfs4_client_lease_debug;
+int nfs4_seqhb_debug;
 int nfs4_sharedfh_debug;
 int nfs4_fname_debug;
 
@@ -103,8 +106,12 @@ static time_t	nfs4_client_resumed = 0;
 static	callb_id_t cid = 0;
 
 static int	nfs4renew(nfs4_server_t *);
+static void	nfs4sequence(mntinfo4_t *, nfs4_server_t *, servinfo4_t *,
+		    nfs4_error_t *);
 static void	nfs4_attrcache_va(vnode_t *, nfs4_ga_res_t *, int);
 static void	nfs4_pgflush_thread(pgflush_t *);
+static int	nfs4_call_construct(void *, void *, int);
+static void	nfs4_call_destroy(void *, void *);
 
 static boolean_t nfs4_client_cpr_callb(void *, int);
 
@@ -115,6 +122,8 @@ struct mi4_globals {
 };
 
 static zone_key_t mi4_list_key;
+static kmem_cache_t *nfs4_call_cache;
+static kmem_cache_t *compound4node_clnt_cache;
 
 /*
  * Attributes caching:
@@ -796,7 +805,8 @@ nfs4_attrcache_va(vnode_t *vp, nfs4_ga_res_t *garp, int set_cache_timeout)
 	 */
 	if (rp->r_size != vap->va_size &&
 	    (!vn_has_cached_data(vp) ||
-	    (!(rp->r_flags & R4DIRTY) && rp->r_count == 0))) {
+	    (!(rp->r_flags & R4DIRTY) && rp->r_count == 0)) &&
+	    !(rp->r_flags & R4LASTBYTE)) {
 		rp->r_size = vap->va_size;
 	}
 	nfs_setswaplike(vp, vap);
@@ -811,10 +821,14 @@ nfs4_attrcache_va(vnode_t *vp, nfs4_ga_res_t *garp, int set_cache_timeout)
 int
 nfs4_getattr_otw(vnode_t *vp, nfs4_ga_res_t *garp, cred_t *cr, int get_acl)
 {
+	nfs4_call_t *cp;
+	rnode4_t *rp = VTOR4(vp);
 	mntinfo4_t *mi = VTOMI4(vp);
 	hrtime_t t;
 	nfs4_recov_state_t recov_state;
 	nfs4_error_t e = { 0, NFS4_OK, RPC_SUCCESS };
+	GETATTR4res *getattr_res;
+	attrmap4 attr_request;
 
 	recov_state.rs_flags = 0;
 	recov_state.rs_num_retry_despite_err = 0;
@@ -823,27 +837,41 @@ nfs4_getattr_otw(vnode_t *vp, nfs4_ga_res_t *garp, cred_t *cr, int get_acl)
 	(void) save_mnt_secinfo(mi->mi_curr_serv);
 
 recov_retry:
+	cp = nfs4_call_init(TAG_GETATTR, OP_GETATTR, OH_GETATTR, FALSE, mi,
+	    vp, NULL, cr);
 
-	if ((e.error = nfs4_start_fop(mi, vp, NULL, OH_GETATTR,
-	    &recov_state, NULL))) {
+	if (e.error = nfs4_start_op(cp, &recov_state)) {
+		nfs4_call_rele(cp);
 		(void) check_mnt_secinfo(mi->mi_curr_serv, vp);
 		return (e.error);
 	}
 
 	t = gethrtime();
 
-	nfs4_getattr_otw_norecovery(vp, garp, &e, cr, get_acl);
+	(void) nfs4_op_cputfh(cp, rp->r_fh);
+	attr_request = MI4_DEFAULT_ATTRMAP(mi);
+	if (get_acl)
+		ATTR_SET(attr_request, ACL);
+	getattr_res = nfs4_op_getattr(cp, attr_request);
 
-	if (nfs4_needs_recovery(&e, FALSE, vp->v_vfsp)) {
-		if (nfs4_start_recovery(&e, VTOMI4(vp), vp, NULL, NULL,
-		    NULL, OP_GETATTR, NULL, NULL, NULL) == FALSE)  {
-			nfs4_end_fop(VTOMI4(vp), vp, NULL, OH_GETATTR,
-			    &recov_state, 1);
+	rfs4call(cp, &e);
+
+	if ((e.error == 0) && (cp->nc_res.status == NFS4_OK)) {
+		*garp = getattr_res->ga_res;
+	}
+
+	nfs4_needs_recovery(cp);
+	if (cp->nc_needs_recovery) {
+		if (nfs4_start_recovery(cp) == FALSE)  {
+			nfs4_end_op(cp, &recov_state);
+			nfs4_call_rele(cp);
 			goto recov_retry;
 		}
 	}
 
-	nfs4_end_fop(VTOMI4(vp), vp, NULL, OH_GETATTR, &recov_state, 0);
+	cp->nc_needs_recovery = FALSE;
+	nfs4_end_op(cp, &recov_state);
+	nfs4_call_rele(cp);
 
 	if (!e.error) {
 		if (e.stat == NFS4_OK) {
@@ -872,20 +900,17 @@ void
 nfs4_getattr_otw_norecovery(vnode_t *vp, nfs4_ga_res_t *garp,
     nfs4_error_t *ep, cred_t *cr, int get_acl)
 {
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	int doqueue;
+	nfs4_call_t *cp;
 	rnode4_t *rp = VTOR4(vp);
-	nfs_argop4 argop[2];
+	mntinfo4_t *mi = VTOMI4(vp);
+	GETATTR4res *getattr_res;
+	attrmap4 attr_request;
 
-	args.ctag = TAG_GETATTR;
-
-	args.array_len = 2;
-	args.array = argop;
+	cp = nfs4_call_init(TAG_GETATTR, OP_GETATTR, OH_OTHER, FALSE, mi,
+	    NULL, NULL, cr);
 
 	/* putfh */
-	argop[0].argop = OP_CPUTFH;
-	argop[0].nfs_argop4_u.opcputfh.sfh = rp->r_fh;
+	(void) nfs4_op_cputfh(cp, rp->r_fh);
 
 	/* getattr */
 	/*
@@ -900,27 +925,20 @@ nfs4_getattr_otw_norecovery(vnode_t *vp, nfs4_ga_res_t *garp,
 	 * So to ensure that all bases are covered, request at least
 	 * the AT_ALL attribute mask.
 	 */
-	argop[1].argop = OP_GETATTR;
-	argop[1].nfs_argop4_u.opgetattr.attr_request = NFS4_VATTR_MASK;
+	attr_request = MI4_DEFAULT_ATTRMAP(mi);
 	if (get_acl)
-		argop[1].nfs_argop4_u.opgetattr.attr_request |= FATTR4_ACL_MASK;
-	argop[1].nfs_argop4_u.opgetattr.mi = VTOMI4(vp);
+		ATTR_SET(attr_request, ACL);
+	getattr_res = nfs4_op_getattr(cp, attr_request);
 
-	doqueue = 1;
+	rfs4call(cp, ep);
 
-	rfs4call(VTOMI4(vp), &args, &res, cr, &doqueue, 0, ep);
-
-	if (ep->error)
-		return;
-
-	if (res.status != NFS4_OK) {
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	if (ep->error || (cp->nc_res.status != NFS4_OK)) {
+		nfs4_call_rele(cp);
 		return;
 	}
 
-	*garp = res.array[1].nfs_resop4_u.opgetattr.ga_res;
-
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	*garp = getattr_res->ga_res;
+	nfs4_call_rele(cp);
 }
 
 /*
@@ -970,90 +988,74 @@ nfs4getattr(vnode_t *vp, vattr_t *vap, cred_t *cr)
 
 int
 nfs4_attr_otw(vnode_t *vp, nfs4_tag_type_t tag_type,
-    nfs4_ga_res_t *garp, bitmap4 reqbitmap, cred_t *cr)
+    nfs4_ga_res_t *garp, attrmap4 *reqbitmap, cred_t *cr)
 {
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	int doqueue;
-	nfs_argop4 argop[2];
+	nfs4_call_t *cp;
 	mntinfo4_t *mi = VTOMI4(vp);
-	bool_t needrecov = FALSE;
 	nfs4_recov_state_t recov_state;
 	nfs4_error_t e = { 0, NFS4_OK, RPC_SUCCESS };
 	nfs4_ga_ext_res_t *gerp;
+	GETATTR4res *getattr_res;
 
 	recov_state.rs_flags = 0;
 	recov_state.rs_num_retry_despite_err = 0;
 
 recov_retry:
-	args.ctag = tag_type;
+	cp = nfs4_call_init(tag_type, OP_GETATTR, OH_GETATTR, FALSE, mi, vp,
+	    NULL, cr);
 
-	args.array_len = 2;
-	args.array = argop;
-
-	e.error = nfs4_start_fop(mi, vp, NULL, OH_GETATTR, &recov_state, NULL);
-	if (e.error)
-		return (e.error);
-
-	/* putfh */
-	argop[0].argop = OP_CPUTFH;
-	argop[0].nfs_argop4_u.opcputfh.sfh = VTOR4(vp)->r_fh;
-
-	/* getattr */
-	argop[1].argop = OP_GETATTR;
-	argop[1].nfs_argop4_u.opgetattr.attr_request = reqbitmap;
-	argop[1].nfs_argop4_u.opgetattr.mi = mi;
-
-	doqueue = 1;
-
-	NFS4_DEBUG(nfs4_client_call_debug, (CE_NOTE,
-	    "nfs4_attr_otw: %s call, rp %s", needrecov ? "recov" : "first",
-	    rnode4info(VTOR4(vp))));
-
-	rfs4call(mi, &args, &res, cr, &doqueue, 0, &e);
-
-	needrecov = nfs4_needs_recovery(&e, FALSE, vp->v_vfsp);
-	if (!needrecov && e.error) {
-		nfs4_end_fop(VTOMI4(vp), vp, NULL, OH_GETATTR, &recov_state,
-		    needrecov);
+	e.error = nfs4_start_op(cp, &recov_state);
+	if (e.error) {
+		nfs4_call_rele(cp);
 		return (e.error);
 	}
 
-	if (needrecov) {
+	/* putfh */
+	(void) nfs4_op_cputfh(cp, VTOR4(vp)->r_fh);
+
+	/* getattr */
+	getattr_res = nfs4_op_getattr(cp, *reqbitmap);
+
+	NFS4_DEBUG(nfs4_client_call_debug, (CE_NOTE,
+	    "nfs4_attr_otw: %s call, rp %s", NFS4_RS_RECOVSTR(&recov_state),
+	    rnode4info(VTOR4(vp))));
+
+	rfs4call(cp, &e);
+
+	nfs4_needs_recovery(cp);
+	if (!cp->nc_needs_recovery && e.error) {
+		nfs4_end_op(cp, &recov_state);
+		nfs4_call_rele(cp);
+		return (e.error);
+	}
+
+	if (cp->nc_needs_recovery) {
 		bool_t abort;
 
 		NFS4_DEBUG(nfs4_client_recov_debug, (CE_NOTE,
 		    "nfs4_attr_otw: initiating recovery\n"));
 
-		abort = nfs4_start_recovery(&e, VTOMI4(vp), vp, NULL, NULL,
-		    NULL, OP_GETATTR, NULL, NULL, NULL);
-		nfs4_end_fop(VTOMI4(vp), vp, NULL, OH_GETATTR, &recov_state,
-		    needrecov);
-		if (!e.error) {
-			(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-			e.error = geterrno4(res.status);
-		}
+		abort = nfs4_start_recovery(cp);
+		nfs4_end_op(cp, &recov_state);
+		if (!e.error)
+			e.error = geterrno4(cp->nc_res.status);
+		nfs4_call_rele(cp);
 		if (abort == FALSE)
 			goto recov_retry;
 		return (e.error);
 	}
 
-	if (res.status) {
-		e.error = geterrno4(res.status);
+	if (cp->nc_res.status) {
+		e.error = geterrno4(cp->nc_res.status);
 	} else {
 		gerp = garp->n4g_ext_res;
-		bcopy(&res.array[1].nfs_resop4_u.opgetattr.ga_res,
-		    garp, sizeof (nfs4_ga_res_t));
+		*garp = getattr_res->ga_res;
 		garp->n4g_ext_res = gerp;
-		if (garp->n4g_ext_res &&
-		    res.array[1].nfs_resop4_u.opgetattr.ga_res.n4g_ext_res)
-			bcopy(res.array[1].nfs_resop4_u.opgetattr.
-			    ga_res.n4g_ext_res,
-			    garp->n4g_ext_res, sizeof (nfs4_ga_ext_res_t));
+		if (garp->n4g_ext_res && getattr_res->ga_res.n4g_ext_res)
+			*garp->n4g_ext_res = *getattr_res->ga_res.n4g_ext_res;
 	}
-	(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-	nfs4_end_fop(VTOMI4(vp), vp, NULL, OH_GETATTR, &recov_state,
-	    needrecov);
+	nfs4_end_op(cp, &recov_state);
+	nfs4_call_rele(cp);
 	return (e.error);
 }
 
@@ -1239,6 +1241,10 @@ nfs4_async_manager_stop(vfs_t *vfsp)
 	mutex_enter(&mi->mi_async_lock);
 	mutex_enter(&mi->mi_lock);
 	mi->mi_flags |= MI4_ASYNC_MGR_STOP;
+	if (mi->mi_flags & MI4_PNFS) {
+		taskq_destroy(mi->mi_pnfs_io_taskq);
+		taskq_destroy(mi->mi_pnfs_other_taskq);
+	}
 	mutex_exit(&mi->mi_lock);
 	cv_broadcast(&mi->mi_async_reqs_cv);
 	/*
@@ -2122,7 +2128,7 @@ noasync:
 		while (plist != NULL) {
 			pp = plist;
 			page_sub(&plist, pp);
-			pp->p_fsdata = C_COMMIT;
+			pp->p_fsdata = C_COMMIT4;
 			page_unlock(pp);
 		}
 		return;
@@ -2943,10 +2949,41 @@ nfs4_mi_shutdown(zoneid_t zoneid, void *data)
 	/*
 	 * Tell each renew thread in the zone to exit
 	 */
+the_top:
 	mutex_enter(&nfs4_server_lst_lock);
 	for (np = nfs4_server_lst.forw; np != &nfs4_server_lst; np = np->forw) {
 		mutex_enter(&np->s_lock);
 		if (np->zoneid == zoneid) {
+			nfs4_error_t e;
+
+			if (np->seqhb_flags & NFS4_SEQHB_STARTED) {
+				/*
+				 * Tell the heartbeat thread to destroy
+				 * the session and terminate if it is
+				 * still around.  If not, then just clean
+				 * up the session.  Take a reference on
+				 * np to prevent it from disappearing due
+				 * to the action of the hb thread.
+				 */
+				np->s_refcnt++;
+				mutex_exit(&np->s_lock);
+				mutex_exit(&nfs4_server_lst_lock);
+				nfs4destroy_session(np, np->s_hb_mi,
+				    np->s_hb_svp, &e,
+				    N4DS_TERMINATE_HB_THREAD|
+				    N4DS_DESTROY_INZONE);
+
+				/*
+				 * Release our ref from above.    Start
+				 * again from the top.  Since we dropped
+				 * the list lock, the list could have
+				 * changed, although no new entries for
+				 * this zone should have been added.
+				 */
+				nfs4_server_rele(np);
+				goto the_top;
+			}
+
 			/*
 			 * We add another hold onto the nfs4_server_t
 			 * because this will make sure tha the nfs4_server_t
@@ -2955,8 +2992,10 @@ nfs4_mi_shutdown(zoneid_t zoneid, void *data)
 			 * unconditionally release its holds on the
 			 * nfs4_server_t.
 			 */
-			np->s_refcnt++;
-			nfs4_mark_srv_dead(np);
+			if (!(np->s_flags & N4S_SRV_DEAD)) {
+				np->s_refcnt++;
+				nfs4_mark_srv_dead(np, 1);
+			}
 		}
 		mutex_exit(&np->s_lock);
 	}
@@ -3066,6 +3105,8 @@ nfs_free_mi4(mntinfo4_t *mi)
 	 * the structure members or other routines calling back into NFS
 	 * accessing freed mntinfo4_t structure member.
 	 */
+	if (mi->mi_flags & MI4_PNFS)
+		nfs4_pnfs_fini_mi(mi);
 	mutex_enter(&mi->mi_lock);
 	ASSERT(mi->mi_recovthread == NULL);
 	ASSERT(mi->mi_flags & MI4_ASYNC_MGR_STOP);
@@ -3174,6 +3215,18 @@ nfs4_clnt_init(void)
 	nfs_idmap_init();
 	nfs4_callback_init();
 	nfs4_secinfo_init();
+	nfs4_pnfs_init();
+
+	nfs4_call_cache = kmem_cache_create("nfs4_call_cache",
+	    sizeof (nfs4_call_t), 0,
+	    nfs4_call_construct, nfs4_call_destroy, NULL,
+	    NULL, NULL, 0);
+
+	compound4node_clnt_cache = kmem_cache_create("compound4node_clnt_cache",
+	    sizeof (COMPOUND4node_clnt), 0,
+	    NULL, NULL, NULL,
+	    NULL, NULL, 0);
+
 #ifdef	DEBUG
 	tsd_create(&nfs4_tsd_key, NULL);
 #endif
@@ -3206,6 +3259,9 @@ nfs4_clnt_fini(void)
 	nfs_idmap_fini();
 	nfs4_callback_fini();
 	nfs4_secinfo_fini();
+	nfs4_pnfs_fini();
+	kmem_cache_destroy(nfs4_call_cache);
+	kmem_cache_destroy(compound4node_clnt_cache);
 #ifdef	DEBUG
 	tsd_destroy(&nfs4_tsd_key);
 #endif
@@ -3231,6 +3287,181 @@ nfs4_client_cpr_callb(void *arg, int code)
 	 */
 	nfs4_client_resumed = gethrestime_sec();
 	return (B_TRUE);
+}
+
+#ifdef	DEBUG
+int nfs4_sequence_hbt_timeout = 0;
+#else
+/*
+ * By default, the sequence heartbeat thread will wait 4
+ * minutes before dying after the last ref goes away.
+ */
+int nfs4_sequence_hbt_timeout = 4;
+#endif
+
+void
+nfs4_sequence_heartbeat_thread(nfs4_server_t *np)
+{
+	time_t			kip_secs;
+	clock_t			tick_delay = 0;
+	clock_t 		die_time = 0;
+	clock_t 		time_left = 0;
+	callb_cpr_t 		cpr_info;
+	kmutex_t 		cpr_lock;
+	nfs4_error_t		e = { 0, NFS4_OK, RPC_SUCCESS };
+	int			destroy = 0;
+
+	NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+	    "nfs4_seq_heartbeat_thread: active on np 0x%p", (void*)np));
+
+	mutex_init(&cpr_lock, NULL, MUTEX_DEFAULT, NULL);
+	CALLB_CPR_INIT(&cpr_info, &cpr_lock, callb_generic_cpr, "nfsv4seqhb");
+
+	mutex_enter(&np->s_lock);
+	np->seqhb_flags = NFS4_SEQHB_STARTED;
+
+	while (!(np->seqhb_flags & NFS4_SEQHB_EXIT)) {
+		kip_secs = MAX((np->s_lease_time >> 1) -
+		    (3 * np->propagation_delay.tv_sec), 1);
+
+		tick_delay = SEC_TO_TICK(kip_secs);
+
+		NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+		    "nfs4_seq_heartbeat_thread: no sequence : thread "
+		    "wait %ld secs", kip_secs));
+
+		NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+		    "nfs4_seq_heartbeat_thread: no sequence : "
+		    "state_ref_count %d, lease_valid %d",
+		    np->state_ref_count, np->lease_valid));
+
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_BEGIN(&cpr_info);
+		mutex_exit(&cpr_lock);
+
+		time_left = cv_timedwait(&np->cv_thread_exit,
+		    &np->s_lock, tick_delay + ddi_get_lbolt());
+
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_END(&cpr_info, &cpr_lock);
+		mutex_exit(&cpr_lock);
+
+		NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+		    "nfs4_seq_heartbeat_thread: no renew: "
+		    "time left %ld", time_left));
+
+		/*
+		 * Don't send the sequence otw if we are
+		 * about to close up.
+		 */
+
+		if (!(np->seqhb_flags & NFS4_SEQHB_EXIT)) {
+			nfs4sequence(np->s_hb_mi, np, np->s_hb_svp, &e);
+
+			/*
+			 * Need to reacquire sp's lock,
+			 * nfs4sequence() relinquishes it.
+			 */
+			mutex_enter(&np->s_lock);
+
+			/*
+			 * If we got BAD_SESSION from the sequence op,
+			 * then we are going to be terminating.  Don't
+			 * bother doing DESTROY_SESSION otw.
+			 */
+			if (e.stat == NFS4ERR_BADSESSION) {
+				destroy = 0;
+				break;
+			}
+
+		}
+
+		if (np->seqhb_flags & NFS4_SEQHB_EXITING) {
+			/*
+			 * Wait a while before destroying the
+			 * session.
+			 */
+			clock_t	cur_time;
+			cur_time = ddi_get_lbolt();
+			if (die_time) {
+				if (cur_time >= die_time) {
+					if (np->mntinfo4_list == NULL) {
+						np->seqhb_flags |=
+						    NFS4_SEQHB_EXIT;
+						destroy = 1;
+					} else {
+						die_time = 0;
+					}
+					np->seqhb_flags &=
+					    ~(NFS4_SEQHB_EXITING);
+				}
+			} else {
+				die_time = SEC_TO_TICK
+				    (nfs4_sequence_hbt_timeout * 60)
+				    + ddi_get_lbolt();
+			}
+		}
+	}
+
+	NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+	    "nfs4_seq_heartbeat_thread: thread exiting"));
+
+	while (np->s_otw_call_count != 0) {
+
+		NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+		    "nfs4_seq_heartbeat_thread: waiting for outstanding "
+		    "otw calls to finish for np 0x%p, current "
+		    "s_otw_call_count %d", (void *)np,
+		    np->s_otw_call_count));
+
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_BEGIN(&cpr_info);
+		mutex_exit(&cpr_lock);
+		cv_wait(&np->s_cv_otw_count, &np->s_lock);
+		mutex_enter(&cpr_lock);
+		CALLB_CPR_SAFE_END(&cpr_info, &cpr_lock);
+		mutex_exit(&cpr_lock);
+	}
+
+	if (np->seqhb_flags & NFS4_SEQHB_DESTROY_INZONE)
+		destroy = 1;
+	mutex_exit(&np->s_lock);
+
+	if (destroy)
+		nfs4destroy_session(np, np->s_hb_mi, np->s_hb_svp, &e,
+		    N4DS_DESTROY_OTW);
+
+	/*
+	 * signal recovery thread (if waiting) that we are done.
+	 */
+	mutex_enter(&np->s_lock);
+	np->seqhb_flags &= ~NFS4_SEQHB_STARTED;
+	np->seqhb_flags &= ~NFS4_SEQHB_EXIT;
+	cv_signal(&np->ssx_wait);
+
+	/*
+	 * Release our ref on the device node, if there is one.
+	 * This would be the case if the nfs4_server exists only
+	 * to be a data server.  s_lock must be held.
+	 */
+	if (np->s_devnode)
+		pnfs_rele_device(np, np->s_devnode);
+	mutex_exit(&np->s_lock);
+
+	MI4_RELE(np->s_hb_mi);
+	nfs4_server_rele(np);		/* free the thread's reference */
+	nfs4_server_rele(np);		/* free the list's reference */
+	np = NULL;
+
+	mutex_enter(&cpr_lock);
+	CALLB_CPR_EXIT(&cpr_info);	/* drops cpr_lock */
+	mutex_destroy(&cpr_lock);
+
+	NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+	    "nfs4_seq_heartbeat_thread: renew thread exit officially"));
+
+	zthread_exit();
+	/* NOT REACHED */
 }
 
 void
@@ -3417,17 +3648,13 @@ done:
 static int
 nfs4renew(nfs4_server_t *sp)
 {
-	COMPOUND4args_clnt args;
-	COMPOUND4res_clnt res;
-	nfs_argop4 argop[1];
-	int doqueue = 1;
-	int rpc_error;
+	nfs4_call_t *cp;
 	cred_t *cr;
 	mntinfo4_t *mi;
 	timespec_t prop_time, after_time;
-	int needrecov = FALSE;
 	nfs4_recov_state_t recov_state;
 	nfs4_error_t e = { 0, NFS4_OK, RPC_SUCCESS };
+	clientid4 cid;
 
 	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4renew"));
 
@@ -3436,13 +3663,22 @@ nfs4renew(nfs4_server_t *sp)
 
 recov_retry:
 	mi = sp->mntinfo4_list;
-	VFS_HOLD(mi->mi_vfsp);
-	mutex_exit(&sp->s_lock);
 	ASSERT(mi != NULL);
+	VFS_HOLD(mi->mi_vfsp);
 
-	e.error = nfs4_start_op(mi, NULL, NULL, &recov_state);
+	cr = sp->s_cred;
+	ASSERT(cr != NULL);
+	crhold(cr);
+	mutex_exit(&sp->s_lock);
+
+	cp = nfs4_call_init(TAG_RENEW, OP_RENEW, OH_OTHER, FALSE, mi,
+	    NULL, NULL, cr);
+	crfree(cr);
+
+	e.error = nfs4_start_op(cp, &recov_state);
 	if (e.error) {
 		VFS_RELE(mi->mi_vfsp);
+		nfs4_call_rele(cp);
 		return (e.error);
 	}
 
@@ -3450,8 +3686,9 @@ recov_retry:
 	mutex_enter(&sp->s_lock);
 	if (sp->s_thread_exit == NFS4_THREAD_EXIT) {
 		mutex_exit(&sp->s_lock);
-		nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+		nfs4_end_op(cp, &recov_state);
 		VFS_RELE(mi->mi_vfsp);
+		nfs4_call_rele(cp);
 		return (0);
 	}
 
@@ -3459,33 +3696,23 @@ recov_retry:
 	if (mi != sp->mntinfo4_list) {
 		/* Must drop sp's lock to avoid a recursive mutex enter */
 		mutex_exit(&sp->s_lock);
-		nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+		nfs4_end_op(cp, &recov_state);
 		VFS_RELE(mi->mi_vfsp);
+		nfs4_call_rele(cp);
 		mutex_enter(&sp->s_lock);
 		goto recov_retry;
 	}
+	cid = sp->clientid;
 	mutex_exit(&sp->s_lock);
 
-	args.ctag = TAG_RENEW;
-
-	args.array_len = 1;
-	args.array = argop;
-
-	argop[0].argop = OP_RENEW;
-
-	mutex_enter(&sp->s_lock);
-	argop[0].nfs_argop4_u.oprenew.clientid = sp->clientid;
-	cr = sp->s_cred;
-	crhold(cr);
-	mutex_exit(&sp->s_lock);
-
-	ASSERT(cr != NULL);
+	/* 0: renew */
+	(void) nfs4_op_renew(cp, cid);
 
 	/* used to figure out RTT for sp */
 	gethrestime(&prop_time);
 
 	NFS4_DEBUG(nfs4_client_call_debug, (CE_NOTE,
-	    "nfs4renew: %s call, sp 0x%p", needrecov ? "recov" : "first",
+	    "nfs4renew: %s call, sp 0x%p", NFS4_RS_RECOVSTR(&recov_state),
 	    (void*)sp));
 	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "before: %ld s %ld ns ",
 	    prop_time.tv_sec, prop_time.tv_nsec));
@@ -3493,8 +3720,7 @@ recov_retry:
 	DTRACE_PROBE2(nfs4__renew__start, nfs4_server_t *, sp,
 	    mntinfo4_t *, mi);
 
-	rfs4call(mi, &args, &res, cr, &doqueue, 0, &e);
-	crfree(cr);
+	rfs4call(cp, &e);
 
 	DTRACE_PROBE2(nfs4__renew__end, nfs4_server_t *, sp,
 	    mntinfo4_t *, mi);
@@ -3509,11 +3735,11 @@ recov_retry:
 	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "after : %ld s %ld ns ",
 	    after_time.tv_sec, after_time.tv_nsec));
 
-	if (e.error == 0 && res.status == NFS4ERR_CB_PATH_DOWN) {
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
+	if (e.error == 0 && cp->nc_res.status == NFS4ERR_CB_PATH_DOWN) {
 		nfs4_delegreturn_all(sp);
-		nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+		nfs4_end_op(cp, &recov_state);
 		VFS_RELE(mi->mi_vfsp);
+		nfs4_call_rele(cp);
 		/*
 		 * If the server returns CB_PATH_DOWN, it has renewed
 		 * the lease and informed us that the callback path is
@@ -3523,51 +3749,189 @@ recov_retry:
 		return (0);
 	}
 
-	needrecov = nfs4_needs_recovery(&e, FALSE, mi->mi_vfsp);
-	if (!needrecov && e.error) {
-		nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+	nfs4_needs_recovery(cp);
+	if (!cp->nc_needs_recovery && e.error) {
+		nfs4_end_op(cp, &recov_state);
 		VFS_RELE(mi->mi_vfsp);
+		nfs4_call_rele(cp);
 		return (e.error);
 	}
 
-	rpc_error = e.error;
-
-	if (needrecov) {
+	if (cp->nc_needs_recovery) {
 		NFS4_DEBUG(nfs4_client_recov_debug, (CE_NOTE,
 		    "nfs4renew: initiating recovery\n"));
 
-		if (nfs4_start_recovery(&e, mi, NULL, NULL, NULL, NULL,
-		    OP_RENEW, NULL, NULL, NULL) == FALSE) {
-			nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
+		if (nfs4_start_recovery(cp) == FALSE) {
+			nfs4_end_op(cp, &recov_state);
 			VFS_RELE(mi->mi_vfsp);
-			if (!e.error)
-				(void) xdr_free(xdr_COMPOUND4res_clnt,
-				    (caddr_t)&res);
+			nfs4_call_rele(cp);
 			mutex_enter(&sp->s_lock);
 			goto recov_retry;
 		}
-		/* fall through for res.status case */
+		/* fall through for cp->nc_res.status case */
 	}
 
-	if (res.status) {
-		if (res.status == NFS4ERR_LEASE_MOVED) {
+	if (cp->nc_res.status) {
+		if (cp->nc_res.status == NFS4ERR_LEASE_MOVED) {
 			/*EMPTY*/
 			/*
 			 * XXX need to try every mntinfo4 in sp->mntinfo4_list
 			 * to renew the lease on that server
 			 */
 		}
-		e.error = geterrno4(res.status);
+		e.error = geterrno4(cp->nc_res.status);
 	}
 
-	if (!rpc_error)
-		(void) xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&res);
-
-	nfs4_end_op(mi, NULL, NULL, &recov_state, needrecov);
-
+	nfs4_end_op(cp, &recov_state);
 	VFS_RELE(mi->mi_vfsp);
+	nfs4_call_rele(cp);
 
 	return (e.error);
+}
+
+/*
+ * Send a compound with a single SEQUENCE operation to renew
+ * the lease with the server. Assumes s_lock is held, but this
+ * function releases it because it goes otw.  The caller must
+ * reacquire it if desired.
+ */
+static void
+nfs4sequence(mntinfo4_t *mi, nfs4_server_t *sp, servinfo4_t *svp,
+	nfs4_error_t *ep)
+{
+	nfs4_call_t *cp;
+	cred_t *cr;
+	timespec_t prop_time, after_time;
+	nfs4_recov_state_t recov_state;
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "nfs4renew"));
+
+	recov_state.rs_flags = 0;
+	recov_state.rs_num_retry_despite_err = 0;
+
+recov_retry:
+	if (sp->s_thread_exit == NFS4_THREAD_EXIT) {
+		mutex_exit(&sp->s_lock);
+		ep->error = EIO;
+		return;
+	}
+
+	cr = sp->s_cred;
+	ASSERT(cr != NULL);
+	crhold(cr);
+	mutex_exit(&sp->s_lock);
+
+	cp = nfs4_call_init(TAG_SEQUENCE, OP_SEQUENCE, OH_SEQUENCE, FALSE,
+	    mi, NULL, NULL, cr);
+	crfree(cr);
+	cp->nc_svp = cp->nc_ds_servinfo = svp;
+	cp->nc_rfs4call_flags = RFS4CALL_FORCE;
+
+	ep->error = nfs4_start_op(cp, &recov_state);
+	if (ep->error) {
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	/* Check to see if we're dealing with a marked-dead sp */
+	mutex_enter(&sp->s_lock);
+	if (sp->seqhb_flags & NFS4_SEQHB_EXIT) {
+		mutex_exit(&sp->s_lock);
+		nfs4_end_op(cp, &recov_state);
+		nfs4_call_rele(cp);
+		return;
+	}
+
+#ifdef	NOTYET
+		/*
+		 * XXX
+		 * This needs to be re-thought and isn't even correct
+		 * as coded.  mntinfo4_list is the anchor of a list, so
+		 * who's to say that mi is the first thing on that list?
+		 *
+		 * In the NEW version of start_op, the current nfs4_server_t
+		 * will be captured and returned in the call_t.  From there,
+		 * if we need this check, it will be something like
+		 * if (sp != callt->n4sp), then loop back.
+		 */
+
+		/* Make sure mi hasn't changed on us */
+		if (mi != sp->mntinfo4_list) {
+			/*
+			 * Must drop sp's lock to avoid a recursive mutex
+			 * enter
+			 */
+			mutex_exit(&sp->s_lock);
+			nfs4_end_op_impl(cp);
+			nfs4_call_rele(cp);
+			mutex_enter(&sp->s_lock);
+			goto recov_retry;
+		}
+#endif
+	mutex_exit(&sp->s_lock);
+
+	/* 0: sequence */
+	(void) nfs4_op_sequence(cp);
+
+	/* used to figure out RTT for sp */
+	gethrestime(&prop_time);
+
+	NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+	    "nfs4renew: %s call, sp 0x%p", NFS4_RS_RECOVSTR(&recov_state),
+	    (void*)sp));
+	NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE, "before: %ld s %ld ns ",
+	    prop_time.tv_sec, prop_time.tv_nsec));
+
+	DTRACE_PROBE2(nfs4__sequence__start, nfs4_server_t *, sp,
+	    mntinfo4_t *, mi);
+
+	rfs4call(cp, ep);
+
+	DTRACE_PROBE2(nfs4__sequence__end, nfs4_server_t *, sp,
+	    mntinfo4_t *, mi);
+
+	gethrestime(&after_time);
+
+	mutex_enter(&sp->s_lock);
+	sp->propagation_delay.tv_sec =
+	    MAX(1, after_time.tv_sec - prop_time.tv_sec);
+	mutex_exit(&sp->s_lock);
+
+	NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE, "after : %ld s %ld ns ",
+	    after_time.tv_sec, after_time.tv_nsec));
+
+	nfs4_needs_recovery(cp);
+	if (!cp->nc_needs_recovery && ep->error) {
+		nfs4_end_op(cp, &recov_state);
+		nfs4_call_rele(cp);
+		return;
+	}
+
+	if (cp->nc_needs_recovery) {
+		NFS4_DEBUG(nfs4_seqhb_debug, (CE_NOTE,
+		    "nfs4sequence: initiating recovery\n"));
+
+		if (nfs4_start_recovery(cp) == FALSE) {
+			nfs4_end_op(cp, &recov_state);
+			nfs4_call_rele(cp);
+			/*
+			 * The sequence heartbeat thread needs to exit to
+			 * recover from a bad session. Don't retry, just
+			 * return and let recovery take place.
+			 */
+			if (ep->stat == NFS4ERR_BADSESSION)
+				return;
+			mutex_enter(&sp->s_lock);
+			goto recov_retry;
+		} else {
+			mutex_enter(&sp->s_lock);
+			sp->seqhb_flags |= NFS4_SEQHB_EXIT;
+			mutex_exit(&sp->s_lock);
+		}
+	}
+
+	nfs4_end_op(cp, &recov_state);
+	nfs4_call_rele(cp);
 }
 
 void
@@ -4386,3 +4750,757 @@ nfs4_consistent_type(vnode_t *vp)
 	return (1);
 }
 #endif /* DEBUG */
+
+/*ARGSUSED*/
+static int
+nfs4_call_construct(void *vcp, void *b, int c)
+{
+	nfs4_call_t *cp = vcp;
+
+	mutex_init(cp->nc_lock, NULL, MUTEX_DEFAULT, NULL);
+	list_create(&cp->nc_args.args, sizeof (COMPOUND4node_clnt),
+	    offsetof(COMPOUND4node_clnt, node));
+
+	return (0);
+}
+
+/*ARGSUSED*/
+static void
+nfs4_call_destroy(void *vcp, void *b)
+{
+	nfs4_call_t *cp = vcp;
+
+	list_destroy(&cp->nc_args.args);
+	mutex_destroy(cp->nc_lock);
+}
+
+nfs4_call_t *
+nfs4_call_init(int ctag, nfs_opnum4 opnum, nfs4_op_hint_t ophint,
+    int stateful, mntinfo4_t *mi, vnode_t *vp1, vnode_t *vp2, cred_t *cr)
+{
+	nfs4_call_t *cp;
+
+	MI4_HOLD(mi);
+
+	if (vp1 != NULL) {
+		VN_HOLD(vp1);
+	}
+	if (vp2 != NULL) {
+		VN_HOLD(vp2);
+	}
+
+	crhold(cr);
+
+	cp = kmem_cache_alloc(nfs4_call_cache, KM_SLEEP);
+
+	cp->nc_mi = mi;
+	cp->nc_vp1 = vp1;
+	cp->nc_vp2 = vp2;
+	cp->nc_ophint = ophint;
+	cp->nc_start_recov = 0;
+	cp->nc_stateful = stateful;
+	nfs4_error_zinit(&cp->nc_e);
+	cp->nc_opnum = opnum;
+	cp->nc_lost_rqst = NULL;
+	cp->nc_bseqid_rqst = NULL;
+	cp->nc_doqueue[0] = 1;
+	cp->nc_rfs4call_flags = 0;
+	cp->nc_cr = cr;
+	cp->nc_svp = NULL;
+	cp->nc_slot_srv = NULL;
+	cp->nc_slot_ent = NULL;
+	cp->nc_ds_servinfo = NULL;
+	cp->nc_ds_nfs4_srv = NULL;
+	cp->nc_count = 1;
+	cp->nc_needs_recovery = 0;
+	cp->nc_wait_for_recovery = 0;
+	cp->nc_args.ctag = ctag;
+	cp->nc_args.minor_vers = NFS4_MINORVERSION(mi);
+	cp->nc_args.args_len = 0;
+	cp->nc_res.status = 0;
+	cp->nc_res.args_len = 0;
+	cp->nc_res.decode_len = 0;
+	cp->nc_res.argsp = &cp->nc_args;
+	cp->nc_flags = 0;
+
+	return (cp);
+}
+
+void
+nfs4_call_hold(nfs4_call_t *cp)
+{
+	mutex_enter(cp->nc_lock);
+	ASSERT(cp->nc_count > 0);
+	cp->nc_count++;
+	mutex_exit(cp->nc_lock);
+}
+
+void
+nfs4_call_rele(nfs4_call_t *cp)
+{
+	COMPOUND4node_clnt *np;
+
+	/*
+	 * Using a self-protecting mutex is ok here because of the
+	 * code above which always allocates a new structure.
+	 */
+	mutex_enter(cp->nc_lock);
+	if (cp->nc_count-- > 1) {
+		mutex_exit(cp->nc_lock);
+		return;
+	}
+	mutex_exit(cp->nc_lock);
+
+	if (cp->nc_vp1 != NULL) {
+		VN_RELE(cp->nc_vp1);
+	}
+	if (cp->nc_vp2 != NULL) {
+		VN_RELE(cp->nc_vp2);
+	}
+
+	nfs4_call_slot_release(cp);
+
+	/* clean up contents of compound args/response list */
+	nfs4_call_opresfree(cp);
+	while (np = list_remove_head(&cp->nc_args.args)) {
+		kmem_cache_free(compound4node_clnt_cache, np);
+	}
+
+	crfree(cp->nc_cr);
+	MI4_RELE(cp->nc_mi)
+
+	kmem_cache_free(nfs4_call_cache, cp);
+}
+
+void
+nfs4_call_slot_release(nfs4_call_t *cp)
+{
+	nfs4_server_t *np;
+	slot_ent_t *slot;
+
+	if (cp->nc_flags & NFS4_CALL_FLAG_SLOT_HELD) {
+		np = cp->nc_slot_srv;
+		slot = cp->nc_slot_ent;
+		ASSERT(np);
+		ASSERT(slot);
+
+		if (slot->se_state & SLOT_RECALLED)
+			cp->nc_flags |= NFS4_CALL_FLAG_SLOT_RECALLED;
+
+		if (cp->nc_flags & NFS4_CALL_FLAG_SLOT_INCR)
+			slot_incr_seq(slot, 1);
+		if ((slot->se_state & SLOT_ERROR) == 0)
+			slot_free(np->ssx.slot_table, slot);
+		nfs4_server_rele(np);
+		nfs4_call_slot_clear(cp);
+	}
+}
+
+void
+nfs4_call_slot_clear(nfs4_call_t *cp)
+{
+	cp->nc_flags &= ~NFS4_CALL_FLAG_SLOT_HELD;
+	cp->nc_slot_srv = NULL;
+	cp->nc_slot_ent = NULL;
+}
+
+void
+nfs4_call_opresfree(nfs4_call_t *cp)
+{
+	if (cp->nc_flags & NFS4_CALL_FLAG_RESFREE) {
+		xdr_free(xdr_COMPOUND4res_clnt, (caddr_t)&cp->nc_res);
+		cp->nc_flags &= ~NFS4_CALL_FLAG_RESFREE;
+	}
+}
+
+COMPOUND4node_clnt *
+nfs4_op_generic(nfs4_call_t *cp, nfs_opnum4 op)
+{
+	COMPOUND4node_clnt *np;
+
+	np = kmem_cache_alloc(compound4node_clnt_cache, KM_SLEEP);
+	bzero(np, sizeof (COMPOUND4node_clnt));
+	np->arg.argop = op;
+	if (op == OP_SEQUENCE)
+		list_insert_head(&cp->nc_args.args, np);
+	else
+		list_insert_tail(&cp->nc_args.args, np);
+	cp->nc_args.args_len++;
+
+	return (np);
+}
+
+SEQUENCE4res *
+nfs4_op_sequence(nfs4_call_t *cp)
+{
+	SEQUENCE4res *r;
+	COMPOUND4node_clnt *np;
+	ASSERT((cp->nc_flags & NFS4_CALL_FLAG_SEQADDED) == 0);
+	np = nfs4_op_generic(cp, OP_SEQUENCE);
+	cp->nc_flags |= NFS4_CALL_FLAG_SEQADDED;
+	r = &np->res.nfs_resop4_u.opsequence;
+	r->sr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+PUTFH4res *
+nfs4_op_cputfh(nfs4_call_t *cp, nfs4_sharedfh_t *fh)
+{
+	PUTFH4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CPUTFH);
+	np->arg.nfs_argop4_u.opcputfh.sfh = fh;
+	r = &np->res.nfs_resop4_u.opputfh;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+GETFH4res *
+nfs4_op_getfh(nfs4_call_t *cp)
+{
+	GETFH4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_GETFH);
+	r = &np->res.nfs_resop4_u.opgetfh;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+SAVEFH4res *
+nfs4_op_savefh(nfs4_call_t *cp)
+{
+	SAVEFH4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_SAVEFH);
+	r = &np->res.nfs_resop4_u.opsavefh;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+RESTOREFH4res *
+nfs4_op_restorefh(nfs4_call_t *cp)
+{
+	RESTOREFH4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_RESTOREFH);
+	r = &np->res.nfs_resop4_u.oprestorefh;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+ACCESS4res *
+nfs4_op_access(nfs4_call_t *cp, uint32_t argacc)
+{
+	ACCESS4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_ACCESS);
+	np->arg.nfs_argop4_u.opaccess.access = argacc;
+	r = &np->res.nfs_resop4_u.opaccess;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+GETATTR4res *
+nfs4_op_getattr(nfs4_call_t *cp, attrmap4 attr_request)
+{
+	GETATTR4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_GETATTR);
+	np->arg.nfs_argop4_u.opgetattr.attr_request = attr_request;
+	np->arg.nfs_argop4_u.opgetattr.mi = cp->nc_mi;
+	r = &np->res.nfs_resop4_u.opgetattr;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+OPEN4res *
+nfs4_op_copen(nfs4_call_t *cp, OPEN4cargs **oargs)
+{
+	OPEN4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_COPEN);
+	*oargs = &np->arg.nfs_argop4_u.opcopen;
+	r = &np->res.nfs_resop4_u.opopen;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+OPEN_DOWNGRADE4res *
+nfs4_op_open_downgrade(nfs4_call_t *cp, stateid4 *stateidp, seqid4 seqid,
+    uint32_t share_access, uint32_t share_deny)
+{
+	OPEN_DOWNGRADE4res *r;
+	OPEN_DOWNGRADE4args *args;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_OPEN_DOWNGRADE);
+	args = &np->arg.nfs_argop4_u.opopen_downgrade;
+	args->open_stateid = *stateidp;
+	args->seqid = seqid;
+	args->share_access = share_access;
+	args->share_deny = share_deny;
+	r = &np->res.nfs_resop4_u.opopen_downgrade;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+CLOSE4res *
+nfs4_op_close(nfs4_call_t *cp, seqid4 seqid, stateid4 open_stateid)
+{
+	CLOSE4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CLOSE);
+	np->arg.nfs_argop4_u.opclose.seqid = seqid;
+	np->arg.nfs_argop4_u.opclose.open_stateid = open_stateid;
+	r = &np->res.nfs_resop4_u.opclose;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LAYOUTCOMMIT4res *
+nfs4_op_layoutcommit(nfs4_call_t *cp, LAYOUTCOMMIT4args **args_pp)
+{
+	LAYOUTCOMMIT4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LAYOUTCOMMIT);
+	*args_pp = &np->arg.nfs_argop4_u.oplayoutcommit;
+	r = &np->res.nfs_resop4_u.oplayoutcommit;
+	r->locr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+WRITE4res *
+nfs4_op_write(nfs4_call_t *cp, stable_how4 stable, WRITE4args **wargs_pp)
+{
+	WRITE4args *wargs;
+	WRITE4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_WRITE);
+	wargs = &np->arg.nfs_argop4_u.opwrite;
+	wargs->stable = stable;
+	*wargs_pp = wargs;
+	r = &np->res.nfs_resop4_u.opwrite;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+READ4res *
+nfs4_op_read(nfs4_call_t *cp, READ4args **rargs_pp)
+{
+	READ4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_READ);
+	*rargs_pp = &np->arg.nfs_argop4_u.opread;
+	r = &np->res.nfs_resop4_u.opread;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+SETATTR4res *
+nfs4_op_setattr(nfs4_call_t *cp, SETATTR4args **args_pp)
+{
+	SETATTR4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_SETATTR);
+	*args_pp = &np->arg.nfs_argop4_u.opsetattr;
+	r = &np->res.nfs_resop4_u.opsetattr;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+VERIFY4res *
+nfs4_op_verify(nfs4_call_t *cp, VERIFY4args **args_pp)
+{
+	VERIFY4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_VERIFY);
+	*args_pp = &np->arg.nfs_argop4_u.opverify;
+	r = &np->res.nfs_resop4_u.opverify;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+NVERIFY4res *
+nfs4_op_nverify(nfs4_call_t *cp, NVERIFY4args **args_pp)
+{
+	NVERIFY4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_NVERIFY);
+	*args_pp = &np->arg.nfs_argop4_u.opnverify;
+	r = &np->res.nfs_resop4_u.opnverify;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+READLINK4res *
+nfs4_op_readlink(nfs4_call_t *cp)
+{
+	READLINK4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_READLINK);
+	r = &np->res.nfs_resop4_u.opreadlink;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+REMOVE4res *
+nfs4_op_cremove(nfs4_call_t *cp, char *target)
+{
+	REMOVE4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CREMOVE);
+	np->arg.nfs_argop4_u.opcremove.ctarget = target;
+	r = &np->res.nfs_resop4_u.opremove;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LOOKUP4res *
+nfs4_op_lookup(nfs4_call_t *cp, utf8string *str)
+{
+	LOOKUP4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LOOKUP);
+	np->arg.nfs_argop4_u.oplookup.objname = *str;
+	r = &np->res.nfs_resop4_u.oplookup;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LOOKUP4res *
+nfs4_op_clookup(nfs4_call_t *cp, char *name)
+{
+	LOOKUP4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CLOOKUP);
+	np->arg.nfs_argop4_u.opclookup.cname = name;
+	r = &np->res.nfs_resop4_u.oplookup;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LOOKUPP4res *
+nfs4_op_lookupp(nfs4_call_t *cp)
+{
+	LOOKUPP4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LOOKUPP);
+	r = &np->res.nfs_resop4_u.oplookupp;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+OPENATTR4res *
+nfs4_op_openattr(nfs4_call_t *cp, bool_t createdir)
+{
+	OPENATTR4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_OPENATTR);
+	np->arg.nfs_argop4_u.opopenattr.createdir = createdir;
+	r = &np->res.nfs_resop4_u.opopenattr;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+CREATE4res *
+nfs4_op_ccreate(nfs4_call_t *cp, char *nm, nfs_ftype4 type, void *data,
+    CREATE4cargs **args_pp)
+{
+	CREATE4cargs *args;
+	CREATE4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CCREATE);
+	args = &np->arg.nfs_argop4_u.opccreate;
+	args->cname = nm;
+	args->type = type;
+	if (type == NF4LNK) {
+		/*
+		 * symlink, treat name as data
+		 */
+		ASSERT(data != NULL);
+		args->ftype4_u.clinkdata = (char *)data;
+	}
+	if (type == NF4BLK || type == NF4CHR) {
+		ASSERT(data != NULL);
+		args->ftype4_u.devdata = *((specdata4 *)data);
+	}
+	*args_pp = args;
+	r = &np->res.nfs_resop4_u.opcreate;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LINK4res *
+nfs4_op_clink(nfs4_call_t *cp, char *name)
+{
+	LINK4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CLINK);
+	np->arg.nfs_argop4_u.opclink.cnewname = name;
+	r = &np->res.nfs_resop4_u.oplink;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+RENAME4res *
+nfs4_op_crename(nfs4_call_t *cp, char *oldname, char *newname)
+{
+	RENAME4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CRENAME);
+	np->arg.nfs_argop4_u.opcrename.coldname = oldname;
+	np->arg.nfs_argop4_u.opcrename.cnewname = newname;
+	r = &np->res.nfs_resop4_u.oprename;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+READDIR4res_clnt *
+nfs4_op_readdir(nfs4_call_t *cp, READDIR4args **args_pp)
+{
+	READDIR4args *args;
+	READDIR4res_clnt *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_READDIR);
+	args = &np->arg.nfs_argop4_u.opreaddir;
+	args->mi = cp->nc_mi;
+	args->cr = cp->nc_cr;
+	*args_pp = args;
+	r = &np->res.nfs_resop4_u.opreaddirclnt;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+COMMIT4res *
+nfs4_op_commit(nfs4_call_t *cp, offset4 offset, count4 count)
+{
+	COMMIT4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_COMMIT);
+	np->arg.nfs_argop4_u.opcommit.offset = offset;
+	np->arg.nfs_argop4_u.opcommit.count = count;
+	r = &np->res.nfs_resop4_u.opcommit;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+OPEN_CONFIRM4res *
+nfs4_op_open_confirm(nfs4_call_t *cp, seqid4 seqid, stateid4 *stateidp)
+{
+	OPEN_CONFIRM4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_OPEN_CONFIRM);
+	np->arg.nfs_argop4_u.opopen_confirm.seqid = seqid;
+	np->arg.nfs_argop4_u.opopen_confirm.open_stateid = *stateidp;
+	r = &np->res.nfs_resop4_u.opopen_confirm;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LOCK4res *
+nfs4_op_lock(nfs4_call_t *cp, LOCK4args **args_pp)
+{
+	LOCK4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LOCK);
+	*args_pp = &np->arg.nfs_argop4_u.oplock;
+	r = &np->res.nfs_resop4_u.oplock;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LOCKU4res *
+nfs4_op_locku(nfs4_call_t *cp, LOCKU4args **args_pp)
+{
+	LOCKU4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LOCKU);
+	*args_pp = &np->arg.nfs_argop4_u.oplocku;
+	r = &np->res.nfs_resop4_u.oplocku;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LOCKT4res *
+nfs4_op_lockt(nfs4_call_t *cp, LOCKT4args **args_pp)
+{
+	LOCKT4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LOCKT);
+	*args_pp = &np->arg.nfs_argop4_u.oplockt;
+	r = &np->res.nfs_resop4_u.oplockt;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+PUTPUBFH4res *
+nfs4_op_putpubfh(nfs4_call_t *cp)
+{
+	PUTPUBFH4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_PUTPUBFH);
+	r = &np->res.nfs_resop4_u.opputpubfh;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+PUTROOTFH4res *
+nfs4_op_putrootfh(nfs4_call_t *cp)
+{
+	PUTROOTFH4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_PUTROOTFH);
+	r = &np->res.nfs_resop4_u.opputrootfh;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+SECINFO4res *
+nfs4_op_secinfo(nfs4_call_t *cp, component4 *namep)
+{
+	SECINFO4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_SECINFO);
+	np->arg.nfs_argop4_u.opsecinfo.name = *namep;
+	r = &np->res.nfs_resop4_u.opsecinfo;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+SECINFO4res *
+nfs4_op_csecinfo(nfs4_call_t *cp, char *namep)
+{
+	SECINFO4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CSECINFO);
+	np->arg.nfs_argop4_u.opcsecinfo.cname = namep;
+	r = &np->res.nfs_resop4_u.opsecinfo;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+BIND_CONN_TO_SESSION4res *
+nfs4_op_bind_conn_to_session(nfs4_call_t *cp, sessionid4 *sessidp,
+    channel_dir_from_client4 dir, bool_t use_conn_in_rdma_mode)
+{
+	BIND_CONN_TO_SESSION4res *r;
+	BIND_CONN_TO_SESSION4args *argp;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_BIND_CONN_TO_SESSION);
+
+	argp = &np->arg.nfs_argop4_u.opbind_conn_to_session;
+	bcopy(sessidp, &argp->bctsa_sessid, sizeof (*sessidp));
+	argp->bctsa_dir = dir;
+	argp->bctsa_use_conn_in_rdma_mode = use_conn_in_rdma_mode;
+
+	r = &np->res.nfs_resop4_u.opbind_conn_to_session;
+	r->bctsr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+DELEGRETURN4res *
+nfs4_op_delegreturn(nfs4_call_t *cp, stateid4 *stateidp)
+{
+	DELEGRETURN4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_DELEGRETURN);
+	np->arg.nfs_argop4_u.opdelegreturn.deleg_stateid = *stateidp;
+	r = &np->res.nfs_resop4_u.opdelegreturn;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+RENEW4res *
+nfs4_op_renew(nfs4_call_t *cp, clientid4 clientid)
+{
+	RENEW4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_RENEW);
+	np->arg.nfs_argop4_u.oprenew.clientid = clientid;
+	r = &np->res.nfs_resop4_u.oprenew;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+EXCHANGE_ID4res *
+nfs4_op_exchange_id(nfs4_call_t *cp, EXCHANGE_ID4args **args)
+{
+	EXCHANGE_ID4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_EXCHANGE_ID);
+	*args = &np->arg.nfs_argop4_u.opexchange_id;
+	r = &np->res.nfs_resop4_u.opexchange_id;
+	r->eir_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+CREATE_SESSION4res *
+nfs4_op_create_session(nfs4_call_t *cp, CREATE_SESSION4args **args)
+{
+	CREATE_SESSION4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_CREATE_SESSION);
+	*args = &np->arg.nfs_argop4_u.opcreate_session;
+	r = &np->res.nfs_resop4_u.opcreate_session;
+	r->csr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+SETCLIENTID4res *
+nfs4_op_setclientid(nfs4_call_t *cp, SETCLIENTID4args **args)
+{
+	SETCLIENTID4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_SETCLIENTID);
+	*args = &np->arg.nfs_argop4_u.opsetclientid;
+	r = &np->res.nfs_resop4_u.opsetclientid;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+SETCLIENTID_CONFIRM4res *
+nfs4_op_setclientid_confirm(nfs4_call_t *cp, clientid4 clientid,
+    verifier4 verf)
+{
+	SETCLIENTID_CONFIRM4res *r;
+	SETCLIENTID_CONFIRM4args *args;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_SETCLIENTID_CONFIRM);
+	args = &np->arg.nfs_argop4_u.opsetclientid_confirm;
+	args->clientid = clientid;
+	args->setclientid_confirm = verf;
+	r = &np->res.nfs_resop4_u.opsetclientid_confirm;
+	r->status = NFS4ERR_INVAL;
+	return (r);
+}
+
+RECLAIM_COMPLETE4res *
+nfs4_op_reclaim_complete(nfs4_call_t *cp, bool_t one_fs)
+{
+	RECLAIM_COMPLETE4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_RECLAIM_COMPLETE);
+	np->arg.nfs_argop4_u.opreclaim_complete.rca_one_fs = one_fs;
+	r = &np->res.nfs_resop4_u.opreclaim_complete;
+	r->rcr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+GETDEVICEINFO4res *
+nfs4_op_getdeviceinfo(nfs4_call_t *cp, deviceid4 device_id,
+    layouttype4 layout_type, count4 maxcount, bitmap4 notify_types)
+{
+	GETDEVICEINFO4res *r;
+	GETDEVICEINFO4args *args;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_GETDEVICEINFO);
+	args = &np->arg.nfs_argop4_u.opgetdeviceinfo;
+	bcopy(device_id, args->gdia_device_id, sizeof (deviceid4));
+	args->gdia_layout_type = layout_type;
+	args->gdia_maxcount = maxcount;
+	args->gdia_notify_types = notify_types;
+	r = &np->res.nfs_resop4_u.opgetdeviceinfo;
+	r->gdir_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LAYOUTRETURN4res *
+nfs4_op_layoutreturn(nfs4_call_t *cp, LAYOUTRETURN4args **args)
+{
+	LAYOUTRETURN4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LAYOUTRETURN);
+	*args = &np->arg.nfs_argop4_u.oplayoutreturn;
+	r = &np->res.nfs_resop4_u.oplayoutreturn;
+	r->lorr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+LAYOUTGET4res *
+nfs4_op_layoutget(nfs4_call_t *cp, LAYOUTGET4args **args)
+{
+	LAYOUTGET4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_LAYOUTGET);
+	*args = &np->arg.nfs_argop4_u.oplayoutget;
+	r = &np->res.nfs_resop4_u.oplayoutget;
+	r->logr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+GETDEVICELIST4res *
+nfs4_op_getdevicelist(nfs4_call_t *cp, GETDEVICELIST4args **args)
+{
+	GETDEVICELIST4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_GETDEVICELIST);
+	*args = &np->arg.nfs_argop4_u.opgetdevicelist;
+	r = &np->res.nfs_resop4_u.opgetdevicelist;
+	r->gdlr_status = NFS4ERR_INVAL;
+	return (r);
+}
+
+DESTROY_SESSION4res *
+nfs4_op_destroy_session(nfs4_call_t *cp, sessionid4 s)
+{
+	DESTROY_SESSION4res *r;
+	COMPOUND4node_clnt *np = nfs4_op_generic(cp, OP_DESTROY_SESSION);
+	bcopy(s, np->arg.nfs_argop4_u.opdestroy_session.dsa_sessionid,
+	    sizeof (sessionid4));
+	r = &np->res.nfs_resop4_u.opdestroy_session;
+	r->dsr_status = NFS4ERR_INVAL;
+	return (r);
+}

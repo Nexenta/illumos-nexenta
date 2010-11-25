@@ -97,18 +97,12 @@ top:
 	return (rc);
 }
 
-/*
- * Iterate over all child filesystems
- */
-int
-zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+static int
+zfs_iter_datasets(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 {
 	zfs_cmd_t zc = { 0 };
 	zfs_handle_t *nzhp;
 	int ret;
-
-	if (zhp->zfs_type != ZFS_TYPE_FILESYSTEM)
-		return (0);
 
 	if (zcmd_alloc_dst_nvlist(zhp->zfs_hdl, &zc, 0) != 0)
 		return (-1);
@@ -131,6 +125,32 @@ zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	}
 	zcmd_free_nvlists(&zc);
 	return ((ret < 0) ? ret : 0);
+}
+
+/*
+ * Iterate over all child filesystems
+ */
+int
+zfs_iter_filesystems(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+{
+
+	if (zhp->zfs_type != ZFS_TYPE_FILESYSTEM)
+		return (0);
+
+	return (zfs_iter_datasets(zhp, func, data));
+}
+
+/*
+ * Iterate over all child pNFS datasets
+ */
+int
+zfs_iter_pnfs(zfs_handle_t *zhp, zfs_iter_f func, void *data)
+{
+
+	if (zhp->zfs_type != ZFS_TYPE_PNFS)
+		return (0);
+
+	return (zfs_iter_datasets(zhp, func, data));
 }
 
 /*
@@ -376,6 +396,9 @@ zfs_iter_children(zfs_handle_t *zhp, zfs_iter_f func, void *data)
 	int ret;
 
 	if ((ret = zfs_iter_filesystems(zhp, func, data)) != 0)
+		return (ret);
+
+	if ((ret = zfs_iter_pnfs(zhp, func, data)) != 0)
 		return (ret);
 
 	return (zfs_iter_snapshots(zhp, func, data));

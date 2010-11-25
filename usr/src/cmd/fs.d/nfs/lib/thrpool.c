@@ -170,7 +170,7 @@ svcsetprio(void)
 }
 
 int
-svcrdma(int id, int versmin, int versmax, int delegation)
+svcrdma(int id, int versmin, int versmax, int delegation, int dfd)
 {
 	thread_t tid;
 	struct rdma_svc_args *rsa;
@@ -181,6 +181,7 @@ svcrdma(int id, int versmin, int versmax, int delegation)
 	rsa->nfs_versmin = versmin;
 	rsa->nfs_versmax = versmax;
 	rsa->delegation = delegation;
+	rsa->dfd = dfd;
 
 	/*
 	 * Create a thread to handle RDMA start and stop.

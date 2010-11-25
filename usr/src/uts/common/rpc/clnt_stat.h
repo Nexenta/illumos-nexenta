@@ -51,6 +51,8 @@ enum clnt_stat {
 	RPC_TIMEDOUT = 5,			/* call timed out */
 	RPC_INTR = 18,			/* call interrupted */
 	RPC_UDERROR = 23,			/* recv got uderr indication */
+	RPC_CONN_NOT_BOUND = 30,	/* connection not bound */
+
 	/*
 	 * remote errors
 	 */

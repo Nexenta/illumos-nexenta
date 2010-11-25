@@ -99,6 +99,7 @@ struct option_defs {
 #define	SVC_NFSLOGD	0x0080
 #define	SVC_REPARSED	0x0100
 #define	SVC_CLIENT	0x0200
+#define	SVC_SPED	0x0400
 
 /*
  * NFS Restart/Refresh options

@@ -35,18 +35,10 @@
 extern "C" {
 #endif
 
-#define	SEARCH_DEBUG	0x0001
-#define	CREATE_DEBUG	0x0002
-#define	CACHED_DEBUG	0x0004
-#define	DESTROY_DEBUG	0x0008
-#define	REAP_DEBUG	0x0010
-#define	OTHER_DEBUG	0x0020
-#define	WALK_DEBUG	0x0040
-
 /*
  * A database is made up of a collection of tables.
  * Tables are in turn made up of a collection of
- * entries. Each table may haveone or more indices
+ * entries. Each table may have one or more indices
  * associtated with it.
  */
 
@@ -64,6 +56,7 @@ struct rfs4_dbe {
 	unsigned	dbe_invalid:1;		/* invalid/"freed" entry */
 	unsigned	dbe_reserved:31;
 	time_t		dbe_time_rele;		/* Time of last rele */
+	caddr_t		dbe_inval_hint;
 	id_t		dbe_id;			/* unique identifier */
 	kcondvar_t	dbe_cv[1];
 	rfs4_entry_t	dbe_data;
@@ -90,7 +83,7 @@ struct rfs4_index {
 
 struct rfs4_table {
 	rfs4_table_t	*dbt_tnext;		/* next table in db */
-	struct rfs4_database *dbt_db;		/* db that holds this table */
+	nfs_server_instance_t *dbt_instp;
 	krwlock_t	dbt_t_lock[1];		/* lock table for resize */
 	kmutex_t	dbt_lock[1];		/* mutex for count and cached */
 	char		*dbt_name;		/* Table name */
@@ -123,10 +116,10 @@ struct rfs4_table {
 
 struct rfs4_database {
 	kmutex_t	db_lock[1];
-	uint32_t	db_debug_flags;		/* Table debug flags to set */
 	uint32_t	db_shutdown_count;	/* count to manage shutdown */
 	kcondvar_t	db_shutdown_wait;	/* where the shutdown waits */
 	rfs4_table_t	*db_tables;		/* list of tables in db */
+	nfs_server_instance_t *db_instp;	/* just for handy debug */
 };
 
 #define	RFS4_RECLAIM_PERCENT 10

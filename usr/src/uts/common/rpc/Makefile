@@ -42,7 +42,7 @@ nettype.h	pmap_clnt.h	pmap_rmt.h \
 raw.h		rpc.h		rpc_com.h	rpc_msg.h \
 rpcb_clnt.h	rpcent.h	svc.h		svc_auth.h	svc_soc.h \
 types.h		xdr.h		rpcsec_gss.h	svc_mt.h \
-rpcsys.h	rpc_rdma.h
+rpcsys.h	rpc_rdma.h	rpc_tags.h
 
 HDRS=			\
 	$(COMMHDRS)	\

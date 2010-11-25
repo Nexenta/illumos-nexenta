@@ -27,7 +27,6 @@
  *		All rights reserved.
  */
 
-
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/time.h>
@@ -1657,7 +1656,11 @@ unexport(struct exportinfo *exi)
 	 * the v4 server may be holding file locks or vnodes under
 	 * this export.
 	 */
-	rfs4_clean_state_exi(exi);
+	sstor_clean_state_exi(exi);
+	/*
+	 * Free all nnodes associated with this export.
+	 */
+	nnode_free_export(exi);
 
 	/*
 	 * Notify the lock manager that the filesystem is being
