@@ -1249,7 +1249,7 @@ typedef struct mntinfo4 {
 /* MI4_MIRRORMOUNT is also defined in nfsstat.c */
 #define	MI4_MIRRORMOUNT		 0x4000
 #define	MI4_REFERRAL		 0x8000
-#define	MI4_PNFS         0x10000
+#define	MI4_PNFS		0x10000
 #define	MI4_NOPRINT		 0x20000
 #define	MI4_DIRECTIO		 0x40000
 /* 0x80000 is available */

@@ -565,7 +565,8 @@ extern void	export_link(struct exportinfo *);
 extern void	export_unlink(struct exportinfo *);
 extern vnode_t *untraverse(vnode_t *);
 extern int	vn_is_nfs_reparse(vnode_t *, cred_t *);
-extern int	client_is_downrev(nfs_server_instance_t *instp, struct svc_req *);
+extern int
+client_is_downrev(nfs_server_instance_t *instp, struct svc_req *);
 extern char    *build_symlink(vnode_t *, cred_t *, size_t *);
 
 /*

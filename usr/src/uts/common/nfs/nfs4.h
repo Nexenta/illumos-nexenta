@@ -1124,9 +1124,9 @@ extern	void	rfs41_cb_freech(mds_session_t *, CLIENT *);
 
 /* rfs4_clntip_t handling */
 extern	rfs4_clntip_t	*rfs4_find_clntip(nfs_server_instance_t *,
-										  struct sockaddr *, bool_t *);
+					    struct sockaddr *, bool_t *);
 extern	void		rfs4_invalidate_clntip(nfs_server_instance_t *,
-										   struct sockaddr *);
+					    struct sockaddr *);
 
 /* rfs4_openowner_t handling */
 extern	rfs4_openowner_t *rfs4_findopenowner(nfs_server_instance_t *,
