@@ -65,15 +65,21 @@ $(i386_ONLY)file path=kernel/misc/nfssrv group=sys mode=0755
 file path=lib/svc/manifest/network/nfs/rquota.xml group=sys mode=0444
 file path=lib/svc/manifest/network/nfs/server.xml group=sys mode=0444
 file path=lib/svc/method/nfs-server mode=0555
+file path=usr/lib/$(ARCH64)/libdserv.so.1
+file path=usr/lib/$(ARCH64)/libnfs.so.1
 file path=usr/lib/fs/nfs/$(ARCH64)/libshare_nfs.so.1
 file path=usr/lib/fs/nfs/libshare_nfs.so.1
+file path=usr/lib/libdserv.so.1
+file path=usr/lib/libnfs.so.1
 file path=usr/lib/nfs/mountd mode=0555
 file path=usr/lib/nfs/nfsd mode=0555
 file path=usr/lib/nfs/nfslogd mode=0555
 file path=usr/lib/nfs/rquotad mode=0555
+file path=usr/lib/nfs/sped mode=0555
 file path=usr/lib/reparse/$(ARCH64)/libnfs_basic.so.1
 file path=usr/lib/reparse/libnfs_basic.so.1
 file path=usr/sbin/exportfs mode=0555
+file path=usr/sbin/mdsadm mode=0555
 file path=usr/sbin/nfsref mode=0555
 file path=usr/share/man/man1m/mountd.1m
 file path=usr/share/man/man1m/nfsd.1m
@@ -91,5 +97,9 @@ legacy pkg=SUNWnfssu desc="Network File System (NFS) server support (Usr)" \
     name="Network File System (NFS) server support (Usr)"
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL
+link path=usr/lib/$(ARCH64)/libdserv.so target=./libdserv.so.1
+link path=usr/lib/$(ARCH64)/libnfs.so target=./libnfs.so.1
+link path=usr/lib/libdserv.so target=./libdserv.so.1
+link path=usr/lib/libnfs.so target=./libnfs.so.1
 link path=usr/lib/reparse/$(ARCH64)/libnfs_basic.so target=./libnfs_basic.so.1
 link path=usr/lib/reparse/libnfs_basic.so target=./libnfs_basic.so.1

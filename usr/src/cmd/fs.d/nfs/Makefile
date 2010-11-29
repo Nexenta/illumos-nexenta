@@ -36,9 +36,9 @@ SUBDIR1=	exportfs nfsd rquotad \
 		nfsfind nfs4cbd share
 SUBDIR2=	clear_locks umount showmount \
 		mount dfmounts nfslog nfsmapid \
-		nfsref rp_basic
+		nfsref rp_basic sped
 
-SUBDIR3=	etc svc
+SUBDIR3=	etc svc mdsadm
 SUBDIRS=	$(SUBDIR1) $(SUBDIR2) $(SUBDIR3)
 
 # for messaging catalog files

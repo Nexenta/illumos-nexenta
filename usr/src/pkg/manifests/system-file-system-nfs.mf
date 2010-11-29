@@ -66,6 +66,8 @@ file path=etc/default/nfs group=sys original_name=SUNWnfsc:etc/default/nfs \
 file path=etc/fs/nfs/mount mode=0555
 file path=etc/nfssec.conf group=sys original_name=SUNWnfsc:etc/nfssec.conf \
     preserve=true
+file path=kernel/drv/$(ARCH64)/dserv group=sys
+$(i386_ONLY)file path=kernel/drv/dserv group=sys
 file path=kernel/fs/$(ARCH64)/nfs group=sys mode=0755
 $(i386_ONLY)file path=kernel/fs/nfs group=sys mode=0755
 file path=kernel/misc/$(ARCH64)/klmmod group=sys mode=0755
@@ -74,6 +76,7 @@ file path=kernel/misc/$(ARCH64)/nfs_dlboot group=sys mode=0755
 $(i386_ONLY)file path=kernel/misc/klmmod group=sys mode=0755
 $(i386_ONLY)file path=kernel/misc/klmops group=sys mode=0755
 $(i386_ONLY)file path=kernel/misc/nfs_dlboot group=sys mode=0755
+file path=lib/svc/manifest/network/dserv.xml group=sys mode=0444
 file path=lib/svc/manifest/network/nfs/cbd.xml group=sys mode=0444
 file path=lib/svc/manifest/network/nfs/client.xml group=sys mode=0444
 file path=lib/svc/manifest/network/nfs/mapid.xml group=sys mode=0444
@@ -95,6 +98,8 @@ file path=usr/lib/nfs/lockd mode=0555
 file path=usr/lib/nfs/nfs4cbd mode=0555
 file path=usr/lib/nfs/nfsmapid mode=0555
 file path=usr/lib/nfs/statd mode=0555
+file path=usr/sbin/dservadm mode=0555
+file path=usr/sbin/dservd mode=0555
 file path=usr/share/man/man1/on.1
 file path=usr/share/man/man1m/mount_nfs.1m
 file path=usr/share/man/man1m/nfs4cbd.1m
