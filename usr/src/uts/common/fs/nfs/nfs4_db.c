@@ -1008,4 +1008,3 @@ dbe_to_instp(rfs4_dbe_t *dbp)
 {
 	return (dbp->dbe_table->dbt_instp);
 }
-д
