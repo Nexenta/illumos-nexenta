@@ -642,7 +642,7 @@ retry:
 			/* inform caller we did not create this entry */
 			*create = FALSE;
 
-			if (id != -1)
+			if (id != -1 && table->dbt_id_space)
 				id_free(table->dbt_id_space, id);
 			return (l->entry->dbe_data);
 		}
@@ -658,7 +658,7 @@ retry:
 	if (!*create || table->dbt_create == NULL || !idx->dbi_createable ||
 	    table->dbt_maxentries == table->dbt_count) {
 		rw_exit(bp->dbk_lock);
-		if (id != -1)
+		if (id != -1 && table->dbt_id_space)
 			id_free(table->dbt_id_space, id);
 		return (NULL);
 	}
@@ -689,8 +689,10 @@ retry:
 	entry = rfs4_dbe_create(table, id, arg);
 	if (entry == NULL) {
 		rw_exit(bp->dbk_lock);
-		if (id != -1)
+	/* causes 'bad free' assertion, as already done by rfs4_dbe_create
+		if (id != -1 && table->dbt_id_space)
 			id_free(table->dbt_id_space, id);
+	*/
 
 		return (NULL);
 	}
@@ -1006,3 +1008,4 @@ dbe_to_instp(rfs4_dbe_t *dbp)
 {
 	return (dbp->dbe_table->dbt_instp);
 }
+д

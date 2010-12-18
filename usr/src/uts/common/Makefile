@@ -29,16 +29,3 @@ include $(SRC)/Makefile.master
 
 .KEEP_STATE:
 
-# EXPORT DELETE START
-# Special target to clean up the source tree for export distribution
-# Warning: This target changes the source tree
-EXPORT_SRC:
-	$(RM) Makefile+ Makefile.rules+
-	sed -e "/^# EXPORT DELETE START/,/^# EXPORT DELETE END/d" \
-		< Makefile > Makefile+
-	$(MV) Makefile+ Makefile
-	sed -e "/^# EXPORT DELETE START/,/^# EXPORT DELETE END/d" \
-		< Makefile.rules > Makefile.rules+
-	$(MV) Makefile.rules+ Makefile.rules
-	$(CHMOD) 444 Makefile Makefile.rules
-# EXPORT DELETE END
