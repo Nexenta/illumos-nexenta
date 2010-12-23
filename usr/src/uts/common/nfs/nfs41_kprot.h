@@ -676,6 +676,7 @@ typedef struct state_protect4_a state_protect4_a;
 
 struct EXCHANGE_ID4args {
 	client_owner4 eia_clientowner;
+	unsigned long __padding;	/* cast to nfs_client_id4 */
 	uint32_t eia_flags;
 	state_protect4_a eia_state_protect;
 	struct {

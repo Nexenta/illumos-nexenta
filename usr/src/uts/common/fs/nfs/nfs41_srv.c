@@ -7301,7 +7301,9 @@ mds_op_exchange_id(nfs_argop4 *argop, nfs_resop4 *resop,
 
 	update = (args->eia_flags & EXCHGID4_FLAG_UPD_CONFIRMED_REC_A);
 	cop = &args->eia_clientowner;
+
 	cip = (nfs_client_id4 *)cop;
+	cip->cl_addr = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
 
 	/*
 	 * Refer to Section 18.35.4 of draft 19
