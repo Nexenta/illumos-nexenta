@@ -100,6 +100,8 @@
 
 #include <sys/priv_names.h>
 
+extern vfs_t EIO_vfs;
+
 extern zone_key_t	nfs4clnt_zone_key;
 extern zone_key_t	nfsidmap_zone_key;
 
@@ -2378,7 +2380,7 @@ nfs4_ephemeral_unmount_engine(nfs4_ephemeral_t *eph,
 		mi = e->ne_mount;
 		mutex_enter(&mi->mi_lock);
 		vfsp = mi->mi_vfsp;
-		ASSERT(vfsp != NULL);
+		ASSERT(vfsp != &EIO_vfs);
 
 		/*
 		 * Cleared by umount2_engine.
@@ -2785,7 +2787,7 @@ nfs4_ephemeral_record_umount(vfs_t *vfsp, int flag,
 	/*
 	 * Only act on if the fs is still mounted.
 	 */
-	if (vfsp == NULL)
+	if (vfsp == &EIO_vfs)
 		return;
 
 	error = umount2_engine(vfsp, flag, kcred, FALSE);
@@ -2879,7 +2881,7 @@ nfs4_ephemeral_harvest_forest(nfs4_trigger_globals_t *ntg,
 				mi = net->net_root->ne_mount;
 
 				vfsp = mi->mi_vfsp;
-				ASSERT(vfsp != NULL);
+				ASSERT(vfsp != &EIO_vfs);
 
 				/*
 				 * Cleared by umount2_engine.
@@ -2988,7 +2990,7 @@ nfs4_ephemeral_harvest_forest(nfs4_trigger_globals_t *ntg,
 				/*
 				 * Cleared by umount2_engine.
 				 */
-				if (vfsp != NULL)
+				if (vfsp != &EIO_vfs)
 					VFS_HOLD(vfsp);
 
 				/*

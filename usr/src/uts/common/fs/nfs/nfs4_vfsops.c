@@ -3259,17 +3259,13 @@ void
 nfs4_freevfs(vfs_t *vfsp)
 {
 	mntinfo4_t *mi;
+	extern vfs_t EIO_vfs;
 
 	/* need to release the initial hold */
 	mi = VFTOMI4(vfsp);
 
-	/*
-	 * At this point, we can no longer reference the vfs
-	 * and need to inform other holders of the reference
-	 * to the mntinfo4_t.
-	 */
-	mi->mi_vfsp = NULL;
-
+	/* smash the vfs pointer, mi might be hanging around */
+	mi->mi_vfsp = &EIO_vfs;
 	MI4_RELE(mi);
 }
 
