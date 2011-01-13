@@ -2705,9 +2705,13 @@ mds_op_read(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	ASSERT(uio.uio_resid >= 0);
 	resp->data_len = args->count - uio.uio_resid;
-	resp->data_val = (char *)mp->b_datap->db_base;
+	if (mp) {
+		resp->data_val = (char *)mp->b_datap->db_base;
+		rfs_rndup_mblks(mp, resp->data_len, 0);
+	} else {
+		resp->data_val = (caddr_t)iov.iov_base;
+	}
 	resp->mblk = mp;
-
 	resp->eof = (nnioflags & NNODE_IO_FLAG_EOF) ? TRUE : FALSE;
 
 out:
