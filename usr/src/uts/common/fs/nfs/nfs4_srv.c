@@ -3143,7 +3143,7 @@ doio_read:
 	error = nnop_read(nn, &nnioflags, cs->cr, &ct, &uio, 0);
 	if (error) {
 		if (mp != NULL)
-			freeb(mp);
+			freemsg(mp);
 		*cs->statusp = resp->status = nnode_stat4(error, 0);
 		goto out;
 	}
