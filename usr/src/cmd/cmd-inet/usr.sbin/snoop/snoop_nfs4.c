@@ -31,6 +31,9 @@
 #include <sys/errno.h>
 #include <sys/tiuser.h>
 #include <setjmp.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <errno.h>
 
 #include <rpc/types.h>
 #include <rpc/xdr.h>
@@ -43,7 +46,8 @@
 #include <sys/param.h>
 #include <rpcsvc/nfs_prot.h>
 /* use the same nfs4_prot.h as the xdr code */
-#include "rpcsvc/nfs4_prot.h"
+/* #include "rpcsvc/nfs4_prot.h" */
+#include "nfs4_prot.h"
 
 /*
  * XXX With NFS v2 and v3, we only need to xdr the pieces that we care
@@ -69,7 +73,7 @@ extern XDR xdrm;
 /*
  * Maximum number of recognized attributes.
  */
-#define	MAX_ATTRIBUTES	56
+#define	MAX_ATTRIBUTES	77
 
 /*
  * This data structure provides a more convenient way to access an
@@ -81,6 +85,7 @@ extern XDR xdrm;
 typedef struct {
 	char map[MAX_ATTRIBUTES];
 } unpkd_attrmap_t;
+
 
 
 static void sumarg_cb_getattr(char *buf, size_t buflen, void *obj);
@@ -113,6 +118,7 @@ static void sum_exist_lock_owner(char *buf, int buflen,
 					exist_lock_owner4 *own);
 static void sum_locker(char *buf, size_t buflen, locker4 *lk);
 static void sumarg_lock(char *buf, size_t buflen, void *obj);
+static void detail_headerpadsize(count4);
 static void detail_open_to_lock_owner(open_to_lock_owner4 *own);
 static void detail_exist_lock_owner(exist_lock_owner4 *own);
 static void detail_locker(locker4 *lk);
@@ -123,6 +129,8 @@ static void sumarg_locku(char *buf, size_t buflen, void *obj);
 static void dtlarg_locku(void *obj);
 static void sumarg_lookup(char *buf, size_t buflen, void *obj);
 static void dtlarg_lookup(void *obj);
+static char *detail_lortype_name(layoutrecall_type4);
+static char *sum_lortype_name(layoutrecall_type4);
 static void sumarg_open(char *buf, size_t buflen, void *obj);
 static void dtlarg_open(void *obj);
 static void sumarg_openattr(char *buf, size_t buflen, void *obj);
@@ -204,6 +212,115 @@ static uint32_t adler16(void *, int);
 static void nfs4_xdr_skip(int nbytes);
 static char *sum_lock_type_name(enum nfs_lock_type4 type);
 
+/* nfs4.1 operations */
+static void sumarg_cb_layoutrecall(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_layoutrecall(void *obj);
+static void sumres_cb_layoutrecall(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_layoutrecall(void *obj);
+static void sumarg_cb_notify(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_notify(void *obj);
+static void sumres_cb_notify(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_notify(void *obj);
+static void sumarg_cb_push_deleg(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_push_deleg(void *obj);
+static void sumres_cb_push_deleg(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_push_deleg(void *obj);
+static void sumarg_cb_recall_any(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_recall_any(void *obj);
+static void sumres_cb_recall_any(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_recall_any(void *obj);
+static void sumarg_cb_recallable_obj_avail(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_recallable_obj_avail(void *obj);
+static void sumres_cb_recallable_obj_avail(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_recallable_obj_avail(void *obj);
+static void sumarg_cb_recall_slot(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_recall_slot(void *obj);
+static void sumres_cb_recall_slot(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_recall_slot(void *obj);
+static void sumarg_cb_sequence(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_sequence(void *obj);
+static void sumres_cb_sequence(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_sequence(void *obj);
+static void sumarg_cb_wants_cancelled(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_wants_cancelled(void *obj);
+static void sumres_cb_wants_cancelled(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_wants_cancelled(void *obj);
+static void sumarg_cb_notify_lock(char *buf, size_t buflen, void *obj);
+static void dtlarg_cb_notify_lock(void *obj);
+static void sumres_cb_notify_lock(char *buf, size_t buflen, void *obj);
+static void dtlres_cb_notify_lock(void *obj);
+
+/* nfs4.1 operations */
+static void sumarg_backchannel_ctl(char *buf, size_t buflen, void *obj);
+static void dtlarg_backchannel_ctl(void *obj);
+static void sumarg_bind_conn_to_session(char *buf, size_t buflen, void *obj);
+static void dtlarg_bind_conn_to_session(void *obj);
+static void sumres_bind_conn_to_session(char *buf, size_t buflen, void *obj);
+static void dtlres_bind_conn_to_session(void *obj);
+static void sumarg_exchange_id(char *buf, size_t buflen, void *obj);
+static void dtlarg_exchange_id(void *obj);
+static void sumres_exchange_id(char *buf, size_t buflen, void *obj);
+static void dtlres_exchange_id(void *obj);
+static void sumarg_create_session(char *buf, size_t buflen, void *obj);
+static void sumres_create_session(char *buf, size_t buflen, void *obj);
+static void dtlarg_create_session(void *obj);
+static void dtlres_create_session(void *obj);
+static void sumarg_destroy_session(char *buf, size_t buflen, void *obj);
+static void dtlarg_destroy_session(void *obj);
+static void sumarg_free_stateid(char *buf, size_t buflen, void *obj);
+static void dtlarg_free_stateid(void *obj);
+static void sumarg_get_dir_delegation(char *buf, size_t buflen, void *obj);
+static void dtlarg_get_dir_delegation(void *obj);
+static void sumres_get_dir_delegation(char *buf, size_t buflen, void *obj);
+static void dtlres_get_dir_delegation(void *obj);
+static void sumarg_getdeviceinfo(char *buf, size_t buflen, void *obj);
+static void dtlarg_getdeviceinfo(void *obj);
+static void sumres_getdeviceinfo(char *buf, size_t buflen, void *obj);
+static void dtlres_getdeviceinfo(void *obj);
+static void sumarg_getdevicelist(char *buf, size_t buflen, void *obj);
+static void dtlarg_getdevicelist(void *obj);
+static void sumres_getdevicelist(char *buf, size_t buflen, void *obj);
+static void dtlres_getdevicelist(void *obj);
+static void sumarg_layoutcommit(char *buf, size_t buflen, void *obj);
+static void dtlarg_layoutcommit(void *obj);
+static void sumres_layoutcommit(char *buf, size_t buflen, void *obj);
+static void dtlres_layoutcommit(void *obj);
+static void sumarg_layoutget(char *buf, size_t buflen, void *obj);
+static void dtlarg_layoutget(void *obj);
+static void sumres_layoutget(char *buf, size_t buflen, void *obj);
+static void dtlres_layoutget(void *obj);
+static void sumarg_layoutreturn(char *buf, size_t buflen, void *obj);
+static void dtlarg_layoutreturn(void *obj);
+static void sumarg_secinfo_no_name(char *buf, size_t buflen, void *obj);
+static void dtlarg_secinfo_no_name(void *obj);
+static void sumarg_sequence(char *buf, size_t buflen, void *obj);
+static void dtlarg_sequence(void *obj);
+static void sumres_sequence(char *buf, size_t buflen, void *obj);
+static void dtlres_sequence(void *obj);
+static void sumarg_set_ssv(char *buf, size_t buflen, void *obj);
+static void dtlarg_set_ssv(void *obj);
+static void sumres_set_ssv(char *buf, size_t buflen, void *obj);
+static void dtlres_set_ssv(void *obj);
+static void sumarg_test_stateid(char *buf, size_t buflen, void *obj);
+static void dtlarg_test_stateid(void *obj);
+static void sumres_test_stateid(char *buf, size_t buflen, void *obj);
+static void dtlres_test_stateid(void *obj);
+static void sumarg_want_delegation(char *buf, size_t buflen, void *obj);
+static void dtlarg_want_delegation(void *obj);
+static void sumres_want_delegation(char *buf, size_t buflen, void *obj);
+static void dtlres_want_delegation(void *obj);
+static void sumarg_destroy_clientid(char *buf, size_t buflen, void *obj);
+static void dtlarg_destroy_clientid(void *obj);
+static void sumres_destroy_clientid(char *buf, size_t buflen, void *obj);
+static void dtlres_destroy_clientid(void *obj);
+static void sumarg_reclaim_complete(char *buf, size_t buflen, void *obj);
+static void dtlarg_reclaim_complete(void *obj);
+static void sumres_reclaim_complete(char *buf, size_t buflen, void *obj);
+static void dtlres_reclaim_complete(void *obj);
+
+static char *detail_lotype_name(layouttype4);
+static void detail_threshold_hint_bitmap(uint32_t);
+
 int nfs4_pkt_start;
 int nfs4_pkt_len;
 int nfs4_skip_bytes;
@@ -237,11 +354,42 @@ static op_info_t cb_opcode_info[] = {
 	{"OP_ONE",	NULL,	NULL,	NULL,	NULL},
 	{"OP_TWO",	NULL,	NULL,	NULL,	NULL},  /* minor vers */
 	{"CB_GETATTR",
-		sumarg_cb_getattr,	sumres_cb_getattr,
-		dtlarg_cb_getattr,	dtlres_cb_getattr},
+	    sumarg_cb_getattr,	sumres_cb_getattr,
+	    dtlarg_cb_getattr,	dtlres_cb_getattr},
 	{"CB_RECALL",
-		sumarg_cb_recall,	sum_nfsstat4,
-		dtlarg_cb_recall,	dtl_nfsstat4},
+	    sumarg_cb_recall,	sum_nfsstat4,
+	    dtlarg_cb_recall,	dtl_nfsstat4},
+	{"CB_LAYOUTRECALL",				/* 5 */
+	    sumarg_cb_layoutrecall,	sumres_cb_layoutrecall,
+	    dtlarg_cb_layoutrecall,	dtlres_cb_layoutrecall},
+	{"CB_NOTIFY",
+	    sumarg_cb_notify,	sumres_cb_notify,
+	    dtlarg_cb_notify,	dtlres_cb_notify},
+	{"CB_PUSH_DELEG",
+	    sumarg_cb_push_deleg,	sumres_cb_push_deleg,
+	    dtlarg_cb_push_deleg,	dtlres_cb_push_deleg},
+	{"CB_RECALL_ANY",
+	    sumarg_cb_recall_any,	sumres_cb_recall_any,
+	    dtlarg_cb_recall_any,	dtlres_cb_recall_any},
+	{"CB_RECALLABLE_OBJ_AVAIL",
+	    sumarg_cb_recallable_obj_avail,
+	    sumres_cb_recallable_obj_avail,
+	    dtlarg_cb_recallable_obj_avail,
+	    dtlres_cb_recallable_obj_avail},
+	{"CB_RECALL_SLOT",				/* 10 */
+	    sumarg_cb_recall_slot,	sumres_cb_recall_slot,
+	    dtlarg_cb_recall_slot,	dtlres_cb_recall_slot},
+	{"CB_SEQUENCE",
+	    sumarg_cb_sequence,	sumres_cb_sequence,
+	    dtlarg_cb_sequence,	dtlres_cb_sequence},
+	{"CB_WANTS_CANCELLED",
+	    sumarg_cb_wants_cancelled,
+	    sumres_cb_wants_cancelled,
+	    dtlarg_cb_wants_cancelled,
+	    dtlres_cb_wants_cancelled},
+	{"CB_NOTIFY_LOCK",
+	    sumarg_cb_notify_lock,	sumres_cb_notify_lock,
+	    dtlarg_cb_notify_lock,	dtlres_cb_notify_lock},
 };
 static uint_t cb_num_opcodes = sizeof (cb_opcode_info) / sizeof (op_info_t *);
 
@@ -333,17 +481,142 @@ static op_info_t opcode_info[] = {
 	{"RELEASE_LOCKOWNER",
 	sumarg_release_lkown, sum_nfsstat4,
 	dtlarg_release_lkown, dtl_nfsstat4},
+	/* nfs4.1 operations */
+	{"BACKCHANNEL_CTL",				/* 40 */
+	sumarg_backchannel_ctl,		sum_nfsstat4,
+	dtlarg_backchannel_ctl,		dtl_nfsstat4},
+	{"BIND_CONN_TO_SESSION",
+	sumarg_bind_conn_to_session,	sumres_bind_conn_to_session,
+	dtlarg_bind_conn_to_session,	dtlres_bind_conn_to_session},
+	{"EXCHANGE_ID",
+	sumarg_exchange_id,		sumres_exchange_id,
+	dtlarg_exchange_id,		dtlres_exchange_id},
+	{"CREATE_SESSION",
+	sumarg_create_session,		sumres_create_session,
+	dtlarg_create_session,		dtlres_create_session},
+	{"DESTROY_SESSION",
+	sumarg_destroy_session,		sum_nfsstat4,
+	dtlarg_destroy_session,		dtl_nfsstat4},
+	{"FREE_STATEID",				/* 45 */
+	sumarg_free_stateid,		sum_nfsstat4,
+	dtlarg_free_stateid,		dtl_nfsstat4},
+	{"GET_DIR_DELEGATION",
+	sumarg_get_dir_delegation,	sumres_get_dir_delegation,
+	dtlarg_get_dir_delegation,	dtlres_get_dir_delegation},
+	{"GETDEVICEINFO",
+	sumarg_getdeviceinfo,		sumres_getdeviceinfo,
+	dtlarg_getdeviceinfo,		dtlres_getdeviceinfo},
+	{"GETDEVICELIST",
+	sumarg_getdevicelist,		sumres_getdevicelist,
+	dtlarg_getdevicelist,		dtlres_getdevicelist},
+	{"LAYOUTCOMMIT",
+	sumarg_layoutcommit,		sumres_layoutcommit,
+	dtlarg_layoutcommit,		dtlres_layoutcommit},
+	{"LAYOUTGET",					/* 50 */
+	sumarg_layoutget,		sumres_layoutget,
+	dtlarg_layoutget,		dtlres_layoutget},
+	{"LAYOUTRETURN",
+	sumarg_layoutreturn,		sum_nfsstat4,
+	dtlarg_layoutreturn,		dtl_nfsstat4},
+	{"SECINFO_NO_NAME",
+	sumarg_secinfo_no_name,		sumres_secinfo,
+	dtlarg_secinfo_no_name,		dtlres_secinfo},
+	{"SEQUENCE",
+	sumarg_sequence,		sumres_sequence,
+	dtlarg_sequence,		dtlres_sequence},
+	{"SET_SSV",
+	sumarg_set_ssv,			sumres_set_ssv,
+	dtlarg_set_ssv,			dtlres_set_ssv},
+	{"TEST_STATEID",				/* 55 */
+	sumarg_test_stateid,		sumres_test_stateid,
+	dtlarg_test_stateid,		dtlres_test_stateid},
+	{"WANT_DELEGATION",
+	sumarg_want_delegation,		sumres_want_delegation,
+	dtlarg_want_delegation,		dtlres_want_delegation},
+	{"DESTROY_CLIENTID",
+	sumarg_destroy_clientid,		sumres_destroy_clientid,
+	dtlarg_destroy_clientid,		dtlres_destroy_clientid},
+	{"RECLAIM_COMPLETE",
+	sumarg_reclaim_complete,		sumres_reclaim_complete,
+	dtlarg_reclaim_complete,		dtlres_reclaim_complete},
 };
 static uint_t num_opcodes = sizeof (opcode_info) / sizeof (op_info_t *);
+
+
+typedef struct {
+	char *short_name;		/* for summary output */
+	char *long_name;		/* for detail output */
+} type_names_t;
+
+
+/*
+ * Layout Recall types
+ */
+static type_names_t lortype_names[] = {
+	{"Type 0",	"Type 0"},
+	{"FILE",	"Layout for File handle"},
+	{"FSID",	"All layouts for objects in FSID"},
+	{"ALL",		"All layouts"},
+};
+static uint_t num_lortypes = sizeof (lortype_names) / sizeof (type_names_t);
+
+
+/*
+ * Layout types
+ */
+static type_names_t lotype_names[] = {
+	{"Type 0",	"Type 0"},
+	{"FILE",	"LAYOUT4_NFSV4_1_FILES"},
+	{"OBJ",		"LAYOUT4_OSD2_OBJECTS"},
+	{"VOL",		"LAYOUT4_BLOCK_VOLUME"},
+};
+static uint_t num_lotypes = sizeof (lotype_names) / sizeof (type_names_t);
+
+/*
+ * Layout iomodes
+ */
+
+static type_names_t iomode_names[] = {
+	{"?",		"UNKNOWN"},
+	{"READ",	"LAYOUTIOMODE4_READ"},
+	{"RW",		"LAYOUTIOMODE4_RW"},
+	{"ANY",		"LAYOUTIOMODE4_ANY"},
+};
+static uint_t num_iomodes = sizeof (iomode_names) / sizeof (type_names_t);
+
+/*
+ * Layoutreturn types
+ */
+
+static type_names_t lrtype_names[] = {
+	{"?",		"UNKNOWN"},
+	{"FILE",	"LAYOUTRETURN4_FILE"},
+	{"FSID",	"LAYOUTRETURN4_FSID"},
+	{"ALL",		"LAYOUTRETURN4_ALL"},
+};
+static uint_t num_lrtypes = sizeof (lrtype_names) / sizeof (type_names_t);
+
+/* stripe type */
+static type_names_t stripe_names[] = {
+	{"?",		"UNKNOWN"},
+	{"SPARSE",      "STRIPE4_SPARSE"},
+	{"DENSE",       "STRIPE4_DENSE"},
+};
+static uint_t num_stripes = sizeof (stripe_names) / sizeof (type_names_t);
+
+/* how the client wants to protect its client */
+static type_names_t ps_names[] = {
+	{"NONE",	"SP4_NONE"},
+	{"MACH_CRED",	"SP4_MACH_CRED"},
+	{"SSV",		"SP4_SSV"},
+};
+static uint_t num_ps = sizeof (ps_names) / sizeof (type_names_t);
 
 /*
  * File types.
  */
 
-typedef struct {
-	char *short_name;		/* for summary output */
-	char *long_name;		/* for detail output */
-} ftype_names_t;
+typedef type_names_t ftype_names_t;
 
 static ftype_names_t ftype_names[] = {
 	{"Type 0",	"Type 0"},
@@ -359,7 +632,9 @@ static ftype_names_t ftype_names[] = {
 };
 static uint_t num_ftypes = sizeof (ftype_names) / sizeof (ftype_names_t);
 
-static ftype_names_t	open_rflags[] = {
+typedef type_names_t flag_t;
+
+static flag_t	open_rflags[] = {
 	{"?",	"UNKNOWN"},	/* 0 */
 	{"CF",	"CONFIRM"},	/* 1 */
 	{"PL",	"POSIX LOCK"},	/* 2 */
@@ -432,7 +707,28 @@ static void prt_time_delta(XDR *);
 static void prt_time_metadata(XDR *);
 static void prt_time_modify(XDR *);
 static void prt_time_modify_set(XDR *);
-
+/* nfs4.1 attributes */
+static void prt_dir_notif_delay(XDR *);
+static void prt_dirent_notif_delay(XDR *);
+static void prt_dacl(XDR *);
+static void prt_sacl(XDR *);
+static void prt_change_policy(XDR *);
+static void prt_fs_status(XDR *);
+static void prt_fs_layout_type(XDR *);
+static void prt_layout_hint(XDR *);
+static void prt_layout_type(XDR *);
+static void prt_layout_blksize(XDR *);
+static void prt_layout_alignment(XDR *);
+static void prt_fs_locations_info(XDR *);
+static void prt_mdsthreshold(XDR *);
+static void prt_retention_get(XDR *);
+static void prt_retention_set(XDR *);
+static void prt_retentevt_get(XDR *);
+static void prt_retentevt_set(XDR *);
+static void prt_retention_hold(XDR *);
+static void prt_mode_set_masked(XDR *);
+static void prt_suppattr_exclcreat(XDR *);
+static void prt_fs_charset_cap(XDR *);
 
 
 /*
@@ -451,6 +747,12 @@ typedef struct {
 	char	*name;
 	void	(*prt_details)(XDR *);
 } attr_info_t;
+
+
+#define	TH4_READ_SIZE_MASK	(1 << TH4_READ_SIZE)
+#define	TH4_WRITE_SIZE_MASK	(1 << TH4_WRITE_SIZE)
+#define	TH4_READ_IOSIZE_MASK	(1 << TH4_READ_IOSIZE)
+#define	TH4_WRITE_IOSIZE_MASK	(1 << TH4_WRITE_IOSIZE)
 
 static attr_info_t attr_info[MAX_ATTRIBUTES] = {
 	{"SUPPORTED_ATTRS",	prt_supported_attrs},
@@ -508,7 +810,29 @@ static attr_info_t attr_info[MAX_ATTRIBUTES] = {
 	{"TIME_METADATA",	prt_time_metadata},
 	{"TIME_MODIFY",		prt_time_modify},
 	{"TIME_MODIFY_SET",	prt_time_modify_set},
-	{"MOUNTED_ON_FILEID",	prt_mounted_on_fileid},
+	{"MOUNTED_ON_FILEID",	prt_mounted_on_fileid},	/* 55 */
+	/* Attributes supported in nfs4.1 */
+	{"DIR_NOTIF_DELAY",	prt_dir_notif_delay},
+	{"DIRENT_NOTIF_DELAY",	prt_dirent_notif_delay},
+	{"DACL",		prt_dacl},
+	{"SACL",		prt_sacl},
+	{"CHANGE_POLICY",	prt_change_policy},	/* 60 */
+	{"FS_STATUS",		prt_fs_status},
+	{"FS_LAYOUT_TYPE",	prt_fs_layout_type},
+	{"LAYOUT_HINT",		prt_layout_hint},
+	{"LAYOUT_TYPE",		prt_layout_type},
+	{"LAYOUT_BLKSIZE",	prt_layout_blksize},	/* 65 */
+	{"LAYOUT_ALIGNMENT",	prt_layout_alignment},
+	{"FS_LOCATIONS_INFO",	prt_fs_locations_info},
+	{"MDSTHRESHOLD",	prt_mdsthreshold},
+	{"RETENTION_GET",	prt_retention_get},
+	{"RETENTION_SET",	prt_retention_set},	/* 70 */
+	{"RETENTEVT_GET",	prt_retentevt_get},
+	{"RETENTEVT_SET",	prt_retentevt_set},
+	{"RETENTION_HOLD",	prt_retention_hold},
+	{"MODE_SET_MASKED",	prt_mode_set_masked},
+	{"SUPPATTR_EXCLCREAT",	prt_suppattr_exclcreat}, /* 75 */
+	{"FS_CHARSET_CAP",	prt_fs_charset_cap},
 };
 
 extern char *get_sum_line();
@@ -589,6 +913,9 @@ static void detail_fh4(nfs_fh4 *fh);
 #define	fh4_hash(fh) adler16((fh)->nfs_fh4_val, (fh)->nfs_fh4_len)
 #define	stateid_hash(st) adler16((st)->other, sizeof ((st)->other))
 #define	owner_hash(own) adler16((own)->owner_val, (own)->owner_len)
+#define	sessionid_hash(sid) adler16(sid, 16)
+#define	deviceid_hash(did) adler16(did, 16)
+#define	cowner_hash(oid) adler16((oid)->co_ownerid_val, (oid)->co_ownerid_len)
 
 #define	sum_deleg_stateid(st)	_sum_stateid((st), "DST=")
 #define	sum_open_stateid(st)	_sum_stateid((st), "OST=")
@@ -675,6 +1002,32 @@ static char *acemask4_names[] = {
 	"ACE4_SYNCHRONIZE"
 };
 #define	ACEMASK4_NAMES_MAX (sizeof (acemask4_names) / sizeof (char *))
+
+static char *seq_status[] = {
+	"SEQ4_STATUS_CB_PATH_DOWN",
+	"SEQ4_STATUS_CB_GSS_CONTEXTS_EXPIRING",
+	"SEQ4_STATUS_CB_GSS_CONTEXTS_EXPIRED",
+	"SEQ4_STATUS_EXPIRED_ALL_STATE_REVOKED",
+	"SEQ4_STATUS_EXPIRED_SOME_STATE_REVOKED",
+	"SEQ4_STATUS_ADMIN_STATE_REVOKED",
+	"SEQ4_STATUS_RECALLABLE_STATE_REVOKED",
+	"SEQ4_STATUS_LEASE_MOVED",
+	"SEQ4_STATUS_RESTART_RECLAIM_NEEDED"
+};
+#define	SEQ_STATUS_MAX	(sizeof (seq_status) / sizeof (char *))
+
+static flag_t   session_flags[] = {
+	{"RS",	"PERSIST"},	/* 1: Reliable semantics */
+	{"BC",	"BACKCHAN"},	/* 2: conn used for back channel, too */
+	{"DP",	"RDMA"},	/* 3: conn is non-streamed; Begin RDMA */
+	{"?",	"UNKNOWN"}	/* 4: Unknown Flag */
+};
+static uint_t num_session_flags = sizeof (session_flags) / sizeof (flag_t) - 1;
+
+#define	sum_sn_flags(flag) \
+	get_flags((flag), session_flags, num_session_flags, 1, " SF=")
+#define	detail_sn_flags(flag) \
+	get_flags((flag), session_flags, num_session_flags, 0, NULL)
 
 #define	MAXPROC	1
 
@@ -2018,8 +2371,8 @@ sumarg_setclid(char *buf, size_t buflen, void *obj)
 
 	snprintf(buf, buflen, "Prog=%u ID=%s Addr=%s CBID=%u",
 	    args->callback.cb_program,
-	    args->callback.cb_location.r_netid,
-	    args->callback.cb_location.r_addr, args->callback_ident);
+	    args->callback.cb_location.na_r_netid,
+	    args->callback.cb_location.na_r_addr, args->callback_ident);
 }
 
 static void
@@ -2036,9 +2389,9 @@ dtlarg_setclid(void *obj)
 	sprintf(get_line(0, 0), "Callback Program = %u",
 	    args->callback.cb_program);
 	sprintf(get_line(0, 0), "Callback Net ID = %s",
-	    args->callback.cb_location.r_netid);
+	    args->callback.cb_location.na_r_netid);
 	sprintf(get_line(0, 0), "Callback Addr = %s",
-	    args->callback.cb_location.r_addr);
+	    args->callback.cb_location.na_r_addr);
 	sprintf(get_line(0, 0), "Callback Ident = %u", args->callback_ident);
 }
 
@@ -2146,6 +2499,55 @@ detail_fattr4(fattr4 *attrp)
 		}
 	}
 
+done:
+	bcopy(old_errbuf, xdr_err, sizeof (old_errbuf));
+}
+
+static void
+detail_threshold_item4(threshold_item4 *thi)
+{
+	XDR txdr;
+	jmp_buf old_errbuf;
+	uint32_t b, val;
+
+	sprintf(get_line(0, 0), "    %s",
+	    detail_lotype_name(thi->thi_layout_type));
+
+	if (thi->thi_hintset.bitmap4_len == 0)
+		return;
+
+	b = ((uint32_t *)(thi->thi_hintset.bitmap4_val))[0];
+	sprintf(get_line(0, 0), "      Threshold hint bitmap = 0x%08x", b);
+
+	xdrmem_create(&txdr, thi->thi_hintlist.thi_hintlist_val,
+	    thi->thi_hintlist.thi_hintlist_len, XDR_DECODE);
+
+	bcopy(xdr_err, old_errbuf, sizeof (old_errbuf));
+	if (setjmp(xdr_err)) {
+		sprintf(get_line(0, 0), "<attr_vals too short>");
+		goto done;
+	}
+
+	if (b & TH4_READ_SIZE_MASK) {
+		if (!xdr_uint32_t(&txdr, &val))
+			longjmp(xdr_err, 1);
+		sprintf(get_line(0, 0), "        Read size = %u", val);
+	}
+	if (b & TH4_READ_IOSIZE_MASK) {
+		if (!xdr_uint32_t(&txdr, &val))
+			longjmp(xdr_err, 1);
+		sprintf(get_line(0, 0), "        Read IO size = %u", val);
+	}
+	if (b & TH4_WRITE_SIZE_MASK) {
+		if (!xdr_uint32_t(&txdr, &val))
+			longjmp(xdr_err, 1);
+		sprintf(get_line(0, 0), "        Write size = %u", val);
+	}
+	if (b & TH4_WRITE_IOSIZE_MASK) {
+		if (!xdr_uint32_t(&txdr, &val))
+			longjmp(xdr_err, 1);
+		sprintf(get_line(0, 0), "        Write IO size = %u", val);
+	}
 done:
 	bcopy(old_errbuf, xdr_err, sizeof (old_errbuf));
 }
@@ -2416,7 +2818,7 @@ static void
 detail_fattr4_change(char *msg, fattr4_change chg)
 {
 	sprintf(get_line(0, 0), "%s: 0x%llx", msg, chg);
-					/* XXX print as time_t, too? */
+	/* XXX print as time_t, too? */
 }
 
 static void
@@ -3008,8 +3410,8 @@ sumres_setclid(char *buf, size_t buflen, void *obj)
 	case NFS4ERR_CLID_INUSE:
 		bp = buf + strlen(buf);
 		snprintf(bp, buflen - (bp - buf), " ID=%s Addr=%s",
-		    res->SETCLIENTID4res_u.client_using.r_netid,
-		    res->SETCLIENTID4res_u.client_using.r_addr);
+		    res->SETCLIENTID4res_u.client_using.na_r_netid,
+		    res->SETCLIENTID4res_u.client_using.na_r_addr);
 		break;
 	}
 }
@@ -3029,9 +3431,9 @@ dtlres_setclid(void *obj)
 		break;
 	case NFS4ERR_CLID_INUSE:
 		sprintf(get_line(0, 0), "Used by Net ID = %s",
-		    res->SETCLIENTID4res_u.client_using.r_netid);
+		    res->SETCLIENTID4res_u.client_using.na_r_netid);
 		sprintf(get_line(0, 0), "Used by Addr = %s",
-		    res->SETCLIENTID4res_u.client_using.r_addr);
+		    res->SETCLIENTID4res_u.client_using.na_r_addr);
 		break;
 	}
 }
@@ -3292,6 +3694,12 @@ sum_name(char *buf, size_t buflen, open_claim4 *claim)
 		    component_name(&claim->open_claim4_u.
 		    file_delegate_prev));
 		break;
+	case CLAIM_FH:
+		break;
+	case CLAIM_DELEG_CUR_FH:
+		break;
+	case CLAIM_DELEG_PREV_FH:
+		break;
 	}
 }
 
@@ -3319,8 +3727,17 @@ sum_claim(char *buf, size_t buflen, open_claim4 *claim)
 	case CLAIM_DELEGATE_PREV:
 		snprintf(bp, buflen, " CT=DP");
 		break;
+	case CLAIM_FH:
+		snprintf(bp, buflen, " CT=FH");
+		break;
+	case CLAIM_DELEG_CUR_FH:
+		snprintf(bp, buflen, " CT=CUR_FH");
+		break;
+	case CLAIM_DELEG_PREV_FH:
+		snprintf(bp, buflen, " CT=PREV_FH");
+		break;
 	default:
-		snprintf(bp, buflen, " CT=?");
+		snprintf(bp, buflen, " CT=? (%d)", claim->claim);
 		break;
 	}
 }
@@ -3760,6 +4177,9 @@ claim_name(enum open_claim_type4 claim_type)
 	case CLAIM_DELEGATE_PREV:
 		result = "DELEGATE PREVIOUS";
 		break;
+	case CLAIM_FH:
+		result = "FILEHANDLE";
+		break;
 	default:
 		result = "?";
 		break;
@@ -3886,74 +4306,217 @@ status_name(int status)
 	char *p;
 
 	switch (status) {
-	case NFS4_OK:		p = "NFS4_OK"; break;
-	case NFS4ERR_PERM:	p = "NFS4ERR_PERM"; break;
-	case NFS4ERR_NOENT:	p = "NFS4ERR_NOENT"; break;
-	case NFS4ERR_IO:	p = "NFS4ERR_IO"; break;
-	case NFS4ERR_NXIO:	p = "NFS4ERR_NXIO"; break;
-	case NFS4ERR_ACCESS:	p = "NFS4ERR_ACCESS"; break;
-	case NFS4ERR_EXIST:	p = "NFS4ERR_EXIST"; break;
-	case NFS4ERR_XDEV:	p = "NFS4ERR_XDEV"; break;
-	case NFS4ERR_NOTDIR:	p = "NFS4ERR_NOTDIR"; break;
-	case NFS4ERR_ISDIR:	p = "NFS4ERR_ISDIR"; break;
-	case NFS4ERR_INVAL:	p = "NFS4ERR_INVAL"; break;
-	case NFS4ERR_FBIG:	p = "NFS4ERR_FBIG"; break;
-	case NFS4ERR_NOSPC:	p = "NFS4ERR_NOSPC"; break;
-	case NFS4ERR_ROFS:	p = "NFS4ERR_ROFS"; break;
-	case NFS4ERR_MLINK:	p = "NFS4ERR_MLINK"; break;
-	case NFS4ERR_NAMETOOLONG:p = "NFS4ERR_NAMETOOLONG"; break;
-	case NFS4ERR_NOTEMPTY:	p = "NFS4ERR_NOTEMPTY"; break;
-	case NFS4ERR_DQUOT:	p = "NFS4ERR_DQUOT"; break;
-	case NFS4ERR_STALE:	p = "NFS4ERR_STALE"; break;
-	case NFS4ERR_BADHANDLE:	p = "NFS4ERR_BADHANDLE"; break;
-	case NFS4ERR_BAD_COOKIE:p = "NFS4ERR_BAD_COOKIE"; break;
-	case NFS4ERR_NOTSUPP:	p = "NFS4ERR_NOTSUPP"; break;
-	case NFS4ERR_TOOSMALL:	p = "NFS4ERR_TOOSMALL"; break;
-	case NFS4ERR_SERVERFAULT:p = "NFS4ERR_SERVERFAULT"; break;
-	case NFS4ERR_BADTYPE:	p = "NFS4ERR_BADTYPE"; break;
-	case NFS4ERR_DELAY:	p = "NFS4ERR_DELAY"; break;
-	case NFS4ERR_SAME:	p = "NFS4ERR_SAME"; break;
-	case NFS4ERR_DENIED:	p = "NFS4ERR_DENIED"; break;
-	case NFS4ERR_EXPIRED:	p = "NFS4ERR_EXPIRED"; break;
-	case NFS4ERR_LOCKED:	p = "NFS4ERR_LOCKED"; break;
-	case NFS4ERR_GRACE:	p = "NFS4ERR_GRACE"; break;
-	case NFS4ERR_FHEXPIRED:	p = "NFS4ERR_FHEXPIRED"; break;
-	case NFS4ERR_SHARE_DENIED: p = "NFS4ERR_SHARE_DENIED"; break;
-	case NFS4ERR_WRONGSEC:	p = "NFS4ERR_WRONGSEC"; break;
-	case NFS4ERR_CLID_INUSE: p = "NFS4ERR_CLID_INUSE"; break;
-	case NFS4ERR_RESOURCE:	p = "NFS4ERR_RESOURCE"; break;
-	case NFS4ERR_MOVED:	p = "NFS4ERR_MOVED"; break;
-	case NFS4ERR_NOFILEHANDLE: p = "NFS4ERR_NOFILEHANDLE"; break;
-	case NFS4ERR_MINOR_VERS_MISMATCH: p = "NFS4ERR_MINOR_VERS_MISMATCH";
-	break;
-	case NFS4ERR_STALE_CLIENTID: p = "NFS4ERR_STALE_CLIENTID"; break;
-	case NFS4ERR_STALE_STATEID: p = "NFS4ERR_STALE_STATEID"; break;
-	case NFS4ERR_OLD_STATEID: p = "NFS4ERR_OLD_STATEID"; break;
-	case NFS4ERR_BAD_STATEID: p = "NFS4ERR_BAD_STATEID"; break;
-	case NFS4ERR_BAD_SEQID: p = "NFS4ERR_BAD_SEQID"; break;
-	case NFS4ERR_NOT_SAME: p = "NFS4ERR_NOT_SAME"; break;
-	case NFS4ERR_LOCK_RANGE: p = "NFS4ERR_LOCK_RANGE"; break;
-	case NFS4ERR_SYMLINK: p = "NFS4ERR_SYMLINK"; break;
-	case NFS4ERR_RESTOREFH: p = "NFS4ERR_RESTOREFH"; break;
-	case NFS4ERR_LEASE_MOVED: p = "NFS4ERR_LEASE_MOVED"; break;
-	case NFS4ERR_ATTRNOTSUPP: p = "NFS4ERR_ATTRNOTSUPP"; break;
-	case NFS4ERR_NO_GRACE: p = "NFS4ERR_NO_GRACE"; break;
-	case NFS4ERR_RECLAIM_BAD: p = "NFS4ERR_RECLAIM_BAD"; break;
-	case NFS4ERR_RECLAIM_CONFLICT: p = "NFS4ERR_RECLAIM_CONFLICT"; break;
-	case NFS4ERR_BADXDR: p = "NFS4ERR_BADXDR"; break;
-	case NFS4ERR_LOCKS_HELD: p = "NFS4ERR_LOCKS_HELD"; break;
-	case NFS4ERR_OPENMODE: p = "NFS4ERR_OPENMODE"; break;
-	case NFS4ERR_BADOWNER: p = "NFS4ERR_BADOWNER"; break;
-	case NFS4ERR_BADCHAR: p = "NFS4ERR_BADCHAR"; break;
-	case NFS4ERR_BADNAME: p = "NFS4ERR_BADNAME"; break;
-	case NFS4ERR_BAD_RANGE: p = "NFS4ERR_BAD_RANGE"; break;
-	case NFS4ERR_LOCK_NOTSUPP: p = "NFS4ERR_LOCK_NOTSUPP"; break;
-	case NFS4ERR_OP_ILLEGAL: p = "NFS4ERR_OP_ILLEGAL"; break;
-	case NFS4ERR_DEADLOCK: p = "NFS4ERR_DEADLOCK"; break;
-	case NFS4ERR_FILE_OPEN: p = "NFS4ERR_FILE_OPEN"; break;
-	case NFS4ERR_ADMIN_REVOKED: p = "NFS4ERR_ADMIN_REVOKED"; break;
-	case NFS4ERR_CB_PATH_DOWN: p = "NFS4ERR_CB_PATH_DOWN"; break;
-	default:		p = "(unknown error)"; break;
+	case NFS4_OK:				/* 0 */
+		p = "NFS4_OK"; break;
+	case NFS4ERR_PERM:			/* 1 */
+		p = "NFS4ERR_PERM"; break;
+	case NFS4ERR_NOENT:			/* 2 */
+		p = "NFS4ERR_NOENT"; break;
+	case NFS4ERR_IO:			/* 5 */
+		p = "NFS4ERR_IO"; break;
+	case NFS4ERR_NXIO:			/* 6 */
+		p = "NFS4ERR_NXIO"; break;
+	case NFS4ERR_ACCESS:			/* 13 */
+		p = "NFS4ERR_ACCESS"; break;
+	case NFS4ERR_EXIST:			/* 17 */
+		p = "NFS4ERR_EXIST"; break;
+	case NFS4ERR_XDEV:			/* 18 */
+		p = "NFS4ERR_XDEV"; break;
+	case NFS4ERR_NOTDIR:			/* 20 */
+		p = "NFS4ERR_NOTDIR"; break;
+	case NFS4ERR_ISDIR:			/* 21 */
+		p = "NFS4ERR_ISDIR"; break;
+	case NFS4ERR_INVAL:			/* 22 */
+		p = "NFS4ERR_INVAL"; break;
+	case NFS4ERR_FBIG:			/* 27 */
+		p = "NFS4ERR_FBIG"; break;
+	case NFS4ERR_NOSPC:			/* 28 */
+		p = "NFS4ERR_NOSPC"; break;
+	case NFS4ERR_ROFS:			/* 30 */
+		p = "NFS4ERR_ROFS"; break;
+	case NFS4ERR_MLINK:			/* 31 */
+		p = "NFS4ERR_MLINK"; break;
+	case NFS4ERR_NAMETOOLONG:		/* 63 */
+		p = "NFS4ERR_NAMETOOLONG"; break;
+	case NFS4ERR_NOTEMPTY:			/* 66 */
+		p = "NFS4ERR_NOTEMPTY"; break;
+	case NFS4ERR_DQUOT:			/* 69 */
+		p = "NFS4ERR_DQUOT"; break;
+	case NFS4ERR_STALE:			/* 70 */
+		p = "NFS4ERR_STALE"; break;
+	case NFS4ERR_BADHANDLE:			/* 10001 */
+		p = "NFS4ERR_BADHANDLE"; break;
+	case NFS4ERR_BAD_COOKIE:		/* 10003 */
+		p = "NFS4ERR_BAD_COOKIE"; break;
+	case NFS4ERR_NOTSUPP:			/* 10004 */
+		p = "NFS4ERR_NOTSUPP"; break;
+	case NFS4ERR_TOOSMALL:			/* 10005 */
+		p = "NFS4ERR_TOOSMALL"; break;
+	case NFS4ERR_SERVERFAULT:		/* 10006 */
+		p = "NFS4ERR_SERVERFAULT"; break;
+	case NFS4ERR_BADTYPE:			/* 10007 */
+		p = "NFS4ERR_BADTYPE"; break;
+	case NFS4ERR_DELAY:			/* 10008 */
+		p = "NFS4ERR_DELAY"; break;
+	case NFS4ERR_SAME:			/* 10009 */
+		p = "NFS4ERR_SAME"; break;
+	case NFS4ERR_DENIED:			/* 10010 */
+		p = "NFS4ERR_DENIED"; break;
+	case NFS4ERR_EXPIRED:			/* 10011 */
+		p = "NFS4ERR_EXPIRED"; break;
+	case NFS4ERR_LOCKED:			/* 10012 */
+		p = "NFS4ERR_LOCKED"; break;
+	case NFS4ERR_GRACE:			/* 10013 */
+		p = "NFS4ERR_GRACE"; break;
+	case NFS4ERR_FHEXPIRED:			/* 10014 */
+		p = "NFS4ERR_FHEXPIRED"; break;
+	case NFS4ERR_SHARE_DENIED:		/* 10015 */
+		p = "NFS4ERR_SHARE_DENIED"; break;
+	case NFS4ERR_WRONGSEC:			/* 10016 */
+		p = "NFS4ERR_WRONGSEC"; break;
+	case NFS4ERR_CLID_INUSE:		/* 10017 */
+		p = "NFS4ERR_CLID_INUSE"; break;
+	case NFS4ERR_RESOURCE:			/* 10018 */
+		p = "NFS4ERR_RESOURCE"; break;
+	case NFS4ERR_MOVED:			/* 10019 */
+		p = "NFS4ERR_MOVED"; break;
+	case NFS4ERR_NOFILEHANDLE:		/* 10020 */
+		p = "NFS4ERR_NOFILEHANDLE"; break;
+	case NFS4ERR_MINOR_VERS_MISMATCH:	/* 10021 */
+		p = "NFS4ERR_MINOR_VERS_MISMATCH"; break;
+	case NFS4ERR_STALE_CLIENTID: 		/* 10022 */
+		p = "NFS4ERR_STALE_CLIENTID"; break;
+	case NFS4ERR_STALE_STATEID:		/* 10023 */
+		p = "NFS4ERR_STALE_STATEID"; break;
+	case NFS4ERR_OLD_STATEID:		/* 10024 */
+		p = "NFS4ERR_OLD_STATEID"; break;
+	case NFS4ERR_BAD_STATEID:		/* 10025 */
+		p = "NFS4ERR_BAD_STATEID"; break;
+	case NFS4ERR_BAD_SEQID:			/* 10026 */
+		p = "NFS4ERR_BAD_SEQID"; break;
+	case NFS4ERR_NOT_SAME:			/* 10027 */
+		p = "NFS4ERR_NOT_SAME"; break;
+	case NFS4ERR_LOCK_RANGE:		/* 10028 */
+		p = "NFS4ERR_LOCK_RANGE"; break;
+	case NFS4ERR_SYMLINK:			/* 10029 */
+		p = "NFS4ERR_SYMLINK"; break;
+	case NFS4ERR_RESTOREFH:			/* 10030 */
+		p = "NFS4ERR_RESTOREFH"; break;
+	case NFS4ERR_LEASE_MOVED:		/* 10031 */
+		p = "NFS4ERR_LEASE_MOVED"; break;
+	case NFS4ERR_ATTRNOTSUPP:		/* 10032 */
+		p = "NFS4ERR_ATTRNOTSUPP"; break;
+	case NFS4ERR_NO_GRACE:			/* 10033 */
+		p = "NFS4ERR_NO_GRACE"; break;
+	case NFS4ERR_RECLAIM_BAD:		/* 10034 */
+		p = "NFS4ERR_RECLAIM_BAD"; break;
+	case NFS4ERR_RECLAIM_CONFLICT:		/* 10035 */
+		p = "NFS4ERR_RECLAIM_CONFLICT"; break;
+	case NFS4ERR_BADXDR:			/* 10036 */
+		p = "NFS4ERR_BADXDR"; break;
+	case NFS4ERR_LOCKS_HELD:		/* 10037 */
+		p = "NFS4ERR_LOCKS_HELD"; break;
+	case NFS4ERR_OPENMODE:			/* 10038 */
+		p = "NFS4ERR_OPENMODE"; break;
+	case NFS4ERR_BADOWNER:			/* 10039 */
+		p = "NFS4ERR_BADOWNER"; break;
+	case NFS4ERR_BADCHAR:			/* 10040 */
+		p = "NFS4ERR_BADCHAR"; break;
+	case NFS4ERR_BADNAME:			/* 10041 */
+		p = "NFS4ERR_BADNAME"; break;
+	case NFS4ERR_BAD_RANGE:			/* 10042 */
+		p = "NFS4ERR_BAD_RANGE"; break;
+	case NFS4ERR_LOCK_NOTSUPP:		/* 10043 */
+		p = "NFS4ERR_LOCK_NOTSUPP"; break;
+	case NFS4ERR_OP_ILLEGAL:		/* 10044 */
+		p = "NFS4ERR_OP_ILLEGAL"; break;
+	case NFS4ERR_DEADLOCK:			/* 10045 */
+		p = "NFS4ERR_DEADLOCK"; break;
+	case NFS4ERR_FILE_OPEN:			/* 10046 */
+		p = "NFS4ERR_FILE_OPEN"; break;
+	case NFS4ERR_ADMIN_REVOKED:		/* 10047 */
+		p = "NFS4ERR_ADMIN_REVOKED"; break;
+	case NFS4ERR_CB_PATH_DOWN:		/* 10048 */
+		p = "NFS4ERR_CB_PATH_DOWN"; break;
+	/* nfs4.1 error code */
+	case NFS4ERR_BADIOMODE:			/* 10049 */
+		p = "NFS4ERR_BADIOMODE"; break;
+	case NFS4ERR_BADLAYOUT:			/* 10050 */
+		p = "NFS4ERR_BADLAYOUT"; break;
+	case NFS4ERR_BAD_SESSION_DIGEST:	/* 10051 */
+		p = "NFS4ERR_BAD_SESSION_DIGEST"; break;
+	case NFS4ERR_BADSESSION:		/* 10052 */
+		p = "NFS4ERR_BADSESSION"; break;
+	case NFS4ERR_BADSLOT:			/* 10053 */
+		p = "NFS4ERR_BADSLOT"; break;
+	case NFS4ERR_COMPLETE_ALREADY:		/* 10054 */
+		p = "NFS4ERR_COMPLETE_ALREADY"; break;
+	case NFS4ERR_CONN_NOT_BOUND_TO_SESSION:	/* 10055 */
+		p = "NFS4ERR_CONN_NOT_BOUND_TO_SESSION"; break;
+	case NFS4ERR_DELEG_ALREADY_WANTED:	/* 10056 */
+		p = "NFS4ERR_DELEG_ALREADY_WANTED"; break;
+	case NFS4ERR_BACK_CHAN_BUSY:		/* 10057 */
+		p = "NFS4ERR_BACK_CHAN_BUSY"; break;
+	case NFS4ERR_LAYOUTTRYLATER:		/* 10058 */
+		p = "NFS4ERR_LAYOUTTRYLATER"; break;
+	case NFS4ERR_LAYOUTUNAVAILABLE:		/* 10059 */
+		p = "NFS4ERR_LAYOUTUNAVAILABLE"; break;
+	case NFS4ERR_NOMATCHING_LAYOUT:		/* 10060 */
+		p = "NFS4ERR_NOMATCHING_LAYOUT"; break;
+	case NFS4ERR_RECALLCONFLICT:		/* 10061 */
+		p = "NFS4ERR_RECALLCONFLICT"; break;
+	case NFS4ERR_UNKNOWN_LAYOUTTYPE:	/* 10062 */
+		p = "NFS4ERR_UNKNOWN_LAYOUTTYPE"; break;
+	case NFS4ERR_SEQ_MISORDERED:		/* 10063 */
+		p = "NFS4ERR_SEQ_MISORDERED"; break;
+	case NFS4ERR_SEQUENCE_POS:		/* 10064 */
+		p = "NFS4ERR_SEQUENCE_POS"; break;
+	case NFS4ERR_REQ_TOO_BIG:		/* 10065 */
+		p = "NFS4ERR_REQ_TOO_BIG"; break;
+	case NFS4ERR_REP_TOO_BIG:		/* 10066 */
+		p = "NFS4ERR_REP_TOO_BIG"; break;
+	case NFS4ERR_REP_TOO_BIG_TO_CACHE:	/* 10067 */
+		p = "NFS4ERR_REP_TOO_BIG_TO_CACHE"; break;
+	case NFS4ERR_RETRY_UNCACHED_REP:	/* 10068 */
+		p = "NFS4ERR_RETRY_UNCACHED_REP"; break;
+	case NFS4ERR_UNSAFE_COMPOUND:		/* 10069 */
+		p = "NFS4ERR_UNSAFE_COMPOUND"; break;
+	case NFS4ERR_TOO_MANY_OPS:		/* 10070 */
+		p = "NFS4ERR_TOO_MANY_OPS"; break;
+	case NFS4ERR_OP_NOT_IN_SESSION:		/* 10071 */
+		p = "NFS4ERR_OP_NOT_IN_SESSION"; break;
+	case NFS4ERR_HASH_ALG_UNSUPP:		/* 10072 */
+		p = "NFS4ERR_HASH_ALG_UNSUPP"; break;
+	case NFS4ERR_CONN_BINDING_NOT_ENFORCED:	/* 10073 */
+		p = "NFS4ERR_CONN_BINDING_NOT_ENFORCED"; break;
+	case NFS4ERR_CLIENTID_BUSY:		/* 10074 */
+		p = "NFS4ERR_CLIENTID_BUSY"; break;
+	case NFS4ERR_PNFS_IO_HOLE:		/* 10075 */
+		p = "NFS4ERR_PNFS_IO_HOLE"; break;
+	case NFS4ERR_SEQ_FALSE_RETRY:		/* 10076 */
+		p = "NFS4ERR_SEQ_FALSE_RETRY"; break;
+	case NFS4ERR_BAD_HIGH_SLOT:		/* 10077 */
+		p = "NFS4ERR_BAD_HIGH_SLOT"; break;
+	case NFS4ERR_DEADSESSION:		/* 10078 */
+		p = "NFS4ERR_DEADSESSION"; break;
+	case NFS4ERR_ENCR_ALG_UNSUPP:		/* 10079 */
+		p = "NFS4ERR_ENCR_ALG_UNSUPP"; break;
+	case NFS4ERR_PNFS_NO_LAYOUT:		/* 10080 */
+		p = "NFS4ERR_PNFS_NO_LAYOUT"; break;
+	case NFS4ERR_NOT_ONLY_OP:		/* 10081 */
+		p = "NFS4ERR_NOT_ONLY_OP"; break;
+	case NFS4ERR_WRONG_CRED:		/* 10082 */
+		p = "NFS4ERR_WRONG_CRED"; break;
+	case NFS4ERR_WRONG_TYPE:		/* 10083 */
+		p = "NFS4ERR_WRONG_TYPE"; break;
+	case NFS4ERR_DIRDELEG_UNAVAIL:		/* 10084 */
+		p = "NFS4ERR_DIRDELEG_UNAVAIL"; break;
+	case NFS4ERR_REJECT_DELEG:		/* 10085 */
+		p = "NFS4ERR_REJECT_DELEG"; break;
+	case NFS4ERR_RETURNCONFLICT:		/* 10086 */
+		p = "NFS4ERR_RETURNCONFLICT"; break;
+	default:
+		p = "(unknown error)"; break;
 	}
 
 	return (p);
@@ -3964,6 +4527,2251 @@ nfsstat4_to_name(int status)
 {
 	return (status_name(status));
 }
+
+static char *
+sum_sequenceid(sequenceid4 seq)
+{
+	static char buf[64];
+
+	snprintf(buf, sizeof (buf), "SQ=%u", seq);
+	return (buf);
+}
+
+static void
+sum_sec_parm(char *buf, size_t buflen, callback_sec_parms4 parms)
+{
+	snprintf(buf, buflen, " %s", flavor_name(parms.cb_secflavor));
+}
+
+static void
+sumarg_create_session(char *buf, size_t buflen, void *obj)
+{
+	CREATE_SESSION4args *args = (CREATE_SESSION4args *)obj;
+	char *bp = buf;
+	uint_t i;
+
+	snprintf(bp, buflen, "%s ", sum_clientid(args->csa_clientid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%s ",
+	    sum_sequenceid(args->csa_sequence));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%s ", sum_sn_flags(args->csa_flags));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "CB=%u",
+	    args->csa_cb_program);
+
+	for (i = 0; i < args->csa_sec_parms.csa_sec_parms_len; i++) {
+		bp += strlen(bp);
+		sum_sec_parm(bp, buflen - (bp - buf),
+		    args->csa_sec_parms.csa_sec_parms_val[i]);
+	}
+}
+
+static char *
+sum_sessionid(sessionid4 sid)
+{
+	static char buf[64];
+
+	snprintf(buf, sizeof (buf), "SID=%04X", sessionid_hash(sid));
+	return (buf);
+}
+
+static void
+sumres_create_session(char *buf, size_t buflen, void *obj)
+{
+	CREATE_SESSION4res *res = (CREATE_SESSION4res *)obj;
+	CREATE_SESSION4resok *resok;
+	char *bp = buf;
+
+	strcpy(bp, status_name(res->csr_status));
+	if (res->csr_status == NFS4_OK) {
+		resok = &res->CREATE_SESSION4res_u.csr_resok4;
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_sessionid(resok->csr_sessionid));
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_sequenceid(resok->csr_sequence));
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp -buf), " %s",
+		    sum_sn_flags(resok->csr_flags));
+	}
+}
+
+static void
+detail_sequenceid(sequenceid4 seq)
+{
+	sprintf(get_line(0, 0), "Sequence ID = %u", seq);
+}
+
+static void
+detail_channel_attr(channel_attrs4 attr)
+{
+	int i;
+
+	detail_headerpadsize(attr.ca_headerpadsize);
+	sprintf(get_line(0, 0), "\tMaximum request size = %u",
+	    attr.ca_maxrequestsize);
+	sprintf(get_line(0, 0), "\tMaximum response size = %u",
+	    attr.ca_maxresponsesize);
+	sprintf(get_line(0, 0), "\tMaximum response cache size = %u",
+	    attr.ca_maxresponsesize_cached);
+	sprintf(get_line(0, 0), "\tMaximum number of operations = %u",
+	    attr.ca_maxoperations);
+	sprintf(get_line(0, 0), "\tMaximum number of requests = %u",
+	    attr.ca_maxrequests);
+
+	for (i = 0; i < attr.ca_rdma_ird.ca_rdma_ird_len; i++)
+		sprintf(get_line(0, 0), "\tRDMA channel attribute [i] = %u",
+		    attr.ca_rdma_ird.ca_rdma_ird_val[i]);
+}
+
+static void
+detail_sessionid(sessionid4 sid)
+{
+	sprintf(get_line(0, 0), "Session ID hash = [%04X] ",
+	    sessionid_hash(sid));
+	sprintf(get_line(0, 0), "    (16) %s",
+	    tohex(sid, 16));
+}
+
+static void
+detail_headerpadsize(count4 size)
+{
+	sprintf(get_line(0, 0), "Header padding = %u", size);
+}
+
+static void
+detail_use_in_rdma_mode(bool_t val)
+{
+	sprintf(get_line(0, 0), "Use the connection in RDMA mode = %s",
+	    val ? "TRUE" : "FALSE");
+}
+
+static void
+detail_authsys_parms(authsys_parms aup)
+{
+	uint_t i;
+
+	char *bp = get_line(0, 0);
+	sprintf(bp, "time=%u machine=%s uid=%u gid=%u",
+	    aup.aup_time, aup.aup_machname, aup.aup_uid, aup.aup_gid);
+
+	for (i = 0; i < aup.aup_len; i++) {
+		bp += strlen(bp);
+		sprintf(bp, " gids[i]=%u", aup.aup_gids[i]);
+	}
+}
+
+static void
+detail_gss_handles4(gss_cb_handles4 hdl)
+{
+	uint_t i;
+
+	char *bp = get_line(0, 0);
+	sprintf(bp, "Service = %d (%s); ",
+	    hdl.gcbp_service, gss_svc_name(hdl.gcbp_service));
+
+	bp += strlen(bp);
+	sprintf(bp, "The handle from server=%s;",
+	    tohex(hdl.gcbp_handle_from_server.gsshandle4_t_val,
+	    hdl.gcbp_handle_from_server.gsshandle4_t_len));
+
+	bp += strlen(bp);
+	sprintf(bp, "The handle for client=%s",
+	    tohex(hdl.gcbp_handle_from_client.gsshandle4_t_val,
+	    hdl.gcbp_handle_from_client.gsshandle4_t_len));
+}
+
+static void
+detail_sec_parm(callback_sec_parms4 sec)
+{
+	sprintf(get_line(0, 0), "Flavor = %d (%s)",
+	    sec.cb_secflavor, flavor_name(sec.cb_secflavor));
+
+	switch (sec.cb_secflavor) {
+	case AUTH_NONE:
+		break;
+	case AUTH_SYS:
+		detail_authsys_parms(sec.callback_sec_parms4_u.cbsp_sys_cred);
+		break;
+	case RPCSEC_GSS:
+		detail_gss_handles4(sec.callback_sec_parms4_u.cbsp_gss_handles);
+		break;
+	defaul:
+		break;
+	}
+}
+
+static void
+dtlarg_create_session(void *obj)
+{
+	CREATE_SESSION4args *args = (CREATE_SESSION4args *)obj;
+	callback_sec_parms4 parms;
+	uint_t i;
+
+	detail_clientid(args->csa_clientid);
+	detail_sequenceid(args->csa_sequence);
+	sprintf(get_line(0, 0), "Flags = 0x%x (%s)",
+	    args->csa_flags, detail_sn_flags(args->csa_flags));
+	sprintf(get_line(0, 0), "Attributes of the fore channel: ");
+	detail_channel_attr(args->csa_fore_chan_attrs);
+	sprintf(get_line(0, 0), "Attributes of the back channel: ");
+	detail_channel_attr(args->csa_back_chan_attrs);
+	sprintf(get_line(0, 0), "Callback program ID = %u",
+	    args->csa_cb_program);
+	for (i = 0; i < args->csa_sec_parms.csa_sec_parms_len; i++)
+		parms = args->csa_sec_parms.csa_sec_parms_val[i];
+		detail_sec_parm(parms);
+}
+
+static void
+dtlres_create_session(void *obj)
+{
+	CREATE_SESSION4res *res = (CREATE_SESSION4res *)obj;
+	CREATE_SESSION4resok *resok;
+
+	dtl_nfsstat4(obj);
+	if (res->csr_status == NFS4_OK) {
+		resok = &res->CREATE_SESSION4res_u.csr_resok4;
+		detail_sessionid(resok->csr_sessionid);
+		detail_sequenceid(resok->csr_sequence);
+		sprintf(get_line(0, 0), "Flags = 0x%x (%s)",
+		    resok->csr_flags, detail_sn_flags(resok->csr_flags));
+		sprintf(get_line(0, 0), "Attributes of the fore channel:");
+		detail_channel_attr(resok->csr_fore_chan_attrs);
+		sprintf(get_line(0, 0), "Attributes of the back channel:");
+		detail_channel_attr(resok->csr_back_chan_attrs);
+	}
+}
+
+static char *
+sum_verifier(verifier4 verifier)
+{
+	static char buf[32];
+
+	snprintf(buf, sizeof (buf), "Verf=%s",
+	    tohex(verifier, NFS4_VERIFIER_SIZE));
+
+	return (buf);
+}
+
+static void
+detail_verifier(verifier4 verifier)
+{
+	sprintf(get_line(0, 0), "Verifier=%s",
+	    tohex(verifier, NFS4_VERIFIER_SIZE));
+}
+
+static char *
+print_ei_flag(uint32_t flag)
+{
+	static char buf[64];
+	char *bp = buf;
+	size_t buflen = sizeof (buf);
+
+	if (flag & EXCHGID4_FLAG_SUPP_MOVED_REFER) {
+		snprintf(bp, buflen, "MOVED_REFER ");
+		bp += strlen(buf);
+	}
+
+	if (flag & EXCHGID4_FLAG_SUPP_MOVED_MIGR) {
+		snprintf(bp, buflen - (bp - buf), "MOVED_MIGR ");
+		bp += strlen(bp);
+	}
+
+	if (flag & EXCHGID4_FLAG_BIND_PRINC_STATEID) {
+		snprintf(bp, buflen - (bp - buf), "PRINC_STATEID ");
+		bp += strlen(bp);
+	}
+
+	if (flag & EXCHGID4_FLAG_USE_NON_PNFS) {
+		snprintf(bp, buflen - (bp - buf), "NON_PNFS ");
+		bp += strlen(bp);
+	}
+
+	if (flag & EXCHGID4_FLAG_USE_PNFS_MDS) {
+		snprintf(bp, buflen - (bp - buf), "PNFS_MDS ");
+		bp += strlen(bp);
+	}
+
+	if (flag & EXCHGID4_FLAG_USE_PNFS_DS) {
+		snprintf(bp, buflen - (bp - buf), "PNFS_DS ");
+		bp += strlen(bp);
+	}
+
+	if (flag & EXCHGID4_FLAG_UPD_CONFIRMED_REC_A) {
+		snprintf(bp, buflen - (bp - buf), "CONFIRMED_REC_A ");
+		bp += strlen(bp);
+	}
+
+	if (flag & EXCHGID4_FLAG_CONFIRMED_R) {
+		snprintf(bp, buflen - (bp - buf), "CONFIRMED_R ");
+		bp += strlen(bp);
+	}
+
+	return (buf);
+}
+static char *
+sum_ps_name(state_protect_how4 type)
+{
+	static char buf[32];
+
+	if (type < num_ps)
+		return (ps_names[type].short_name);
+	else {
+		sprintf(buf, "ps_how=%d", type);
+		return (buf);
+	}
+}
+
+static char *
+detail_ps_name(state_protect_how4 type)
+{
+	static char buf[64];
+
+	if (type < num_ps)
+		return (ps_names[type].long_name);
+	else {
+		sprintf(buf, "Unkown protect state type = %d", type);
+		return (buf);
+	}
+}
+
+static void
+sum_ei_state_protect4_a(char *buf, size_t buflen, state_protect4_a *spa)
+{
+	char *bp = buf;
+
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_ps_name(spa->spa_how));
+}
+
+static void
+detail_ei_state_protect4_a(state_protect4_a *spa)
+{
+	sprintf(get_line(0, 0), "State protest = %s",
+	    detail_ps_name(spa->spa_how));
+}
+
+static void
+sum_ei_state_protect4_r(char *buf, size_t buflen, state_protect4_r *spr)
+{
+	char *bp = buf;
+
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_ps_name(spr->spr_how));
+}
+
+static void
+detail_ei_state_protect4_r(state_protect4_r *spr)
+{
+	sprintf(get_line(0, 0), "State protect = %s",
+	    detail_ps_name(spr->spr_how));
+}
+
+static void
+sum_nfs_impl_id4(char *buf, size_t buflen, nfs_impl_id4 *impl)
+{
+	char *bp = buf;
+
+	snprintf(bp, buflen - (bp - buf), "%*s.",
+	    impl->nii_name.utf8string_len,
+	    impl->nii_name.utf8string_val);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%*s ",
+	    impl->nii_domain.utf8string_len,
+	    impl->nii_domain.utf8string_val);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%s ",
+	    format_time(impl->nii_date.seconds, impl->nii_date.nseconds));
+	bp += strlen(bp);
+}
+
+static void
+detail_nfs_impl_id4(nfs_impl_id4 *impl)
+{
+	sprintf(get_line(0, 0), "Domain = %*s",
+	    impl->nii_domain.utf8string_len,
+	    impl->nii_domain.utf8string_val);
+	sprintf(get_line(0, 0), "Name = %*s",
+	    impl->nii_name.utf8string_len,
+	    impl->nii_name.utf8string_val);
+	sprintf(get_line(0, 0), "Time = %s",
+	    format_time(impl->nii_date.seconds, impl->nii_date.nseconds));
+}
+
+static void
+sumarg_exchange_id(char *buf, size_t buflen, void *obj)
+{
+	EXCHANGE_ID4args *args = (EXCHANGE_ID4args *)obj;
+	nfs_impl_id4 *impl;
+	char *bp = buf;
+	int i, n;
+
+	snprintf(bp, buflen, "%s",
+	    sum_verifier(args->eia_clientowner.co_verifier));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " COID=%04X",
+	    cowner_hash(&args->eia_clientowner.co_ownerid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    print_ei_flag(args->eia_flags));
+	bp += strlen(bp);
+	sum_ei_state_protect4_a(bp, buflen - (bp - buf),
+	    &args->eia_state_protect);
+	bp += strlen(bp);
+
+	n = args->eia_client_impl_id.eia_client_impl_id_len;
+	impl = args->eia_client_impl_id.eia_client_impl_id_val;
+	for (i = 0; i < n; i++) {
+		sum_nfs_impl_id4(bp, buflen - (bp - buf), impl + i);
+		bp += strlen(bp);
+	}
+}
+
+static void
+dtlarg_exchange_id(void *obj)
+{
+	nfs_impl_id4 *impl;
+	int n, i;
+
+	EXCHANGE_ID4args *args = (EXCHANGE_ID4args *)obj;
+
+	detail_verifier(args->eia_clientowner.co_verifier);
+	sprintf(get_line(0, 0), "Client Owner ID hash = [%04X] ",
+	    cowner_hash(&args->eia_clientowner.co_ownerid));
+	sprintf(get_line(0, 0), "    (%d) %s",
+	    args->eia_clientowner.co_ownerid.co_ownerid_len,
+	    tohex(args->eia_clientowner.co_ownerid.co_ownerid_val,
+	    args->eia_clientowner.co_ownerid.co_ownerid_len));
+	sprintf(get_line(0, 0), "Flag = %s",
+	    print_ei_flag(args->eia_flags));
+	detail_ei_state_protect4_a(&args->eia_state_protect);
+
+	n = args->eia_client_impl_id.eia_client_impl_id_len;
+	impl = args->eia_client_impl_id.eia_client_impl_id_val;
+	for (i = 0; i < n; i++)
+		detail_nfs_impl_id4(impl + i);
+}
+
+static void
+sumres_exchange_id(char *buf, size_t buflen, void *obj)
+{
+	EXCHANGE_ID4res *res = (EXCHANGE_ID4res *)obj;
+	EXCHANGE_ID4resok *resok;
+	char *bp = buf;
+
+	strcpy(bp, status_name(res->eir_status));
+	if (res->eir_status != NFS4_OK)
+		return;
+
+	resok = &res->EXCHANGE_ID4res_u.eir_resok4;
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_clientid(resok->eir_clientid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_sequenceid(resok->eir_sequenceid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    print_ei_flag(resok->eir_flags));
+	bp += strlen(bp);
+	sum_ei_state_protect4_r(bp, buflen - (bp - buf),
+	    &resok->eir_state_protect);
+}
+
+static void
+detail_server_owner(server_owner4 owner)
+{
+	sprintf(get_line(0, 0), "Server owner minor ID = %llu",
+	    owner.so_minor_id);
+	if (owner.so_major_id.so_major_id_len != 0)
+		sprintf(get_line(0, 0), "Server owner major ID = %s",
+		    tohex(owner.so_major_id.so_major_id_val,
+		    owner.so_major_id.so_major_id_len));
+	else
+		sprintf(get_line(0, 0), "Server owner major ID is not set");
+}
+
+static void
+dtlres_exchange_id(void *obj)
+{
+	EXCHANGE_ID4res *res = (EXCHANGE_ID4res *)obj;
+	EXCHANGE_ID4resok *resok;
+	nfs_impl_id4 *impl;
+	int i, n;
+
+	dtl_nfsstat4(obj);
+	if (res->eir_status != NFS4_OK)
+		return;
+
+	resok = &res->EXCHANGE_ID4res_u.eir_resok4;
+	detail_clientid(resok->eir_clientid);
+	detail_sequenceid(resok->eir_sequenceid);
+	sprintf(get_line(0, 0), "Flag = %s",
+	    print_ei_flag(resok->eir_flags));
+	detail_ei_state_protect4_r(&resok->eir_state_protect);
+	detail_server_owner(resok->eir_server_owner);
+	if (resok->eir_server_scope.eir_server_scope_len == 0) {
+		sprintf(get_line(0, 0), "Server scope is not set");
+		return;
+	}
+	sprintf(get_line(0, 0), "Server scope = %s",
+	    tohex(resok->eir_server_scope.eir_server_scope_val,
+	    resok->eir_server_scope.eir_server_scope_len));
+
+	impl = resok->eir_server_impl_id.eir_server_impl_id_val;
+	n = resok->eir_server_impl_id.eir_server_impl_id_len;
+	for (i = 0; i < n; i++)
+		detail_nfs_impl_id4(impl + i);
+}
+
+static char *
+sum_bcts_dir_from_client(channel_dir_from_client4 type)
+{
+	char *result;
+
+	switch (type) {
+	case 0x1:
+		result = "FORE";
+		break;
+	case 0x2:
+		result = "BACK";
+		break;
+	case 0x3:
+		result = "FORE or BOTH";
+		break;
+	case 0x7:
+		result = "BACK or BOTH";
+		break;
+	default:
+		result = "?";
+		break;
+	}
+
+	return (result);
+}
+
+static void
+detail_bcts_dir_from_client(channel_dir_from_client4 type)
+{
+	char *bp = get_line(0, 0);
+
+	switch (type) {
+	case 0x1:
+		sprintf(bp, "Binding to fore channel");
+		break;
+	case 0x2:
+		sprintf(bp, "Binding to back channel");
+		break;
+	case 0x3:
+		sprintf(bp, "Binding to fore or both channel");
+		break;
+	case 0x7:
+		sprintf(bp, "Binding to back or both channel");
+	default:
+		sprintf(bp, "Binding to invalid channel");
+		break;
+	}
+}
+
+static char *
+sum_bcts_dir_from_server(channel_dir_from_server4 type)
+{
+	char *result;
+
+	switch (type) {
+	case 0x1:
+		result = "FORE";
+		break;
+	case 0x2:
+		result = "BACK";
+		break;
+	case 0x3:
+		result = "BOTH";
+		break;
+	default:
+		result = "?";
+		break;
+	}
+
+	return (result);
+}
+
+static void
+detail_bcts_dir_from_server(channel_dir_from_server4 type)
+{
+	char *bp = get_line(0, 0);
+
+	switch (type) {
+	case 0x1:
+		sprintf(bp, "Binding to fore channel");
+		break;
+	case 0x2:
+		sprintf(bp, "Binding to back channel");
+		break;
+	case 0x3:
+		sprintf(bp, "Binding to both channel");
+		break;
+	default:
+		sprintf(bp, "Binding to invalid channel");
+		break;
+	}
+}
+
+static void
+detail_bcts_nonce(uint64_t val)
+{
+	sprintf(get_line(0, 0), "Nonce value = %llu", val);
+}
+
+static void
+sumarg_bind_conn_to_session(char *buf, size_t buflen, void *obj)
+{
+	BIND_CONN_TO_SESSION4args *args = (BIND_CONN_TO_SESSION4args *)obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen, "%s", sum_sessionid(args->bctsa_sessid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_bcts_dir_from_client(args->bctsa_dir));
+	bp += strlen(bp);
+}
+
+static void
+dtlarg_bind_conn_to_session(void *obj)
+{
+	BIND_CONN_TO_SESSION4args *args = (BIND_CONN_TO_SESSION4args *)obj;
+
+	detail_sessionid(args->bctsa_sessid);
+	detail_bcts_dir_from_client(args->bctsa_dir);
+	detail_use_in_rdma_mode(args->bctsa_use_conn_in_rdma_mode);
+}
+
+static void
+sumres_bind_conn_to_session(char *buf, size_t buflen, void *obj)
+{
+	BIND_CONN_TO_SESSION4res *res = (BIND_CONN_TO_SESSION4res *)obj;
+	BIND_CONN_TO_SESSION4resok *resok;
+	char *bp = buf;
+
+	strcpy(bp, status_name(res->bctsr_status));
+	if (res->bctsr_status == NFS4_OK) {
+		resok = &res->BIND_CONN_TO_SESSION4res_u.bctsr_resok4;
+		snprintf(bp, buflen, "%s", sum_sessionid(resok->bctsr_sessid));
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_bcts_dir_from_server(resok->bctsr_dir));
+		bp += strlen(bp);
+	}
+}
+
+static void
+dtlres_bind_conn_to_session(void *obj)
+{
+	BIND_CONN_TO_SESSION4res *res = (BIND_CONN_TO_SESSION4res *)obj;
+	BIND_CONN_TO_SESSION4resok *resok;
+
+	dtl_nfsstat4(obj);
+	if (res->bctsr_status == NFS4_OK) {
+		resok = &res->BIND_CONN_TO_SESSION4res_u.bctsr_resok4;
+		detail_sessionid(resok->bctsr_sessid);
+		detail_bcts_dir_from_server(resok->bctsr_dir);
+		detail_use_in_rdma_mode(resok->bctsr_use_conn_in_rdma_mode);
+	}
+}
+
+static void
+sumarg_backchannel_ctl(char *buf, size_t buflen, void *obj)
+{
+	BACKCHANNEL_CTL4args *args = (BACKCHANNEL_CTL4args *)obj;
+	char *bp = buf;
+	uint_t i;
+
+	sprintf(bp, "CB=%u", args->bca_cb_program);
+	for (i = 0; i < args->bca_sec_parms.bca_sec_parms_len; i++) {
+		bp += strlen(bp);
+		sum_sec_parm(bp, buflen - (bp - buf),
+		    args->bca_sec_parms.bca_sec_parms_val[i]);
+	}
+}
+
+static void
+dtlarg_backchannel_ctl(void *obj)
+{
+	BACKCHANNEL_CTL4args *args = (BACKCHANNEL_CTL4args *)obj;
+	uint_t i;
+
+	sprintf(get_line(0, 0), "Callback program ID = %u",
+	    args->bca_cb_program);
+	for (i = 0; i < args->bca_sec_parms.bca_sec_parms_len; i++)
+		detail_sec_parm(args->bca_sec_parms.bca_sec_parms_val[i]);
+}
+
+static void
+sumarg_set_ssv(char *buf, size_t buflen, void *obj)
+{
+	SET_SSV4args *args = (SET_SSV4args *)obj;
+
+	snprintf(buf, buflen, "SSV=%s DG=%s",
+	    tohex(args->ssa_ssv.ssa_ssv_val, args->ssa_ssv.ssa_ssv_len),
+	    tohex(args->ssa_digest.ssa_digest_val,
+	    args->ssa_digest.ssa_digest_len));
+}
+
+static void
+dtlarg_set_ssv(void *obj)
+{
+	SET_SSV4args *args = (SET_SSV4args *)obj;
+
+	sprintf(get_line(0, 0), "SSV = %s",
+	    tohex(args->ssa_ssv.ssa_ssv_val, args->ssa_ssv.ssa_ssv_len));
+	sprintf(get_line(0, 0), "Digest = %s",
+	    tohex(args->ssa_digest.ssa_digest_val,
+	    args->ssa_digest.ssa_digest_len));
+}
+
+static void
+sumres_set_ssv(char *buf, size_t buflen, void *obj)
+{
+	SET_SSV4res *res = (SET_SSV4res *)obj;
+	SET_SSV4resok *resok;
+	char *bp = buf;
+
+	strcpy(bp, status_name(res->ssr_status));
+	bp += strlen(bp);
+	if (res->ssr_status == NFS4_OK) {
+		resok = &res->SET_SSV4res_u.ssr_resok4;
+		snprintf(bp, buflen - (bp - buf), "DG=%s",
+		    tohex(resok->ssr_digest.ssr_digest_val,
+		    resok->ssr_digest.ssr_digest_len));
+	}
+}
+
+static void
+dtlres_set_ssv(void *obj)
+{
+	SET_SSV4res *res = (SET_SSV4res *)obj;
+	SET_SSV4resok *resok;
+
+	dtl_nfsstat4(obj);
+	if (res->ssr_status == NFS4_OK) {
+		resok = &res->SET_SSV4res_u.ssr_resok4;
+		sprintf(get_line(0, 0), "Digest = %s",
+		    tohex(resok->ssr_digest.ssr_digest_val,
+		    resok->ssr_digest.ssr_digest_len));
+	}
+}
+
+static void
+sumarg_destroy_session(char *buf, size_t buflen, void *obj)
+{
+	DESTROY_SESSION4args *args = (DESTROY_SESSION4args *)obj;
+
+	snprintf(buf, buflen, "%s", sum_sessionid(args->dsa_sessionid));
+}
+
+static void
+dtlarg_destroy_session(void *obj)
+{
+	DESTROY_SESSION4args *args = (DESTROY_SESSION4args *)obj;
+
+	detail_sessionid(args->dsa_sessionid);
+}
+
+static void
+sumarg_sequence(char *buf, size_t buflen, void *obj)
+{
+	SEQUENCE4args *args = (SEQUENCE4args *)obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen, "%s ", sum_sessionid(args->sa_sessionid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%s ",
+	    sum_sequenceid(args->sa_sequenceid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "SLID=%u", args->sa_slotid);
+}
+
+static void
+dtlarg_sequence(void *obj)
+{
+	SEQUENCE4args *args = (SEQUENCE4args *)obj;
+
+	detail_sessionid(args->sa_sessionid);
+	detail_sequenceid(args->sa_sequenceid);
+	sprintf(get_line(0, 0), "Slot ID = %u", args->sa_slotid);
+	sprintf(get_line(0, 0), "Highest slotid = %u", args->sa_highest_slotid);
+	sprintf(get_line(0, 0), "Cache flag = %s",
+	    args->sa_cachethis? "TRUE" : "FALSE");
+}
+
+static char *
+sum_seq_status(uint32_t status)
+{
+	static char buf[32];
+
+	snprintf(buf, sizeof (buf), "ST=%x", status);
+	return (buf);
+}
+
+static void
+detail_seq_status(uint32_t status)
+{
+	int bit;
+
+	sprintf(get_line(0, 0), "status = %x", status);
+	for (bit = 0; bit < SEQ_STATUS_MAX; bit++) {
+		if (status & (1 << bit)) {
+			sprintf(get_line(0, 0), "\t%s",
+			    seq_status[bit]);
+		}
+	}
+}
+
+static void
+sumres_sequence(char *buf, size_t buflen, void *obj)
+{
+	SEQUENCE4res *res = (SEQUENCE4res *)obj;
+	SEQUENCE4resok *resok;
+	char *bp = buf;
+
+	strncpy(bp, status_name(res->sr_status), buflen);
+	if (res->sr_status == NFS4_OK) {
+		resok = &res->SEQUENCE4res_u.sr_resok4;
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_sessionid(resok->sr_sessionid));
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_sequenceid(resok->sr_sequenceid));
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " SLID=%u",
+		    resok->sr_slotid);
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_seq_status(resok->sr_status_flags));
+	}
+}
+
+static void
+dtlres_sequence(void *obj)
+{
+	SEQUENCE4res *res = (SEQUENCE4res *)obj;
+	SEQUENCE4resok *resok;
+
+	dtl_nfsstat4(obj);
+	if (res->sr_status == NFS4_OK) {
+		resok = &res->SEQUENCE4res_u.sr_resok4;
+		detail_sessionid(resok->sr_sessionid);
+		detail_sequenceid(resok->sr_sequenceid);
+		sprintf(get_line(0, 0), "Slot ID = %u", resok->sr_slotid);
+		sprintf(get_line(0, 0), "Highest slotid = %u",
+		    resok->sr_highest_slotid);
+		sprintf(get_line(0, 0), "Target highest slotid = %u",
+		    resok->sr_target_highest_slotid);
+		detail_seq_status(resok->sr_status_flags);
+	}
+}
+
+static void
+sumarg_cb_sequence(char *buf, size_t buflen, void *obj)
+{
+	CB_SEQUENCE4args *args = (CB_SEQUENCE4args *)obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen, "%s ", sum_sessionid(args->csa_sessionid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%s ",
+	    sum_sequenceid(args->csa_sequenceid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "SLID=%u", args->csa_slotid);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "cachethis=%d",
+	    args->csa_cachethis);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "num calls = %d",
+	    args->csa_referring_call_lists.csa_referring_call_lists_len);
+	bp += strlen(bp);
+}
+
+static void
+detail_referring_call_list(uint_t ref, referring_call_list4 list)
+{
+	referring_call4 *call;
+	uint_t i;
+
+	sprintf(get_line(0, 0),
+	    "Referring call list[%u]: Session ID = %s",
+	    i, tohex(list.rcl_sessionid, 16));
+
+	for (i = 0;
+	    i < list.rcl_referring_calls.rcl_referring_calls_len;
+	    i++) {
+
+		call = &list.rcl_referring_calls.rcl_referring_calls_val[i];
+		sprintf(get_line(0, 0),
+		    "    Sequence ID = %u   Slot ID = %u",
+		    call->rc_sequenceid, call->rc_slotid);
+	}
+}
+
+static void
+dtlarg_cb_sequence(void *obj)
+{
+	CB_SEQUENCE4args *args = (CB_SEQUENCE4args *)obj;
+	referring_call_list4 *list;
+	uint_t i;
+
+	detail_sessionid(args->csa_sessionid);
+	detail_sequenceid(args->csa_sequenceid);
+	sprintf(get_line(0, 0), "Slot ID = %u", args->csa_slotid);
+	sprintf(get_line(0, 0), "Highest slot = %u", args->csa_highest_slotid);
+	sprintf(get_line(0, 0), "Cache this = %s",
+	    args->csa_cachethis ? "TRUE" : "FALSE");
+
+	list = args->csa_referring_call_lists.csa_referring_call_lists_val;
+	for (i = 0;
+	    i < args->csa_referring_call_lists.csa_referring_call_lists_len;
+	    i++) {
+		detail_referring_call_list(i, list[i]);
+	}
+}
+
+static void
+sumres_cb_sequence(char *buf, size_t buflen, void *obj)
+{
+	CB_SEQUENCE4res *res = (CB_SEQUENCE4res *)obj;
+	CB_SEQUENCE4resok *resok;
+	char *bp = buf;
+
+	strcpy(bp, status_name(res->csr_status));
+	if (res->csr_status != NFS4_OK)
+		return;
+
+	resok = &res->CB_SEQUENCE4res_u.csr_resok4;
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%s ",
+	    sum_sessionid(resok->csr_sessionid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "%s ",
+	    sum_sequenceid(resok->csr_sequenceid));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "SLID=%u ",
+	    resok->csr_slotid);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "Highest SLID=%u ",
+	    resok->csr_highest_slotid);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), "Target highest SLID=%u ",
+	    resok->csr_target_highest_slotid);
+	bp += strlen(bp);
+}
+
+static void
+dtlres_cb_sequence(void *obj)
+{
+	CB_SEQUENCE4res *res = (CB_SEQUENCE4res *)obj;
+	CB_SEQUENCE4resok *resok;
+
+	dtl_nfsstat4(obj);
+	if (res->csr_status == NFS4_OK) {
+		resok = &res->CB_SEQUENCE4res_u.csr_resok4;
+		detail_sessionid(resok->csr_sessionid);
+		detail_sequenceid(resok->csr_sequenceid);
+		sprintf(get_line(0, 0), "Slot ID = %u", resok->csr_slotid);
+		sprintf(get_line(0, 0), "Highest slotid = %u",
+		    resok->csr_highest_slotid);
+		sprintf(get_line(0, 0), "Target highest slotid = %u",
+		    resok->csr_target_highest_slotid);
+	}
+}
+
+static void
+sumarg_test_stateid(char *buf, size_t buflen, void *obj)
+{
+	TEST_STATEID4args *args = (TEST_STATEID4args *)obj;
+	stateid4 *stateid;
+	char prefix[32];
+	char *bp = buf;
+	uint_t i;
+
+	for (i = 0; i < args->ts_stateids.ts_stateids_len; i++) {
+		stateid = &args->ts_stateids.ts_stateids_val[i];
+		sprintf(prefix, "ST[%u]=", i);
+		snprintf(bp, buflen - (bp - buf), "%s ",
+		    _sum_stateid(stateid, prefix));
+		bp += strlen(bp);
+	}
+}
+
+static void
+dtlarg_test_stateid(void *obj)
+{
+	TEST_STATEID4args *args = (TEST_STATEID4args *)obj;
+	stateid4 *stateid;
+	char prefix[32];
+	uint_t i;
+
+	for (i = 0; i < args->ts_stateids.ts_stateids_len; i++) {
+		stateid = &args->ts_stateids.ts_stateids_val[i];
+		sprintf(prefix, "[%u] : ", i);
+		_detail_stateid(stateid, prefix);
+	}
+}
+
+static void
+sum_ts_resok(char *buf, size_t buflen, TEST_STATEID4resok *resok)
+{
+	nfsstat4 status;
+	char *bp = buf;
+	uint_t i;
+
+	for (i = 0;
+	    i < resok->tsr_status_codes.tsr_status_codes_len;
+	    i++) {
+
+		status = resok->tsr_status_codes.tsr_status_codes_val[i];
+		if (i == 0)
+			snprintf(bp, buflen - (bp - buf), " ");
+		if (i > 0)
+			snprintf(bp, buflen - (bp - buf), ",");
+		bp += strlen(bp);
+		sum_nfsstat4(bp, buflen - (bp -buf), &status);
+		bp += strlen(bp);
+	}
+}
+
+static void
+sumres_test_stateid(char *buf, size_t buflen, void *obj)
+{
+	TEST_STATEID4res *res = (TEST_STATEID4res *)obj;
+	char *bp = buf;
+
+	strncpy(bp, status_name(res->tsr_status), buflen);
+	if (res->tsr_status == NFS4_OK) {
+		bp += strlen(bp);
+		sum_ts_resok(bp, buflen - (bp - buf),
+		    &res->TEST_STATEID4res_u.tsr_resok4);
+	}
+}
+
+static void
+detail_ts_resok(TEST_STATEID4resok *resok)
+{
+	nfsstat4 status;
+	uint_t i;
+
+	for (i = 0;
+	    i < resok->tsr_status_codes.tsr_status_codes_len;
+	    i++) {
+
+		status = resok->tsr_status_codes.tsr_status_codes_val[i];
+		sprintf(get_line(0, 0), "[%u] : Status %d (%s)",
+		    i, status, status_name(status));
+	}
+}
+
+static void
+dtlres_test_stateid(void *obj)
+{
+	TEST_STATEID4res *res = (TEST_STATEID4res *)obj;
+	nfsstat4 status;
+
+	dtl_nfsstat4(obj);
+	if (res->tsr_status == NFS4_OK)
+		detail_ts_resok(&res->TEST_STATEID4res_u.tsr_resok4);
+}
+
+static void
+sumarg_free_stateid(char *buf, size_t buflen, void *obj)
+{
+	FREE_STATEID4args *args = (FREE_STATEID4args *)obj;
+
+	snprintf(buf, buflen, "%s", _sum_stateid(&args->fsa_stateid, "ST="));
+}
+
+static void
+dtlarg_free_stateid(void *obj)
+{
+	FREE_STATEID4args *args = (FREE_STATEID4args *)obj;
+
+	_detail_stateid(&args->fsa_stateid, "");
+}
+
+static void
+sumarg_get_dir_delegation(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_get_dir_delegation(void *obj)
+{
+}
+
+static void
+sumres_get_dir_delegation(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_get_dir_delegation(void *obj)
+{
+}
+
+static char *
+detail_lortype_name(layoutrecall_type4 lortype)
+{
+	static char buf[32];
+
+	if (lortype < num_lortypes)
+		return (lortype_names[lortype].long_name);
+
+	sprintf(buf, "lorec_type=%d", lortype);
+	return (buf);
+}
+
+
+static char *
+sum_lortype_name(layoutrecall_type4 lortype)
+{
+	static char buf[32];
+
+	if (lortype < num_lortypes)
+		return (lortype_names[lortype].short_name);
+
+	sprintf(buf, "lorec_type=%d", lortype);
+	return (buf);
+}
+
+static char *
+sum_lotype_name(layouttype4 type)
+{
+	static char buf[32];
+
+	if (type < num_lotypes)
+		return (lotype_names[type].short_name);
+	else {
+		sprintf(buf, "lotype=%d", type);
+		return (buf);
+	}
+}
+
+static char *
+detail_lotype_name(layouttype4 type)
+{
+	static char buf[64];
+
+	if (type >= 0 && type < num_lotypes)
+		return (lotype_names[type].long_name);
+	else {
+		sprintf(buf, "Unknown layout type(%d)", type);
+		return (buf);
+	}
+}
+
+static char *
+sum_iomode_name(layoutiomode4 mode)
+{
+	static char buf[32];
+
+	if (mode < num_iomodes)
+		return (iomode_names[mode].short_name);
+	else {
+		sprintf(buf, "iomode=%d", mode);
+		return (buf);
+	}
+}
+
+static char *
+detail_iomode_name(layoutiomode4 mode)
+{
+	static char buf[64];
+
+	if (mode < num_iomodes)
+		return (iomode_names[mode].long_name);
+	else {
+		sprintf(buf, "Unknown layout iomode = %d", mode);
+		return (buf);
+	}
+}
+
+static char *
+sum_lrtype_name(layoutreturn_type4 type)
+{
+	static char buf[32];
+
+	if (type < num_lrtypes)
+		return (lrtype_names[type].short_name);
+	else {
+		sprintf(buf, "lrtype=%d", type);
+		return (buf);
+	}
+}
+
+static char *
+detail_lrtype_name(layoutreturn_type4 type)
+{
+	static char buf[64];
+
+	if (type < num_lrtypes)
+		return (lrtype_names[type].long_name);
+	else {
+		sprintf(buf, "Unkown layoutreturn type = %d", type);
+		return (buf);
+	}
+}
+
+static void
+print_netaddr4(char *buf, size_t buflen, netaddr4 *na)
+{
+	char *copy = NULL;
+	char *bp = buf;
+
+	/*
+	 * We are always able to print addr/net.  We try to print
+	 * more helpful formats for the more common netids.
+	 *
+	 * For "tcp", which is tcp/IPv4, we try to print hostname:portnumber,
+	 * or if hostname cannot be determined, we try to print
+	 * ipaddr:portnumber.
+	 */
+	if (strcmp("tcp", na->na_r_netid) == 0) {
+#ifdef REVERSE_DNS
+		char *copy = strdup(na->na_r_addr);
+		struct hostent *host;
+		struct in_addr addr;
+		char *penultimate;
+		char *ultimate;
+		int port;
+
+		/* chop off final two octets */
+		ultimate = strrchr(copy, '.');
+		if (ultimate == NULL)
+			goto failsafe;
+		*(ultimate++) = '\0';
+		penultimate = strrchr(copy, '.');
+		if (penultimate == NULL)
+			goto failsafe;
+		*(penultimate++) = '\0';
+
+		/* convert final two octets into port number */
+		errno = 0;
+		port = strtol(penultimate, NULL, 0) << 8 +
+		    strtol(ultimate, NULL, 0);
+		if (errno != 0)
+			goto failsafe;
+
+		/* try to convert IPv4 into host name */
+		if ((inet_aton(copy, &addr)) &&
+		    ((host = gethostbyaddr((char *)&addr,
+		    4, AF_INET)) != NULL)) {
+			snprintf(bp, buflen - (bp - buf), " %s", host->h_name);
+		/* otherwise, use IP address */
+		} else {
+			snprintf(bp, buflen - (bp - buf), " %s", copy);
+		}
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), ":%d/tcp", port);
+#endif
+		snprintf(bp, buflen - (bp - buf), "tcp:%s", na->na_r_addr);
+
+		return;
+	}
+
+failsafe:
+	/* just print "address/netid". */
+	if (copy != NULL)
+		free(copy);
+	snprintf(bp, buflen - (bp - buf), "%s/%s",
+	    na->na_r_addr, na->na_r_netid);
+}
+
+static void
+print_multipath_list4(char *buf, size_t buflen, multipath_list4 *mpl)
+{
+	char *bp = buf;
+	netaddr4 *addr;
+	int i, n;
+
+	n = mpl->multipath_list4_len;
+	addr = mpl->multipath_list4_val;
+
+	for (i = 0; i < n; i++) {
+		sprintf(bp, " [%u] ", i);
+		bp += strlen(bp);
+		print_netaddr4(bp, buflen - (bp - buf), addr + i);
+		bp += strlen(bp);
+	}
+}
+
+
+static void
+sum_devaddr(char *buf, size_t buflen,
+	device_addr4 *d_addr, layouttype4 type)
+{
+	nfsv4_1_file_layout_ds_addr4 devi;
+	netaddr4 *addr;
+	multipath_list4 *mpl;
+	XDR xdr;
+	int i, n;
+	uint32_t *index;
+	char *bp = buf;
+
+	if (type == LAYOUT4_NFSV4_1_FILES) {
+		xdrmem_create(&xdr,
+		    d_addr->da_addr_body.da_addr_body_val,
+		    d_addr->da_addr_body.da_addr_body_len, XDR_DECODE);
+		bzero(&devi, sizeof (devi));
+		if (! xdr_nfsv4_1_file_layout_ds_addr4(&xdr, &devi))
+			longjmp(xdr_err, 1);
+
+		n = devi.nflda_stripe_indices.nflda_stripe_indices_len;
+		index = devi.nflda_stripe_indices.nflda_stripe_indices_val;
+		for (i = 0; i < n; i++) {
+			snprintf(bp, buflen - (bp - buf), "%s%u",
+			    i ? "," : " ", index[i]);
+			bp += strlen(bp);
+		}
+
+		n = devi.nflda_multipath_ds_list.nflda_multipath_ds_list_len;
+		mpl = devi.nflda_multipath_ds_list.nflda_multipath_ds_list_val;
+		for (i = 0; i < n; i++) {
+			print_multipath_list4(bp, buflen - (bp - buf), mpl + i);
+			bp += strlen(bp);
+		}
+
+		xdr_free(xdr_nfsv4_1_file_layout_ds_addr4, (char *)&devi);
+	}
+}
+
+static void
+detail_devaddr(device_addr4 *d_addr, layouttype4 type)
+{
+	nfsv4_1_file_layout_ds_addr4 devi;
+	netaddr4 *addr;
+	multipath_list4 *mpl;
+	XDR xdr;
+	int i, n;
+	uint32_t *index;
+	char *bp, *buf;
+	size_t buflen;
+
+	if (type == LAYOUT4_NFSV4_1_FILES) {
+		xdrmem_create(&xdr,
+		    d_addr->da_addr_body.da_addr_body_val,
+		    d_addr->da_addr_body.da_addr_body_len, XDR_DECODE);
+		bzero(&devi, sizeof (devi));
+		if (! xdr_nfsv4_1_file_layout_ds_addr4(&xdr, &devi))
+			longjmp(xdr_err, 1);
+
+		n = devi.nflda_stripe_indices.nflda_stripe_indices_len;
+		index = devi.nflda_stripe_indices.nflda_stripe_indices_val;
+		buf = get_line(0, 0);
+		buflen = SUM_COMPND_MAX;
+		sprintf(buf, "    stripe_indices:");
+		bp = buf + strlen(buf);
+		for (i = 0; i < n; i++) {
+			snprintf(bp, buflen - (bp - buf), "%s%u",
+			    i ? ", " : " ", index[i]);
+			bp += strlen(bp);
+		}
+
+		n = devi.nflda_multipath_ds_list.nflda_multipath_ds_list_len;
+		mpl = devi.nflda_multipath_ds_list.nflda_multipath_ds_list_val;
+		for (i = 0; i < n; i++) {
+			buf = get_line(0, 0);
+			buflen = SUM_COMPND_MAX;
+			sprintf(buf, "    multipath_ds_list[%u]:", i);
+			bp = buf + strlen(buf);
+			print_multipath_list4(bp, buflen - (bp - buf), mpl + i);
+		}
+
+		xdr_free(xdr_nfsv4_1_file_layout_ds_addr4, (char *)&devi);
+	}
+}
+
+static void
+detail_deviceid(deviceid4 did)
+{
+	sprintf(get_line(0, 0), "Device ID hash = [%04X] ",
+	    deviceid_hash(did));
+	sprintf(get_line(0, 0), "    (16) %s",
+	    tohex(did, 16));
+}
+
+static void
+sumarg_getdeviceinfo(char *buf, size_t buflen, void *obj)
+{
+	GETDEVICEINFO4args *args = (GETDEVICEINFO4args *)obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen, "DID=%04X",
+	    deviceid_hash(args->gdia_device_id));
+
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_lotype_name(args->gdia_layout_type));
+
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " MAX=%u",
+	    args->gdia_maxcount);
+}
+
+static void
+dtlarg_getdeviceinfo(void *obj)
+{
+	GETDEVICEINFO4args *args = (GETDEVICEINFO4args *)obj;
+
+	detail_deviceid(args->gdia_device_id);
+	sprintf(get_line(0, 0), "Layout Type = %s",
+	    detail_lotype_name(args->gdia_layout_type));
+	sprintf(get_line(0, 0), "Max count = %u", args->gdia_maxcount);
+}
+
+static void
+sumres_getdeviceinfo(char *buf, size_t buflen, void *obj)
+{
+	GETDEVICEINFO4res *res = (GETDEVICEINFO4res *)obj;
+	GETDEVICEINFO4resok *resok;
+	char *bp = buf;
+	layouttype4 lotype;
+
+	strcpy(bp, status_name(res->gdir_status));
+	if (res->gdir_status == NFS4_OK) {
+		resok = &res->GETDEVICEINFO4res_u.gdir_resok4;
+		lotype = resok->gdir_device_addr.da_layout_type;
+		bp += strlen(bp);
+		if (lotype == LAYOUT4_NFSV4_1_FILES) {
+			snprintf(bp, buflen - (bp - buf), " DEV=");
+			bp += strlen(bp);
+			sum_devaddr(bp, buflen - (bp - buf),
+			    &resok->gdir_device_addr, lotype);
+		}
+	}
+}
+
+static void
+dtlres_getdeviceinfo(void *obj)
+{
+	GETDEVICEINFO4res *res = (GETDEVICEINFO4res *)obj;
+	GETDEVICEINFO4resok *resok;
+	layouttype4 lotype;
+	char *buf;
+
+	dtl_nfsstat4(obj);
+	if (res->gdir_status == NFS4_OK) {
+		resok = &res->GETDEVICEINFO4res_u.gdir_resok4;
+		lotype = resok->gdir_device_addr.da_layout_type;
+		sprintf(get_line(0, 0), "Layout type = %s",
+		    detail_lotype_name(lotype));
+		if (lotype == LAYOUT4_NFSV4_1_FILES) {
+			sprintf(get_line(0, 0), "Device address: ");
+			detail_devaddr(&resok->gdir_device_addr, lotype);
+		}
+	}
+}
+
+static void
+sumarg_getdevicelist(char *buf, size_t buflen, void *obj)
+{
+	GETDEVICELIST4args *args = (GETDEVICELIST4args *)obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen - (bp - buf), "%s",
+	    sum_lotype_name(args->gdla_layout_type));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " Max=%u", args->gdla_maxdevices);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " CK=%llx", args->gdla_cookie);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_verifier(args->gdla_cookieverf));
+}
+
+static void
+dtlarg_getdevicelist(void *obj)
+{
+	GETDEVICELIST4args *args = (GETDEVICELIST4args *)obj;
+
+	sprintf(get_line(0, 0), "%s",
+	    detail_lotype_name(args->gdla_layout_type));
+	sprintf(get_line(0, 0), "Max device count = %u", args->gdla_maxdevices);
+	sprintf(get_line(0, 0), "NFS Cookie = %llx", args->gdla_cookie);
+	detail_verifier(args->gdla_cookieverf);
+}
+
+static void
+sum_devicelist(char *buf, size_t buflen, GETDEVICELIST4resok *resok)
+{
+	deviceid4 *devid;
+	char *bp = buf;
+	uint_t i, len;
+
+	len = resok->gdlr_deviceid_list.gdlr_deviceid_list_len;
+	if (!len) {
+		snprintf(bp, buflen, "NO_DEV");
+		return;
+	}
+	for (i = 0; i < len; i++) {
+		devid = &resok->gdlr_deviceid_list.gdlr_deviceid_list_val[i];
+		snprintf(bp, buflen - (bp - buf), " DEV[i]=%04X ",
+		    deviceid_hash(*devid));
+		bp += strlen(bp);
+	}
+}
+
+static void
+sumres_getdevicelist(char *buf, size_t buflen, void *obj)
+{
+	GETDEVICELIST4res *res = (GETDEVICELIST4res *)obj;
+	GETDEVICELIST4resok *resok;
+	char *bp = buf;
+
+	strcpy(bp, status_name(res->gdlr_status));
+	if (res->gdlr_status == NFS4_OK) {
+		resok = &res->GETDEVICELIST4res_u.gdlr_resok4;
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " CK=%llx",
+		    resok->gdlr_cookie);
+			bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_verifier(resok->gdlr_cookieverf));
+		bp += strlen(bp);
+		sum_devicelist(bp, buflen - (bp - buf), resok);
+	}
+}
+
+static void
+detail_devicelist(GETDEVICELIST4resok *resok)
+{
+	deviceid4 *devid;
+	uint_t i, len;
+	char *buf;
+	layouttype4 lotype;
+
+	len = resok->gdlr_deviceid_list.gdlr_deviceid_list_len;
+	if (!len) {
+		sprintf(get_line(0, 0), "No device list");
+		return;
+	}
+	for (i = 0; i < len; i++) {
+		devid = &resok->gdlr_deviceid_list.gdlr_deviceid_list_val[i];
+		detail_deviceid(*devid);
+	}
+}
+
+static void
+dtlres_getdevicelist(void *obj)
+{
+	GETDEVICELIST4res *res = (GETDEVICELIST4res *)obj;
+	GETDEVICELIST4resok *resok;
+
+	dtl_nfsstat4(obj);
+	if (res->gdlr_status == NFS4_OK) {
+		resok = &res->GETDEVICELIST4res_u.gdlr_resok4;
+		sprintf(get_line(0, 0), "NFS Cookie = %llx",
+		    resok->gdlr_cookie);
+		detail_verifier(resok->gdlr_cookieverf);
+		detail_devicelist(resok);
+		sprintf(get_line(0, 0), "EOF flag = %s",
+		    resok->gdlr_eof ? "TRUE" : "FALSE");
+	}
+}
+
+static void
+sumarg_layoutcommit(char *buf, size_t buflen, void *obj)
+{
+	LAYOUTCOMMIT4args *args = (LAYOUTCOMMIT4args *)obj;
+	newoffset4 *noff;
+	nfstime4 *time;
+	char *bp = buf;
+
+	snprintf(bp, buflen, "OFF=%llu", args->loca_offset);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " LEN=%llu",
+	    args->loca_length);
+	bp += strlen(bp);
+
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_stateid(&args->loca_stateid));
+	bp += strlen(bp);
+
+	if (args->loca_last_write_offset.no_newoffset) {
+		noff = &args->loca_last_write_offset;
+		snprintf(bp, buflen - (bp - buf), " LOFF=%llu",
+		    noff->newoffset4_u.no_offset);
+		bp += strlen(bp);
+	}
+
+	if (args->loca_time_modify.nt_timechanged) {
+		time = &args->loca_time_modify.newtime4_u.nt_time;
+		snprintf(bp, buflen - (bp - buf), " TM=%s",
+		    format_time(time->seconds, time->nseconds));
+		bp += strlen(bp);
+	}
+
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_lotype_name(args->loca_layoutupdate.lou_type));
+}
+
+static void
+dtlarg_layoutcommit(void *obj)
+{
+	LAYOUTCOMMIT4args *args = (LAYOUTCOMMIT4args *)obj;
+	newoffset4 *noff;
+	nfstime4 *time;
+
+	sprintf(get_line(0, 0), "Offset = %llu",
+	    args->loca_offset);
+	sprintf(get_line(0, 0), "Length = %llu",
+	    args->loca_length);
+
+	sprintf(get_line(0, 0), "Reclaim = %s",
+	    args->loca_reclaim ? "TRUE" : "FALSE");
+
+	detail_stateid(&args->loca_stateid);
+
+	if (args->loca_last_write_offset.no_newoffset) {
+		noff = &args->loca_last_write_offset;
+		sprintf(get_line(0, 0), "Last write offset = %llu",
+		    noff->newoffset4_u.no_offset);
+	} else
+		sprintf(get_line(0, 0), "No last_write_offset provided");
+
+	if (args->loca_time_modify.nt_timechanged) {
+		time = &args->loca_time_modify.newtime4_u.nt_time;
+		sprintf(get_line(0, 0), "Time modify = %s",
+		    format_time(time->seconds, time->nseconds));
+	} else
+		sprintf(get_line(0, 0), "No time_modify provided");
+
+	sprintf(get_line(0, 0), "Layoutupdate type = %s",
+	    detail_lotype_name(args->loca_layoutupdate.lou_type));
+	sprintf(get_line(0, 0), "Layoutupdate data = %s",
+	    tohex(args->loca_layoutupdate.lou_body.lou_body_val,
+	    args->loca_layoutupdate.lou_body.lou_body_len));
+}
+
+static void
+sumres_layoutcommit(char *buf, size_t buflen, void *obj)
+{
+	LAYOUTCOMMIT4res *res = (LAYOUTCOMMIT4res *)obj;
+	LAYOUTCOMMIT4resok *resok;
+	char *bp = buf;
+
+	strcpy(bp, status_name(res->locr_status));
+	if (res->locr_status == NFS4_OK) {
+		resok = &res->LAYOUTCOMMIT4res_u.locr_resok4;
+		bp += strlen(bp);
+		if (resok->locr_newsize.ns_sizechanged)
+			snprintf(bp, buflen - (bp - buf), " NSIZE=%llu",
+			    resok->locr_newsize.newsize4_u.ns_size);
+		else
+			snprintf(bp, buflen - (bp - buf), " NO_CHANGE");
+	}
+}
+
+static void
+dtlres_layoutcommit(void *obj)
+{
+	LAYOUTCOMMIT4res *res = (LAYOUTCOMMIT4res *)obj;
+	LAYOUTCOMMIT4resok *resok;
+
+	dtl_nfsstat4(obj);
+	if (res->locr_status == NFS4_OK) {
+		resok = &res->LAYOUTCOMMIT4res_u.locr_resok4;
+		if (resok->locr_newsize.ns_sizechanged)
+			sprintf(get_line(0, 0), "Changed size = %llu",
+			    resok->locr_newsize.newsize4_u.ns_size);
+		else
+			sprintf(get_line(0, 0), "The size is not changed");
+	}
+}
+
+static void
+sumarg_layoutget(char *buf, size_t buflen, void *obj)
+{
+	LAYOUTGET4args *args = (LAYOUTGET4args *)obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen, "%s",
+	    sum_lotype_name(args->loga_layout_type));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_iomode_name(args->loga_iomode));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " OFF=%llu",
+	    args->loga_offset);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " LEN=%llu",
+	    args->loga_length);
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_stateid(&args->loga_stateid));
+}
+
+static void
+dtlarg_layoutget(void *obj)
+{
+	LAYOUTGET4args *args = (LAYOUTGET4args *)obj;
+
+	sprintf(get_line(0, 0), "Signal layout available = %s",
+	    args->loga_signal_layout_avail ? "TRUE" : "FALSE");
+	sprintf(get_line(0, 0), "Layout type = %s",
+	    detail_lotype_name(args->loga_layout_type));
+	sprintf(get_line(0, 0), "Layout iomode = %s",
+	    detail_iomode_name(args->loga_iomode));
+	sprintf(get_line(0, 0), "Offset = %llu",
+	    args->loga_offset);
+	sprintf(get_line(0, 0), "Length = %llu",
+	    args->loga_length);
+	sprintf(get_line(0, 0), "Minimum size overlap = %llu",
+	    args->loga_minlength);
+	detail_stateid(&args->loga_stateid);
+	sprintf(get_line(0, 0), "Max count = %u",
+	    args->loga_maxcount);
+}
+
+static void
+sum_file_layout(char *buf, size_t buflen, layout4 *lo)
+{
+	static nfsv4_1_file_layout4 fl;
+	char *bp = buf;
+	uint_t i, n;
+	nfs_fh4 *fh;
+	XDR xdr;
+
+	bzero(&fl, sizeof (fl));
+	xdrmem_create(&xdr,
+	    lo->lo_content.loc_body.loc_body_val,
+	    lo->lo_content.loc_body.loc_body_len,
+	    XDR_DECODE);
+	if (! xdr_nfsv4_1_file_layout4(&xdr, &fl))
+		longjmp(xdr_err, 1);
+
+	snprintf(bp, buflen, " %04X 0x%x",
+	    deviceid_hash(fl.nfl_deviceid), fl.nfl_util);
+	bp += strlen(bp);
+	n = fl.nfl_fh_list.nfl_fh_list_len;
+	fh = fl.nfl_fh_list.nfl_fh_list_val;
+	for (i = 0; i < n; i++) {
+		strncat(bp, " ", buflen - (bp - buf));
+		bp += strlen(bp);
+		if (i == fl.nfl_first_stripe_index) {
+			strncat(bp, "<start>", buflen - (bp - buf));
+			bp += strlen(bp);
+		}
+		snprintf(bp, buflen - (bp - buf), "%04X", fh4_hash(fh + i));
+		bp += strlen(bp);
+	}
+
+	xdr_free(xdr_nfsv4_1_file_layout4, (char *)&fl);
+}
+
+static void
+sumres_layoutget(char *buf, size_t buflen, void *obj)
+{
+	LAYOUTGET4res *res = (LAYOUTGET4res *)obj;
+	LAYOUTGET4resok *resok;
+	layout4 *lo;
+	char *bp = buf;
+	int i;
+
+	strcpy(bp, status_name(res->logr_status));
+	if (res->logr_status == NFS4_OK) {
+		resok = &res->LAYOUTGET4res_u.logr_resok4;
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_stateid(&resok->logr_stateid));
+		for (i = 0; i < resok->logr_layout.logr_layout_len; i++) {
+			bp += strlen(bp);
+			lo = &resok->logr_layout.logr_layout_val[i];
+			snprintf(bp, buflen - (bp - buf), " [%u]:OFF=%llu",
+			    i, lo->lo_offset);
+			bp += strlen(bp);
+			snprintf(bp, buflen - (bp - buf), " LEN=%llu",
+			    lo->lo_length);
+			bp += strlen(bp);
+			snprintf(bp, buflen - (bp - buf), " %s",
+			    sum_iomode_name(lo->lo_iomode));
+			bp += strlen(bp);
+			snprintf(bp, buflen - (bp - buf), " %s",
+			    sum_lotype_name(lo->lo_content.loc_type));
+			bp += strlen(bp);
+			if (lo->lo_content.loc_type == LAYOUT4_NFSV4_1_FILES)
+				sum_file_layout(bp, buflen - (bp - buf), lo);
+			else
+				snprintf(bp, buflen - (bp - buf), " %s",
+				    tohex(lo->lo_content.loc_body.loc_body_val,
+				    lo->lo_content.loc_body.loc_body_len));
+		}
+	} else if (res->logr_status == NFS4ERR_LAYOUTTRYLATER) {
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    res->LAYOUTGET4res_u.logr_will_signal_layout_avail ?
+		    "SIGNAL" : "NO_SIGNAL");
+	}
+}
+
+static void
+detail_file_layout(layout4 *lo)
+{
+	nfsv4_1_file_layout4 fl;
+	uint_t i;
+	XDR xdr;
+
+	bzero(&fl, sizeof (fl));
+	xdrmem_create(&xdr,
+	    lo->lo_content.loc_body.loc_body_val,
+	    lo->lo_content.loc_body.loc_body_len,
+	    XDR_DECODE);
+	if (! xdr_nfsv4_1_file_layout4(&xdr, &fl))
+		longjmp(xdr_err, 1);
+
+	detail_deviceid(fl.nfl_deviceid);
+	sprintf(get_line(0, 0), "Util = 0x%x", fl.nfl_util);
+	sprintf(get_line(0, 0), "    stripe_unit = %d", fl.nfl_util >> 6);
+	if (fl.nfl_util & NFL4_UFLG_DENSE)
+		sprintf(get_line(0, 0), "    UFLG_DENSE");
+	if (fl.nfl_util & NFL4_UFLG_COMMIT_THRU_MDS)
+		sprintf(get_line(0, 0), "    UFLG_COMMIT_THRU_MDS");
+	sprintf(get_line(0, 0), "First stripe = %d", fl.nfl_first_stripe_index);
+	for (i = 0; i < fl.nfl_fh_list.nfl_fh_list_len; i++) {
+		sprintf(get_line(0, 0), "fh[%u] = (%u) %s",
+		    i, fl.nfl_fh_list.nfl_fh_list_val[i].nfs_fh4_len,
+		    tohex(fl.nfl_fh_list.nfl_fh_list_val[i].nfs_fh4_val,
+		    fl.nfl_fh_list.nfl_fh_list_val[i].nfs_fh4_len));
+	}
+	xdr_free(xdr_nfsv4_1_file_layout4, (char *)&fl);
+}
+
+static void
+dtlres_layoutget(void *obj)
+{
+	LAYOUTGET4res *res = (LAYOUTGET4res *)obj;
+	LAYOUTGET4resok *resok;
+	layout4 *lo;
+	int i;
+
+	dtl_nfsstat4(obj);
+	if (res->logr_status == NFS4_OK) {
+		resok = &res->LAYOUTGET4res_u.logr_resok4;
+		detail_stateid(&resok->logr_stateid);
+		for (i = 0; i < resok->logr_layout.logr_layout_len; i++) {
+			lo = &resok->logr_layout.logr_layout_val[i];
+			sprintf(get_line(0, 0), "Layout [%u]:", i);
+			sprintf(get_line(0, 0), "Return layout on close = %s",
+			    resok->logr_return_on_close ? "TRUE" : "FALSE");
+			sprintf(get_line(0, 0), "Layout offset = %llu",
+			    lo->lo_offset);
+			sprintf(get_line(0, 0), "Layout length = %llu",
+			    lo->lo_length);
+			sprintf(get_line(0, 0), "Layout iomode = %s",
+			    detail_iomode_name(lo->lo_iomode));
+			sprintf(get_line(0, 0), "Layout type = %s",
+			    detail_lotype_name(lo->lo_content.loc_type));
+			if (lo->lo_content.loc_type == LAYOUT4_NFSV4_1_FILES) {
+				detail_file_layout(lo);
+			} else
+				sprintf(get_line(0, 0), "Non-file layout = %s",
+				    tohex(lo->lo_content.loc_body.loc_body_val,
+				    lo->lo_content.loc_body.loc_body_len));
+		}
+	} else if (res->logr_status == NFS4ERR_LAYOUTTRYLATER) {
+		sprintf(get_line(0, 0), "Will signal layout avail = %s",
+		    res->LAYOUTGET4res_u.logr_will_signal_layout_avail ?
+		    "TRUE" : "FALSE");
+	}
+}
+
+static void
+sumarg_layoutreturn(char *buf, size_t buflen, void *obj)
+{
+	LAYOUTRETURN4args *args = (LAYOUTRETURN4args *)obj;
+	layoutreturn4 *lr = &args->lora_layoutreturn;
+	char *bp = buf;
+
+	snprintf(bp, buflen, "%s",
+	    sum_lotype_name(args->lora_layout_type));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_iomode_name(args->lora_iomode));
+	bp += strlen(bp);
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_lrtype_name(lr->lr_returntype));
+	if (lr->lr_returntype == LAYOUTRETURN4_FILE) {
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " OFF=%llu",
+		    lr->layoutreturn4_u.lr_layout.lrf_offset);
+		bp += strlen(bp);
+		snprintf(bp, buflen - (bp - buf), " LEN=%llu",
+		    lr->layoutreturn4_u.lr_layout.lrf_length);
+	}
+}
+
+static void
+dtlarg_layoutreturn(void *obj)
+{
+	LAYOUTRETURN4args *args = (LAYOUTRETURN4args *)obj;
+	layoutreturn4 *lr = &args->lora_layoutreturn;
+
+	sprintf(get_line(0, 0), "Reclaim = %s",
+	    args->lora_reclaim ? "TRUE" : "FALSE");
+	sprintf(get_line(0, 0), "Layout type = %s",
+	    detail_lotype_name(args->lora_layout_type));
+	sprintf(get_line(0, 0), "Layout iomode = %s",
+	    detail_iomode_name(args->lora_iomode));
+	sprintf(get_line(0, 0), "Layoutreturn type = %s",
+	    detail_lrtype_name(lr->lr_returntype));
+	if (lr->lr_returntype == LAYOUTRETURN4_FILE) {
+		sprintf(get_line(0, 0), "Layoutreturn Offset = %llu",
+		    lr->layoutreturn4_u.lr_layout.lrf_offset);
+		sprintf(get_line(0, 0), "Layoutreturn Length = %llu",
+		    lr->layoutreturn4_u.lr_layout.lrf_length);
+	}
+}
+
+
+static void
+sumarg_secinfo_no_name(char *buf, size_t buflen, void *obj)
+{
+	char style;
+
+	switch (*(SECINFO_NO_NAME4args *)obj) {
+	case SECINFO_STYLE4_CURRENT_FH:
+		style = 'C';
+		break;
+	case SECINFO_STYLE4_PARENT:
+		style = 'P';
+		break;
+	default:
+		style = '?';
+		break;
+	}
+	snprintf(buf, buflen, " ST=%c", style);
+}
+
+static void
+dtlarg_secinfo_no_name(void *obj)
+{
+	char *style;
+
+	switch (*(SECINFO_NO_NAME4args *)obj) {
+	case SECINFO_STYLE4_CURRENT_FH:
+		style = "CURRENT_FH";
+		break;
+	case SECINFO_STYLE4_PARENT:
+		style = "PARENT";
+		break;
+	default:
+		style = "???";
+		break;
+	}
+	sprintf(get_line(0, 0), "Style = %s", style);
+}
+
+static void
+sumarg_want_delegation(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_want_delegation(void *obj)
+{
+}
+
+static void
+sumres_want_delegation(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_want_delegation(void *obj)
+{
+}
+
+static void
+sumarg_destroy_clientid(char *buf, size_t buflen, void *obj)
+{
+	DESTROY_CLIENTID4args *a = obj;
+
+	snprintf(buf, buflen, "%s",
+	    sum_clientid(a->dca_clientid));
+}
+
+static void
+dtlarg_destroy_clientid(void *obj)
+{
+	DESTROY_CLIENTID4args *a = obj;
+
+	detail_clientid(a->dca_clientid);
+}
+
+static void
+sumres_destroy_clientid(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_destroy_clientid(void *obj)
+{
+}
+
+static void
+sumarg_reclaim_complete(char *buf, size_t buflen, void *obj)
+{
+	RECLAIM_COMPLETE4args *a = obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen - (bp - buf), "%s",
+	    (a->rca_one_fs) ? "<one-fs>" : "<all-fs>");
+	bp += strlen(bp);
+}
+
+static void
+dtlarg_reclaim_complete(void *obj)
+{
+	RECLAIM_COMPLETE4args *a = obj;
+
+	sprintf(get_line(0, 0), "One_FS = %d", a->rca_one_fs);
+}
+
+static void
+sumres_reclaim_complete(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_reclaim_complete(void *obj)
+{
+}
+
+static void
+sumarg_cb_layoutrecall(char *buf, size_t buflen, void *obj)
+{
+	CB_LAYOUTRECALL4args	*args = (CB_LAYOUTRECALL4args *)obj;
+	layoutrecall_file4	*lor_file;
+	fsid4			*lor_fsid;
+	char *bp = buf;
+
+	snprintf(bp, buflen - (bp - buf), " %s",
+	    sum_lortype_name(args->clora_recall.lor_recalltype));
+	bp += strlen(bp);
+
+	switch (args->clora_recall.lor_recalltype) {
+	case LAYOUTRECALL4_FILE:
+		lor_file = &args->clora_recall.layoutrecall4_u.lor_layout;
+		snprintf(bp, buflen - (bp - buf), " %s",
+		    sum_fh4(&lor_file->lor_fh));
+		break;
+	case LAYOUTRECALL4_FSID:
+		lor_fsid = &args->clora_recall.layoutrecall4_u.lor_fsid;
+		snprintf(bp, buflen - (bp - buf), " (%llx, %llx)",
+		    lor_fsid->major, lor_fsid->minor);
+		break;
+	}
+	bp += strlen(bp);
+}
+
+static void
+dtlarg_cb_layoutrecall(void *obj)
+{
+	CB_LAYOUTRECALL4args	*args = (CB_LAYOUTRECALL4args *)obj;
+	layoutrecall_file4	*lor_file;
+	fsid4			*lor_fsid;
+
+	sprintf(get_line(0, 0), "Layout type        = %s",
+	    detail_lotype_name(args->clora_type));
+
+	sprintf(get_line(0, 0), "Layout iomode      = %s",
+	    detail_iomode_name(args->clora_iomode));
+
+	sprintf(get_line(0, 0), "Changed            = %s",
+	    args->clora_changed ? "TRUE" : "FALSE");
+
+	sprintf(get_line(0, 0), "Layout Recall type = %s",
+	    detail_lortype_name(args->clora_recall.lor_recalltype));
+
+	switch (args->clora_recall.lor_recalltype) {
+	case LAYOUTRECALL4_FILE:
+		lor_file = &args->clora_recall.layoutrecall4_u.lor_layout;
+		sprintf(get_line(0, 0), "Layout associated with FILE");
+		detail_fh4(&lor_file->lor_fh);
+		sprintf(get_line(0, 0), "Offset  = %llu",
+		    lor_file->lor_offset);
+		sprintf(get_line(0, 0), "Length  = %llu",
+		    lor_file->lor_length);
+		break;
+	case LAYOUTRECALL4_FSID:
+		lor_fsid = &args->clora_recall.layoutrecall4_u.lor_fsid;
+		sprintf(get_line(0, 0), "Layouts associated with FSID");
+		sprintf(get_line(0, 0), "FS ID: Major = %llx, Minor = %llx",
+		    lor_fsid->major, lor_fsid->minor);
+		break;
+	case LAYOUTRECALL4_ALL:
+		sprintf(get_line(0, 0), "ALL Layouts");
+		break;
+	}
+}
+
+static void
+sumres_cb_layoutrecall(char *buf, size_t buflen, void *obj)
+{
+	CB_LAYOUTRECALL4res *res = (CB_LAYOUTRECALL4res *)obj;
+	char *bp = buf;
+
+	snprintf(bp, buflen - (bp - buf), "%s ",
+	    status_name(res->clorr_status));
+}
+
+static void
+dtlres_cb_layoutrecall(void *obj)
+{
+	dtl_nfsstat4(obj);
+}
+
+static void
+sumarg_cb_notify(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_cb_notify(void *obj)
+{
+}
+
+static void
+sumres_cb_notify(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_cb_notify(void *obj)
+{
+}
+
+static void
+sumarg_cb_push_deleg(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_cb_push_deleg(void *obj)
+{
+}
+
+static void
+sumres_cb_push_deleg(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_cb_push_deleg(void *obj)
+{
+}
+
+static void
+sumarg_cb_recall_any(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_cb_recall_any(void *obj)
+{
+}
+
+static void
+sumres_cb_recall_any(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_cb_recall_any(void *obj)
+{
+}
+
+static void
+sumarg_cb_recallable_obj_avail(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_cb_recallable_obj_avail(void *obj)
+{
+}
+
+static void
+sumres_cb_recallable_obj_avail(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_cb_recallable_obj_avail(void *obj)
+{
+}
+
+static void
+sumarg_cb_recall_slot(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_cb_recall_slot(void *obj)
+{
+}
+
+static void
+sumres_cb_recall_slot(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_cb_recall_slot(void *obj)
+{
+}
+
+static void
+sumarg_cb_wants_cancelled(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_cb_wants_cancelled(void *obj)
+{
+}
+
+static void
+sumres_cb_wants_cancelled(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_cb_wants_cancelled(void *obj)
+{
+}
+
+static void
+sumarg_cb_notify_lock(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlarg_cb_notify_lock(void *obj)
+{
+}
+
+static void
+sumres_cb_notify_lock(char *buf, size_t buflen, void *obj)
+{
+}
+
+static void
+dtlres_cb_notify_lock(void *obj)
+{
+}
+
 
 /*
  * Attribute print functions.  See attr_info_t.
@@ -4043,7 +6851,7 @@ prt_change(XDR *xdr)
 	if (!xdr_changeid4(xdr, &val))
 		longjmp(xdr_err, 1);
 	sprintf(get_line(0, 0), "Change ID = 0x%llx", val);
-					/* XXX print as time_t, too? */
+	/* XXX print as time_t, too? */
 }
 
 static void
@@ -4713,6 +7521,297 @@ prt_time_modify_set(XDR *xdr)
 		sprintf(get_line(0, 0),
 		    "Modification Time (set to server time)");
 	} else
+		longjmp(xdr_err, 1);
+}
+
+static void
+prt_dir_notif_delay(XDR *xdr)
+{
+	nfstime4 val;
+
+	if (!xdr_nfstime4(xdr, &val))
+		longjmp(xdr_err, 1);
+	sprintf(get_line(0, 0),
+	    "Notification delays on directory attributes = %s",
+	    format_time(val.seconds, val.nseconds));
+}
+
+static void
+prt_dirent_notif_delay(XDR *xdr)
+{
+	nfstime4 val;
+
+	if (!xdr_nfstime4(xdr, &val))
+		longjmp(xdr_err, 1);
+	sprintf(get_line(0, 0),
+	    "Notification delays on child attributes = %s",
+	    format_time(val.seconds, val.nseconds));
+}
+
+static void
+prt_dacl(XDR *xdr)
+{
+
+	static fattr4_dacl val;
+
+	if (!xdr_fattr4_dacl(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	xdr_free(xdr_fattr4_dacl, (char *)&val);
+}
+
+static void
+prt_sacl(XDR *xdr)
+{
+	static fattr4_sacl val;
+
+	if (!xdr_fattr4_sacl(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	xdr_free(xdr_fattr4_sacl, (char *)&val);
+}
+
+static void
+prt_change_policy(XDR *xdr)
+{
+	change_policy4 val;
+
+	if (!xdr_change_policy4(xdr, &val))
+		longjmp(xdr_err, 1);
+}
+
+static void
+prt_fs_status(XDR *xdr)
+{
+	fattr4_fs_status val;
+
+	if (!xdr_fattr4_fs_status(xdr, &val))
+		longjmp(xdr_err, 1);
+}
+
+static void
+prt_fs_layout_type(XDR *xdr)
+{
+	static fattr4_fs_layout_types val;
+	char *bufp;
+	int i;
+
+	if (!xdr_fattr4_fs_layout_types(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	bufp = get_line(0, 0);
+	sprintf(bufp, "Layout types available for the file system : ");
+	for (i = 0; i < val.fattr4_fs_layout_types_len; i++) {
+		bufp += strlen(bufp);
+		sprintf(bufp,
+		    sum_lotype_name(val.fattr4_fs_layout_types_val[i]));
+	}
+
+	xdr_free(xdr_fattr4_fs_layout_types, (char *)&val);
+}
+
+static void
+prt_file_layouthint4(fattr4_layout_hint *rawhint)
+{
+	struct nfsv4_1_file_layouthint4 hint;
+	XDR xdr;
+
+	if (rawhint->loh_type != 1)
+		return;
+
+	xdrmem_create(&xdr,
+	    rawhint->loh_body.loh_body_val,
+	    rawhint->loh_body.loh_body_len,
+	    XDR_DECODE);
+	bzero(&hint, sizeof (hint));
+	if (! xdr_nfsv4_1_file_layouthint4(&xdr, &hint))
+		longjmp(xdr_err, 1);
+
+	sprintf(get_line(0, 0),
+	    "care = 0x%x", hint.nflh_care);
+	if (hint.nflh_care & NFLH4_CARE_DENSE)
+		sprintf(get_line(0, 0), "    CARE_DENSE");
+	if (hint.nflh_care & NFLH4_CARE_COMMIT_THRU_MDS)
+		sprintf(get_line(0, 0), "    CARE_COMMIT_THRU_MDS");
+	if (hint.nflh_care & NFLH4_CARE_STRIPE_UNIT_SIZE)
+		sprintf(get_line(0, 0), "    CARE_STRIPE_UNIT_SIZE");
+	if (hint.nflh_care & NFLH4_CARE_STRIPE_COUNT)
+		sprintf(get_line(0, 0), "    CARE_STRIPE_COUNT");
+	sprintf(get_line(0, 0),
+	    "util = 0x%x", hint.nflh_util);
+	sprintf(get_line(0, 0),
+	    "stripe_count = %d", hint.nflh_stripe_count);
+
+	xdr_free(xdr_nfsv4_1_file_layouthint4, (char *)&hint);
+}
+
+static void
+prt_layout_hint(XDR *xdr)
+{
+	static fattr4_layout_hint val;
+
+	if (!xdr_fattr4_layout_hint(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	sprintf(get_line(0, 0),
+	    "Client specified hint for file layout: %s %s",
+	    sum_lotype_name(val.loh_type),
+	    tohex(val.loh_body.loh_body_val, val.loh_body.loh_body_len));
+
+	if (val.loh_type == 1)
+		prt_file_layouthint4(&val);
+
+	xdr_free(xdr_fattr4_layout_hint, (char *)&val);
+}
+
+static void
+prt_layout_type(XDR *xdr)
+{
+	static fattr4_layout_types val;
+	layouttype4 * ptype;
+
+	if (!xdr_fattr4_layout_types(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	ptype = (layouttype4 *)&val;
+	sprintf(get_line(0, 0),
+	    "Layout types available for the file: %s",
+	    sum_lotype_name(*ptype));
+}
+
+static void
+prt_layout_blksize(XDR *xdr)
+{
+	fattr4_layout_blksize val;
+
+	if (!xdr_fattr4_layout_blksize(xdr, &val))
+		longjmp(xdr_err, 1);
+	sprintf(get_line(0, 0),
+	    "Preferred block size for layout related I/O = %u", val);
+}
+
+static void
+prt_layout_alignment(XDR *xdr)
+{
+	fattr4_layout_alignment val;
+
+	if (!xdr_fattr4_layout_alignment(xdr, &val))
+		longjmp(xdr_err, 1);
+	sprintf(get_line(0, 0),
+	    "Preferred alignment for layout related I/O = %u", val);
+}
+
+static void
+prt_fs_locations_info(XDR *xdr)
+{
+	static fattr4_fs_locations val;
+
+	if (!xdr_fattr4_fs_locations(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	xdr_free(xdr_fattr4_fs_locations, (char *)&val);
+}
+
+static void
+prt_mdsthreshold(XDR *xdr)
+{
+	static fattr4_mdsthreshold val;
+	int i;
+	threshold_item4 *thi;
+
+	if (!xdr_fattr4_mdsthreshold(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	sprintf(get_line(0, 0), "MDS threshold hintlist len = %d",
+	    val.mth_hints.mth_hints_len);
+
+	thi = (threshold_item4 *)val.mth_hints.mth_hints_val;
+	for (i = 0; i < val.mth_hints.mth_hints_len; i++)
+		detail_threshold_item4(&thi[i]);
+
+	xdr_free(xdr_fattr4_mdsthreshold, (char *)&val);
+}
+
+static void
+prt_retention_get(XDR *xdr)
+{
+	static fattr4_retention_get val;
+
+	if (!xdr_fattr4_retention_get(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	xdr_free(xdr_fattr4_retention_get, (char *)&val);
+}
+
+static void
+prt_retention_set(XDR *xdr)
+{
+	static fattr4_retention_set val;
+
+	if (!xdr_fattr4_retention_set(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	xdr_free(xdr_fattr4_retention_set, (char *)&val);
+}
+
+static void
+prt_retentevt_get(XDR *xdr)
+{
+	static fattr4_retentevt_get val;
+
+	if (!xdr_fattr4_retentevt_get(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	xdr_free(xdr_fattr4_retentevt_get, (char *)&val);
+}
+
+static void
+prt_retentevt_set(XDR *xdr)
+{
+	static fattr4_retentevt_set val;
+
+	if (!xdr_fattr4_retentevt_set(xdr, &val))
+		longjmp(xdr_err, 1);
+
+	xdr_free(xdr_fattr4_retentevt_set, (char *)&val);
+}
+
+static void
+prt_retention_hold(XDR *xdr)
+{
+	fattr4_retention_hold val;
+
+	if (!xdr_fattr4_retention_hold(xdr, &val))
+		longjmp(xdr_err, 1);
+}
+
+static void
+prt_mode_set_masked(XDR *xdr)
+{
+	static fattr4_mode_set_masked val;
+
+	if (!xdr_fattr4_mode_set_masked(xdr, &val))
+		longjmp(xdr_err, 1);
+}
+
+static void
+prt_suppattr_exclcreat(XDR *xdr)
+{
+	static bitmap4 val;
+
+	if (!xdr_bitmap4(xdr, &val))
+		longjmp(xdr_err, 1);
+	sprintf(get_line(0, 0), "Supported Attributes for Exclusive Create:");
+	detail_attr_bitmap("\t", &val, NULL);
+	xdr_free(xdr_bitmap4, (char *)&val);
+}
+
+static void
+prt_fs_charset_cap(XDR *xdr)
+{
+	static fattr4_fs_charset_cap4 val;
+
+	if (!xdr_fattr4_fs_charset_cap4(xdr, &val))
 		longjmp(xdr_err, 1);
 }
 
