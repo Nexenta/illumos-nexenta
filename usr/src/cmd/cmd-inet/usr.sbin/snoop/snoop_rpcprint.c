@@ -64,6 +64,9 @@ protoprint(flags, type, xid, prog, vers, proc, data, len)
 	case 100021:	interpreter = interpret_nlm;		break;
 	case 100026:	interpreter = interpret_bparam;		break;
 	case 100227:	interpreter = interpret_nfs_acl;	break;
+	case 104000:	interpreter = interpret_pnfsctlmds;	break;
+	case 104001:	interpreter = interpret_pnfsctlds;	break;
+	case 104002:	interpreter = interpret_pnfsctlmv;	break;
 	case 150006:	interpreter = interpret_solarnet_fw;	break;
 	default:	interpreter = NULL;
 	}

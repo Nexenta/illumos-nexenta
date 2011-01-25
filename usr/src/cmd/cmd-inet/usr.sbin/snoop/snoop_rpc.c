@@ -530,6 +530,9 @@ struct rpcnames {
 101003, "NSELINKAPP",		/* NSE link application */
 110001, "GOLABEL",		/* SunOS MLS  */
 110002, "PUC",			/* SunOS MLS  */
+104000, "CTL-MDS",		/* pNFS Control Protocol MDS->DS */
+104001, "CTL-DS",		/* pNFS Control Protocol DS->MDS */
+104002, "CTL-MV",		/* pNFS Control Protocol DS->DS */
 150001, "PCNFSD",		/* PC passwd authorization */
 150002, "TOPS",			/* TOPS name mapping */
 150003, "TOPS",			/* TOPS external attribute storage */
