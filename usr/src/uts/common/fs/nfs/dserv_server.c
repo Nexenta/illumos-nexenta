@@ -1130,7 +1130,8 @@ dserv_svc(dserv_svc_args_t *svcargs)
 	if (strncmp("tcp", svcargs->netid, 3) != 0) {
 		DTRACE_PROBE2(dserv__e__not_starting_pool,
 		    int, svcargs->poolid, char *, svcargs->netid);
-		return (EINVAL);
+		error = EINVAL;
+		goto end;
 	}
 
 	six = strchr(svcargs->netid, '6');
@@ -1150,8 +1151,8 @@ dserv_svc(dserv_svc_args_t *svcargs)
 	    &xprt, &dserv_sct, NULL, svcargs->poolid, TRUE);
 	if (error != 0)
 		kmem_free(addrmask.buf, addrmask.len);
+end:
 	releasef(svcargs->fd);
-
 	return (error);
 }
 
