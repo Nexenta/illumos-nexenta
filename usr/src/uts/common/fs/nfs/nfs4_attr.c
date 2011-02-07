@@ -905,8 +905,8 @@ struct nfs4_ntov_map nfs40_ntov_map[NFS41_ATTR_COUNT] = {
 		FATTR4_TIME_MODIFY_SET, 4 * BYTES_PER_XDR_UNIT,
 		xdr_settime4, NULL, "fattr4_time_modify_set" },
 
-	{ {FATTR4_MOUNTED_ON_FILEID_MASK, AT_NODEID},
-		0, FALSE, FALSE,
+	{ {FATTR4_MOUNTED_ON_FILEID_MASK, 0},
+		AT_NODEID, FALSE, FALSE,
 		FATTR4_MOUNTED_ON_FILEID, 2 * BYTES_PER_XDR_UNIT,
 		xdr_u_longlong_t, NULL, "fattr4_mounted_on_fileid" },
 
@@ -1243,7 +1243,7 @@ struct nfs4_ntov_map nfs41_ntov_map[NFS41_ATTR_COUNT] = {
 		xdr_settime4, NULL, "fattr4_time_modify_set" },
 
 	{ {FATTR4_MOUNTED_ON_FILEID_MASK, 0},
-		0, FALSE, FALSE,
+		AT_NODEID, FALSE, FALSE,
 		FATTR4_MOUNTED_ON_FILEID, 2 * BYTES_PER_XDR_UNIT,
 		xdr_u_longlong_t, NULL, "fattr4_mounted_on_fileid" },
 
