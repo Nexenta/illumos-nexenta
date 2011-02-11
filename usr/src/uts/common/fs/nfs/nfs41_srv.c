@@ -1883,6 +1883,25 @@ mds_op_getfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
+        /* check for reparse point at the share point */
+	if (cs->exi->exi_moved || vn_is_nfs_reparse(cs->exi->exi_vp, cs->cr)) {
+		/* it's all bad */
+		cs->exi->exi_moved = 1;
+		*cs->statusp = resp->status = NFS4ERR_MOVED;
+		DTRACE_PROBE2(nfs41serv__func__referral__shared__moved,
+		    vnode_t *, cs->vp, char *, "mds_op_getfh");
+		return;
+	}
+
+	/* check for reparse point at vp */
+	if (vn_is_nfs_reparse(cs->vp, cs->cr) && !client_is_downrev(cs->instp, req)) {
+		/* it's not all bad */
+		*cs->statusp = resp->status = NFS4ERR_MOVED;
+		DTRACE_PROBE2(nfs41serv__func__referral__moved,
+		    vnode_t *, cs->vp, char *, "mds_op_getfh");
+		return;
+	}
+
 	resp->object.nfs_fh4_val =
 	    kmem_alloc(cs->fh.nfs_fh4_len, KM_SLEEP);
 	nfs_fh4_copy(&cs->fh, &resp->object);
