@@ -4569,6 +4569,8 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	attrvers_t avers;
 
 	avers = nfs4_attrvers(cs);
+	ASSERT(avers == AV_NFS41);
+
 	sarg.sbp = &sb;
 	dvp = cs->vp;
 
