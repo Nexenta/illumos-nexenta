@@ -4567,6 +4567,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	component4 *component;
 	bslabel_t *clabel;
 	attrvers_t avers;
+	createmode4 mode = args->mode;
 
 	avers = nfs4_attrvers(cs);
 	ASSERT(avers == AV_NFS41);
@@ -4625,7 +4626,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 
 	NFS4_SET_FATTR4_CHANGE(cinfo->before, bva.va_ctime);
 
-	switch (args->mode) {
+	switch (mode) {
 	case GUARDED4:
 		/*FALLTHROUGH*/
 	case UNCHECKED4:
@@ -4706,7 +4707,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		return (NFS4ERR_INVAL);
 	}
 
-	status = create_vnode(dvp, nm, vap, args->mode, mtime,
+	status = create_vnode(dvp, nm, vap, mode, mtime,
 	    cs->cr, &vp, &created);
 	kmem_free(nm, buflen);
 
@@ -4719,7 +4720,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 
 	trunc = (setsize && !created);
 
-	if (args->mode != EXCLUSIVE4) {
+	if (mode != EXCLUSIVE4) {
 		attrmap4 createmask = args->createhow4_u.createattrs.attrmask;
 
 		/*
