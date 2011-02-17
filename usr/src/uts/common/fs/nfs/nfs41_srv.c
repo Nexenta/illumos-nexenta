@@ -4625,39 +4625,30 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	}
 
 	NFS4_SET_FATTR4_CHANGE(cinfo->before, bva.va_ctime);
+	vap = sarg.vap;
 
-	switch (mode) {
-	case GUARDED4:
-		/*FALLTHROUGH*/
-	case UNCHECKED4:
+	if (mode == GUARDED4 || mode == UNCHECKED4) {
 		nfs4_ntov_table_init(&ntov, avers);
 		ntov_table_init = TRUE;
-
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
-		status = do_rfs4_set_attrs(attrset,
-		    &args->createhow4_u.createattrs,
-		    cs, &sarg, &ntov, NFS4ATTR_SETIT);
 
-		if (status == NFS4_OK && (sarg.vap->va_mask & AT_TYPE) &&
-		    sarg.vap->va_type != VREG) {
-			if (sarg.vap->va_type == VDIR)
+		status = do_rfs4_set_attrs(attrset,
+					&args->createhow4_u.createattrs,
+					cs, &sarg, &ntov, NFS4ATTR_SETIT);
+
+		if (status != NFS4_OK)
+			goto err_free_ntop;
+
+		if ((vap->va_mask & AT_TYPE) && vap->va_type != VREG) {
+			if (vap->va_type == VDIR)
 				status = NFS4ERR_ISDIR;
-			else if (sarg.vap->va_type == VLNK)
+			else if (vap->va_type == VLNK)
 				status = NFS4ERR_SYMLINK;
 			else
 				status = NFS4ERR_INVAL;
-		}
 
-		if (status != NFS4_OK) {
-			kmem_free(nm, buflen);
-			nfs4_ntov_table_free(&ntov, &sarg);
-			*attrset = NFS4_EMPTY_ATTRMAP(avers);
-			return (status);
+			goto err_free_ntop;
 		}
-
-		vap = sarg.vap;
-		vap->va_type = VREG;
-		vap->va_mask |= AT_TYPE;
 
 		if ((vap->va_mask & AT_MODE) == 0) {
 			vap->va_mask |= AT_MODE;
@@ -4665,19 +4656,20 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		}
 
 		if (vap->va_mask & AT_SIZE) {
+			reqsize = sarg.vap->va_size;
 
 			/* Disallow create with a non-zero size */
-
-			if ((reqsize = sarg.vap->va_size) != 0) {
-				kmem_free(nm, buflen);
-				nfs4_ntov_table_free(&ntov, &sarg);
-				*attrset = NFS4_EMPTY_ATTRMAP(avers);
-				return (NFS4ERR_INVAL);
+			if (reqsize != 0) {
+				status = NFS4ERR_INVAL;
+				goto err_free_ntop;
 			}
 			setsize = TRUE;
 		}
-		break;
+		vap->va_type = VREG;
+		vap->va_mask |= AT_TYPE;
+	}
 
+	switch (mode) {
 	case EXCLUSIVE4:
 		/* prohibit EXCL create of named attributes */
 		if (dvp->v_flag & V_XATTRDIR) {
@@ -4933,6 +4925,12 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	}
 
 	return (status);
+
+err_free_ntop:
+	kmem_free(nm, buflen);
+	nfs4_ntov_table_free(&ntov, &sarg);
+	*attrset = NFS4_EMPTY_ATTRMAP(avers);
+	return status;
 }
 
 /*
