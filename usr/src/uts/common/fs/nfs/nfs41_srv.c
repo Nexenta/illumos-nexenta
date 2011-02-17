@@ -4539,6 +4539,21 @@ mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
 	return (status);
 }
 
+static inline struct fattr4 *args_to_fattr(OPEN4args *args,
+					   createmode4 mode)
+{
+	struct fattr4 *fattr;
+
+	ASSERT(mode != EXCLUSIVE4);
+
+	if (mode == EXCLUSIVE4_1)
+		fattr = &args->createhow4_u.ch_createboth.cva_attrs;
+	else
+		fattr = &args->createhow4_u.createattrs;
+
+	return fattr;
+}
+
 /*
  * If we call the spe in here, we return the new layout in *plo.
  */
@@ -4628,11 +4643,9 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 
 	if (mode == GUARDED4 || mode == UNCHECKED4 || mode == EXCLUSIVE4_1) {
 		struct nfs4_ntov_table ntov;
-		struct fattr4 *fattr = &args->createhow4_u.createattrs;
+		struct fattr4 *fattr;
 
-		if (mode == EXCLUSIVE4_1)
-			fattr = &args->createhow4_u.ch_createboth.cva_attrs;
-
+		fattr = args_to_fattr(args, mode);
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
 
 		nfs4_ntov_table_init(&ntov, avers);
@@ -4710,7 +4723,8 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	trunc = (setsize && !created);
 
 	if (mode != EXCLUSIVE4) {
-		attrmap4 createmask = args->createhow4_u.createattrs.attrmask;
+		struct fattr4 *fattr = args_to_fattr(args, mode);
+		attrmap4 createmask = fattr->attrmask;
 
 		/*
 		 * True verification that object was created with correct
