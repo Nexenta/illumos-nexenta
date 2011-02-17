@@ -4547,9 +4547,6 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
     change_info4 *cinfo, attrmap4 *attrset, mds_layout_t **plo)
 {
 	struct nfs4_svgetit_arg sarg;
-	struct nfs4_ntov_table ntov;
-
-	bool_t ntov_table_init = FALSE;
 	struct statvfs64 sb;
 	nfsstat4	status = NFS4_OK;
 	vnode_t *vp;
@@ -4628,20 +4625,21 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	vap = sarg.vap;
 
 	if (mode == GUARDED4 || mode == UNCHECKED4 || mode == EXCLUSIVE4_1) {
+		struct nfs4_ntov_table ntov;
 		struct fattr4 *fattr = &args->createhow4_u.createattrs;
 
 		if (mode == EXCLUSIVE4_1)
 			fattr = &args->createhow4_u.ch_createboth.cva_attrs;
 
-		nfs4_ntov_table_init(&ntov, avers);
-		ntov_table_init = TRUE;
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
 
+		nfs4_ntov_table_init(&ntov, avers);
 		status = do_rfs4_set_attrs(attrset, fattr,
 					cs, &sarg, &ntov, NFS4ATTR_SETIT);
+ 		nfs4_ntov_table_free(&ntov, &sarg);
 
 		if (status != NFS4_OK)
-			goto err_free_ntop;
+			goto err_free;
 
 		if ((vap->va_mask & AT_TYPE) && vap->va_type != VREG) {
 			if (vap->va_type == VDIR)
@@ -4651,7 +4649,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 			else
 				status = NFS4ERR_INVAL;
 
-			goto err_free_ntop;
+			goto err_free;
 		}
 
 		if ((vap->va_mask & AT_MODE) == 0) {
@@ -4665,7 +4663,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 			/* Disallow create with a non-zero size */
 			if (reqsize != 0) {
 				status = NFS4ERR_INVAL;
-				goto err_free_ntop;
+				goto err_free;
 			}
 			setsize = TRUE;
 		}
@@ -4708,8 +4706,6 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	kmem_free(nm, buflen);
 
 	if (status != NFS4_OK) {
-		if (ntov_table_init)
-			nfs4_ntov_table_free(&ntov, &sarg);
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
 		return (status);
 	}
@@ -4753,8 +4749,6 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 				ATTR_SET(*attrset, SIZE);
 		}
 	}
-	if (ntov_table_init)
-		nfs4_ntov_table_free(&ntov, &sarg);
 
 	/*
 	 * Get the initial "after" sequence number, if it fails,
@@ -4927,12 +4921,10 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 			status = NFS4_OK;
 		}
 	}
-
 	return (status);
 
-err_free_ntop:
+err_free:
 	kmem_free(nm, buflen);
-	nfs4_ntov_table_free(&ntov, &sarg);
 	*attrset = NFS4_EMPTY_ATTRMAP(avers);
 	return status;
 }
