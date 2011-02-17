@@ -4622,7 +4622,9 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	}
 
 	NFS4_SET_FATTR4_CHANGE(cinfo->before, bva.va_ctime);
+
 	vap = sarg.vap;
+	bzero(vap, sizeof(vattr_t));
 
 	if (mode == GUARDED4 || mode == UNCHECKED4 || mode == EXCLUSIVE4_1) {
 		struct nfs4_ntov_table ntov;
@@ -4671,8 +4673,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		vap->va_mask |= AT_TYPE;
 	}
 
-	switch (mode) {
-	case EXCLUSIVE4:
+	if (mode == EXCLUSIVE4 || mode == EXCLUSIVE4_1) {
 		/* prohibit EXCL create of named attributes */
 		if (dvp->v_flag & V_XATTRDIR) {
 			kmem_free(nm, buflen);
@@ -4680,8 +4681,8 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 			return (NFS4ERR_INVAL);
 		}
 
-		cva.va_mask = AT_TYPE | AT_MTIME | AT_MODE;
-		cva.va_type = VREG;
+		vap->va_mask |= AT_TYPE | AT_MTIME | AT_MODE;
+		vap->va_type = VREG;
 		/*
 		 * Ensure no time overflows. Assumes underlying
 		 * filesystem supports at least 32 bits.
@@ -4689,16 +4690,8 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		 * compares even if the underlying filesystem truncates.
 		 */
 		mtime = (timespec32_t *)&args->createhow4_u.createverf;
-		cva.va_mtime.tv_sec = mtime->tv_sec % TIME32_MAX;
-		cva.va_mtime.tv_nsec = (mtime->tv_nsec / 1000) * 1000;
-		cva.va_mode = (mode_t)0;
-		vap = &cva;
-		break;
-
-	case EXCLUSIVE4_1:
-		kmem_free(nm, buflen);
-		*attrset = NFS4_EMPTY_ATTRMAP(avers);
-		return (NFS4ERR_INVAL);
+		vap->va_mtime.tv_sec = mtime->tv_sec % TIME32_MAX;
+		vap->va_mtime.tv_nsec = (mtime->tv_nsec / 1000) * 1000;
 	}
 
 	status = create_vnode(dvp, nm, vap, mode, mtime,
