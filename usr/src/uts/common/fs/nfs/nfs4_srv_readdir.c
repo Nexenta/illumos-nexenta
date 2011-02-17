@@ -407,7 +407,7 @@ rfs4_op_readdir(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__readdir__start, struct compound_state *, cs,
 	    READDIR4args *, args);
 
-	avers = RFS4_ATTRVERS(cs);
+	avers = nfs4_attrvers(cs);
 	ar = args->attr_request;
 	ATTRMAP_MASK(ar, RFS4_RDDIR_SUPP_ATTRMAP(avers));
 	minrddir = ar;

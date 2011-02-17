@@ -147,7 +147,7 @@ mds_op_readdir(nfs_argop4 *argop, nfs_resop4 *resop,
 	int owner_error, group_error;
 	attrvers_t avers;
 
-	avers = RFS4_ATTRVERS(cs);
+	avers = nfs4_attrvers(cs);
 	ar = args->attr_request;
 	ATTRMAP_MASK(ar, RFS4_RDDIR_SUPP_ATTRMAP(avers));
 	minrddir = ar;

@@ -762,7 +762,7 @@ rfs4_fattr4_filehandle(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 {
 	nfs_fh4 *fh;
 
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS40);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS40);
 
 	switch (cmd) {
 	case NFS4ATTR_SUPPORTED:
@@ -852,7 +852,7 @@ rfs41_fattr4_filehandle(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 {
 	nfs_fh4 *fh;
 
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 
 	switch (cmd) {
 	case NFS4ATTR_SUPPORTED:
@@ -917,7 +917,7 @@ rfs4_fattr4_suppattr_exclcreat(nfs4_attr_cmd_t cmd,
 	/*
 	 * nfs41 attribute -- not supp for nfs40
 	 */
-	avers = RFS4_ATTRVERS(sarg->cs);
+	avers = nfs4_attrvers(sarg->cs);
 	ASSERT(avers == AV_NFS41);
 	if (sarg->cs->instp->attrvers != AV_NFS41)
 		return (ENOTSUP);
@@ -2893,7 +2893,7 @@ rfs4_fattr4_fs_layout_types(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 {
 	int error = 0;
 
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 
 	if (RFS4_MANDATTR_ONLY)
 		return (ENOTSUP);
@@ -2933,7 +2933,7 @@ rfs4_fattr4_layout_hint(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 {
 	int error = 0;
 
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 
 	if (RFS4_MANDATTR_ONLY)
 		return (ENOTSUP);
@@ -2969,7 +2969,7 @@ rfs4_fattr4_layout_types(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 {
 	int error = 0;
 
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 
 	if (RFS4_MANDATTR_ONLY)
 		return (ENOTSUP);
@@ -3044,7 +3044,7 @@ rfs4_fattr4_layout_alignment(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 {
 	int error = 0;
 
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 
 	if (RFS4_MANDATTR_ONLY)
 		return (ENOTSUP);
@@ -3081,7 +3081,7 @@ rfs4_fattr4_mdsthreshold(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 {
 	int error = 0;
 
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 
 	if (RFS4_MANDATTR_ONLY)
 		return (ENOTSUP);
@@ -3129,7 +3129,7 @@ static int
 rfs4_fattr4_dir_notif_delay(nfs4_attr_cmd_t cmd,
     struct nfs4_svgetit_arg *sarg, union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3138,7 +3138,7 @@ static int
 rfs4_fattr4_dirent_notif_delay(nfs4_attr_cmd_t cmd,
     struct nfs4_svgetit_arg *sarg, union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3147,7 +3147,7 @@ static int
 rfs4_fattr4_dacl(nfs4_attr_cmd_t cmd,
     struct nfs4_svgetit_arg *sarg, union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3156,7 +3156,7 @@ static int
 rfs4_fattr4_sacl(nfs4_attr_cmd_t cmd,
     struct nfs4_svgetit_arg *sarg, union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3165,7 +3165,7 @@ static int
 rfs4_fattr4_chang_policy(nfs4_attr_cmd_t cmd,
     struct nfs4_svgetit_arg *sarg, union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3174,7 +3174,7 @@ static int
 rfs4_fattr4_fs_status(nfs4_attr_cmd_t cmd,
     struct nfs4_svgetit_arg *sarg, union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3183,7 +3183,7 @@ static int
 rfs4_fattr4_fs_locations_info(nfs4_attr_cmd_t cmd,
     struct nfs4_svgetit_arg *sarg, union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3192,7 +3192,7 @@ static int
 rfs4_fattr4_retention_get(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 	union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 /* ARGSUSED */
@@ -3200,7 +3200,7 @@ static int
 rfs4_fattr4_retention_set(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 	union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 /* ARGSUSED */
@@ -3208,7 +3208,7 @@ static int
 rfs4_fattr4_retentevt_get(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 	union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3217,7 +3217,7 @@ static int
 rfs4_fattr4_retentevt_set(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 	union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3226,7 +3226,7 @@ static int
 rfs4_fattr4_retention_hold(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 	union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3235,7 +3235,7 @@ static int
 rfs4_fattr4_mode_set_masked(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 	union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 
@@ -3244,7 +3244,7 @@ static int
 rfs4_fattr4_fs_charset_cap(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 	union nfs4_attr_u *na)
 {
-	ASSERT(RFS4_ATTRVERS(sarg->cs) == AV_NFS41);
+	ASSERT(nfs4_attrvers(sarg->cs) == AV_NFS41);
 	return (ENOTSUP);
 }
 

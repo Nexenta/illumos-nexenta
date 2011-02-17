@@ -31,15 +31,10 @@
 extern "C" {
 #endif
 
-/*
- * When MDS differentiate pnfs shares from non-pnfs shares in
- * exportinfo, check for pnfs and return new attrvers type AV_PNFS.
- * Until then, attrvers is simply based on attrvers of server instance.
- *
- *  (((cs)->instp->attrvers == AV_NFS40) ? AV_NFS40 :
- *	((cs)->exi_pnfs ? AV_PNFS : AV_NFS41))
- */
-#define	RFS4_ATTRVERS(cs)	((cs)->instp->attrvers)
+static inline enum attrvers nfs4_attrvers(struct compound_state *cs)
+{
+	return cs->instp->attrvers;
+}
 
 /*
  * translation table for attrs

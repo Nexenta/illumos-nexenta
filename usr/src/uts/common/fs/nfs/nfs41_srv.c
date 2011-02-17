@@ -761,7 +761,7 @@ mds_setattr(attrmap4 *resp, fattr4 *fattrp, struct compound_state *cs,
 	attrvers_t avers;
 	struct nfs4_ntov_map *nvmap;
 
-	avers = RFS4_ATTRVERS(cs);
+	avers = nfs4_attrvers(cs);
 	nvmap = NFS4_NTOV_MAP(avers);
 	*resp = NFS4_EMPTY_ATTRMAP(avers);
 	sarg.sbp = &sb;
@@ -1116,7 +1116,7 @@ mds_op_verify(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	}
 
 	sarg.sbp = &sb;
-	nfs4_ntov_table_init(&ntov, RFS4_ATTRVERS(cs));
+	nfs4_ntov_table_init(&ntov, nfs4_attrvers(cs));
 	resp->status = do_rfs4_set_attrs(NULL, &args->obj_attributes, cs,
 	    &sarg, &ntov, NFS4ATTR_VERIT);
 	if (resp->status != NFS4_OK) {
@@ -1169,7 +1169,7 @@ mds_op_nverify(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 	sarg.sbp = &sb;
-	nfs4_ntov_table_init(&ntov, RFS4_ATTRVERS(cs));
+	nfs4_ntov_table_init(&ntov, nfs4_attrvers(cs));
 	resp->status = do_rfs4_set_attrs(NULL, &args->obj_attributes, cs,
 	    &sarg, &ntov, NFS4ATTR_VERIT);
 	if (resp->status != NFS4_OK) {
@@ -1457,7 +1457,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__create__start, struct compound_state *, cs,
 	    CREATE4args *, args);
 
-	resp->attrset = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+	resp->attrset = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 
 	if (dvp == NULL) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
@@ -1526,7 +1526,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	}
 
 	sarg.sbp = &sb;
-	nfs4_ntov_table_init(&ntov, RFS4_ATTRVERS(cs));
+	nfs4_ntov_table_init(&ntov, nfs4_attrvers(cs));
 
 	status = do_rfs4_set_attrs(&resp->attrset,
 	    &args->createattrs, cs, &sarg, &ntov, NFS4ATTR_SETIT);
@@ -1539,7 +1539,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		kmem_free(nm, len);
 		nfs4_ntov_table_free(&ntov, &sarg);
 
-		resp->attrset = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+		resp->attrset = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 		goto final;
 	}
 
@@ -1551,7 +1551,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		kmem_free(nm, len);
 		nfs4_ntov_table_free(&ntov, &sarg);
 
-		resp->attrset = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+		resp->attrset = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 		goto final;
 	}
 	NFS4_SET_FATTR4_CHANGE(resp->cinfo.before, bva.va_ctime)
@@ -1608,7 +1608,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			kmem_free(nm, len);
 			nfs4_ntov_table_free(&ntov, &sarg);
 			resp->attrset =
-			    NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+			    NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 			goto final;
 		}
 
@@ -1618,7 +1618,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			kmem_free(lnm, llen);
 			nfs4_ntov_table_free(&ntov, &sarg);
 			resp->attrset =
-			    NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+			    NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 			goto final;
 		}
 
@@ -1667,7 +1667,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		if (vp == NULL) {
 			kmem_free(nm, len);
 			nfs4_ntov_table_free(&ntov, &sarg);
-			resp->attrset = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+			resp->attrset = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 			goto final;
 		}
 
@@ -1696,7 +1696,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		if (vp != NULL)
 			VN_RELE(vp);
 		nfs4_ntov_table_free(&ntov, &sarg);
-		resp->attrset = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+		resp->attrset = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 		goto final;
 	}
 
@@ -1732,7 +1732,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * more attrset bits than were requested in createattrs
 	 */
 	nfs4_vmask_to_nmask(sarg.vap->va_mask, &resp->attrset,
-	    RFS4_ATTRVERS(cs));
+	    nfs4_attrvers(cs));
 	ATTRMAP_MASK(resp->attrset, args->createattrs.attrmask);
 	nfs4_ntov_table_free(&ntov, &sarg);
 
@@ -3986,7 +3986,7 @@ mds_op_setattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
-	resp->attrsset = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+	resp->attrsset = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 
 	if (rdonly4(cs->exi, cs->vp, req)) {
 		*cs->statusp = resp->status = NFS4ERR_ROFS;
@@ -4568,7 +4568,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	bslabel_t *clabel;
 	attrvers_t avers;
 
-	avers = RFS4_ATTRVERS(cs);
+	avers = nfs4_attrvers(cs);
 	sarg.sbp = &sb;
 	dvp = cs->vp;
 
@@ -5417,7 +5417,7 @@ mds_do_opennull(struct compound_state *cs,
 		 */
 		if (resp->status != NFS4_OK)
 			resp->attrset =
-			    NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+			    NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 	} else
 		*cs->statusp = resp->status;
 
@@ -5746,7 +5746,7 @@ retry:
 	/*
 	 * make sure attrset is zero before response is built.
 	 */
-	resp->attrset = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+	resp->attrset = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 
 	switch (claim) {
 	case CLAIM_NULL:

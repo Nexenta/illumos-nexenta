@@ -498,7 +498,7 @@ cb_getattr(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
 #endif
 
 	resp->obj_attributes.attrmask =
-	    NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+	    NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 
 	mutex_enter(&ncg->nfs4_cb_lock);
 	sp = ncg->nfs4prog2server[req->rq_prog - NFS4_CALLBACK];
@@ -602,7 +602,7 @@ cb_getattr(nfs_cb_argop4 *argop, nfs_cb_resop4 *resop, struct svc_req *req,
 	 */
 	fap = &resp->obj_attributes;
 
-	fap->attrmask = NFS4_EMPTY_ATTRMAP(RFS4_ATTRVERS(cs));
+	fap->attrmask = NFS4_EMPTY_ATTRMAP(nfs4_attrvers(cs));
 	/* attrlist4_len starts at 0 and increases as attrs are processed */
 	fap->attrlist4 = (char *)fdata;
 	fap->attrlist4_len = 0;
