@@ -1434,7 +1434,7 @@ rfs4_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		resp->attrset = NFS4_EMPTY_ATTRMAP(avers);
 		goto out;
 	}
-	NFS4_SET_FATTR4_CHANGE(resp->cinfo.before, bva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(resp->cinfo.before, bva.va_ctime);
 
 	vap = sarg.vap;
 
@@ -2392,7 +2392,7 @@ rfs4_op_link(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto out;
 	}
 
-	NFS4_SET_FATTR4_CHANGE(resp->cinfo.before, bdva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(resp->cinfo.before, bdva.va_ctime);
 
 	error = VOP_LINK(dvp, vp, name, cs->cr, NULL, 0);
 
@@ -2428,7 +2428,7 @@ rfs4_op_link(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		adva.va_seq = 0;
 	}
 
-	NFS4_SET_FATTR4_CHANGE(resp->cinfo.after, adva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(resp->cinfo.after, adva.va_ctime);
 
 	/*
 	 * The cinfo.atomic = TRUE only if we have
@@ -3989,7 +3989,7 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		}
 		goto out;
 	}
-	NFS4_SET_FATTR4_CHANGE(resp->cinfo.before, bdva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(resp->cinfo.before, bdva.va_ctime);
 
 	/* Actually do the REMOVE operation */
 	if (vp->v_type == VDIR) {
@@ -4081,7 +4081,7 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		adva.va_seq = 0;
 	}
 
-	NFS4_SET_FATTR4_CHANGE(resp->cinfo.after, adva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(resp->cinfo.after, adva.va_ctime);
 
 	/*
 	 * The cinfo.atomic = TRUE only if we have
@@ -4342,8 +4342,8 @@ rfs4_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto err_out;
 	}
 
-	NFS4_SET_FATTR4_CHANGE(resp->source_cinfo.before, obdva.va_ctime)
-	NFS4_SET_FATTR4_CHANGE(resp->target_cinfo.before, nbdva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(resp->source_cinfo.before, obdva.va_ctime);
+	NFS4_SET_FATTR4_CHANGE(resp->target_cinfo.before, nbdva.va_ctime);
 
 	if ((error = VOP_RENAME(odvp, converted_onm, ndvp, converted_nnm,
 	    cs->cr, NULL, 0)) == 0 && fp != NULL) {
@@ -4436,8 +4436,8 @@ rfs4_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		nadva.va_seq = 0;
 	}
 
-	NFS4_SET_FATTR4_CHANGE(resp->source_cinfo.after, oadva.va_ctime)
-	NFS4_SET_FATTR4_CHANGE(resp->target_cinfo.after, nadva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(resp->source_cinfo.after, oadva.va_ctime);
+	NFS4_SET_FATTR4_CHANGE(resp->target_cinfo.after, nadva.va_ctime);
 
 	/*
 	 * The cinfo.atomic = TRUE only if we have
@@ -6102,7 +6102,7 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		return (NFS4ERR_NOTDIR);
 	}
 
-	NFS4_SET_FATTR4_CHANGE(cinfo->before, bva.va_ctime)
+	NFS4_SET_FATTR4_CHANGE(cinfo->before, bva.va_ctime);
 
 	switch (args->mode) {
 	case GUARDED4:

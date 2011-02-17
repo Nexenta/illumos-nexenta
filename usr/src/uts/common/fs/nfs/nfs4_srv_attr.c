@@ -368,7 +368,7 @@ fattr4_get_change(struct nfs4_svgetit_arg *sarg, fattr4_change *changep)
 		if (status != NFS4_OK)
 			return (geterrno4(status));
 	}
-	NFS4_SET_FATTR4_CHANGE(*changep, vap->va_ctime)
+	NFS4_SET_FATTR4_CHANGE(*changep, vap->va_ctime);
 	return (0);
 }
 

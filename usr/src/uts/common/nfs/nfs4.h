@@ -69,12 +69,12 @@ typedef struct nfs4_fhandle nfs4_fhandle_t;
  * Set the fattr4_change variable using a time struct. Note that change
  * is 64 bits, but timestruc_t is 128 bits in a 64-bit kernel.
  */
-#define	NFS4_SET_FATTR4_CHANGE(change, ts)			\
-{							\
-	change = (ts).tv_sec;				\
-	change <<= 32;					\
-	change |= (uint32_t)((ts).tv_nsec);		\
-}
+#define	NFS4_SET_FATTR4_CHANGE(change, ts)		\
+	do {						\
+		change = (ts).tv_sec;			\
+		change <<= 32;				\
+		change |= (uint32_t)((ts).tv_nsec);	\
+	} while (0)
 
 /*
  * Server lease period.  Value is in seconds;  Also used for grace period
