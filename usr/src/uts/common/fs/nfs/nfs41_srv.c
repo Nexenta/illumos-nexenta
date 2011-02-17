@@ -4627,13 +4627,17 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	NFS4_SET_FATTR4_CHANGE(cinfo->before, bva.va_ctime);
 	vap = sarg.vap;
 
-	if (mode == GUARDED4 || mode == UNCHECKED4) {
+	if (mode == GUARDED4 || mode == UNCHECKED4 || mode == EXCLUSIVE4_1) {
+		struct fattr4 *fattr = &args->createhow4_u.createattrs;
+
+		if (mode == EXCLUSIVE4_1)
+			fattr = &args->createhow4_u.ch_createboth.cva_attrs;
+
 		nfs4_ntov_table_init(&ntov, avers);
 		ntov_table_init = TRUE;
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
 
-		status = do_rfs4_set_attrs(attrset,
-					&args->createhow4_u.createattrs,
+		status = do_rfs4_set_attrs(attrset, fattr,
 					cs, &sarg, &ntov, NFS4ATTR_SETIT);
 
 		if (status != NFS4_OK)
