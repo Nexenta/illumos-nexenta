@@ -4674,6 +4674,11 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	}
 
 	if (mode == EXCLUSIVE4 || mode == EXCLUSIVE4_1) {
+		verifier4 *v = &args->createhow4_u.ch_createboth.cva_verf;
+
+		if (mode == EXCLUSIVE4)
+			v = &args->createhow4_u.createverf;
+
 		/* prohibit EXCL create of named attributes */
 		if (dvp->v_flag & V_XATTRDIR) {
 			kmem_free(nm, buflen);
@@ -4689,7 +4694,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		 * Truncate nsec to usec resolution to allow valid
 		 * compares even if the underlying filesystem truncates.
 		 */
-		mtime = (timespec32_t *)&args->createhow4_u.createverf;
+		mtime = (timespec32_t *)v;
 		vap->va_mtime.tv_sec = mtime->tv_sec % TIME32_MAX;
 		vap->va_mtime.tv_nsec = (mtime->tv_nsec / 1000) * 1000;
 	}
