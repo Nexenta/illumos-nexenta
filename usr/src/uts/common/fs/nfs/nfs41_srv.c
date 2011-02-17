@@ -4681,9 +4681,8 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 
 		/* prohibit EXCL create of named attributes */
 		if (dvp->v_flag & V_XATTRDIR) {
-			kmem_free(nm, buflen);
-			*attrset = NFS4_EMPTY_ATTRMAP(avers);
-			return (NFS4ERR_INVAL);
+			status = NFS4ERR_INVAL;
+			goto err_free;
 		}
 
 		vap->va_mask |= AT_TYPE | AT_MTIME | AT_MODE;
