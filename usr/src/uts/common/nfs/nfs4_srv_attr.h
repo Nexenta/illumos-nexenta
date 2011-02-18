@@ -33,7 +33,7 @@ extern "C" {
 
 static inline enum attrvers nfs4_attrvers(struct compound_state *cs)
 {
-	return cs->instp->attrvers;
+	return (cs->instp->attrvers);
 }
 
 /*
