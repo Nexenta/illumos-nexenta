@@ -252,11 +252,11 @@ rfs41_compute_seq4_flags(COMPOUND4res *rp, compound_state_t *cs)
 void
 rfs41_slrc_cache_contrived(slot_ent_t *slp, COMPOUND4res_srv *rsp)
 {
-	COMPOUND4res_srv	*crp = NULL;
+	COMPOUND4res_srv	*crp = &slp->se_buf;
 	int			 len = 2;
 
-	crp = kmem_zalloc(sizeof (COMPOUND4res_srv), KM_SLEEP);
-
+	bzero(crp, sizeof(COMPOUND4res_srv));
+	
 	/* status */
 	crp->status = NFS4ERR_RETRY_UNCACHED_REP;
 
@@ -277,7 +277,6 @@ rfs41_slrc_cache_contrived(slot_ent_t *slp, COMPOUND4res_srv *rsp)
 
 	/* cache it */
 	slp->se_status = crp->status;
-	slp->se_buf = *crp;
 	slp->se_state = SLRC_CACHED_OKAY;
 }
 
