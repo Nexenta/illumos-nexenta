@@ -544,10 +544,9 @@ reply:
 		error++;
 	}
 
-	if (replay) {
+	if (replay)
 		(void) rfs41_slrc_cacheok(cs->sp, cap);
-		replay = 0;
-	}
+
 out:
 	rfs41_compound_state_free(cs);
 	return (error);
