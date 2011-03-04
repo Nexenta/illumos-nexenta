@@ -4208,6 +4208,8 @@ xdr_snfs_argop4_free(XDR *xdrs, nfs_argop4 **arrayp, int len,
 			nfs_fh4 *objp = &array[i].nfs_argop4_u.opputfh.object;
 
 			if (objp->nfs_fh4_val != NULL) {
+				if (minorversion == 1)
+					xdr_free_nfs41_fh(xdrs, objp);
 				kmem_free(objp->nfs_fh4_val, objp->nfs_fh4_len);
 			}
 			continue;

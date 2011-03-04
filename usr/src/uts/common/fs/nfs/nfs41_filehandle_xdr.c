@@ -143,6 +143,21 @@ free_mds_ds_fh(mds_ds_fh *fp)
 }
 
 bool_t
+xdr_free_nfs41_fh(XDR *xdrs, nfs_fh4 *objp)
+{
+	void *ptr = objp->nfs_fh4_val;
+	nfs41_fh_type_t type = *(nfs41_fh_type_t *)ptr; 
+	bool_t ret = TRUE;
+
+	if (type == FH41_TYPE_DMU_DS) {
+		struct mds_ds_fh *fh = (struct mds_ds_fh *)ptr;
+
+		ret = xdr_ds_fh(xdrs, fh);
+	}
+	return ret;
+}
+
+bool_t
 xdr_decode_nfs41_fh(XDR *xdrs, nfs_fh4 *objp)
 {
 	uint_t otw_len;

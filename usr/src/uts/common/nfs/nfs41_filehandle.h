@@ -85,6 +85,7 @@ extern int mknfs41_fh(nfs_fh4 *, vnode_t *, struct exportinfo *);
 
 extern bool_t xdr_encode_nfs41_fh(XDR *, nfs_fh4 *);
 extern bool_t xdr_decode_nfs41_fh(XDR *, nfs_fh4 *);
+extern bool_t xdr_free_nfs41_fh(XDR *, nfs_fh4 *);
 extern bool_t xdr_nfs41_fh_fmt(XDR *, nfs41_fh_fmt_t *);
 
 #ifdef	__cplusplus
