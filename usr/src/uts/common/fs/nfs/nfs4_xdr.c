@@ -4204,15 +4204,14 @@ xdr_snfs_argop4_free(XDR *xdrs, nfs_argop4 **arrayp, int len,
 		 * These should be ordered by frequency of use
 		 */
 		switch (array[i].argop) {
-		case OP_PUTFH:
-			if (array[i].nfs_argop4_u.opputfh.object.nfs_fh4_val !=
-			    NULL) {
-				kmem_free(array[i].nfs_argop4_u.opputfh.object.
-				    nfs_fh4_val,
-				    array[i].nfs_argop4_u.opputfh.object.
-				    nfs_fh4_len);
+		case OP_PUTFH: {
+			nfs_fh4 *objp = &array[i].nfs_argop4_u.opputfh.object;
+
+			if (objp->nfs_fh4_val != NULL) {
+				kmem_free(objp->nfs_fh4_val, objp->nfs_fh4_len);
 			}
 			continue;
+		}
 		case OP_GETATTR:
 		case OP_GETFH:
 			continue;
