@@ -280,11 +280,12 @@ rfs41_slrc_cache_contrived(slot_ent_t *slp, COMPOUND4res_srv *rsp)
 	slp->se_state = SLRC_CACHED_OKAY;
 }
 
+/* Return true if resp was saved in the slot hash */
 int
 rfs41_slrc_epilogue(mds_session_t *sp, COMPOUND4args_srv *cap,
     COMPOUND4res_srv *resp, compound_state_t *cs)
 {
-	int		 error = 0;
+	int		 saved = 0;
 	stok_t		*handle = sp->sn_replay;
 	slot_ent_t	*slt = NULL;
 	slotid4		 slot = cap->sargs->sa_slotid;
@@ -310,6 +311,7 @@ rfs41_slrc_epilogue(mds_session_t *sp, COMPOUND4args_srv *cap,
 		 * Cache depending on sa_cachethis
 		 */
 		if (cs->sact || seqop_singleton(resp)) {
+			saved = 1;
 			slt->se_status = resp->status;
 			slt->se_buf = *resp;
 			slt->se_state = SLRC_CACHED_OKAY;
@@ -325,12 +327,11 @@ rfs41_slrc_epilogue(mds_session_t *sp, COMPOUND4args_srv *cap,
 		break;
 
 	default:
-		error = 1;
 		break;
 	}
 	cv_signal(&slt->se_wait);
 	mutex_exit(&slt->se_lock);
-	return (error);
+	return (saved);
 }
 
 /*ARGSUSED*/
@@ -425,6 +426,7 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 	int			 error = 0;
 	int			 rpcerr = 0;
 	int			 replay = 0;
+	int saved = 0;
 
 	cs = rfs41_compound_state_alloc(mds_server);
 	bzero(&res_buf, sizeof (COMPOUND4res_srv));
@@ -529,7 +531,7 @@ slrc:
 			 */
 			DTRACE_PROBE1(nfss41__i__dispatch, COMPOUND4res *, rbp);
 		} else {
-			(void) rfs41_slrc_epilogue(cs->sp, cap, rbp, cs);
+			saved = rfs41_slrc_epilogue(cs->sp, cap, rbp, cs);
 		}
 	}
 
@@ -547,6 +549,8 @@ reply:
 	if (replay)
 		(void) rfs41_slrc_cacheok(cs->sp, cap);
 
+	if (!saved && !replay)
+		rfs41_compound_free((COMPOUND4res *)rbp, cs);
 out:
 	rfs41_compound_state_free(cs);
 	return (error);
