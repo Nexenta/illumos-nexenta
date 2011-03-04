@@ -75,6 +75,9 @@ xdr_ds_fh_v1(XDR *xdrs, ds_fh_v1 *objp)
 {
 	char *ptr;
 
+	if (xdrs->x_op == XDR_FREE)
+		return xdr_mds_sid(xdrs, &objp->mds_sid);
+
 	if (!xdr_uint32_t(xdrs, &objp->flags))
 		return (FALSE);
 	if (!xdr_uint32_t(xdrs, &objp->gen))
