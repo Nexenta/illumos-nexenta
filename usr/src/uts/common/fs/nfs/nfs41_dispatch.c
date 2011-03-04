@@ -518,8 +518,8 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 
 	if (curthread->t_flag & T_WOULDBLOCK) {
 		curthread->t_flag &= ~T_WOULDBLOCK;
-		rfs41_compound_state_free(cs);
-		return (1);
+		error = 1;
+		goto out_free_res;
 	}
 
 slrc:
@@ -549,6 +549,7 @@ reply:
 	if (replay)
 		(void) rfs41_slrc_cacheok(cs->sp, cap);
 
+out_free_res:
 	if (!saved && !replay)
 		rfs41_compound_free((COMPOUND4res *)rbp, cs);
 out:
