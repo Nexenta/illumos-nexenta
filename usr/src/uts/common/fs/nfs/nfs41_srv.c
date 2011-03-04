@@ -4275,16 +4275,6 @@ mds_compound(compound_state_t *cs,
 
 	if (rv != NULL)
 		*rv = 0;
-	/*
-	 * Form a reply tag by copying over the reqeuest tag.
-	 */
-	resp->tag.utf8string_val =
-	    kmem_alloc(args->tag.utf8string_len, KM_SLEEP);
-
-	resp->tag.utf8string_len = args->tag.utf8string_len;
-
-	bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
-	    resp->tag.utf8string_len);
 
 	ASSERT(exi == NULL);
 
@@ -4312,6 +4302,18 @@ mds_compound(compound_state_t *cs,
 		crfree(cs->basecr);
 	cs->basecr = cr;
 	cs->req = req;
+
+	/*
+	 * Form a reply tag by copying over the reqeuest tag.
+	 */
+	resp->tag.utf8string_val =
+	    kmem_alloc(args->tag.utf8string_len, KM_SLEEP);
+
+	resp->tag.utf8string_len = args->tag.utf8string_len;
+
+	bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
+	    resp->tag.utf8string_len);
+
 
 	DTRACE_NFSV4_2(compound__start, struct compound_state *, &cs,
 	    COMPOUND4args *, args);
