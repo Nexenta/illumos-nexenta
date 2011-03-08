@@ -8033,7 +8033,6 @@ mds_op_sequence(nfs_argop4 *argop, nfs_resop4 *resop,
 	ASSERT(slt != NULL);
 	if (args->sa_sequenceid != slt->se_seqid + 1) {
 		cmn_err(CE_WARN, "mds_op_sequence: Misordered New Request");
-		slt->se_status = NFS4ERR_SEQ_MISORDERED;
 		*cs->statusp = resp->sr_status = NFS4ERR_SEQ_MISORDERED;
 		goto sessrel;
 
@@ -8044,7 +8043,6 @@ mds_op_sequence(nfs_argop4 *argop, nfs_resop4 *resop,
 		 * New request.
 		 */
 		mutex_enter(&slt->se_lock);
-		slt->se_status = NFS4_OK;	/* SLRC_NR_INPROG */
 		slt->se_seqid = args->sa_sequenceid;
 		if (slt->se_p != NULL) {
 			/*

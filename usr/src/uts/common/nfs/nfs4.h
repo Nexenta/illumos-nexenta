@@ -389,7 +389,6 @@ typedef struct slot_ent {
 	avl_node_t	  se_node;
 	slotid4		  se_sltno;
 	uint32_t	  se_state;
-	nfsstat4	  se_status;
 	sequenceid4	  se_seqid;
 	COMPOUND4res_srv  se_buf; /* Buf for slot and replays */
 	void		  *se_p;   /* Call-back race detection info buf */

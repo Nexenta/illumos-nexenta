@@ -284,7 +284,6 @@ find_again:
 	tnode->se_seqid = 0;
 	tnode->se_sltno = slot;
 	tnode->se_state = SLRC_INPROG_NEWREQ;
-	tnode->se_status = NFS4ERR_SEQ_MISORDERED;
 	mutex_init(&tnode->se_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&tnode->se_wait,  NULL, CV_DEFAULT, NULL);
 	mutex_enter(&handle->st_lock);

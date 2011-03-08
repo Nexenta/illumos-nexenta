@@ -1466,7 +1466,6 @@ cb_slrc_epilogue(nfs4_server_t *np, CB_COMPOUND4res *res, slotid4 slot)
 				if (slt->se_buf.array != NULL) {
 					cb_compound_free(bres);
 				}
-				slt->se_status = NFS4_OK;
 				slt->se_buf = *(COMPOUND4res_srv *)res;
 				slt->se_state = SLRC_CACHED_OKAY;
 			} else {
@@ -1475,7 +1474,6 @@ cb_slrc_epilogue(nfs4_server_t *np, CB_COMPOUND4res *res, slotid4 slot)
 			break;
 		case SLRC_INPROG_REPLAY:
 			slt->se_state = SLRC_CACHED_OKAY;
-			slt->se_status = NFS4_OK;
 			break;
 		default:
 			slt->se_state = SLRC_EMPTY_SLOT;

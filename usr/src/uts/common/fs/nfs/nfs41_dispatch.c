@@ -274,7 +274,6 @@ rfs41_slrc_cache_contrived(slot_ent_t *slp, COMPOUND4res_srv *rsp)
 	SET_RESOP4(&crp->array[1], crp->status);
 
 	/* cache it */
-	slp->se_status = crp->status;
 	slp->se_state = SLRC_CACHED_OKAY;
 }
 
@@ -310,7 +309,6 @@ rfs41_slrc_epilogue(mds_session_t *sp, COMPOUND4args_srv *cap,
 		 */
 		if (cs->sact || seqop_singleton(resp)) {
 			saved = 1;
-			slt->se_status = resp->status;
 			slt->se_buf = *resp;
 			slt->se_state = SLRC_CACHED_OKAY;
 
@@ -408,7 +406,6 @@ rfs41_slrc_cacheok(mds_session_t *sess, COMPOUND4args_srv *cap)
 	slt = slrc_slot_get(handle, slot);
 	mutex_enter(&slt->se_lock);
 	slt->se_state = SLRC_CACHED_OKAY;
-	slt->se_status = NFS4_OK;
 	cv_signal(&slt->se_wait);
 	mutex_exit(&slt->se_lock);
 }
