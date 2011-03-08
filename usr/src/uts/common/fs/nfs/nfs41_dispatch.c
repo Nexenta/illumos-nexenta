@@ -544,7 +544,7 @@ out_free_res:
 	if (!saved && !replay)
 		rfs41_compound_free((COMPOUND4res *)rbp, cs);
 out:
-	if (replay)
+	if (!saved && slt)
 		slrc_reset_slot_state(slt);
 
 	rfs41_compound_state_free(cs);
