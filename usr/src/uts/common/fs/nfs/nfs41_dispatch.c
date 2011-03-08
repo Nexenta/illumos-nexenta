@@ -148,7 +148,7 @@ rfs41_find_and_set_session(COMPOUND4args_srv *ap, struct compound_state *cs)
 
 slrc_stat_t
 rfs41_slrc_prologue(mds_session_t *sess, COMPOUND4args_srv *cap,
-    COMPOUND4res_srv **rpp)
+		    COMPOUND4res_srv **rpp, slot_ent_t **pslt)
 {
 	stok_t *handle = sess->sn_replay;
 	slotid4 slot = cap->sargs->sa_slotid;
@@ -161,6 +161,7 @@ rfs41_slrc_prologue(mds_session_t *sess, COMPOUND4args_srv *cap,
 	if ((ret == SEQRES_REPLAY) && (slt != NULL))
 		*rpp = &slt->se_buf;
 
+	*pslt = slt;
 	return (ret);
 }
 
@@ -418,6 +419,7 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 	COMPOUND4res_srv	 res_buf;
 	COMPOUND4res_srv	*rbp;
 	COMPOUND4args_srv	*cap;
+	slot_ent_t		*slt = NULL;
 	int			 error = 0;
 	int			 rpcerr = 0;
 	int			 replay = 0;
@@ -471,7 +473,7 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 				goto reply;
 			}
 
-			switch (rfs41_slrc_prologue(cs->sp, cap, &rbp)) {
+			switch (rfs41_slrc_prologue(cs->sp, cap, &rbp, &slt)) {
 			case SEQRES_NEWREQ:
 				break;
 
