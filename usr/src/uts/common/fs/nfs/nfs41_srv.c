@@ -7943,6 +7943,7 @@ out:
 		rfs41_cb_freech(sp, ch);
 	}
 
+	rfs41_session_rele(sp);
 	thread_exit();
 }
 
@@ -7998,9 +7999,15 @@ mds_op_sequence(nfs_argop4 *argop, nfs_resop4 *resop,
 	rfs4_dbe_lock(sp->sn_dbe);
 	if (SN_CB_CHAN_EST(sp)) {
 		if (SN_CB_CHAN_OK(sp)) {
-			if (sp->sn_bc.pngcnt > 0 && !sp->sn_bc.pnginprog)
-				(void) thread_create(NULL, 0, ping_cb_null_thr,
+			if (sp->sn_bc.pngcnt > 0 && !sp->sn_bc.pnginprog) {
+				kthread_t *t;
+
+				rfs41_session_hold(sp);
+				t  = thread_create(NULL, 0, ping_cb_null_thr,
 				    sp, 0, &p0, TS_RUN, minclsyspri);
+				if (!t)
+					rfs41_session_rele(sp);
+			}
 		} else {
 			cbstat |= SEQ4_STATUS_CB_PATH_DOWN;
 		}
