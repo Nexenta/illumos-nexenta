@@ -544,13 +544,13 @@ reply:
 		error++;
 	}
 
-	if (replay)
-		(void) rfs41_slrc_cacheok(cs->sp, cap);
-
 out_free_res:
 	if (!saved && !replay)
 		rfs41_compound_free((COMPOUND4res *)rbp, cs);
 out:
+	if (replay)
+		(void) rfs41_slrc_cacheok(cs->sp, cap);
+
 	rfs41_compound_state_free(cs);
 	return (error);
 }
