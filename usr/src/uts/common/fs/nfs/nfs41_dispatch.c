@@ -158,11 +158,9 @@ rfs41_slrc_prologue(mds_session_t *sess, COMPOUND4args_srv *cap,
 
 	ret = slrc_slot_alloc(handle, slot, seq, &slt);
 	/* Take care of the replay case. */
-	if ((ret == SEQRES_REPLAY) && (slt != NULL)) {
-		if (seq == 0)		/* corner case */
-			create_rtag(cap, (COMPOUND4res *)*rpp);
+	if ((ret == SEQRES_REPLAY) && (slt != NULL))
 		*rpp = &slt->se_buf;
-	}
+
 	return (ret);
 }
 
