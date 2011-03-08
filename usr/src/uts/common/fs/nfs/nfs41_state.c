@@ -408,6 +408,12 @@ rfs41_session_rele(mds_session_t *sp)
 	rfs4_dbe_rele(sp->sn_dbe);
 }
 
+void
+rfs41_session_hold(mds_session_t *sp)
+{
+	rfs4_dbe_hold(sp->sn_dbe);
+}
+
 mds_session_t *
 mds_findsession_by_id(nfs_server_instance_t *instp, sessionid4 sessid)
 {

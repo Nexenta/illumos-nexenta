@@ -1117,6 +1117,7 @@ extern	void		 rfs41_destroy_session_channel(mds_session_t *,
 			    channel_dir_from_server4);
 
 extern	void		 rfs41_session_rele(mds_session_t *);
+extern  void	rfs41_session_hold(mds_session_t *);
 extern	void	rfs41_cb_chflush(mds_session_t *);
 extern	CLIENT	*rfs41_cb_getch(mds_session_t *);
 extern	void	rfs41_cb_freech(mds_session_t *, CLIENT *);
