@@ -397,14 +397,8 @@ rfs41_compound_state_free(compound_state_t *cs)
 }
 
 static void
-rfs41_slrc_cacheok(mds_session_t *sess, COMPOUND4args_srv *cap)
+rfs41_slrc_cacheok(slot_ent_t *slt)
 {
-	stok_t *handle = sess->sn_replay;
-	slot_ent_t *slt = NULL;
-	slotid4 slot;
-
-	slot = cap->sargs->sa_slotid;
-	slt = slrc_slot_get(handle, slot);
 	mutex_enter(&slt->se_lock);
 	slt->se_state = SLRC_CACHED_OKAY;
 	cv_signal(&slt->se_wait);
@@ -551,7 +545,7 @@ out_free_res:
 		rfs41_compound_free((COMPOUND4res *)rbp, cs);
 out:
 	if (replay)
-		(void) rfs41_slrc_cacheok(cs->sp, cap);
+		rfs41_slrc_cacheok(slt);
 
 	rfs41_compound_state_free(cs);
 	return (error);
