@@ -397,7 +397,7 @@ rfs41_compound_state_free(compound_state_t *cs)
 }
 
 static void
-rfs41_slrc_cacheok(slot_ent_t *slt)
+slrc_reset_slot_state(slot_ent_t *slt)
 {
 	mutex_enter(&slt->se_lock);
 	slt->se_state = SLRC_CACHED_OKAY;
@@ -545,7 +545,7 @@ out_free_res:
 		rfs41_compound_free((COMPOUND4res *)rbp, cs);
 out:
 	if (replay)
-		rfs41_slrc_cacheok(slt);
+		slrc_reset_slot_state(slt);
 
 	rfs41_compound_state_free(cs);
 	return (error);
