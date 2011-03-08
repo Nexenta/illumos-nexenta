@@ -480,14 +480,17 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 			case SEQRES_NEWREQ:
 				break;
 
+			case SEQRES_REPLAY:
+				replay = 1;
+				goto reply;
+
+			/*
+			 *  Bad cases
+			 */
 			case SEQRES_MISORD_REPLAY:
 			case SEQRES_MISORD_NEWREQ:
 				rbp->status = NFS4ERR_SEQ_MISORDERED;
 				seqop_error(cap, (COMPOUND4res *)rbp);
-				goto reply;
-
-			case SEQRES_REPLAY:
-				replay = 1;
 				goto reply;
 
 			case SEQRES_BADSESSION:
