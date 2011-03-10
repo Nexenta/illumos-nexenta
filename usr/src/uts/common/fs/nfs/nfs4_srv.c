@@ -3178,7 +3178,8 @@ doio_read:
 	}
 
 out:
-	nnop_io_release(nn, nnioflags, &ct);
+	if(nn)
+		nnop_io_release(nn, nnioflags, &ct);
 
 	DTRACE_NFSV4_2(op__read__done, struct compound_state *, cs,
 	    READ4res *, resp);
