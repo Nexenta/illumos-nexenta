@@ -456,7 +456,7 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 	 * If it's not SEQUENCE _or_ it's a new request,
 	 * we handle it via mds_compound().
 	 */
-	if (cap->array[0].argop == OP_SEQUENCE) {
+	if (cap->array_len && cap->array[0].argop == OP_SEQUENCE) {
 		/*
 		 * sargs will be set by the XDR decode function
 		 */

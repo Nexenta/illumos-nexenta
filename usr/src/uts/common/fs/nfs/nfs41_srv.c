@@ -4337,6 +4337,9 @@ mds_compound(compound_state_t *cs,
 		cs->instp->seen_first_compound = 1;
 	}
 
+	if (args->array_len == 0)
+		goto out;
+
 	/*
 	 * Any operations _other_ than the ones listed below, should _not_
 	 * appear as the first operation in a compound. If so we will
