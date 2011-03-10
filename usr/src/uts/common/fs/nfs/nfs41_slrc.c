@@ -120,6 +120,7 @@ sltab_create(stok_t **handle, int max_slots)
 	tok->st_sltab = tree;
 	tok->st_currw = max_slots;
 	tok->st_fslots = max_slots;
+	tok->cleanup_entry = NULL;
 	*handle = tok;
 }
 
@@ -194,6 +195,14 @@ sltab_query(stok_t *handle, slt_query_t qf, void *res)
 	mutex_exit(&handle->st_lock);
 }
 
+void
+sltab_set_cleanup(stok_t *handle, void (*cleanup)(slot_ent_t *))
+{
+	mutex_enter(&handle->st_lock);
+	handle->cleanup_entry = cleanup;
+	mutex_exit(&handle->st_lock);
+}
+
 int
 slot_delete(stok_t *handle, slot_ent_t *node)
 {
@@ -203,6 +212,8 @@ slot_delete(stok_t *handle, slot_ent_t *node)
 	cv_destroy(&node->se_wait);
 	mutex_destroy(&node->se_lock);
 	avl_remove(replaytree, node);
+	if (handle->cleanup_entry)
+		handle->cleanup_entry(node);
 	kmem_free(node, sizeof (*node));
 	node = NULL;
 	handle->st_fslots -= 1;

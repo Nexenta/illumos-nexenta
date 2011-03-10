@@ -403,6 +403,7 @@ typedef struct slot_tab_token {
 	avl_tree_t	  *st_sltab;	/* tree of 'currw' pointers */
 	kmutex_t	  st_lock;	/* cache lock; resize or destroy */
 	kcondvar_t	  st_wait;
+	void		(*cleanup_entry)(slot_ent_t *);
 } stok_t;
 
 typedef enum {
@@ -1749,6 +1750,7 @@ extern void		 sltab_create(stok_t **, int);
 extern int		 sltab_resize(stok_t *, int);
 extern void		 sltab_query(stok_t *, slt_query_t, void *);
 extern void		 sltab_destroy(stok_t *);
+extern void		 sltab_set_cleanup(stok_t *, void (*)(slot_ent_t *));
 extern int		 slot_alloc(stok_t *, slt_wait_t, slot_ent_t **);
 extern void		 slot_free(stok_t *, slot_ent_t *);
 extern int		 slot_mark(stok_t *, slotid4, sequenceid4);
