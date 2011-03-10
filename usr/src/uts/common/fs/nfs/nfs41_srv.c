@@ -178,7 +178,6 @@ static void	mds_op_commit(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
 static void	mds_op_create(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
-static void	mds_op_create_free(nfs_resop4 *resop);
 static void	mds_op_delegreturn(nfs_argop4 *, nfs_resop4 *,
 				struct svc_req *, compound_state_t *);
 static void	mds_op_getattr(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
