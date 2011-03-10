@@ -661,6 +661,12 @@ back:
 	}
 }
 
+static void
+rfs41_cleanup_slot(slot_ent_t *se)
+{
+	rfs41_compound_free((COMPOUND4res *)&se->se_buf);
+}
+
 /*
  * Create/Initialize the session for this rfs4_client_t. Also
  * create its slot replay cache as per the server's resource
@@ -837,6 +843,7 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 	 */
 	max_slots = ocp->cn_attrs.ca_maxrequests;
 	slrc_table_create(&sp->sn_replay, max_slots);
+	sltab_set_cleanup(sp->sn_replay, rfs41_cleanup_slot);
 
 	/* only initialize bits relevant to session scope */
 	bzero(&sp->sn_seq4, sizeof (bit_attr_t) * BITS_PER_WORD);
