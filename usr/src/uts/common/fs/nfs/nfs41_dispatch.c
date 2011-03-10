@@ -302,7 +302,7 @@ rfs41_slrc_epilogue(mds_session_t *sp, COMPOUND4args_srv *cap,
 			slt->se_state = SLRC_CACHED_PURGING;
 			DTRACE_PROBE2(nfss41__i__cache_evict,
 			    COMPOUND4res *, &slt->se_buf, slot_ent_t *, slt);
-			rfs41_compound_free((COMPOUND4res *)&slt->se_buf, cs);
+			rfs41_compound_free((COMPOUND4res *)&slt->se_buf);
 		}
 
 		/*
@@ -542,7 +542,7 @@ reply:
 
 out_free_res:
 	if (!saved && !replay)
-		rfs41_compound_free((COMPOUND4res *)rbp, cs);
+		rfs41_compound_free((COMPOUND4res *)rbp);
 out:
 	if (!saved && slt)
 		slrc_reset_slot_state(slt);

@@ -165,7 +165,7 @@ static sysid_t lockt_sysid;		/* dummy sysid for all LOCKT calls */
 
 void		rfs4_init_compound_state(struct compound_state *);
 
-static void	nullfree(nfs_resop4 *, compound_state_t *);
+static void	nullfree(nfs_resop4 *);
 static void	mds_op_inval(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
 static void	mds_op_notsup(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
@@ -182,15 +182,15 @@ static void	mds_op_delegreturn(nfs_argop4 *, nfs_resop4 *,
 				struct svc_req *, compound_state_t *);
 static void	mds_op_getattr(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
-static void	mds_op_getattr_free(nfs_resop4 *, compound_state_t *);
+static void	mds_op_getattr_free(nfs_resop4 *);
 static void	mds_op_getfh(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
-static void	mds_op_getfh_free(nfs_resop4 *, compound_state_t *);
+static void	mds_op_getfh_free(nfs_resop4 *);
 static void	mds_op_link(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
 static void	mds_op_lock(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
-static void	mds_lock_denied_free(nfs_resop4 *, compound_state_t *);
+static void	mds_lock_denied_free(nfs_resop4 *);
 static void	mds_op_locku(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
 static void	mds_op_lockt(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
@@ -215,13 +215,13 @@ static void	mds_op_putrootfh(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
 static void	mds_op_read(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
-static void	mds_op_read_free(nfs_resop4 *, compound_state_t *);
+static void	mds_op_read_free(nfs_resop4 *);
 void		mds_op_readdir(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
-static void	mds_op_readdir_free(nfs_resop4 *, compound_state_t *);
+static void	mds_op_readdir_free(nfs_resop4 *);
 static void	mds_op_readlink(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
-static void	mds_op_readlink_free(nfs_resop4 *, compound_state_t *);
+static void	mds_op_readlink_free(nfs_resop4 *);
 static void	mds_op_release_lockowner(nfs_argop4 *, nfs_resop4 *,
 			struct svc_req *, compound_state_t *);
 static void	mds_op_remove(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
@@ -242,7 +242,7 @@ static void	mds_op_write(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
 static void	mds_op_exchange_id(nfs_argop4 *, nfs_resop4 *,
 			struct svc_req *, compound_state_t *);
-static void	mds_op_exid_free(nfs_resop4 *, compound_state_t *);
+static void	mds_op_exid_free(nfs_resop4 *);
 static void	mds_op_secinfo(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			compound_state_t *);
 static void	mds_op_secinfonn(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
@@ -250,7 +250,7 @@ static void	mds_op_secinfonn(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 nfsstat4	do_rfs4_op_secinfo(struct compound_state *, char *, int,
     SECINFO4res *);
 
-static void	mds_op_secinfo_free(nfs_resop4 *, compound_state_t *);
+static void	mds_op_secinfo_free(nfs_resop4 *);
 
 static void	mds_op_backchannel_ctl(nfs_argop4 *, nfs_resop4 *,
 			struct svc_req *, compound_state_t *);
@@ -273,7 +273,7 @@ static void mds_op_get_devinfo(nfs_argop4 *, nfs_resop4 *,
 
 static void mds_op_layout_get(nfs_argop4 *, nfs_resop4 *,
 		struct svc_req *, compound_state_t *);
-static void mds_op_layout_get_free(nfs_resop4 *, compound_state_t *);
+static void mds_op_layout_get_free(nfs_resop4 *);
 
 static void mds_op_layout_commit(nfs_argop4 *, nfs_resop4 *,
 		struct svc_req *, compound_state_t *);
@@ -290,7 +290,7 @@ nfsstat4 check_open_access(uint32_t,
 			struct compound_state *, struct svc_req *);
 nfsstat4 rfs4_client_sysid(rfs4_client_t *, sysid_t *);
 
-static void	mds_free_reply(nfs_resop4 *, compound_state_t *);
+static void	mds_free_reply(nfs_resop4 *);
 
 vnode_t *do_rfs4_op_mknod(CREATE4args *, CREATE4res *, struct svc_req *,
 			struct compound_state *, vattr_t *, char *);
@@ -403,7 +403,7 @@ mds_op_inval(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 /*ARGSUSED*/
 static void
-nullfree(nfs_resop4 *resop, compound_state_t *cs)
+nullfree(nfs_resop4 *resop)
 {
 }
 
@@ -484,7 +484,7 @@ extern size_t strlcpy(char *dst, const char *src, size_t dstsize);
 
 /*ARGSUSED*/
 static void
-mds_op_readdir_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_readdir_free(nfs_resop4 *resop)
 {
 	/* Common function used for NFSv4.0 and NFSv4.1 */
 	rfs4_op_readdir_free(resop);
@@ -492,7 +492,7 @@ mds_op_readdir_free(nfs_resop4 *resop, compound_state_t *cs)
 
 /*ARGSUSED*/
 static void
-mds_op_secinfo_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_secinfo_free(nfs_resop4 *resop)
 {
 	/* Common function used for NFSv4.0 and NFSv4.1 */
 	rfs4_op_secinfo_free(resop);
@@ -1857,7 +1857,7 @@ final:
 
 /*ARGSUSED*/
 void
-mds_op_getattr_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_getattr_free(nfs_resop4 *resop)
 {
 	/* Common function for NFSv4.0 and NFSv4.1 */
 	rfs4_op_getattr_free(resop);
@@ -1913,7 +1913,7 @@ final:
 
 /*ARGSUSED*/
 static void
-mds_op_getfh_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_getfh_free(nfs_resop4 *resop)
 {
 	/* Common function for NFSv4.0 and NFSv4.1 */
 	rfs4_op_getfh_free(resop);
@@ -2742,7 +2742,7 @@ final:
 
 /*ARGSUSED*/
 static void
-mds_op_read_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_read_free(nfs_resop4 *resop)
 {
 	/* Common function for NFSv4.0 and NFSv4.1 */
 	rfs4_op_read_free(resop);
@@ -3137,7 +3137,7 @@ final:
 
 /*ARGSUSED*/
 static void
-mds_op_readlink_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_readlink_free(nfs_resop4 *resop)
 {
 	/* Common function used for NFSv4.0 and NFSv4.1 */
 	rfs4_op_readlink_free(resop);
@@ -4398,7 +4398,7 @@ out:
 }
 
 void
-rfs41_compound_free(COMPOUND4res *resp, compound_state_t *cs)
+rfs41_compound_free(COMPOUND4res *resp)
 {
 	uint_t i;
 
@@ -4413,7 +4413,7 @@ rfs41_compound_free(COMPOUND4res *resp, compound_state_t *cs)
 		resop = &resp->array[i];
 		op = (uint_t)resop->resop;
 		if (op < OP_ILLEGAL_IDX) {
-			(*mds_disptab[op].dis_resfree)(resop, cs);
+			(*mds_disptab[op].dis_resfree)(resop);
 		}
 	}
 
@@ -5804,7 +5804,7 @@ final:
 
 /*ARGSUSED*/
 static void
-mds_free_reply(nfs_resop4 *resop, compound_state_t *cs)
+mds_free_reply(nfs_resop4 *resop)
 {
 	/* Common function for NFSv4.0 and NFSv4.1 */
 	rfs4_free_reply(resop);
@@ -6456,7 +6456,7 @@ final:
 /* free function for LOCK/LOCKT */
 /*ARGSUSED*/
 static void
-mds_lock_denied_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_lock_denied_free(nfs_resop4 *resop)
 {
 	/* Common function for NFSv4.0 and NFSv4.1 */
 	lock_denied_free(resop);
@@ -7272,7 +7272,7 @@ mds_clean_up_trunkinfo(rfs4_client_t *cp)
 
 /*ARGSUSED*/
 static void
-mds_op_exid_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_exid_free(nfs_resop4 *resop)
 {
 	EXCHANGE_ID4res		*resp = &resop->nfs_resop4_u.opexchange_id;
 	EXCHANGE_ID4resok	*rok = &resp->EXCHANGE_ID4res_u.eir_resok4;
@@ -8863,7 +8863,7 @@ final:
  */
 /*ARGSUSED*/
 static void
-mds_op_layout_get_free(nfs_resop4 *resop, compound_state_t *cs)
+mds_op_layout_get_free(nfs_resop4 *resop)
 {
 	LAYOUTGET4res	*resp = &(resop->nfs_resop4_u.oplayoutget);
 	layout4 *lo =

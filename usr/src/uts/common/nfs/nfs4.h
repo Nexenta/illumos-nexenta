@@ -1437,7 +1437,7 @@ typedef struct compound_state {
 	int		post_proc;
 } compound_state_t;
 
-void rfs41_compound_free(COMPOUND4res *, compound_state_t *);
+void rfs41_compound_free(COMPOUND4res *);
 extern	void		rfs4_init_compound_state(struct compound_state *);
 extern	compound_state_t *
     rfs41_compound_state_alloc(nfs_server_instance_t *);
@@ -1479,7 +1479,7 @@ typedef enum {
 typedef struct {
 	void    (*dis_op)(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 	    compound_state_t *);
-	void    (*dis_resfree)(nfs_resop4 *, compound_state_t *);
+	void    (*dis_resfree)(nfs_resop4 *);
 	op_disp_valid_t	op_flag;
 	char    *op_name;
 } op_disp_tbl_t;
