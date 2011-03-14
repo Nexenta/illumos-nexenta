@@ -1426,7 +1426,6 @@ typedef struct compound_state {
 	/* additions for NFSv4.1 */
 	slotid4		slotno;
 	sequenceid4	seqid;
-	int		sequenced;
 	mds_session_t	*sp;
 	rfs4_client_t   *cp;
 	int		op_ndx;

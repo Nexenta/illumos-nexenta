@@ -7971,17 +7971,6 @@ mds_op_sequence(nfs_argop4 *argop, nfs_resop4 *resop,
 	    struct compound_state *, cs,
 	    SEQUENCE4args *, args);
 
-	if (cs->sequenced > 1) {
-		/*
-		 * Spec Error ! If we detect a multi-SEQUENCE
-		 * compound we halt processing here.
-		 */
-		*cs->statusp = resp->sr_status = NFS4ERR_SEQUENCE_POS;
-		goto final;
-	}
-
-	cs->sequenced++;
-
 	if ((status = mds_lease_chk(sp)) != NFS4_OK) {
 		*cs->statusp = resp->sr_status = status;
 		goto final;
@@ -9360,11 +9349,11 @@ seq_chk_limits(nfs_argop4 *argop, nfs_resop4 *resop, compound_state_t *cs)
 	attrmap4	 am;
 
 	ASSERT(cs != NULL);
-	if (!cs->sequenced)
+	if (!cs->sp)
 		return (0);
 
 	ASSERT(argop->argop == resop->resop);
-	ASSERT(cs->sp != NULL && cs->sp->sn_fore != NULL);
+	ASSERT(cs->sp->sn_fore != NULL);
 
 	fcp = cs->sp->sn_fore;
 	switch (argop->argop) {
