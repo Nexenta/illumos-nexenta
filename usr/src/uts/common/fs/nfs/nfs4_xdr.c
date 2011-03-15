@@ -4571,12 +4571,8 @@ xdr_snfs_argop4(XDR *xdrs, nfs_argop4 *objp, COMPOUND4args_srv *ap)
 			    &objp->nfs_argop4_u.opputfh.object));
 
 	case OP_SEQUENCE:
-		if (xdr_SEQUENCE4args(xdrs, &objp->nfs_argop4_u.opsequence)) {
-			ap->sargs = &objp->nfs_argop4_u.opsequence;
-			return (TRUE);
-		}
-		ap->sargs = NULL;
-		return (FALSE);
+		return (xdr_SEQUENCE4args(xdrs, &objp->nfs_argop4_u.opsequence));
+
 	default:
 		return (xdr_nfs_argop4_minorversion_0(xdrs, objp));
 	}
@@ -5161,7 +5157,7 @@ xdr_COMPOUND4args_srv(XDR *xdrs, COMPOUND4args_srv *objp)
 		/*
 		 * Alloc the arguments array
 		 */
-		objp->sargs = objp->slp = NULL;
+		objp->slp = NULL;
 		len = objp->array_len * sizeof (nfs_argop4);
 		objp->array = argop = kmem_zalloc(len, KM_SLEEP);
 		for (len = 0; len < objp->array_len; len++, argop++) {

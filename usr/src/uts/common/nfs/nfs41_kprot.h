@@ -1394,7 +1394,6 @@ struct COMPOUND4args_srv {
 	uint32_t	minorversion;
 	uint_t		array_len;
 	nfs_argop4	*array;
-	SEQUENCE4args	*sargs;		/* server internal only */
 	void		*slp;
 };
 typedef struct COMPOUND4args_srv COMPOUND4args_srv;
