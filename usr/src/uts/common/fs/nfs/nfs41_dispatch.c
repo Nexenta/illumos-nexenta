@@ -279,18 +279,14 @@ rfs41_slrc_cache_contrived(slot_ent_t *slp, COMPOUND4res_srv *rsp)
 
 /* Return true if resp was saved in the slot hash */
 int
-rfs41_slrc_epilogue(mds_session_t *sp, COMPOUND4args_srv *cap,
+rfs41_slrc_epilogue(mds_session_t *sp, slot_ent_t *slt,
     COMPOUND4res_srv *resp, compound_state_t *cs)
 {
 	int		 saved = 0;
-	stok_t		*handle = sp->sn_replay;
-	slot_ent_t	*slt = NULL;
-	slotid4		 slot = cap->sargs->sa_slotid;
 
 	/* compute SEQ4 flags before caching response */
 	rfs41_compute_seq4_flags((COMPOUND4res *)resp, cs);
 
-	slt = slrc_slot_get(handle, slot);
 	mutex_enter(&slt->se_lock);
 	switch (slt->se_state) {
 	case SLRC_INPROG_NEWREQ:
@@ -521,7 +517,7 @@ slrc:
 			 */
 			DTRACE_PROBE1(nfss41__i__dispatch, COMPOUND4res *, rbp);
 		} else {
-			saved = rfs41_slrc_epilogue(cs->sp, cap, rbp, cs);
+			saved = rfs41_slrc_epilogue(cs->sp, slt, rbp, cs);
 		}
 	}
 
