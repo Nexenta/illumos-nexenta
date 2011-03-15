@@ -121,28 +121,27 @@ seqop_failed(COMPOUND4res_srv *resp)
  * If this function successfully completes the compound state
  * will contain a session pointer.
  */
-nfsstat4
-rfs41_find_and_set_session(COMPOUND4args_srv *ap, struct compound_state *cs)
+static nfsstat4
+rfs41_find_and_set_session(SEQUENCE4args *sargs, struct compound_state *cs)
 {
 	mds_session_t	*sp;
 	slotid4		 slot;
 
-	ASSERT(ap != NULL);
-	ASSERT(ap->sargs != NULL);
+	ASSERT(sargs != NULL);
 
 	cs->sp = NULL;
 
 	if ((sp = mds_findsession_by_id(cs->instp,
-	    ap->sargs->sa_sessionid)) == NULL)
+	    sargs->sa_sessionid)) == NULL)
 		return (NFS4ERR_BADSESSION);
 
-	slot = ap->sargs->sa_slotid;
+	slot = sargs->sa_slotid;
 	if (slot < 0 || slot >= sp->sn_replay->st_currw) {
 		rfs41_session_rele(sp);
 		return (NFS4ERR_BADSLOT);
 	}
 	cs->sp = sp;
-	cs->sact = ap->sargs->sa_cachethis;
+	cs->sact = sargs->sa_cachethis;
 	return (NFS4_OK);
 }
 
@@ -457,42 +456,39 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 	 * we handle it via mds_compound().
 	 */
 	if (cap->array_len && cap->array[0].argop == OP_SEQUENCE) {
+		SEQUENCE4args *sargs = &cap->array[0].nfs_argop4_u.opsequence;
+
+		if (error = rfs41_find_and_set_session(sargs, cs)) {
+			rbp->status = error;
+			seqop_error(cap, (COMPOUND4res *)rbp);
+			goto reply;
+		}
+
+		switch (rfs41_slrc_prologue(cs->sp, cap, &rbp, &slt)) {
+		case SEQRES_NEWREQ:
+			break;
+
+		case SEQRES_REPLAY:
+			replay = 1;
+			goto reply;
+
 		/*
-		 * sargs will be set by the XDR decode function
+		 *  Bad cases
 		 */
-		if (cap->sargs != NULL) {
-			if (error = rfs41_find_and_set_session(cap, cs)) {
-				rbp->status = error;
-				seqop_error(cap, (COMPOUND4res *)rbp);
-				goto reply;
-			}
+		case SEQRES_MISORD_REPLAY:
+		case SEQRES_MISORD_NEWREQ:
+			rbp->status = NFS4ERR_SEQ_MISORDERED;
+			seqop_error(cap, (COMPOUND4res *)rbp);
+			goto reply;
 
-			switch (rfs41_slrc_prologue(cs->sp, cap, &rbp, &slt)) {
-			case SEQRES_NEWREQ:
-				break;
-
-			case SEQRES_REPLAY:
-				replay = 1;
-				goto reply;
-
-			/*
-			 *  Bad cases
-			 */
-			case SEQRES_MISORD_REPLAY:
-			case SEQRES_MISORD_NEWREQ:
-				rbp->status = NFS4ERR_SEQ_MISORDERED;
-				seqop_error(cap, (COMPOUND4res *)rbp);
-				goto reply;
-
-			case SEQRES_BADSESSION:
-				cmn_err(CE_WARN,
-				    "rfs41_dispatch: SEQRES_BADSESSION");
-			default:
-				cmn_err(CE_WARN, "rfs41_dispatch: default");
-				rbp->status = NFS4ERR_BADSESSION;
-				seqop_error(cap, (COMPOUND4res *)rbp);
-				goto reply;
-			}
+		case SEQRES_BADSESSION:
+			cmn_err(CE_WARN,
+				"rfs41_dispatch: SEQRES_BADSESSION");
+		default:
+			cmn_err(CE_WARN, "rfs41_dispatch: default");
+			rbp->status = NFS4ERR_BADSESSION;
+			seqop_error(cap, (COMPOUND4res *)rbp);
+			goto reply;
 		}
 	}
 
