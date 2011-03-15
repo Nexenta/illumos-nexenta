@@ -7971,6 +7971,11 @@ mds_op_sequence(nfs_argop4 *argop, nfs_resop4 *resop,
 	    struct compound_state *, cs,
 	    SEQUENCE4args *, args);
 
+	if (cs->op_ndx != 0) {
+		*cs->statusp = resp->sr_status = NFS4ERR_SEQUENCE_POS;
+		goto final;
+	}
+
 	if ((status = mds_lease_chk(sp)) != NFS4_OK) {
 		*cs->statusp = resp->sr_status = status;
 		goto final;
