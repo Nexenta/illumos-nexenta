@@ -1721,6 +1721,7 @@ extern struct nfs4_ntov_map nfs40_ntov_map[];
 extern struct nfs4_ntov_map nfs41_ntov_map[];
 
 extern kstat_named_t	*rfsproccnt_v4_ptr;
+extern kstat_named_t	*rfsproccnt_v41_ptr;
 extern struct vfsops	*nfs4_vfsops;
 extern struct vnodeops	*nfs4_vnodeops;
 extern const struct	fs_operation_def nfs4_vnodeops_template[];

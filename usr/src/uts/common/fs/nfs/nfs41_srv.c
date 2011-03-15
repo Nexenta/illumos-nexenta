@@ -4203,7 +4203,7 @@ rfs41_op_dispatch(compound_state_t *cs,
 		 * or some bozo didn't update the operation dispatch
 		 * table.
 		 */
-		rfsproccnt_v4_ptr[OP_ILLEGAL_IDX].value.ui64++;
+		rfsproccnt_v41_ptr[OP_ILLEGAL_IDX].value.ui64++;
 
 		mds_op_illegal(argop, resop, req, cs);
 		DTRACE_PROBE(nfss41__e__operation_tilt);
