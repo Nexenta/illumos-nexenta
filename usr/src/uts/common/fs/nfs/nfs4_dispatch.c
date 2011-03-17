@@ -56,6 +56,8 @@ uint32_t nfs4_drc_hash = 541;
 
 static void rfs4_resource_err(struct svc_req *req, COMPOUND4args *argsp);
 
+int only_nfs41 = 1;
+
 /*
  * Initialize a duplicate request cache.
  */
@@ -622,6 +624,9 @@ rfs4_minor_version_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 		break;
 
 	case 0:
+		if (only_nfs41)
+			((COMPOUND4args *)ap)->minorversion = NFS4_MINOR_v1;
+
 		error = rfs4_dispatch(req, xprt, ap);
 		break;
 	}

@@ -165,7 +165,7 @@
 	   <propval name='protocol' type='astring' value='ALL'/>
 	   <propval name='server_delegation' type='astring' value='on'/>
 	   <propval name='server_versmax' type='integer' value='4'/>
-	   <propval name='server_versmin' type='integer' value='2'/>
+	   <propval name='server_versmin' type='integer' value='4'/>
 	   <propval name='servers' type='integer' value='16'/>
 	 </property_group>
 	</instance>
