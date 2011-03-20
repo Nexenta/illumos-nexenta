@@ -1838,6 +1838,7 @@ mds_op_getattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
+	bzero(&sarg, sizeof(struct nfs4_svgetit_arg));
 	sarg.sbp = &sb;
 	sarg.cs = cs;
 
