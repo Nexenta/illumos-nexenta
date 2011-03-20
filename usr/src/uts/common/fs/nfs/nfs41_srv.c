@@ -1845,9 +1845,13 @@ mds_op_getattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	status = attrmap4_to_vattrmask(&args->attr_request, &sarg);
 	if (status == NFS4_OK) {
 		status = bitmap4_get_sysattrs(&sarg);
-		if (status == NFS4_OK)
+		if (status == NFS4_OK) {
+			if (vn_is_nfs_reparse(cs->vp, cs->cr))
+				sarg.is_referral = B_TRUE;
+
 			status = do_rfs4_op_getattr(&args->attr_request,
 			    &resp->obj_attributes, &sarg);
+		}
 	}
 	*cs->statusp = resp->status = status;
 
