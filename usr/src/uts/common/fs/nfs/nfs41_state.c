@@ -1147,10 +1147,7 @@ mds_gen_default_layout(nfs_server_instance_t *instp)
 		return (NULL);
 	}
 
-	/*
-	 * XXX: What if found != stripe_count ?
-	 */
-
+	gap.lc.lc_stripe_count = gap.found;
 	gap.lc.lc_stripe_unit = mds_default_stripe * 1024;
 
 	rw_enter(&instp->mds_layout_lock, RW_WRITER);
