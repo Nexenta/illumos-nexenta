@@ -1122,19 +1122,18 @@ mds_gen_default_layout(nfs_server_instance_t *instp)
 {
 	struct mds_gather_args	gap;
 	mds_layout_t		*lp;
-
 	int			i;
+	int num = instp->ds_guid_info_count;
 
 	bzero(&gap, sizeof (gap));
 
 	gap.found = 0;
 
 	rw_enter(&instp->ds_guid_info_lock, RW_READER);
-	gap.lc.lc_stripe_count = instp->ds_guid_info_count;
+	gap.lc.lc_stripe_count = num;
 	rw_exit(&instp->ds_guid_info_lock);
 
-	gap.lc.lc_mds_sids = kmem_zalloc(gap.lc.lc_stripe_count *
-	    sizeof (mds_sid), KM_SLEEP);
+	gap.lc.lc_mds_sids = kmem_zalloc(num * sizeof (mds_sid), KM_SLEEP);
 
 	rw_enter(&instp->ds_guid_info_lock, RW_READER);
 	rfs4_dbe_walk(instp->ds_guid_info_tab, mds_gather_mds_sids, &gap);
@@ -1144,8 +1143,7 @@ mds_gen_default_layout(nfs_server_instance_t *instp)
 	 * If we didn't find any devices then we do no service
 	 */
 	if (gap.found == 0) {
-		kmem_free(gap.lc.lc_mds_sids, gap.lc.lc_stripe_count *
-		    sizeof (mds_sid));
+		kmem_free(gap.lc.lc_mds_sids, num * sizeof (mds_sid));
 		return (NULL);
 	}
 
@@ -1163,13 +1161,12 @@ mds_gen_default_layout(nfs_server_instance_t *instp)
 	}
 	rw_exit(&instp->mds_layout_lock);
 
-	for (i = 0; i < gap.lc.lc_stripe_count; i++) {
+	for (i = 0; i < num; i++) {
 		kmem_free(gap.lc.lc_mds_sids[i].val,
 		    gap.lc.lc_mds_sids[i].len);
 	}
 
-	kmem_free(gap.lc.lc_mds_sids, gap.lc.lc_stripe_count *
-	    sizeof (mds_sid));
+	kmem_free(gap.lc.lc_mds_sids, num * sizeof (mds_sid));
 	return (lp);
 }
 
