@@ -3316,6 +3316,10 @@ ds_guid_info_destroy(rfs4_entry_t u_entry)
 	instp = dbe_to_instp(u_entry->dbe);
 
 	rw_enter(&instp->ds_guid_info_lock, RW_WRITER);
+
+	ASSERT(mds_server->ds_guid_info_count > 0);
+	mds_server->ds_guid_info_count--;
+
 	if (pgi->ds_owner) {
 		list_remove(&pgi->ds_owner->ds_guid_list, pgi);
 		rfs4_dbe_rele(pgi->ds_owner->dbe);

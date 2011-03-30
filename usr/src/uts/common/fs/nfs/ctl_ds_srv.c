@@ -1186,12 +1186,6 @@ ds_exchange(DS_EXIBIargs *argp, DS_EXIBIres *resp, struct svc_req *rqstp)
 			while (pgi = list_head(&dop->ds_guid_list)) {
 				list_remove(&dop->ds_guid_list, pgi);
 
-				/*
-				 * XXX: Hack alert!
-				 */
-				ASSERT(mds_server->ds_guid_info_count > 0);
-				mds_server->ds_guid_info_count--;
-
 				pgi->ds_owner = NULL;
 				rfs4_dbe_rele(dop->dbe);
 				rfs4_dbe_invalidate(pgi->dbe);
