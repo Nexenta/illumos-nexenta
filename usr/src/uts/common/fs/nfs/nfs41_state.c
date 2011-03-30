@@ -3225,7 +3225,6 @@ ds_guid_info_create(rfs4_entry_t u_entry, void *arg)
 	rfs4_dbe_hold(pgi->ds_owner->dbe);
 
 	list_insert_tail(&pgi->ds_owner->ds_guid_list, pgi);
-	rfs4_dbe_hold(pgi->dbe);
 
 	/* Only supported type is ZFS */
 	ASSERT(pic->si->type == ZFS);
