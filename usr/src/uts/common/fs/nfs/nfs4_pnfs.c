@@ -4646,7 +4646,7 @@ int pnfs_collect_layoutstats(struct pnfs_getflo_args *args,
 		while (flayout) {
 			if (flayout->plo_flags & (PLO_BAD|PLO_UNAVAIL)) {
 				flayout = list_next(&rp->r_layout, flayout);
-				los++;
+				continue;
 			}
 
 			los->plo_stripe_count =
