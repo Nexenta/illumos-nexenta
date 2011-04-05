@@ -66,8 +66,8 @@ file path=etc/default/nfs group=sys original_name=SUNWnfsc:etc/default/nfs \
 file path=etc/fs/nfs/mount mode=0555
 file path=etc/nfssec.conf group=sys original_name=SUNWnfsc:etc/nfssec.conf \
     preserve=true
-file path=kernel/drv/$(ARCH64)/dserv group=sys
-$(i386_ONLY)file path=kernel/drv/dserv group=sys
+file path=kernel/drv/$(ARCH64)/dserv group=sys mode=0755
+$(i386_ONLY)file path=kernel/drv/dserv group=sys mode=0755
 file path=kernel/fs/$(ARCH64)/nfs group=sys mode=0755
 $(i386_ONLY)file path=kernel/fs/nfs group=sys mode=0755
 file path=kernel/misc/$(ARCH64)/klmmod group=sys mode=0755
