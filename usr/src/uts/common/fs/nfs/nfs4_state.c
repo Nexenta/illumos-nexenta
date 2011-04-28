@@ -3208,45 +3208,56 @@ out:
 }
 
 static nfsstat4
+check_state_seqid(stateid_t *st, stateid_t *in)
+{
+	/* Seqid in the future? - that's bad */
+	if (st->v4_bits.chgseq < in->v4_bits.chgseq)
+		return (NFS4ERR_BAD_STATEID);
+
+	/* Seqid in the past? - that's old */
+	if (st->v4_bits.chgseq > in->v4_bits.chgseq)
+		return (NFS4ERR_OLD_STATEID);
+
+	return (NFS4_OK);
+}
+
+static nfsstat4
 check_state_lockid(rfs4_lo_state_t *lsp, caller_context_t *ct,
     stateid_t *id, vnode_t *vp)
 {
+	nfsstat4 status = NFS4_OK;
+
 	/* Is associated server instance in its grace period? */
 	if (rfs4_clnt_in_grace(lsp->rls_locker->rl_client)) {
-		rfs4_lo_state_rele(lsp, FALSE);
-		return (NFS4ERR_GRACE);
+		status = NFS4ERR_GRACE;
+		goto out;
 	}
-	/* Seqid in the future? - that's bad */
-	if (lsp->rls_lockid.v4_bits.chgseq <
-	    id->v4_bits.chgseq) {
-		rfs4_lo_state_rele(lsp, FALSE);
-		return (NFS4ERR_BAD_STATEID);
-	}
-	/* Seqid in the past? - that's old */
-	if (lsp->rls_lockid.v4_bits.chgseq >
-	    id->v4_bits.chgseq) {
-		rfs4_lo_state_rele(lsp, FALSE);
-		return (NFS4ERR_OLD_STATEID);
-	}
+
+	status = check_state_seqid(&lsp->rls_lockid, id);
+	if (status)
+		goto out;
+
 	/* Ensure specified filehandle matches */
 	if (lsp->rls_state->rs_finfo->rf_vp != vp) {
-		rfs4_lo_state_rele(lsp, FALSE);
-		return (NFS4ERR_BAD_STATEID);
+		status = NFS4ERR_BAD_STATEID;
+		goto out;
 	}
 
 	if (ct != NULL) {
 		ct->cc_sysid = lsp->rls_locker->rl_client->rc_sysidt;
 		ct->cc_pid = lsp->rls_locker->rl_pid;
 	}
-
+out:
 	rfs4_lo_state_rele(lsp, FALSE);
-	return (NFS4_OK);
+	return (status);
 }
 
 static nfsstat4
 check_state_openid(rfs4_state_t *sp,  vnode_t *vp, stateid_t *id,
     clientid4 *cid)
 {
+	nfsstat4 status;
+
 	if (cid) {
 		rfs4_dbe_lock(sp->rs_owner->ro_client->rc_dbe);
 		*cid = sp->rs_owner->ro_client->rc_clientid;
@@ -3257,13 +3268,9 @@ check_state_openid(rfs4_state_t *sp,  vnode_t *vp, stateid_t *id,
 	if (rfs4_clnt_in_grace(sp->rs_owner->ro_client))
 		return (NFS4ERR_GRACE);
 
-	/* Seqid in the future? - that's bad */
-	if (sp->rs_stateid.v4_bits.chgseq < id->v4_bits.chgseq)
-		return (NFS4ERR_BAD_STATEID);
-
-	/* Seqid in the past - that's old */
-	if (sp->rs_stateid.v4_bits.chgseq > id->v4_bits.chgseq)
-		return (NFS4ERR_OLD_STATEID);
+	status = check_state_seqid(&sp->rs_stateid, id);
+	if (status)
+		return (status);
 
 	/* Ensure specified filehandle matches */
 	if (sp->rs_finfo->rf_vp != vp)
