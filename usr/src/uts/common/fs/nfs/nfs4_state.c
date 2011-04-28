@@ -3208,8 +3208,11 @@ out:
 }
 
 static nfsstat4
-check_state_seqid(stateid_t *st, stateid_t *in)
+check_state_seqid(stateid_t *st, stateid_t *in, bool_t has_session)
 {
+	if (has_session && in->v4_bits.chgseq == 0)
+		return (NFS4_OK);
+
 	/* Seqid in the future? - that's bad */
 	if (st->v4_bits.chgseq < in->v4_bits.chgseq)
 		return (NFS4ERR_BAD_STATEID);
@@ -3223,7 +3226,7 @@ check_state_seqid(stateid_t *st, stateid_t *in)
 
 static nfsstat4
 check_state_lockid(rfs4_lo_state_t *lsp, caller_context_t *ct,
-    stateid_t *id, vnode_t *vp)
+    stateid_t *id, vnode_t *vp, bool_t has_session)
 {
 	nfsstat4 status = NFS4_OK;
 
@@ -3233,7 +3236,7 @@ check_state_lockid(rfs4_lo_state_t *lsp, caller_context_t *ct,
 		goto out;
 	}
 
-	status = check_state_seqid(&lsp->rls_lockid, id);
+	status = check_state_seqid(&lsp->rls_lockid, id, has_session);
 	if (status)
 		goto out;
 
@@ -3254,7 +3257,7 @@ out:
 
 static nfsstat4
 check_state_openid(rfs4_state_t *sp,  vnode_t *vp, stateid_t *id,
-    clientid4 *cid)
+    clientid4 *cid, bool_t has_session)
 {
 	nfsstat4 status;
 
@@ -3268,7 +3271,7 @@ check_state_openid(rfs4_state_t *sp,  vnode_t *vp, stateid_t *id,
 	if (rfs4_clnt_in_grace(sp->rs_owner->ro_client))
 		return (NFS4ERR_GRACE);
 
-	status = check_state_seqid(&sp->rs_stateid, id);
+	status = check_state_seqid(&sp->rs_stateid, id, has_session);
 	if (status)
 		return (status);
 
@@ -3306,6 +3309,7 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 	rfs4_lo_state_t *lsp;
 	stateid_t *id = (stateid_t *)stateid;
 	nfsstat4 stat = NFS4_OK;
+	bool_t has_session = (cs->sp != NULL);
 
 	if (ct != NULL) {
 		ct->cc_sysid = 0;
@@ -3345,7 +3349,7 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		if (cid)
 			*cid = lsp->rls_locker->rl_client->rc_clientid;
 
-		stat = check_state_lockid(lsp, ct, id, vp);
+		stat = check_state_lockid(lsp, ct, id, vp, has_session);
 		if (stat) {
 			if (sp)
 				rfs4_state_rele_nounlock(sp);
@@ -3362,7 +3366,7 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		 * ie. Skip if we got here via the LOCKID.
 		 */
 		if (id->v4_bits.type == OPENID) {
-			stat = check_state_openid(sp, vp, id, cid);
+			stat = check_state_openid(sp, vp, id, cid, has_session);
 			if (stat) {
 				rfs4_state_rele_nounlock(sp);
 				return (stat);
