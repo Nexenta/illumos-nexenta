@@ -3251,7 +3251,6 @@ check_state_lockid(rfs4_lo_state_t *lsp, caller_context_t *ct,
 		ct->cc_pid = lsp->rls_locker->rl_pid;
 	}
 out:
-	rfs4_lo_state_rele(lsp, FALSE);
 	return (status);
 }
 
@@ -3351,10 +3350,12 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 
 		stat = check_state_lockid(lsp, ct, id, vp, has_session);
 		if (stat) {
+			rfs4_lo_state_rele(lsp, FALSE);
 			if (sp)
 				rfs4_state_rele_nounlock(sp);
 			return (stat);
 		}
+		rfs4_lo_state_rele(lsp, FALSE);
 	}
 
 	/*
