@@ -3243,6 +3243,35 @@ check_state_lockid(rfs4_lo_state_t *lsp, caller_context_t *ct,
 	return (NFS4_OK);
 }
 
+static nfsstat4
+check_state_openid(rfs4_state_t *sp,  vnode_t *vp, stateid_t *id,
+    clientid4 *cid)
+{
+	if (cid) {
+		rfs4_dbe_lock(sp->rs_owner->ro_client->rc_dbe);
+		*cid = sp->rs_owner->ro_client->rc_clientid;
+		rfs4_dbe_unlock(sp->rs_owner->ro_client->rc_dbe);
+	}
+
+	/* Is associated server instance in its grace period? */
+	if (rfs4_clnt_in_grace(sp->rs_owner->ro_client))
+		return (NFS4ERR_GRACE);
+
+	/* Seqid in the future? - that's bad */
+	if (sp->rs_stateid.v4_bits.chgseq < id->v4_bits.chgseq)
+		return (NFS4ERR_BAD_STATEID);
+
+	/* Seqid in the past - that's old */
+	if (sp->rs_stateid.v4_bits.chgseq > id->v4_bits.chgseq)
+		return (NFS4ERR_OLD_STATEID);
+
+	/* Ensure specified filehandle matches */
+	if (sp->rs_finfo->rf_vp != vp)
+		return (NFS4ERR_BAD_STATEID);
+
+	return (NFS4_OK);
+}
+
 /*
  * Given the I/O mode (FREAD or FWRITE), the vnode, the stateid and whether
  * the file is being truncated, return NFS4_OK if allowed or appropriate
@@ -3326,33 +3355,10 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		 * ie. Skip if we got here via the LOCKID.
 		 */
 		if (id->v4_bits.type == OPENID) {
-			if (cid) {
-				rfs4_dbe_lock(sp->rs_owner->ro_client->rc_dbe);
-				*cid = sp->rs_owner->ro_client->rc_clientid;
-				rfs4_dbe_unlock(sp->rs_owner->
-				    ro_client->rc_dbe);
-			}
-			/* Is associated server instance in its grace period? */
-			if (rfs4_clnt_in_grace(sp->rs_owner->ro_client)) {
+			stat = check_state_openid(sp, vp, id, cid);
+			if (stat) {
 				rfs4_state_rele_nounlock(sp);
-				return (NFS4ERR_GRACE);
-			}
-			/* Seqid in the future? - that's bad */
-			if (sp->rs_stateid.v4_bits.chgseq <
-			    id->v4_bits.chgseq) {
-				rfs4_state_rele_nounlock(sp);
-				return (NFS4ERR_BAD_STATEID);
-			}
-			/* Seqid in the past - that's old */
-			if (sp->rs_stateid.v4_bits.chgseq >
-			    id->v4_bits.chgseq) {
-				rfs4_state_rele_nounlock(sp);
-				return (NFS4ERR_OLD_STATEID);
-			}
-			/* Ensure specified filehandle matches */
-			if (sp->rs_finfo->rf_vp != vp) {
-				rfs4_state_rele_nounlock(sp);
-				return (NFS4ERR_BAD_STATEID);
+				return (stat);
 			}
 		}
 		if (sp->rs_owner->ro_need_confirm) {
