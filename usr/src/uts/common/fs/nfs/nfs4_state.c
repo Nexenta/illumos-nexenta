@@ -3275,11 +3275,6 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		}
 		/* Is associated server instance in its grace period? */
 		if (rfs4_clnt_in_grace(lsp->rls_locker->rl_client)) {
-			if (ct != NULL) {
-				ct->cc_sysid =
-				    lsp->rls_locker->rl_client->rc_sysidt;
-				ct->cc_pid = lsp->rls_locker->rl_pid;
-			}
 			rfs4_lo_state_rele(lsp, FALSE);
 			if (sp != NULL)
 				rfs4_state_rele_nounlock(sp);
@@ -3307,6 +3302,11 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 			if (sp != NULL)
 				rfs4_state_rele_nounlock(sp);
 			return (NFS4ERR_BAD_STATEID);
+		}
+
+		if (ct != NULL) {
+			ct->cc_sysid = lsp->rls_locker->rl_client->rc_sysidt;
+			ct->cc_pid = lsp->rls_locker->rl_pid;
 		}
 		rfs4_lo_state_rele(lsp, FALSE);
 	}
