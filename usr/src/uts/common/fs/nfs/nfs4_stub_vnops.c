@@ -1434,7 +1434,7 @@ nfs4_fetch_locations(mntinfo4_t *mi, nfs4_sharedfh_t *sfh, char *nm,
 	 * PUTFH LOOKUP GETATTR
 	 */
 	cp = nfs4_call_init(TAG_GETATTR_FSLOCATION, OP_CLOSE, OH_OTHER, TRUE,
-			mi, NULL, NULL, cr);
+	    mi, NULL, NULL, cr);
 
 	/* 0. putfh file */
 	(void) nfs4_op_cputfh(cp, sfh);

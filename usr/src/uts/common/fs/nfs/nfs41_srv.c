@@ -1838,7 +1838,7 @@ mds_op_getattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
-	bzero(&sarg, sizeof(struct nfs4_svgetit_arg));
+	bzero(&sarg, sizeof (struct nfs4_svgetit_arg));
 	sarg.sbp = &sb;
 	sarg.cs = cs;
 
@@ -1887,7 +1887,7 @@ mds_op_getfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
-        /* check for reparse point at the share point */
+	/* check for reparse point at the share point */
 	if (cs->exi->exi_moved || vn_is_nfs_reparse(cs->exi->exi_vp, cs->cr)) {
 		/* it's all bad */
 		cs->exi->exi_moved = 1;
@@ -1898,7 +1898,8 @@ mds_op_getfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	}
 
 	/* check for reparse point at vp */
-	if (vn_is_nfs_reparse(cs->vp, cs->cr) && !client_is_downrev(cs->instp, req)) {
+	if (vn_is_nfs_reparse(cs->vp, cs->cr) &&
+	    !client_is_downrev(cs->instp, req)) {
 		/* it's not all bad */
 		*cs->statusp = resp->status = NFS4ERR_MOVED;
 		DTRACE_PROBE2(nfs41serv__func__referral__moved,
@@ -4548,8 +4549,8 @@ mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
 	return (status);
 }
 
-static inline struct fattr4 *args_to_fattr(OPEN4args *args,
-					   createmode4 mode)
+static inline struct fattr4 *
+args_to_fattr(OPEN4args *args, createmode4 mode)
 {
 	struct fattr4 *fattr;
 
@@ -4560,7 +4561,7 @@ static inline struct fattr4 *args_to_fattr(OPEN4args *args,
 	else
 		fattr = &args->createhow4_u.createattrs;
 
-	return fattr;
+	return (fattr);
 }
 
 /*
@@ -4648,7 +4649,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	NFS4_SET_FATTR4_CHANGE(cinfo->before, bva.va_ctime);
 
 	vap = sarg.vap;
-	bzero(vap, sizeof(vattr_t));
+	bzero(vap, sizeof (vattr_t));
 
 	if (mode == GUARDED4 || mode == UNCHECKED4 || mode == EXCLUSIVE4_1) {
 		struct nfs4_ntov_table ntov;
@@ -4659,8 +4660,8 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 
 		nfs4_ntov_table_init(&ntov, avers);
 		status = do_rfs4_set_attrs(attrset, fattr,
-					cs, &sarg, &ntov, NFS4ATTR_SETIT);
- 		nfs4_ntov_table_free(&ntov, &sarg);
+		    cs, &sarg, &ntov, NFS4ATTR_SETIT);
+		nfs4_ntov_table_free(&ntov, &sarg);
 
 		if (status != NFS4_OK)
 			goto err_free;
@@ -4946,7 +4947,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 err_free:
 	kmem_free(nm, buflen);
 	*attrset = NFS4_EMPTY_ATTRMAP(avers);
-	return status;
+	return (status);
 }
 
 /*

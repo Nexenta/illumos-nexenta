@@ -1909,7 +1909,7 @@ is_link_err:
 
 	/* for non-recovery errors */
 	if (cp->nc_res.status && cp->nc_res.status != NFS4ERR_SYMLINK &&
-		cp->nc_res.status != NFS4ERR_MOVED) {
+	    cp->nc_res.status != NFS4ERR_MOVED) {
 		if (!recovery) {
 			nfs4_end_op(cp, &recov_state);
 		}
@@ -1923,7 +1923,7 @@ is_link_err:
 	 * resolve the symlink, then try mount again using the new path.
 	 */
 	if (cp->nc_res.status == NFS4ERR_SYMLINK ||
-		cp->nc_res.status == NFS4ERR_MOVED) {
+	    cp->nc_res.status == NFS4ERR_MOVED) {
 		int where;
 
 		/*
@@ -1961,32 +1961,37 @@ is_link_err:
 		if (cp->nc_res.status == NFS4ERR_SYMLINK) {
 
 			/*
-			 * Make sure the symlink error is on the right compound op.
+			 * Make sure the symlink error is on the right
+			 * compound op.
 			 * The right compound is a OP_LOOKUP node that failed
 			 * with NFS4ERR_SYMLINK, preceeded by a OP_GETFH node
 			 * that succeeded.
 			 * Otherwise do not try to resolve the symlink below.
 			 */
 			if ((node == NULL) ||
-				(snode == NULL) ||
-				((snode = list_next(&cp->nc_args.args, snode)) == NULL) ||
-				(snode->res.resop != OP_GETFH) ||
-				(snode->res.nfs_resop4_u.opgetfh.status != NFS4_OK))
+			    (snode == NULL) ||
+			    ((snode =
+			    list_next(&cp->nc_args.args, snode)) == NULL) ||
+			    (snode->res.resop != OP_GETFH) ||
+			    (snode->res.nfs_resop4_u.opgetfh.status != NFS4_OK))
 				ep->error = geterrno4(cp->nc_res.status);
 			else
-				tmpfhp = &snode->res.nfs_resop4_u.opgetfh.object;
+				tmpfhp =
+				    &snode->res.nfs_resop4_u.opgetfh.object;
 
 		} else if (cp->nc_res.status == NFS4ERR_MOVED) {
 
 			if ((node == NULL) ||
-				(snode == NULL) ||
-				((snode = list_next(&cp->nc_args.args, snode)) == NULL) ||
-				(snode->res.resop != OP_GETFH) ||
-				(snode->res.nfs_resop4_u.opgetfh.status != NFS4_OK))
-				ep->error = resolve_referral(mi, svp, cr, nthcomp,
-						tmpfhp);
+			    (snode == NULL) ||
+			    ((snode =
+			    list_next(&cp->nc_args.args, snode)) == NULL) ||
+			    (snode->res.resop != OP_GETFH) ||
+			    (snode->res.nfs_resop4_u.opgetfh.status != NFS4_OK))
+				ep->error = resolve_referral(mi, svp, cr,
+				    nthcomp, tmpfhp);
 			else
-				tmpfhp = &snode->res.nfs_resop4_u.opgetfh.object;
+				tmpfhp =
+				    &snode->res.nfs_resop4_u.opgetfh.object;
 		}
 
 		if (!ep->error)

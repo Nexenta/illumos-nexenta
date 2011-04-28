@@ -146,7 +146,7 @@ bool_t
 xdr_free_nfs41_fh(XDR *xdrs, nfs_fh4 *objp)
 {
 	void *ptr = objp->nfs_fh4_val;
-	nfs41_fh_type_t type = *(nfs41_fh_type_t *)ptr; 
+	nfs41_fh_type_t type = *(nfs41_fh_type_t *)ptr;
 	bool_t ret = TRUE;
 
 	if (type == FH41_TYPE_DMU_DS) {
@@ -154,7 +154,7 @@ xdr_free_nfs41_fh(XDR *xdrs, nfs_fh4 *objp)
 
 		ret = xdr_ds_fh(xdrs, fh);
 	}
-	return ret;
+	return (ret);
 }
 
 bool_t

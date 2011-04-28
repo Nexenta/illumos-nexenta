@@ -129,7 +129,8 @@ nfs4_readdir_getvp(vnode_t *dvp, char *d_name, vnode_t **vpp,
 	 * If the directory is a referral point, don't return the
 	 * attrs, instead set rdattr_error to MOVED.
 	 */
-	if (vn_is_nfs_reparse(vp, cs->cr) && !client_is_downrev(cs->instp, req)) {
+	if (vn_is_nfs_reparse(vp, cs->cr) &&
+	    !client_is_downrev(cs->instp, req)) {
 		VN_RELE(vp);
 		DTRACE_PROBE2(nfs4serv__func__referral__moved,
 		    vnode_t *, vp, char *, "nfs4_readdir_getvp");
@@ -711,7 +712,7 @@ readagain:
 		 */
 		if (vp &&
 		    (vfs_different =
-		    (dvp->v_vfsp != vp->v_vfsp))) {	
+		    (dvp->v_vfsp != vp->v_vfsp))) {
 			if (ATTRMAP_TST(ar,
 			    RFS4_FS_SPACE_ATTRMAP(avers))) {
 				if (error =

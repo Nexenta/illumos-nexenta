@@ -161,7 +161,7 @@ void
 nnop_io_release(nnode_t *nn, nnode_io_flags_t flags, caller_context_t *ct)
 {
 	if (!nn || (nn->nn_data_ops == NULL) ||
-	   (nn->nn_data_ops->ndo_io_release == NULL))
+	    (nn->nn_data_ops->ndo_io_release == NULL))
 		return;
 
 	(nn->nn_data_ops->ndo_io_release)(nn->nn_data_ops_data, flags, ct);

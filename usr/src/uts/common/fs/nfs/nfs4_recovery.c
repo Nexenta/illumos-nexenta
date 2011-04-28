@@ -959,10 +959,11 @@ again:
 		ASSERT(VTOMI4(vp2) == mi);
 		VN_HOLD(vp2);
 	}
-	/* DIMA: broken recovery for refferals...
-	recovp->rc_moved_vp = moved_vp;
-	recovp->rc_moved_nm = moved_nm;
-	*/
+	/*
+	 *  DIMA: broken recovery for refferals...
+	 *  recovp->rc_moved_vp = moved_vp;
+	 *  recovp->rc_moved_nm = moved_nm;
+	 */
 
 	(void) zthread_create(NULL, 0, nfs4_recov_thread, recovp, 0,
 	    minclsyspri);
@@ -3490,7 +3491,8 @@ recov_openfiles(recov_info_t *recovp, nfs4_server_t *sp)
 				if (nfs4_needs_recovery_old(&e, TRUE,
 				    mi->mi_vfsp)) {
 					(void) nfs4_start_recovery_old(&e, mi,
-					    rep->re_vp, NULL, NULL, OP_OPEN, NULL);
+					    rep->re_vp, NULL, NULL, OP_OPEN,
+					    NULL);
 					break;
 				}
 			}
@@ -3501,9 +3503,11 @@ recov_openfiles(recov_info_t *recovp, nfs4_server_t *sp)
 			if (e.error == 0 && e.stat == NFS4_OK) {
 				relock_file(rep->re_vp, mi, &e, pre_change);
 
-				if (nfs4_needs_recovery_old(&e, TRUE, mi->mi_vfsp))
+				if (nfs4_needs_recovery_old(&e, TRUE,
+				    mi->mi_vfsp))
 					(void) nfs4_start_recovery_old(&e, mi,
-					    rep->re_vp, NULL, NULL, OP_LOCK, NULL);
+					    rep->re_vp, NULL, NULL, OP_LOCK,
+					    NULL);
 			}
 
 			if (e.error != 0 || e.stat != NFS4_OK)

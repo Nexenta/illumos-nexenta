@@ -2237,7 +2237,8 @@ rfs4_op_getfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	}
 
 	/* check for reparse point at vp */
-	if (vn_is_nfs_reparse(cs->vp, cs->cr) && !client_is_downrev(cs->instp, req)) {
+	if (vn_is_nfs_reparse(cs->vp, cs->cr) &&
+	    !client_is_downrev(cs->instp, req)) {
 		/* it's not all bad */
 		*cs->statusp = resp->status = NFS4ERR_MOVED;
 		DTRACE_PROBE2(nfs4serv__func__referral__moved,
@@ -3523,10 +3524,9 @@ rfs4_op_readlink(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	}
 
 	/* Is it a referral? */
-	if (vn_is_nfs_reparse(vp, cs->cr) && client_is_downrev(cs->instp, req)) {
-
+	if (vn_is_nfs_reparse(vp, cs->cr) &&
+	    client_is_downrev(cs->instp, req)) {
 		is_referral = 1;
-
 	} else {
 
 		is_referral = 0;

@@ -4379,7 +4379,8 @@ xdr_nfs_argop4_minorversion_0(XDR *xdrs, nfs_argop4 *objp)
 		    (char **)&objp->nfs_argop4_u.opputfh.object.nfs_fh4_val,
 		    (uint_t *)&objp->nfs_argop4_u.opputfh.object.nfs_fh4_len,
 		    NFS4_FHSIZE));
-	case OP_GETATTR:
+	case OP_GETATTR: {
+		GETATTR4args *a = &objp->nfs_argop4_u.opgetattr;
 		/*
 		 * ACLs can become relatively large ( > 8K) and the default
 		 * 8K reply chunk of RDMA may not suffice. Check for
@@ -4388,16 +4389,16 @@ xdr_nfs_argop4_minorversion_0(XDR *xdrs, nfs_argop4 *objp)
 		 */
 		if ((xdrs->x_ops == &xdrrdma_ops || xdrs->x_ops == xops) &&
 		    (xdrs->x_op == XDR_ENCODE) &&
-			ATTR_ISSET(objp->nfs_argop4_u.opgetattr.attr_request, ACL)) {
+		    ATTR_ISSET(a->attr_request, ACL)) {
 			rci.rci_type = RCI_REPLY_CHUNK;
-			rci.rci_len = objp->nfs_argop4_u.opgetattr.mi->mi_tsize;
+			rci.rci_len = a->mi->mi_tsize;
 			XDR_CONTROL(xdrs, XDR_RDMA_ADD_CHUNK, &rci);
 
 			DTRACE_PROBE1(xdr__i__argop4__getattr, int,
 			    rci.rci_len);
 		}
-		return (xdr_attrmap4(xdrs,
-		    &objp->nfs_argop4_u.opgetattr.attr_request));
+		return (xdr_attrmap4(xdrs, &a->attr_request));
+	}
 	case OP_GETFH:
 		return (TRUE);
 	case OP_LOOKUP:
@@ -4571,7 +4572,8 @@ xdr_snfs_argop4(XDR *xdrs, nfs_argop4 *objp, COMPOUND4args_srv *ap)
 			    &objp->nfs_argop4_u.opputfh.object));
 
 	case OP_SEQUENCE:
-		return (xdr_SEQUENCE4args(xdrs, &objp->nfs_argop4_u.opsequence));
+		return (xdr_SEQUENCE4args(xdrs,
+		    &objp->nfs_argop4_u.opsequence));
 
 	default:
 		return (xdr_nfs_argop4_minorversion_0(xdrs, objp));

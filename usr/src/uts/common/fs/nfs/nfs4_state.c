@@ -471,7 +471,7 @@ rfs4_ss_retrieve_state(nfs_server_instance_t *instp)
  */
 void
 rfs4_ss_chkclid(struct compound_state *cs, rfs4_client_t *cp)
-  {
+{
 
 	/*
 	 * It should be sufficient to check the oldstate data for just
@@ -1007,27 +1007,24 @@ rfs4_client_create(rfs4_entry_t u_entry, void *arg)
 	cid *cidp;
 	scid_confirm_verf *scvp;
 	int	i;
-	
-	if(!cp)
-	{
-	 	cmn_err(CE_WARN, "zero rfs entry pointer!");
+
+	if (!cp) {
+		cmn_err(CE_WARN, "zero rfs entry pointer!");
 #ifdef DEBUG
 		printf("client_create: zero rfs entry pointer!\n");
 #endif
 		return (FALSE);
 	}
-	if(!client)
-	{
-	 	cmn_err(CE_WARN, "zero client id pointer!");
+	if (!client) {
+		cmn_err(CE_WARN, "zero client id pointer!");
 #ifdef DEBUG
 		printf("client_create: zero client id pointer!\n");
 #endif
 		return (FALSE);
 	}
-	
-	if(!client->cl_addr)
-	{
-	 	cmn_err(CE_WARN, "empty client address!");
+
+	if (!client->cl_addr) {
+		cmn_err(CE_WARN, "empty client address!");
 #ifdef DEBUG
 		printf("client_create: empty client address!\n");
 #endif
@@ -1051,19 +1048,19 @@ rfs4_client_create(rfs4_entry_t u_entry, void *arg)
 
 	/* Copy client's IP address */
 	ca = client->cl_addr;
-	
+
 	if (ca->sa_family == AF_INET)
 		bcopy(ca, &cp->rc_addr, sizeof (struct sockaddr_in));
 	else if (ca->sa_family == AF_INET6)
 		bcopy(ca, &cp->rc_addr, sizeof (struct sockaddr_in6));
 	else /* cl_addr contains garbage */
 	{
-	 	cmn_err(CE_WARN, "invalid client address type!");
+		cmn_err(CE_WARN, "invalid client address type!");
 #ifdef DEBUG
 		printf("client_create: invalid client address type!\n");
 #endif
-		/*TODO: must be cleanup code befire exit*/
-		/*return (FALSE);*/
+		/* TODO: must be cleanup code befire exit */
+		/* return (FALSE); */
 	}
 	cp->rc_nfs_client.cl_addr = (struct sockaddr *)&cp->rc_addr;
 
@@ -1324,7 +1321,7 @@ rfs4_clntip_create(rfs4_entry_t u_entry, void *arg)
 
 rfs4_clntip_t *
 rfs4_find_clntip(nfs_server_instance_t *instp, struct sockaddr *addr,
-				 bool_t *create)
+    bool_t *create)
 {
 	rfs4_clntip_t *cp;
 

@@ -3618,7 +3618,7 @@ nfs4_getattr(vnode_t *vp, struct vattr *vap, int flags, cred_t *cr,
 	 */
 	if (flags & ATTR_HINT) {
 		if (!(vap->va_mask & ~(AT_SIZE | AT_FSID | AT_RDEV))) {
-			if(vap->va_mask) {
+			if (vap->va_mask) {
 				mutex_enter(&rp->r_statelock);
 				if (vap->va_mask & AT_SIZE)
 					vap->va_size = rp->r_size;

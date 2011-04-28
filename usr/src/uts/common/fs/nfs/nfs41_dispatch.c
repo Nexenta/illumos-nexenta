@@ -253,8 +253,8 @@ rfs41_slrc_cache_contrived(slot_ent_t *slp, COMPOUND4res_srv *rsp)
 	COMPOUND4res_srv	*crp = &slp->se_buf;
 	int			 len = 2;
 
-	bzero(crp, sizeof(COMPOUND4res_srv));
-	
+	bzero(crp, sizeof (COMPOUND4res_srv));
+
 	/* status */
 	crp->status = NFS4ERR_RETRY_UNCACHED_REP;
 
@@ -479,7 +479,7 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 
 		case SEQRES_BADSESSION:
 			cmn_err(CE_WARN,
-				"rfs41_dispatch: SEQRES_BADSESSION");
+			    "rfs41_dispatch: SEQRES_BADSESSION");
 		default:
 			cmn_err(CE_WARN, "rfs41_dispatch: default");
 			rbp->status = NFS4ERR_BADSESSION;

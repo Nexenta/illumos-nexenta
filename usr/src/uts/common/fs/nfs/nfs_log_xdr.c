@@ -498,7 +498,7 @@ xdr_nfslog_createhow3(XDR *xdrs, createhow3 *objp)
 	case UNCHECKED:
 	case GUARDED:
 		if (!xdr_set_size3(xdrs,
-			&objp->createhow3_u.obj_attributes.size))
+		    &objp->createhow3_u.obj_attributes.size))
 			return (FALSE);
 		break;
 	case EXCLUSIVE:

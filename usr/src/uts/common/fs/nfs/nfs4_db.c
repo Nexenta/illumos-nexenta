@@ -689,11 +689,6 @@ retry:
 	entry = rfs4_dbe_create(table, id, arg);
 	if (entry == NULL) {
 		rw_exit(bp->dbk_lock);
-	/* causes 'bad free' assertion, as already done by rfs4_dbe_create
-		if (id != -1 && table->dbt_id_space)
-			id_free(table->dbt_id_space, id);
-	*/
-
 		return (NULL);
 	}
 
