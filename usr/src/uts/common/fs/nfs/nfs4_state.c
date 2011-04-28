@@ -3207,6 +3207,42 @@ out:
 	return (stat);
 }
 
+static nfsstat4
+check_state_lockid(rfs4_lo_state_t *lsp, caller_context_t *ct,
+    stateid_t *id, vnode_t *vp)
+{
+	/* Is associated server instance in its grace period? */
+	if (rfs4_clnt_in_grace(lsp->rls_locker->rl_client)) {
+		rfs4_lo_state_rele(lsp, FALSE);
+		return (NFS4ERR_GRACE);
+	}
+	/* Seqid in the future? - that's bad */
+	if (lsp->rls_lockid.v4_bits.chgseq <
+	    id->v4_bits.chgseq) {
+		rfs4_lo_state_rele(lsp, FALSE);
+		return (NFS4ERR_BAD_STATEID);
+	}
+	/* Seqid in the past? - that's old */
+	if (lsp->rls_lockid.v4_bits.chgseq >
+	    id->v4_bits.chgseq) {
+		rfs4_lo_state_rele(lsp, FALSE);
+		return (NFS4ERR_OLD_STATEID);
+	}
+	/* Ensure specified filehandle matches */
+	if (lsp->rls_state->rs_finfo->rf_vp != vp) {
+		rfs4_lo_state_rele(lsp, FALSE);
+		return (NFS4ERR_BAD_STATEID);
+	}
+
+	if (ct != NULL) {
+		ct->cc_sysid = lsp->rls_locker->rl_client->rc_sysidt;
+		ct->cc_pid = lsp->rls_locker->rl_pid;
+	}
+
+	rfs4_lo_state_rele(lsp, FALSE);
+	return (NFS4_OK);
+}
+
 /*
  * Given the I/O mode (FREAD or FWRITE), the vnode, the stateid and whether
  * the file is being truncated, return NFS4_OK if allowed or appropriate
@@ -3270,45 +3306,15 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 	 * lsp. First we check lsp, then 'fall' through to sp.
 	 */
 	if (lsp != NULL) {
-		if (cid) {
+		if (cid)
 			*cid = lsp->rls_locker->rl_client->rc_clientid;
-		}
-		/* Is associated server instance in its grace period? */
-		if (rfs4_clnt_in_grace(lsp->rls_locker->rl_client)) {
-			rfs4_lo_state_rele(lsp, FALSE);
-			if (sp != NULL)
-				rfs4_state_rele_nounlock(sp);
-			return (NFS4ERR_GRACE);
-		}
-		/* Seqid in the future? - that's bad */
-		if (lsp->rls_lockid.v4_bits.chgseq <
-		    id->v4_bits.chgseq) {
-			rfs4_lo_state_rele(lsp, FALSE);
-			if (sp != NULL)
-				rfs4_state_rele_nounlock(sp);
-			return (NFS4ERR_BAD_STATEID);
-		}
-		/* Seqid in the past? - that's old */
-		if (lsp->rls_lockid.v4_bits.chgseq >
-		    id->v4_bits.chgseq) {
-			rfs4_lo_state_rele(lsp, FALSE);
-			if (sp != NULL)
-				rfs4_state_rele_nounlock(sp);
-			return (NFS4ERR_OLD_STATEID);
-		}
-		/* Ensure specified filehandle matches */
-		if (lsp->rls_state->rs_finfo->rf_vp != vp) {
-			rfs4_lo_state_rele(lsp, FALSE);
-			if (sp != NULL)
-				rfs4_state_rele_nounlock(sp);
-			return (NFS4ERR_BAD_STATEID);
-		}
 
-		if (ct != NULL) {
-			ct->cc_sysid = lsp->rls_locker->rl_client->rc_sysidt;
-			ct->cc_pid = lsp->rls_locker->rl_pid;
+		stat = check_state_lockid(lsp, ct, id, vp);
+		if (stat) {
+			if (sp)
+				rfs4_state_rele_nounlock(sp);
+			return (stat);
 		}
-		rfs4_lo_state_rele(lsp, FALSE);
 	}
 
 	/*
