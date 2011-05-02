@@ -2889,24 +2889,35 @@ rfs4_get_state(struct compound_state *cs, stateid4 *stateid,
 	return (rfs4_get_state_lockit(cs, stateid, spp, find_invalid, TRUE));
 }
 
+static int
+check_state_seqid2(stateid_t *st, stateid_t *id)
+{
+	/* Stateid is some time in the future - that's bad */
+	if (st->v4_bits.chgseq < id->v4_bits.chgseq)
+		return (NFS4_CHECK_STATEID_BAD);
+
+	if (st->v4_bits.chgseq == id->v4_bits.chgseq + 1)
+		return (NFS4_CHECK_STATEID_REPLAY);
+
+	/* Stateid is some time in the past - that's old */
+	if (st->v4_bits.chgseq > id->v4_bits.chgseq)
+		return (NFS4_CHECK_STATEID_OLD);
+
+	return (0);
+}
+
 int
 rfs4_check_stateid_seqid(rfs4_state_t *sp, stateid4 *stateid)
 {
 	stateid_t *id = (stateid_t *)stateid;
+	int res;
 
 	if (rfs4_lease_expired(sp->rs_owner->ro_client))
 		return (NFS4_CHECK_STATEID_EXPIRED);
 
-	/* Stateid is some time in the future - that's bad */
-	if (sp->rs_stateid.v4_bits.chgseq < id->v4_bits.chgseq)
-		return (NFS4_CHECK_STATEID_BAD);
-
-	if (sp->rs_stateid.v4_bits.chgseq == id->v4_bits.chgseq + 1)
-		return (NFS4_CHECK_STATEID_REPLAY);
-
-	/* Stateid is some time in the past - that's old */
-	if (sp->rs_stateid.v4_bits.chgseq > id->v4_bits.chgseq)
-		return (NFS4_CHECK_STATEID_OLD);
+	res = check_state_seqid2(&sp->rs_stateid, id);
+	if (res)
+		return (res);
 
 	/* Caller needs to know about confirmation before closure */
 	if (sp->rs_owner->ro_need_confirm)
@@ -2922,20 +2933,14 @@ int
 rfs4_check_lo_stateid_seqid(rfs4_lo_state_t *lsp, stateid4 *stateid)
 {
 	stateid_t *id = (stateid_t *)stateid;
+	int res;
 
 	if (rfs4_lease_expired(lsp->rls_state->rs_owner->ro_client))
 		return (NFS4_CHECK_STATEID_EXPIRED);
 
-	/* Stateid is some time in the future - that's bad */
-	if (lsp->rls_lockid.v4_bits.chgseq < id->v4_bits.chgseq)
-		return (NFS4_CHECK_STATEID_BAD);
-
-	if (lsp->rls_lockid.v4_bits.chgseq == id->v4_bits.chgseq + 1)
-		return (NFS4_CHECK_STATEID_REPLAY);
-
-	/* Stateid is some time in the past - that's old */
-	if (lsp->rls_lockid.v4_bits.chgseq > id->v4_bits.chgseq)
-		return (NFS4_CHECK_STATEID_OLD);
+	res = check_state_seqid2(&lsp->rls_lockid, id);
+	if (res)
+		return (res);
 
 	if (lsp->rls_state->rs_closed == TRUE)
 		return (NFS4_CHECK_STATEID_CLOSED);
