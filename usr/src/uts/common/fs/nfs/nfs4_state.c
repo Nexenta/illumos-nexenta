@@ -2890,8 +2890,11 @@ rfs4_get_state(struct compound_state *cs, stateid4 *stateid,
 }
 
 static int
-check_state_seqid2(stateid_t *st, stateid_t *id)
+check_state_seqid2(stateid_t *st, stateid_t *id, int flags)
 {
+	if ((flags & NFS_USE_SESSION) && id->v4_bits.chgseq == 0)
+		return (0);
+
 	/* Stateid is some time in the future - that's bad */
 	if (st->v4_bits.chgseq < id->v4_bits.chgseq)
 		return (NFS4_CHECK_STATEID_BAD);
@@ -2915,7 +2918,7 @@ rfs4_check_stateid_seqid(rfs4_state_t *sp, stateid4 *stateid)
 	if (rfs4_lease_expired(sp->rs_owner->ro_client))
 		return (NFS4_CHECK_STATEID_EXPIRED);
 
-	res = check_state_seqid2(&sp->rs_stateid, id);
+	res = check_state_seqid2(&sp->rs_stateid, id, 0);
 	if (res)
 		return (res);
 
@@ -2930,7 +2933,8 @@ rfs4_check_stateid_seqid(rfs4_state_t *sp, stateid4 *stateid)
 }
 
 int
-rfs4_check_lo_stateid_seqid(rfs4_lo_state_t *lsp, stateid4 *stateid)
+rfs4_check_lo_stateid_seqid(rfs4_lo_state_t *lsp, stateid4 *stateid,
+    int flags)
 {
 	stateid_t *id = (stateid_t *)stateid;
 	int res;
@@ -2938,7 +2942,7 @@ rfs4_check_lo_stateid_seqid(rfs4_lo_state_t *lsp, stateid4 *stateid)
 	if (rfs4_lease_expired(lsp->rls_state->rs_owner->ro_client))
 		return (NFS4_CHECK_STATEID_EXPIRED);
 
-	res = check_state_seqid2(&lsp->rls_lockid, id);
+	res = check_state_seqid2(&lsp->rls_lockid, id, flags);
 	if (res)
 		return (res);
 

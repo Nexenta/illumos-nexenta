@@ -6194,11 +6194,13 @@ mds_op_lock(nfs_argop4 *argop, nfs_resop4 *resop,
 	bool_t ls_sw_held = FALSE;
 	bool_t create = TRUE;
 	bool_t lcreate = TRUE;
-	int rc;
+	int rc, flags = 0;
 
 	DTRACE_NFSV4_2(op__lock__start, struct compound_state *, cs,
 	    LOCK4args *, args);
 
+	if (cs->sp)
+		flags |= NFS_USE_SESSION;
 
 	if (cs->vp == NULL) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
@@ -6345,7 +6347,7 @@ mds_op_lock(nfs_argop4 *argop, nfs_resop4 *resop,
 		rfs4_sw_enter(&lsp->rls_sw);
 		ls_sw_held = TRUE;
 
-		switch (rfs4_check_lo_stateid_seqid(lsp, stateid)) {
+		switch (rfs4_check_lo_stateid_seqid(lsp, stateid, flags)) {
 		/*
 		 * The stateid looks like it was okay (expected to be
 		 * the next one)
@@ -6482,10 +6484,13 @@ mds_op_locku(nfs_argop4 *argop, nfs_resop4 *resop,
 	nfsstat4 status;
 	stateid4 *stateid = &args->lock_stateid;
 	rfs4_lo_state_t *lsp;
+	int flags = 0;
 
 	DTRACE_NFSV4_2(op__locku__start, struct compound_state *, cs,
 	    LOCKU4args *, args);
 
+	if (cs->sp)
+		flags |= NFS_USE_SESSION;
 
 	if (cs->vp == NULL) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
@@ -6512,7 +6517,7 @@ mds_op_locku(nfs_argop4 *argop, nfs_resop4 *resop,
 	/* hold off other access to lsp while we tinker */
 	rfs4_sw_enter(&lsp->rls_sw);
 
-	switch (rfs4_check_lo_stateid_seqid(lsp, stateid)) {
+	switch (rfs4_check_lo_stateid_seqid(lsp, stateid, flags)) {
 	case NFS4_CHECK_STATEID_OKAY:
 		break;
 	case NFS4_CHECK_STATEID_OLD:

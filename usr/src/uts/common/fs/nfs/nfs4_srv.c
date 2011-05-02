@@ -8635,7 +8635,7 @@ rfs4_op_lock(nfs_argop4 *argop, nfs_resop4 *resop,
 		rfs4_sw_enter(&lsp->rls_sw);
 		ls_sw_held = TRUE;
 
-		switch (rfs4_check_lo_stateid_seqid(lsp, stateid)) {
+		switch (rfs4_check_lo_stateid_seqid(lsp, stateid, 0)) {
 		/*
 		 * The stateid looks like it was okay (expected to be
 		 * the next one)
@@ -8868,7 +8868,7 @@ rfs4_op_locku(nfs_argop4 *argop, nfs_resop4 *resop,
 	/* hold off other access to lsp while we tinker */
 	rfs4_sw_enter(&lsp->rls_sw);
 
-	switch (rfs4_check_lo_stateid_seqid(lsp, stateid)) {
+	switch (rfs4_check_lo_stateid_seqid(lsp, stateid, 0)) {
 	case NFS4_CHECK_STATEID_OKAY:
 		if (rfs4_check_lock_seqid(args->seqid, lsp, resop)
 		    != NFS4_CHKSEQ_OKAY) {

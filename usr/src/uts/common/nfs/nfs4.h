@@ -1171,10 +1171,12 @@ extern	rfs4_file_t	*rfs4_findfile_withlock(nfs_server_instance_t *,
 extern	void		rfs4_file_rele(rfs4_file_t *);
 extern	void		rfs4_file_rele_withunlock(rfs4_file_t *);
 
+#define	NFS_USE_SESSION		0x1
+
 /* General collection of "get state" functions */
 extern	int		rfs4_check_stateid_seqid(rfs4_state_t *, stateid4 *);
 extern	int		rfs4_check_lo_stateid_seqid(rfs4_lo_state_t *,
-					stateid4 *);
+					stateid4 *, int flags);
 extern	int		mds_check_stateid_seqid(rfs4_state_t *, stateid4 *);
 
 extern nfs_server_instance_t *dbe_to_instp(rfs4_dbe_t *);
