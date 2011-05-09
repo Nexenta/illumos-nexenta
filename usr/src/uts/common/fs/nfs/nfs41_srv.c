@@ -9325,10 +9325,6 @@ sess_chan_limits(sess_channel_t *scp)
 {
 	count4	maxreqs;
 
-	ASSERT(scp != NULL);
-	if (scp == NULL)
-		return (NFS4ERR_SERVERFAULT);
-
 	maxreqs = scp->cn_attrs.ca_maxrequests;
 	if (maxreqs > slrc_slot_size) {
 		scp->cn_attrs.ca_maxrequests = slrc_slot_size;
