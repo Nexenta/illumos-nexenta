@@ -3294,6 +3294,8 @@ static nfsstat4
 check_state_deleg(rfs4_deleg_state_t *dsp, vnode_t *vp, stateid_t *id,
     clientid4 *cid, bool_t has_session)
 {
+	nfsstat4 status;
+
 	if (cid) {
 		rfs4_dbe_lock(dsp->rds_client->rc_dbe);
 		*cid = dsp->rds_client->rc_clientid;
@@ -3304,8 +3306,9 @@ check_state_deleg(rfs4_deleg_state_t *dsp, vnode_t *vp, stateid_t *id,
 	if (rfs4_clnt_in_grace(dsp->rds_client))
 		return (NFS4ERR_GRACE);
 
-	if (dsp->rds_delegid.v4_bits.chgseq != id->v4_bits.chgseq)
-		return (NFS4ERR_BAD_STATEID);
+	status = check_state_seqid(&dsp->rds_delegid, id, has_session);
+	if (status)
+		return (status);
 
 	/* Ensure specified filehandle matches */
 	if (dsp->rds_finfo->rf_vp != vp)
