@@ -3290,6 +3290,30 @@ check_state_openid(rfs4_state_t *sp,  vnode_t *vp, stateid_t *id,
 	return (NFS4_OK);
 }
 
+static nfsstat4
+check_state_deleg(rfs4_deleg_state_t *dsp, vnode_t *vp, stateid_t *id,
+    clientid4 *cid, bool_t has_session)
+{
+	if (cid) {
+		rfs4_dbe_lock(dsp->rds_client->rc_dbe);
+		*cid = dsp->rds_client->rc_clientid;
+		rfs4_dbe_unlock(dsp->rds_client->rc_dbe);
+	}
+
+	/* Is associated server instance in its grace period? */
+	if (rfs4_clnt_in_grace(dsp->rds_client))
+		return (NFS4ERR_GRACE);
+
+	if (dsp->rds_delegid.v4_bits.chgseq != id->v4_bits.chgseq)
+		return (NFS4ERR_BAD_STATEID);
+
+	/* Ensure specified filehandle matches */
+	if (dsp->rds_finfo->rf_vp != vp)
+		return (NFS4ERR_BAD_STATEID);
+
+	return (NFS4_OK);
+}
+
 /*
  * Given the I/O mode (FREAD or FWRITE), the vnode, the stateid and whether
  * the file is being truncated, return NFS4_OK if allowed or appropriate
@@ -3431,26 +3455,12 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 	}
 
 	if (dsp != NULL) {
-		if (cid) {
-			rfs4_dbe_lock(dsp->rds_client->rc_dbe);
-			*cid = dsp->rds_client->rc_clientid;
-			rfs4_dbe_unlock(dsp->rds_client->rc_dbe);
-		}
-		/* Is associated server instance in its grace period? */
-		if (rfs4_clnt_in_grace(dsp->rds_client)) {
+		stat = check_state_deleg(dsp, vp, id, cid, has_session);
+		if (stat) {
 			rfs4_deleg_state_rele(dsp);
-			return (NFS4ERR_GRACE);
-		}
-		if (dsp->rds_delegid.v4_bits.chgseq != id->v4_bits.chgseq) {
-			rfs4_deleg_state_rele(dsp);
-			return (NFS4ERR_BAD_STATEID);
+			return (stat);
 		}
 
-		/* Ensure specified filehandle matches */
-		if (dsp->rds_finfo->rf_vp != vp) {
-			rfs4_deleg_state_rele(dsp);
-			return (NFS4ERR_BAD_STATEID);
-		}
 		/*
 		 * Return whether this state has write
 		 * delegation if desired
