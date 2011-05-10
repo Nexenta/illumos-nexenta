@@ -1106,6 +1106,9 @@ get_nfs_status(ds_status status)
 		case DSERR_STALE_CLIENTID:
 			nfs_status = NFS4ERR_STALE;
 			break;
+		case DSERR_OLD_STATEID:
+			nfs_status = NFS4ERR_OLD_STATEID;
+			break;
 		default:
 			nfs_status = NFS4ERR_SERVERFAULT;
 	}
