@@ -422,6 +422,11 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	cs->vp = vp;
 	cs->nn = np;
 
+	if (argp->mode & DS_USE_SESSION)
+		cs->flags |= NFS_USE_SESSION;
+
+	argp->mode &= DS_MODE_MASK;
+
 	/*
 	 * Do a checkstate via nnode interface.
 	 * XXX: The nnop_check_stateid function will call nso_checkstate which

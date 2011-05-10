@@ -1195,6 +1195,9 @@ cp_ds_mds_checkstateid(mds_ds_fh *fh, struct compound_state *cs,
 	bcopy(co4, &args.co_owner, sizeof (args.co_owner));
 	args.mode = mode;
 
+	if (cs->flags & NFS_USE_SESSION)
+		args.mode |= DS_USE_SESSION;
+
 	error = dserv_mds_call(inst, DS_CHECKSTATE,
 	    (caddr_t)&args, xdr_DS_CHECKSTATEargs,
 	    (caddr_t)&res, xdr_DS_CHECKSTATEres);
