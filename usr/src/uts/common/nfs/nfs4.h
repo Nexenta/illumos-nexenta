@@ -1437,6 +1437,7 @@ typedef struct compound_state {
 	size_t		rqst_sz;	/* request size */
 	size_t		resp_sz;	/* response size */
 	int		post_proc;
+	int		flags;
 } compound_state_t;
 
 void rfs41_compound_free(COMPOUND4res *);

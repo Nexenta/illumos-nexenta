@@ -142,6 +142,8 @@ rfs41_find_and_set_session(SEQUENCE4args *sargs, struct compound_state *cs)
 	}
 	cs->sp = sp;
 	cs->sact = sargs->sa_cachethis;
+	cs->flags |= NFS_USE_SESSION;
+
 	return (NFS4_OK);
 }
 
@@ -359,6 +361,7 @@ rfs41_compound_state_alloc(nfs_server_instance_t *instp)
 	cs->instp = instp;
 	cs->cont = TRUE;
 	cs->fh.nfs_fh4_val = cs->fhbuf;
+	cs->flags = 0;
 
 	return (cs);
 }

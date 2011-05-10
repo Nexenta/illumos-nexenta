@@ -3344,7 +3344,7 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 	rfs4_lo_state_t *lsp;
 	stateid_t *id = (stateid_t *)stateid;
 	nfsstat4 stat = NFS4_OK;
-	bool_t has_session = (cs->sp != NULL);
+	bool_t has_session = (cs->flags & NFS_USE_SESSION);
 
 	if (ct != NULL) {
 		ct->cc_sysid = 0;
