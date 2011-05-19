@@ -813,7 +813,7 @@ dserv_nnode_io_prep(void *vdata, nnode_io_flags_t *nnflags, cred_t *cr,
 	create = (*nnflags & NNODE_IO_FLAG_WRITE) ? B_TRUE : B_FALSE;
 
 	rw_enter(&data->dnd_rwlock, RW_READER);
-	if (! data->dnd_flags & DSERV_NNODE_FLAG_OBJSET) {
+	if (! (data->dnd_flags & DSERV_NNODE_FLAG_OBJSET)) {
 		/* Get the Object Set */
 		err = dserv_nnode_data_getobjset(data, create);
 		if (err)
