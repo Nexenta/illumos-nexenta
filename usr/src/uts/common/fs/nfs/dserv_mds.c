@@ -1030,6 +1030,9 @@ dserv_mds_addport(const char *uaddr, const char *proto, const char *aname)
 	char in[MAXPATHLEN];
 	ds_status status = 0;
 
+	if (strcmp(proto, "tcp"))
+		return (EINVAL);
+
 	error = dserv_instance_enter(RW_READER, B_TRUE, &inst, NULL);
 	if (error)
 		return (error);
