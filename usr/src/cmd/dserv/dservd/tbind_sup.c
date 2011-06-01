@@ -141,9 +141,6 @@ dserv_service(int fd, struct netbuf *addrmask, struct netconfig *nconf,
 		    sizeof (setportargs.dsa_name));
 
 		result = dserv_kmod_setport(do_all_handle, &setportargs);
-
-		if (result == 0)
-			result = dserv_kmod_reportavail(do_all_handle);
 	}
 
 	if (result != 0) {
@@ -198,6 +195,11 @@ dserv_daemon(dserv_handle_t *handle)
 	if (num_fds == 0) {
 		dserv_log(handle, LOG_ERR,
 		    gettext("Could not start DSERV service for any protocol"));
+		exit(1);
+	}
+
+	if (dserv_kmod_reportavail(handle)) {
+		dserv_log(handle, LOG_ERR, gettext("reportavail"));
 		exit(1);
 	}
 
