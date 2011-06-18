@@ -33,6 +33,7 @@
 #include <nfs/nfssys.h>
 #include <libdserv.h>
 #include <dservd.h>
+#include "libdserv_impl.h"
 
 #define	PNFSCTLMDS	104000
 #define	PNFSCTLMDS_V1	1
@@ -145,7 +146,8 @@ dserv_service(int fd, struct netbuf *addrmask, struct netconfig *nconf,
 
 	if (result != 0) {
 		dserv_log(do_all_handle, LOG_ERR, NULL);
-		return (1); /* XXX errno? */
+		errno = do_all_handle->dsh_errno_error;
+		return (-1);
 	}
 
 	return (0);
