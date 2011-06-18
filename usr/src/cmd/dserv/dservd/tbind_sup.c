@@ -113,6 +113,10 @@ dserv_service(int fd, struct netbuf *addrmask, struct netconfig *nconf,
 	char *uaddr;
 	int result;
 
+	/* ignore non tcp proto */
+	if (strncasecmp(nconf->nc_proto, NC_TCP, strlen(NC_TCP)))
+		return (0);
+
 	if (cmd & NFS4_KRPC_START) {
 		svcargs.fd = fd;
 		bcopy(addr->buf, &svcargs.sin, addr->len);
