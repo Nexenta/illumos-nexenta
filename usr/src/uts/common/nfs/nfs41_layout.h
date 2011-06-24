@@ -105,9 +105,15 @@ typedef struct mds_layout {
 
 /* Functions */
 
-extern mds_layout_t *mds_add_layout(layout_core_t *);
+extern mds_layout_t *pnfs_get_mds_layout(vnode_t *);
+extern mds_layout_t *pnfs_add_mds_layout(vnode_t *, layout_core_t *);
+extern void pnfs_delete_mds_layout(vnode_t *);
+extern int pnfs_save_mds_layout(mds_layout_t *, vnode_t *);
+
+extern void mds_layout_get(mds_layout_t *);
+extern void mds_layout_put(mds_layout_t *);
+
 extern int mds_get_odl(vnode_t *, mds_layout_t **);
-extern int mds_put_layout(mds_layout_t *, vnode_t *);
 extern void mds_nuke_layout(nfs_server_instance_t *, uint32_t);
 
 extern void nfs41_layout_init(nfs_server_instance_t *);

@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <nfs/nnode_vn.h>
@@ -65,8 +67,7 @@ ksema_t proxy_sema;
 
 static kmem_cache_t *nnode_proxy_data_cache;
 
-extern nfsstat4 mds_get_file_layout(nfs_server_instance_t *, vnode_t *,
-    mds_layout_t **);
+extern nfsstat4 mds_get_file_layout(vnode_t *, mds_layout_t **);
 
 /* proxy I/O nnode ops */
 
@@ -77,7 +78,7 @@ proxy_get_layout(nnode_proxy_data_t *mnd)
 	mds_layout_t *lp;
 	nfsstat4 stat;
 
-	stat = mds_get_file_layout(mds_server, mnd->mnd_vp, &lp);
+	stat = mds_get_file_layout(mnd->mnd_vp, &lp);
 	if (lp == NULL || stat != NFS4_OK)
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
 	mnd->mnd_layout = lp;

@@ -27,6 +27,7 @@
  */
 
 #include <sys/rwlock.h>
+#include <sys/vnode.h>
 
 #include <nfs/nfs4.h>
 #include <nfs/mds_odl.h>
@@ -40,6 +41,23 @@
  * MDS: Layout tables.
  * -----------------------------------------------
  */
+
+static mds_layout_t *mds_add_layout(layout_core_t *);
+static void mds_delete_layout(vnode_t *);
+
+static rfs4_table_t *layout_vnode_tab;
+static rfs4_index_t *layout_vnode_idx;
+
+struct layout_vnode {
+	rfs4_dbe_t	*dbe;
+	mds_layout_t	*layout;
+	vnode_t		*vnode;
+};
+
+struct layout_arg {
+	vnode_t		*la_vnode;
+	layout_core_t	*la_lcore;
+};
 
 static uint32_t
 mds_layout_hash(void *key)
@@ -200,7 +218,7 @@ mds_gather_mds_sids(rfs4_entry_t entry, void *arg)
 int mds_default_stripe = 32;
 
 mds_layout_t *
-mds_gen_default_layout(nfs_server_instance_t *instp)
+mds_gen_default_layout(nfs_server_instance_t *instp, vnode_t *vp)
 {
 	struct mds_gather_args	gap;
 	mds_layout_t		*lp;
@@ -232,7 +250,7 @@ mds_gen_default_layout(nfs_server_instance_t *instp)
 	gap.lc.lc_stripe_count = gap.found;
 	gap.lc.lc_stripe_unit = mds_default_stripe * 1024;
 
-	lp = mds_add_layout(&gap.lc);
+	lp = pnfs_add_mds_layout(vp, &gap.lc);
 
 	for (i = 0; i < num; i++) {
 		kmem_free(gap.lc.lc_mds_sids[i].val,
@@ -457,7 +475,7 @@ mds_layout_destroy(rfs4_entry_t u_entry)
 	}
 }
 
-mds_layout_t *
+static mds_layout_t *
 mds_add_layout(layout_core_t *lc)
 {
 	bool_t create = TRUE;
@@ -787,8 +805,8 @@ odl_already_written(char *name)
 	return (1);	/* has already been written */
 }
 
-int
-mds_put_layout(mds_layout_t *lp, vnode_t *vp)
+static int
+mds_save_layout(mds_layout_t *lp, vnode_t *vp)
 {
 	char *odlp;
 	char *name;
@@ -884,7 +902,7 @@ mds_get_odl(vnode_t *vp, mds_layout_t **plp)
 	return (NFS4_OK);
 }
 
-void
+static void
 mds_delete_layout(vnode_t *vp)
 {
 	int len;
@@ -898,6 +916,169 @@ mds_delete_layout(vnode_t *vp)
 	mds_remove_odl(name);
 
 	kmem_free(name, len);
+}
+
+void
+mds_layout_get(mds_layout_t *l)
+{
+	rfs4_dbe_hold(l->mlo_dbe);
+}
+
+void
+mds_layout_put(mds_layout_t *l)
+{
+	rfs4_dbe_rele(l->mlo_dbe);
+}
+
+/* Find vnode <-> layout */
+
+/*
+ * Get layout: get from cache or read from disk
+ */
+
+static struct layout_vnode *
+lookup_layout_vnode(vnode_t *vp, layout_core_t *lc, bool_t *create)
+{
+	struct layout_vnode *lnode;
+	struct layout_arg larg;
+	rfs4_entry_t e;
+
+	larg.la_vnode = vp;
+	larg.la_lcore = lc;
+
+	e = rfs4_dbsearch(layout_vnode_idx, vp, create, &larg, RFS4_DBS_VALID);
+	if (e == NULL)
+		return (NULL);
+
+	lnode = (struct layout_vnode *)e;
+	mds_layout_get(lnode->layout);
+
+	return (lnode);
+}
+
+mds_layout_t *
+pnfs_get_mds_layout(vnode_t *vp)
+{
+	struct layout_vnode *lnode;
+	mds_layout_t *layout = NULL;
+	bool_t yes = TRUE;
+
+	lnode = lookup_layout_vnode(vp, NULL, &yes);
+	if (lnode) {
+		layout = lnode->layout;
+		rfs4_dbe_rele(lnode->dbe);
+	}
+
+	return (layout);
+}
+
+mds_layout_t *
+pnfs_add_mds_layout(vnode_t *vp, layout_core_t *lc)
+{
+	struct layout_vnode *lnode;
+	mds_layout_t *layout = NULL;
+	bool_t yes = TRUE;
+
+	lnode = lookup_layout_vnode(vp, lc, &yes);
+	if (lnode) {
+		layout = lnode->layout;
+		rfs4_dbe_rele(lnode->dbe);
+	}
+
+	/* If something fail, will try in checkstate */
+	mds_save_layout(layout, vp);
+
+	return (layout);
+}
+
+int
+pnfs_save_mds_layout(mds_layout_t *layout, vnode_t *vp)
+{
+	int ret;
+
+	ret = mds_save_layout(layout, vp);
+	return (ret);
+}
+
+void
+pnfs_delete_mds_layout(vnode_t *vp)
+{
+	struct layout_vnode *lnode;
+	bool_t nocreate = FALSE;
+
+	lnode = lookup_layout_vnode(vp, NULL, &nocreate);
+	if (lnode) {
+		mds_layout_put(lnode->layout);
+		rfs4_dbe_invalidate(lnode->dbe);
+		rfs4_dbe_rele(lnode->dbe);
+	}
+
+	mds_delete_layout(vp);
+}
+
+static bool_t
+layout_vnode_create(rfs4_entry_t e, void *arg)
+{
+	struct layout_vnode *lnode = (struct layout_vnode *)e;
+	struct layout_arg *larg = (struct layout_arg *)arg;
+	layout_core_t *lcore;
+	vnode_t *vp;
+	int res;
+
+	vp = larg->la_vnode;
+	lcore = larg->la_lcore;
+
+	if (lcore == NULL) {
+		/* Read from disk */
+		res = mds_get_odl(vp, &lnode->layout);
+		if (res)
+			return (FALSE);
+	} else {
+		mds_layout_t *layout;
+
+		layout = mds_add_layout(lcore);
+		if (layout == NULL)
+			return (FALSE);
+
+		/* refcnt was got early */
+		lnode->layout = layout;
+	}
+
+	VN_HOLD(vp);
+	lnode->vnode = vp;
+
+	return (TRUE);
+}
+
+static void
+layout_vnode_destroy(rfs4_entry_t e)
+{
+	struct layout_vnode *lnode = (struct layout_vnode *)e;
+
+	VN_RELE(lnode->vnode);
+	mds_layout_put(lnode->layout);
+}
+
+static void *
+layout_vnode_mkkey(rfs4_entry_t e)
+{
+	struct layout_vnode *lnode = (struct layout_vnode *)e;
+
+	return (lnode->vnode);
+}
+
+static uint32_t
+layout_vnode_hash(void *key)
+{
+	return ((uint32_t)(uintptr_t)key);
+}
+
+static bool_t
+layout_vnode_cmp(rfs4_entry_t e, void *key)
+{
+	struct layout_vnode *p = (struct layout_vnode *)e;
+
+	return (p->vnode == key);
 }
 
 /*
@@ -1117,4 +1298,15 @@ nfs41_layout_init(nfs_server_instance_t *instp)
 	    mds_layout_id_compare, mds_layout_id_mkkey, FALSE);
 
 	instp->mds_layout_default_idx = 0;
+
+	/*  For global searching layouts by vnode */
+	layout_vnode_tab = rfs4_table_create(instp,
+	    "Layout_vnode", instp->reap_time, 1, layout_vnode_create,
+	    layout_vnode_destroy, NULL, sizeof (struct layout_vnode),
+	    MDS_TABSIZE, MDS_MAXTABSZ, 100);
+
+	layout_vnode_idx =
+	    rfs4_index_create(layout_vnode_tab,
+	    "Layout_vnode_idx", layout_vnode_hash,
+	    layout_vnode_cmp, layout_vnode_mkkey, TRUE);
 }

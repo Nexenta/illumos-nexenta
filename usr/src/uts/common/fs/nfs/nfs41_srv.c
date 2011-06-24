@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -325,7 +327,6 @@ static void	mds_op_nverify(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 
 extern mds_mpd_t *mds_find_mpd(nfs_server_instance_t *, id_t);
 extern void rfs41_lo_seqid(stateid_t *);
-extern void mds_delete_layout(vnode_t *);
 extern void mds_clean_grants_by_fsid(rfs4_client_t *, vnode_t *);
 
 nfsstat4
@@ -3469,7 +3470,7 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 					}
 
 					/* Remove the layout */
-					mds_delete_layout(tvp);
+					pnfs_delete_mds_layout(tvp);
 
 					/*
 					 * Remove objects on data servers.
@@ -4459,7 +4460,7 @@ do_41_deleg_hack(int osa)
 /*
  * XXX: This will go away with the SMF work for npools.
  */
-extern mds_layout_t *mds_gen_default_layout(nfs_server_instance_t *);
+extern mds_layout_t *mds_gen_default_layout(nfs_server_instance_t *, vnode_t *);
 
 /*
  * We are going to create the file, so we need to get
@@ -4509,22 +4510,14 @@ mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
 		 * At that point, we should return the
 		 * given error.
 		 */
-		*plo = mds_gen_default_layout(cs->instp);
-		if (*plo == NULL) {
+		*plo = mds_gen_default_layout(cs->instp, vp);
+		if (*plo == NULL)
 			status = NFS4ERR_LAYOUTUNAVAILABLE;
-		} else {
-			/*
-			 * Record the layout, don't get
-			 * bent out of shape if it fails,
-			 * we'll try again at checkstate time.
-			 */
-			(void) mds_put_layout(*plo, vp);
-		}
 
 		return (status);
 	}
 
-	*plo = mds_add_layout(&lc);
+	*plo = pnfs_add_mds_layout(vp, &lc);
 
 	if (lc.lc_mds_sids) {
 		for (i = 0; i < lc.lc_stripe_count; i++) {
@@ -4536,15 +4529,8 @@ mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
 		    lc.lc_stripe_count * sizeof (mds_sid));
 	}
 
-	if (*plo == NULL) {
+	if (*plo == NULL)
 		status = NFS4ERR_LAYOUTUNAVAILABLE;
-	} else {
-		/*
-		 * Record the layout, don't get bent out of shape
-		 * if it fails, we'll try again at checkstate time.
-		 */
-		(void) mds_put_layout(*plo, vp);
-	}
 
 	return (status);
 }
@@ -8434,49 +8420,17 @@ int mds_layout_is_dense = 1;
  * XXX? should the rfs4_file_t be cached in compound state?
  */
 nfsstat4
-mds_get_file_layout(nfs_server_instance_t *instp, vnode_t *vp,
-    mds_layout_t **plp)
+mds_get_file_layout(vnode_t *vp, mds_layout_t **plp)
 {
-	rfs4_file_t *fp;
-	bool_t create = FALSE;
+	mds_layout_t *layout;
 
 	ASSERT(vp);
-	ASSERT(instp);
-	ASSERT(plp);
 
-	fp = rfs4_findfile(instp, vp, NULL, &create);
-	if (fp == NULL)
+	layout = pnfs_get_mds_layout(vp);
+	if (layout == NULL)
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
 
-	/* do we have a layout already ? */
-	if (fp->rf_mlo == NULL) {
-		/* Nope, read from disk */
-		if (mds_get_odl(vp, &fp->rf_mlo) != NFS4_OK) {
-			/*
-			 * So how can we not have already gotten
-			 * a layout from the create or not have
-			 * one on disk?
-			 */
-			rfs4_file_rele(fp);
-			return (NFS4ERR_LAYOUTUNAVAILABLE);
-		} else {
-			/*
-			 * We've stuffed it in the rfs4_file_t!
-			 */
-			rfs4_dbe_hold(fp->rf_mlo->mlo_dbe);
-		}
-	} else {
-		/*
-		 * We need to hold a reference to it
-		 */
-		rfs4_dbe_hold(fp->rf_mlo->mlo_dbe);
-	}
-
-	/*
-	 * pass back the mds_layout
-	 */
-	*plp = (mds_layout_t *)fp->rf_mlo;
-	rfs4_file_rele(fp);
+	*plp = layout;
 	return (NFS4_OK);
 }
 
@@ -8519,7 +8473,7 @@ mds_fetch_layout(struct compound_state *cs,
 	char *xdr_buffer;
 
 	if (no_layouts ||
-	    mds_get_file_layout(cs->instp, cs->vp, &lp) != NFS4_OK)
+	    mds_get_file_layout(cs->vp, &lp) != NFS4_OK)
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
 
 	/*

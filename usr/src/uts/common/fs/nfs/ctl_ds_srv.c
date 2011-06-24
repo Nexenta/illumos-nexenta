@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/systm.h>
@@ -460,11 +462,16 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	deleg = FALSE;	/* ugly reuse */
 	fp = rfs4_findfile(cs->instp, vp, NULL, &deleg);
 	if (fp != NULL) {
+		mds_layout_t *layout;
+
+		layout = pnfs_get_mds_layout(vp);
+
 		/*
 		 * If layout has not been written to stable storage,
 		 * then do so before issuing the reply.
 		 */
-		if (mds_put_layout(fp->rf_mlo, fp->rf_vp)) {
+		if (layout && pnfs_save_mds_layout(layout, vp)) {
+			mds_layout_put(layout);
 			rfs4_file_rele(fp);
 			rfs41_compound_state_free(cs);
 			/*
@@ -473,6 +480,9 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 			resp->status = DSERR_SERVERFAULT;
 			return;
 		}
+		if (layout)
+			mds_layout_put(layout);
+
 		rfs4_file_rele(fp);
 		resp->status = DS_OK;
 	} else {
