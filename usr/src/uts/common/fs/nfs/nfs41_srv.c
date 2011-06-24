@@ -3213,7 +3213,7 @@ mds_lookup_and_findfile(vnode_t *dvp, char *nm, vnode_t **vpp,
 }
 
 static int
-do_ctl_mds_remove(vnode_t *vp, rfs4_file_t *fp, compound_state_t *cs)
+do_ctl_mds_remove(vnode_t *vp, mds_layout_t *layout, compound_state_t *cs)
 {
 	fid_t fid;
 	nfs41_fid_t nfs41_fid;
@@ -3242,24 +3242,21 @@ do_ctl_mds_remove(vnode_t *vp, rfs4_file_t *fp, compound_state_t *cs)
 	 * the errors are ignored and will not be retried.  This may
 	 * cause leaked space on the the data server.
 	 */
-	if (fp->rf_mlo != NULL) {
-		bzero(&fid, sizeof (fid));
-		fid.fid_len = MAXFIDSZ;
+	bzero(&fid, sizeof (fid));
+	fid.fid_len = MAXFIDSZ;
 
-		error = vop_fid_pseudo(vp, &fid);
-		if (error) {
-			DTRACE_NFSV4_1(nfss__e__vop_fid_pseudo_failed,
-			    int, error);
-			return (error);
-		} else {
-			nfs41_fid.len = fid.fid_len;
-			bcopy(fid.fid_data, nfs41_fid.val, nfs41_fid.len);
-		}
+	error = vop_fid_pseudo(vp, &fid);
+	if (error) {
+		DTRACE_NFSV4_1(nfss__e__vop_fid_pseudo_failed,
+		    int, error);
+		return (error);
+	} else {
+		nfs41_fid.len = fid.fid_len;
+		bcopy(fid.fid_data, nfs41_fid.val, nfs41_fid.len);
+	}
 
-		error = ctl_mds_clnt_remove_file(cs->instp, cs->exi->exi_fsid,
-		    nfs41_fid, fp->rf_mlo);
-	} else
-		DTRACE_PROBE(nfss__i__layout_is_null_cannot_remove);
+	error = ctl_mds_clnt_remove_file(cs->instp, cs->exi->exi_fsid,
+	    nfs41_fid, layout);
 
 	return (error);
 }
@@ -3457,6 +3454,8 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			rfs4_dbe_unlock(fp->rf_dbe);
 
 			if (tvp) {
+				mds_layout_t *lt;
+
 				/*
 				 * This is va_seq safe because we are not
 				 * manipulating dvp.
@@ -3470,13 +3469,17 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 					}
 
 					/* Remove the layout */
-					pnfs_delete_mds_layout(tvp);
+					lt = pnfs_delete_mds_layout(tvp);
 
 					/*
 					 * Remove objects on data servers.
 					 * Ignore errors for now..
 					 */
-					(void) do_ctl_mds_remove(tvp, fp, cs);
+					if (lt) {
+						do_ctl_mds_remove(tvp, lt, cs);
+						mds_layout_put(lt);
+					}
+
 
 					/* Remove state on file remove */
 					rfs4_close_all_state(fp);

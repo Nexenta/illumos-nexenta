@@ -1000,20 +1000,22 @@ pnfs_save_mds_layout(mds_layout_t *layout, vnode_t *vp)
 	return (ret);
 }
 
-void
+mds_layout_t *
 pnfs_delete_mds_layout(vnode_t *vp)
 {
 	struct layout_vnode *lnode;
+	mds_layout_t *layout = NULL;
 	bool_t nocreate = FALSE;
 
 	lnode = lookup_layout_vnode(vp, NULL, &nocreate);
 	if (lnode) {
-		mds_layout_put(lnode->layout);
+		layout = lnode->layout;
 		rfs4_dbe_invalidate(lnode->dbe);
 		rfs4_dbe_rele(lnode->dbe);
 	}
 
 	mds_delete_layout(vp);
+	return (layout);
 }
 
 static bool_t
