@@ -819,10 +819,10 @@ ds_reportavail_args_dtl(DS_REPORTAVAILargs *args)
 		 * Note that this nvpair may change to a bitmap!
 		 */
 		for (j = 0; j < dz->attrs.attrs_len; j++) {
-			sprintf(get_line(0, 0), "    Attribute[%d] = ",
+			sprintf(get_line(0, 0), "    Attribute[%d] =\n\t\t%s",
 			    j, utf8localize((utf8string *)
 			    &dz->attrs.attrs_val[j].attrname));
-			sprintf(get_line(0, 0), "        %s",
+			sprintf(get_line(0, 0), "\t%s",
 			    utf8localize((utf8string *)
 			    &dz->attrs.attrs_val[j].attrvalue));
 		}
