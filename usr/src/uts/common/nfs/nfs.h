@@ -46,6 +46,7 @@
 #include <sys/nvpair.h>
 #include <nfs/mount.h>
 #include <sys/vfs_opreg.h>
+#include <nfs/nfs_config.h>
 #endif
 #include <vm/page.h>
 #include <rpc/rpc_sztypes.h>

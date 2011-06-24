@@ -39,6 +39,7 @@ HDRS=	export.h	lm.h						\
 	nfs41_kprot.h nfs_serv_inst.h nfs4_pnfs.h     \
 	nfs41_sessions.h nfs4_clnt_impl.h ds_filehandle.h     \
 	nfs4_attrmap.h nfs4_srv_readdir.h nfs4_srv_attr.h     \
+	nfs41_ds_addr.h nfs41_layout.h nfs_config.h \
 	ds.h ctl_mds_clnt.h range.h range_impl.h nnode_impl.h \
 	nnode_vn.h nnode_proxy.h spe.h spe_attr.h
 

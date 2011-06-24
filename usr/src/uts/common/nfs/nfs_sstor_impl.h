@@ -35,15 +35,6 @@
 extern "C" {
 #endif
 
-#ifdef DEBUG
-#define	TABSIZE 17
-#else
-#define	TABSIZE 2047
-#endif
-
-#define	ADDRHASH(key) ((unsigned long)(key) >> 3)
-#define	MAXTABSZ 1024*1024
-
 /* The values below are rfs4_lease_time units */
 
 #ifdef DEBUG

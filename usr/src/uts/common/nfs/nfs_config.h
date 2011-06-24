@@ -19,39 +19,25 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ * Copyright 2011 Nexenta, Inc.  All rights reserved.
  */
 
-#ifndef _CTL_MDS_CLNT_H
-#define	_CTL_MDS_CLNT_H
+/* Some internal definitions */
 
-#include <sys/vfs.h>
-#include <nfs/nfs41_filehandle.h>
-#include <nfs/mds_state.h>
-#include <nfs/nfs_serv_inst.h>
+#ifndef __NFS_DEFS_H__
+#define	__NFS_DEFS_H__
 
-#ifdef	__cplusplus
-extern "C" {
+#ifdef DEBUG
+#define	TABSIZE		17
+#define	MDS_TABSIZE	17
+#else
+#define	TABSIZE		2047
+#define	MDS_TABSIZE	2047
 #endif
 
-/*
- * Value which controls the number of times the control
- * protocol messages from MDS to DS are retried in the case of RPC errors.
- * For the number of times to retry messages in the other direction (DS to
- * MDS) see CTLDS_RETRIES.
- */
-#define	CTL_MDS_RETRIES 5
-#define	CTL_MDS_TIMEO 60 /* seconds */
+#define	MAXTABSZ	1024*1024
+#define	MDS_MAXTABSZ	1024*1024
 
-struct mds_layout;
+#define	ADDRHASH(key) ((unsigned long)(key) >> 3)
 
-int ctl_mds_clnt_remove_file(nfs_server_instance_t *, fsid_t, nfs41_fid_t,
-    struct mds_layout *);
-
-
-#ifdef	__cplusplus
-}
-#endif
-
-#endif /* _CTL_MDS_CLNT_H */
+#endif /* __NFS_DEFS_H__ */

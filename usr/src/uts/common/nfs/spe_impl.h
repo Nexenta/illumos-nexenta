@@ -45,8 +45,10 @@ extern "C" {
  *  Ask the Policy engine to allocate the pool mds_sids; stripe count
  *  and unit size.
  */
+struct layout_core;
+
 extern int nfs41_spe_allocate(vattr_t *, struct netbuf *, char *,
-    layout_core_t *, int);
+    struct layout_core *, int);
 
 /*
  * Given a dataset name, get the mds sid

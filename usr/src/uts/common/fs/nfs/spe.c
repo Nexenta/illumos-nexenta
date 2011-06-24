@@ -46,6 +46,7 @@
 #include <nfs/nfssys.h>
 
 #include <nfs/nfs4_kprot.h>
+#include <nfs/nfs41_layout.h>
 
 #include <nfs/spe.h>
 #include <nfs/spe_attr.h>
@@ -921,7 +922,7 @@ error_out:
  */
 int
 nfs41_spe_allocate(vattr_t *vap, struct netbuf *addr, char *dir_path,
-    layout_core_t *plc, int bServer)
+    struct layout_core *plc, int bServer)
 {
 	kspe_state_t	*kspe = Gkspe;
 

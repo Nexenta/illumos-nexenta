@@ -82,6 +82,7 @@
 #include <nfs/nfs4_srv_attr.h>
 #include <nfs/mds_state.h>
 #include <nfs/mds_odl.h>
+#include <nfs/nfs41_layout.h>
 
 #include <nfs/nfs41_filehandle.h>
 #include <nfs/ctl_mds_clnt.h>

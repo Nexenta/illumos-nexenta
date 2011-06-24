@@ -37,6 +37,8 @@
 #include <nfs/nfs_dispatch.h>
 #include <nfs/nfs4.h>
 #include <nfs/mds_state.h>
+#include <nfs/nfs41_layout.h>
+#include <nfs/nfs41_ds_addr.h>
 #include <nfs/nfssys.h>
 #include <nfs/ds.h>
 #include <nfs/spe_impl.h>

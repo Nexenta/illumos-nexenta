@@ -31,6 +31,8 @@
 #include <nfs/ds.h>
 #include <nfs/ctl_mds_clnt.h>
 #include <nfs/mds_state.h>
+#include <nfs/nfs41_layout.h>
+#include <nfs/nfs41_ds_addr.h>
 #include <rpc/rpc.h>
 #include <sys/sdt.h>
 
@@ -81,7 +83,7 @@ out:
 /* ARGSUSED */
 int
 ctl_mds_clnt_remove_file(nfs_server_instance_t *instp, fsid_t fsid,
-    nfs41_fid_t fid, mds_layout_t *lp)
+    nfs41_fid_t fid, struct mds_layout *lp)
 {
 	CTL_MDS_REMOVEargs	args;
 	CTL_MDS_REMOVEres	res;

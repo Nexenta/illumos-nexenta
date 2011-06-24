@@ -47,6 +47,7 @@
 
 #include <nfs/nfs_sstor_impl.h>
 #include <nfs/mds_state.h>
+#include <nfs/nfs41_layout.h>
 
 #include <nfs/spe_impl.h>
 

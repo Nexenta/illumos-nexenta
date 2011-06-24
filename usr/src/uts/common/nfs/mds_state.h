@@ -33,87 +33,14 @@ extern "C" {
 #include <sys/id_space.h>
 #include <nfs/nfs4_db_impl.h>
 #include <nfs/ds_prot.h>
-#include <nfs/mds_odl.h>
 #include <nfs/range.h>
-
-typedef ds_guid_map ds_guid_map_t;
-typedef ds_guid ds_guid_t;
-
-#define	MDS_MAX_LAYOUT_DEVS 16
-
-/*
- * A means to plop the internal uint32_t device
- * id into an OTW 128 bit device id
- */
-typedef union {
-	struct {
-		uint32_t pad0;
-		uint32_t pad1;
-		uint32_t pad2;
-		uint32_t did;
-	} i;
-	deviceid4 did4;
-} ba_devid_t;
-
-extern void mds_set_deviceid(id_t, deviceid4 *);
-
-/*
- * mds_mpd:
- *
- * The fields mdp_encoded_* are in fact the already
- * encoded value for a nfsv4_1_file_layout_ds_addr4
- */
-typedef struct mds_mpd {
-	rfs4_dbe_t	*mpd_dbe;
-	id_t		mpd_id;
-	uint_t 		mpd_encoded_len;
-	char 		*mpd_encoded_val;
-	list_t		mpd_layouts_list;
-} mds_mpd_t;
-
-/*
- * Used to build the reply to getdevicelist
- */
-typedef struct mds_device_list {
-	int		mdl_count;
-	deviceid4	*mdl_dl;
-} mds_device_list_t;
-
-typedef struct layout_core {
-	length4		lc_stripe_unit;
-	int		lc_stripe_count;
-	mds_sid		*lc_mds_sids;
-} layout_core_t;
-
-/*
- * mds_layout has the information for the layout that has been
- * allocated by the SPE. It is represented by the structure
- * "struct odl" or on-disk-layout the odl will be plopped
- * onto stable storage, once we know that a data-server
- * has requested verification for an IO operation.
- * --
- * stripe_unit gets plopped into a nfl_util4 in the returned
- * layout information;
- * --
- * lo_flags carries if we want dense or sparse data at the
- * data-servers and also if we wish the  NFS Client to commit
- * through the MDS or Data-servers.
- */
-typedef struct mds_layout {
-	rfs4_dbe_t	*mlo_dbe;
-	int		mlo_id;
-	layouttype4 	mlo_type;
-	layout_core_t	mlo_lc;
-	uint32_t	mlo_flags;
-	mds_mpd_t	*mlo_mpd;
-	id_t		mlo_mpd_id;
-	list_node_t	mpd_layouts_next;
-} mds_layout_t;
 
 #define	LO_GRANTED		0x00000001
 #define	LO_RECALL_INPROG	0x00000002
 #define	LO_RECALLED		0x00000004
 #define	LO_RETURNED		0x00000008
+
+struct mds_layout;
 
 typedef struct mds_layout_grant {
 	rfs4_dbe_t	*lo_dbe;
@@ -124,7 +51,7 @@ typedef struct mds_layout_grant {
 		uint32_t	lr_seqid;
 		uint32_t	lr_reply;
 	}		 lo_rec;
-	mds_layout_t    *lo_lop;
+	struct mds_layout	*lo_lop;
 	rfs4_client_t   *lo_cp;
 	rfs4_file_t	*lo_fp;
 	rfs41_grant_list_t lo_clientgrantlist;
@@ -159,7 +86,7 @@ typedef struct mds_ever_grant {
  * external linked list release functions, well, this
  * is your only warning not to do that.
  */
-typedef struct {
+typedef struct ds_owner {
 	rfs4_dbe_t	*dbe;
 	time_t		last_access;
 	char		*identity;
@@ -176,8 +103,8 @@ typedef struct {
  * DS_REPORTAVAIL and DS_MAP_MDSSID.
  */
 typedef struct {
-	rfs4_dbe_t	*dbe;
-	ds_guid_map_t	ds_map;
+	rfs4_dbe_t		*dbe;
+	struct ds_guid_map	ds_map;
 } mds_mapzap_t;
 
 #define	MDS_DSI_REBOOTED	1
@@ -192,24 +119,6 @@ typedef struct {
 
 #define	MDS_SET_DS_FLAGS(dst, flg) \
 	dst = (dst & ~MDS_DEV_DS_MASK) | (MDS_DEV_DS_MASK & flg);
-
-/*
- * ds_addrlist:
- *
- * This list is updated via the control-protocol
- * message DS_REPORTAVAIL.
- */
-typedef struct {
-	rfs4_dbe_t		*dbe;
-	netaddr4		dev_addr;
-	struct knetconfig	*dev_knc;
-	struct netbuf		*dev_nb;
-	uint_t			dev_flags;
-	uint32_t		ds_port_key;
-	uint64_t		ds_addr_key;
-	ds_owner_t		*ds_owner;
-	list_node_t		ds_addrlist_next;
-} ds_addrlist_t;
 
 /*
  * Tracks the state 'handed out' to the data-server.
@@ -230,6 +139,8 @@ struct mds_adddev_args {
  * Identify the dataset...
  */
 
+
+typedef ds_guid ds_guid_t;
 
 /*
  * Tracks the mds_sid to data-server guid, and
@@ -254,17 +165,9 @@ typedef struct {
 	ds_owner_t		*ds_owner;
 } pinfo_create_t;
 
-extern int mds_get_odl(vnode_t *, mds_layout_t **);
-extern mds_layout_t *mds_add_layout(layout_core_t *);
-extern void mds_xdr_devicelist(rfs4_entry_t, void *);
-extern ds_addrlist_t *mds_find_ds_addrlist(nfs_server_instance_t *, uint32_t);
-extern ds_addrlist_t *mds_find_ds_addrlist_by_mds_sid(mds_sid *);
-extern ds_addrlist_t *mds_find_ds_addrlist_by_uaddr(nfs_server_instance_t *,
-    char *);
-extern void mds_ds_addrlist_rele(ds_addrlist_t *);
 extern ds_guid_info_t *mds_find_ds_guid_info_by_id(ds_guid_t *guid);
 extern int uaddr2sockaddr(int, char *, void *, in_port_t *);
-extern int mds_put_layout(mds_layout_t *, vnode_t *);
+extern bool_t rfs41_invalid_expiry(rfs4_entry_t);
 
 #ifdef	__cplusplus
 }

@@ -21,37 +21,40 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta, Inc.  All rights reserved.
+ * Use is subject to license terms.
  */
 
-#ifndef _CTL_MDS_CLNT_H
-#define	_CTL_MDS_CLNT_H
-
-#include <sys/vfs.h>
-#include <nfs/nfs41_filehandle.h>
-#include <nfs/mds_state.h>
-#include <nfs/nfs_serv_inst.h>
-
-#ifdef	__cplusplus
-extern "C" {
-#endif
+#ifndef __NFS41_DS_ADDR_H__
+#define	__NFS41_DS_ADDR_H__
 
 /*
- * Value which controls the number of times the control
- * protocol messages from MDS to DS are retried in the case of RPC errors.
- * For the number of times to retry messages in the other direction (DS to
- * MDS) see CTLDS_RETRIES.
+ * ds_addrlist:
+ *
+ * This list is updated via the control-protocol
+ * message DS_REPORTAVAIL.
  */
-#define	CTL_MDS_RETRIES 5
-#define	CTL_MDS_TIMEO 60 /* seconds */
+struct ds_owner;
+struct mds_sid;
 
-struct mds_layout;
+typedef struct ds_addlist {
+	rfs4_dbe_t		*dbe;
+	netaddr4		dev_addr;
+	struct knetconfig	*dev_knc;
+	struct netbuf		*dev_nb;
+	uint_t			dev_flags;
+	uint32_t		ds_port_key;
+	uint64_t		ds_addr_key;
+	struct ds_owner		*ds_owner;
+	list_node_t		ds_addrlist_next;
+} ds_addrlist_t;
 
-int ctl_mds_clnt_remove_file(nfs_server_instance_t *, fsid_t, nfs41_fid_t,
-    struct mds_layout *);
+extern ds_addrlist_t *mds_find_ds_addrlist(nfs_server_instance_t *, uint32_t);
+extern ds_addrlist_t *mds_find_ds_addrlist_by_mds_sid(struct mds_sid *);
+extern ds_addrlist_t *mds_find_ds_addrlist_by_uaddr(nfs_server_instance_t *,
+    char *);
+extern void mds_ds_addrlist_rele(ds_addrlist_t *);
+extern void nfs41_ds_addr_init(nfs_server_instance_t *);
 
-
-#ifdef	__cplusplus
-}
-#endif
-
-#endif /* _CTL_MDS_CLNT_H */
+#endif	/* __NFS41_DS_ADDR_H__ */

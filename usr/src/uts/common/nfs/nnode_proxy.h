@@ -31,6 +31,8 @@
 #include <sys/mutex.h>
 #include <nfs/ds_filehandle.h>
 #include <nfs/mds_state.h>
+#include <nfs/nfs41_layout.h>
+#include <nfs/nfs41_ds_addr.h>
 
 #ifdef	__cplusplus
 extern "C" {
