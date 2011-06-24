@@ -586,7 +586,7 @@ mds_write_odl(char *path, char *odlp, int size)
 	if (path == NULL)
 		return (-1);
 
-	if (vn_open(path, UIO_SYSSPACE, FCREAT|FWRITE|FTRUNC, 0600, &vp,
+	if (vn_open(path, UIO_SYSSPACE, FCREAT|FWRITE|FTRUNC, 0644, &vp,
 	    CRCREAT, 0)) {
 		return (-1);
 	}
