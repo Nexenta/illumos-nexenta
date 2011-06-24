@@ -5490,6 +5490,7 @@ err:
 
 	resp->writeverf = cs->instp->Write4verf;
 
+	nnop_update(nn, nnioflags, cr, &ct, args->offset + resp->count);
 out:
 	nnop_io_release(nn, nnioflags, &ct);
 
