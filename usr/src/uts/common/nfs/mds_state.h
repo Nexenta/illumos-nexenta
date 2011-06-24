@@ -259,8 +259,7 @@ typedef struct {
 extern int mds_get_odl(vnode_t *, mds_layout_t **);
 extern void mds_xdr_devicelist(rfs4_entry_t, void *);
 extern ds_addrlist_t *mds_find_ds_addrlist(nfs_server_instance_t *, uint32_t);
-extern ds_addrlist_t *mds_find_ds_addrlist_by_mds_sid(nfs_server_instance_t *,
-    mds_sid *);
+extern ds_addrlist_t *mds_find_ds_addrlist_by_mds_sid(mds_sid *);
 extern ds_addrlist_t *mds_find_ds_addrlist_by_uaddr(nfs_server_instance_t *,
     char *);
 extern void mds_ds_addrlist_rele(ds_addrlist_t *);

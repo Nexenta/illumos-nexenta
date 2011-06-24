@@ -120,7 +120,7 @@ ctl_mds_clnt_remove_file(nfs_server_instance_t *instp, fsid_t fsid,
 			return (error);
 		}
 
-		dp = mds_find_ds_addrlist_by_mds_sid(instp,
+		dp = mds_find_ds_addrlist_by_mds_sid(
 		    &lp->mlo_lc.lc_mds_sids[i]);
 		if (dp == NULL)
 			continue;

@@ -1231,7 +1231,7 @@ mds_gen_mpd(nfs_server_instance_t *instp, mds_layout_t *lp)
 		ds_addrlist_t	*dp;
 
 		mplp[i].multipath_list4_len = 1;
-		dp = mds_find_ds_addrlist_by_mds_sid(instp,
+		dp = mds_find_ds_addrlist_by_mds_sid(
 		    &lp->mlo_lc.lc_mds_sids[i]);
 		if (!dp) {
 			iLoaded = i;
@@ -2814,8 +2814,7 @@ mds_mpd_list(rfs4_entry_t entry, void *arg)
 
 /* ARGSUSED */
 ds_addrlist_t *
-mds_find_ds_addrlist_by_mds_sid(nfs_server_instance_t *instp,
-    mds_sid *sid)
+mds_find_ds_addrlist_by_mds_sid(mds_sid *sid)
 {
 	ds_addrlist_t	*dp = NULL;
 	ds_guid_info_t	*pgi;

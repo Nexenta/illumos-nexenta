@@ -77,7 +77,7 @@ proxy_get_layout(nnode_proxy_data_t *mnd)
 	mds_layout_t *lp;
 	nfsstat4 stat;
 
-	stat = mds_get_file_layout(mnd->mnd_instp, mnd->mnd_vp, &lp);
+	stat = mds_get_file_layout(mds_server, mnd->mnd_vp, &lp);
 	if (lp == NULL || stat != NFS4_OK)
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
 	mnd->mnd_layout = lp;
@@ -157,8 +157,7 @@ proxy_get_strategy(nnode_proxy_data_t *mnd)
 		if (e)
 			return (NFS4ERR_LAYOUTTRYLATER);
 
-		io_array[i].ds =
-		    mds_find_ds_addrlist_by_mds_sid(mnd->mnd_instp,
+		io_array[i].ds = mds_find_ds_addrlist_by_mds_sid(
 		    &lp->mlo_lc.lc_mds_sids[i]);
 		if (io_array[i].ds == NULL) {
 			/* We can only cleanup a complete "row" */
@@ -775,7 +774,6 @@ nnode_proxy_data_setup(nnode_seed_t *seed, vnode_t *vp, fsid_t fsid,
 
 	pdata = nnode_proxy_data_alloc();
 	pdata->mnd_vp = vp;
-	pdata->mnd_instp = mds_server; /* XXX what else can I do? */
 	pdata->mnd_fsid = fsid;
 	pdata->mnd_fid.len = len;
 	ASSERT(fid);
