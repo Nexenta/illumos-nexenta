@@ -4513,7 +4513,7 @@ mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
 		 * At that point, we should return the
 		 * given error.
 		 */
-		*plo = mds_gen_default_layout(cs->instp, vp);
+		*plo = mds_gen_default_layout(mds_server, vp);
 		if (*plo == NULL)
 			status = NFS4ERR_LAYOUTUNAVAILABLE;
 
