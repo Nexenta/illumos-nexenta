@@ -401,9 +401,10 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
-	mnd->mnd_uiop = uiop;
 
 	mutex_enter(&mnd->mnd_lock);
+	mnd->mnd_uiop = uiop;
+
 	rc = proxy_get_layout(mnd);
 	if (rc != 0) {
 		/*
@@ -418,7 +419,6 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 		return (nnode_vn_read(vdata, flags, cr, ct, uiop, ioflag));
 	}
 	rc = proxy_get_strategy(mnd);
-	mutex_exit(&mnd->mnd_lock);
 	if (rc != 0)
 		goto out;
 
@@ -428,27 +428,23 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 
 	moved -= uiop->uio_resid;
 
-	mutex_enter(&mnd->mnd_lock);
 	vap->va_mask = AT_ALL;
 	rc = VOP_GETATTR(vp, vap, 0, cr, ct);
 	if (rc != 0) {
 		mnd->mnd_flags &= ~NNODE_NVD_VATTR_VALID;
-		mutex_exit(&mnd->mnd_lock);
 		goto out;
 	}
 	mnd->mnd_flags |= NNODE_NVD_VATTR_VALID;
-	mutex_exit(&mnd->mnd_lock);
 
 	if (off + moved == vap->va_size || mnd->mnd_eof)
 		*flags |= NNODE_IO_FLAG_EOF;
 	else
 		*flags &= ~NNODE_IO_FLAG_EOF;
 out:
-	mutex_enter(&mnd->mnd_lock);
-	sema_v(&proxy_sema);
 	proxy_free_strategy(mnd);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
+	sema_v(&proxy_sema);
 	return (rc);
 }
 
@@ -637,9 +633,10 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
-	mnd->mnd_uiop = uiop;
 
 	mutex_enter(&mnd->mnd_lock);
+	mnd->mnd_uiop = uiop;
+
 	rc = proxy_get_layout(mnd);
 	if (rc != 0) {
 		/*
@@ -655,7 +652,6 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		    nnode_vn_write(vdata, flags, uiop, ioflags, cr, ct, wcc));
 	}
 	rc = proxy_get_strategy(mnd);
-	mutex_exit(&mnd->mnd_lock);
 	if (rc != 0)
 		goto out;
 
@@ -665,7 +661,6 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 
 	moved -= uiop->uio_resid;
 
-	mutex_enter(&mnd->mnd_lock);
 	if (wcc != NULL) {
 		if (mnd->mnd_flags & NNODE_NVD_VATTR_VALID) {
 			bcopy(&mnd->mnd_vattr, &before, sizeof (before));
@@ -692,7 +687,6 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 			beforep = NULL;
 		vattr_to_wcc_data(beforep, afterp, wcc);
 	}
-	mutex_exit(&mnd->mnd_lock);
 
 	if (off + moved == vap->va_size || mnd->mnd_eof)
 		*flags |= NNODE_IO_FLAG_EOF;
@@ -700,11 +694,10 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		*flags &= ~NNODE_IO_FLAG_EOF;
 
 out:
-	mutex_enter(&mnd->mnd_lock);
-	sema_v(&proxy_sema);
 	proxy_free_strategy(mnd);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
+	sema_v(&proxy_sema);
 	return (rc);
 }
 
