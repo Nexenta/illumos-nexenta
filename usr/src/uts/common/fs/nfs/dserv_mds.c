@@ -172,6 +172,7 @@ dserv_mds_instance_init(dserv_mds_instance_t *inst)
 	inst->dmi_verifier = *(uint64_t *)&verf;
 	inst->dmi_teardown_in_progress = B_FALSE;
 	inst->dmi_recov_in_progress = B_FALSE;
+	inst->total_datasets = 0;
 }
 
 static dserv_mds_instance_t *
@@ -528,6 +529,7 @@ dserv_mds_instance_teardown()
 
 			dmu_objset_disown(tmp->oro_osp, pnfs_dmu_tag);
 			list_remove(&inst->dmi_datasets, tmp);
+			inst->total_datasets--;
 			kmem_cache_free(dserv_open_root_objset_cache,
 			    tmp);
 		}
@@ -862,6 +864,7 @@ dserv_mds_addobjset(const char *objsetname)
 	new_objset->oro_ds_guid.dg_zpool_guid = spa_guid(spa);
 	new_objset->oro_ds_guid.dg_objset_guid = dmu_objset_id(osp);
 	list_insert_tail(&inst->dmi_datasets, new_objset);
+	inst->total_datasets++;
 #if 0
 	/*
 	 * Populate in-core MDS SID map from on-disk info.
@@ -1336,10 +1339,7 @@ dserv_mds_do_reportavail(dserv_mds_instance_t *inst, ds_status *status)
 	    ua = list_next(&inst->dmi_uaddrs, ua))
 		++acount;
 
-	pcount = 0;
-	for (root = list_head(&inst->dmi_datasets); root != NULL;
-	    root = list_next(&inst->dmi_datasets, root))
-		++pcount;
+	pcount = inst->total_datasets;
 
 	if ((acount == 0) || (pcount == 0)) {
 		mutex_exit(&inst->dmi_content_lock);

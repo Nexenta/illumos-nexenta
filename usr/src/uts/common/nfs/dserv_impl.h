@@ -174,6 +174,7 @@ typedef struct {
 	char 		*dmi_mds_addr;
 	char		*dmi_mds_netid;
 	list_t		dmi_datasets;
+	unsigned int	total_datasets;
 	list_t		dmi_mds_sids;
 	list_t		dmi_uaddrs;
 	list_t		dmi_handles;
