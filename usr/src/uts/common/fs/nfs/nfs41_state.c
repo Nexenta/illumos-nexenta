@@ -1150,13 +1150,7 @@ mds_gen_default_layout(nfs_server_instance_t *instp)
 	gap.lc.lc_stripe_count = gap.found;
 	gap.lc.lc_stripe_unit = mds_default_stripe * 1024;
 
-	rw_enter(&instp->mds_layout_lock, RW_WRITER);
-	lp = (mds_layout_t *)rfs4_dbcreate(instp->mds_layout_idx,
-	    (void *)&gap.lc);
-	if (lp) {
-		instp->mds_layout_default_idx = lp->mlo_id;
-	}
-	rw_exit(&instp->mds_layout_lock);
+	lp = mds_add_layout(&gap.lc);
 
 	for (i = 0; i < num; i++) {
 		kmem_free(gap.lc.lc_mds_sids[i].val,
@@ -1384,25 +1378,14 @@ mds_layout_destroy(rfs4_entry_t u_entry)
 mds_layout_t *
 mds_add_layout(layout_core_t *lc)
 {
-	bool_t create = FALSE;
+	bool_t create = TRUE;
 	mds_layout_t *lp;
 
 	rw_enter(&mds_server->mds_layout_lock, RW_WRITER);
 
-	/*
-	 * If it is already in memory, then we can just
-	 * bump the refcnt.
-	 */
 	lp = (mds_layout_t *)rfs4_dbsearch(mds_server->mds_layout_idx,
-	    (void *)lc, &create, NULL,
-	    RFS4_DBS_VALID);
-	if (lp != NULL) {
-		rw_exit(&mds_server->mds_layout_lock);
-		return (lp);
-	}
+	    (void *)lc, &create, (void *)lc, RFS4_DBS_VALID);
 
-	lp = (mds_layout_t *)rfs4_dbcreate(mds_server->mds_layout_idx,
-	    (void *)lc);
 	rw_exit(&mds_server->mds_layout_lock);
 
 	if (lp == NULL) {

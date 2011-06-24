@@ -326,7 +326,6 @@ extern mds_mpd_t *mds_find_mpd(nfs_server_instance_t *, id_t);
 extern void rfs41_lo_seqid(stateid_t *);
 extern void mds_delete_layout(vnode_t *);
 extern void mds_clean_grants_by_fsid(rfs4_client_t *, vnode_t *);
-extern mds_layout_t *mds_add_layout(layout_core_t *lc);
 
 nfsstat4
 create_vnode(vnode_t *, char *,  vattr_t *, createmode4, timespec32_t *,
