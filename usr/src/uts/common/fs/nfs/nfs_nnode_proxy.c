@@ -312,12 +312,14 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 			full -= count;
 			ASSERT(full >= 0);
 
+			if (ask == 0)
+				break;
 			/*
 			 * If we're out of room in this iov, move to next
 			 */
 			if (remain == 0) {
 				io++;
-				ASSERT(io <= mnd->mnd_uiop->uio_iovcnt);
+				ASSERT(io < mnd->mnd_uiop->uio_iovcnt);
 				base = mnd->mnd_uiop->uio_iov[io].iov_base;
 				remain = mnd->mnd_uiop->uio_iov[io].iov_len;
 			}
