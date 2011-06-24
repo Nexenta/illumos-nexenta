@@ -67,6 +67,7 @@
 #include <nfs/nfs_cmd.h>
 #include <nfs/lm.h>
 #include <nfs/nfs4.h>
+#include <nfs/nfs41_layout.h>
 #include <nfs/nfs41_filehandle.h>
 
 #include <nfs/nfssys.h>
@@ -89,6 +90,8 @@ extern int nfs_loaned_buffers;
 /* End of Tunables */
 
 static int rdma_setup_read_data4(READ4args *, READ4res *);
+
+int pnfsproxy = 1;
 
 /*
  * Used to bump the stateid4.seqid value and show changes in the stateid
@@ -391,6 +394,9 @@ void rfs4_ss_chkclid(struct compound_state *, rfs4_client_t *);
 extern size_t   strlcpy(char *dst, const char *src, size_t dstsize);
 
 extern void	rfs4_free_fs_locations4(fs_locations4 *);
+extern nfsstat4 mds_createfile_get_layout(struct svc_req *, vnode_t *,
+    struct compound_state *, caller_context_t *, mds_layout_t **);
+extern int do_ctl_mds_remove(vnode_t *, mds_layout_t *, compound_state_t *);
 
 #ifdef	nextdp
 #undef nextdp
@@ -4035,6 +4041,18 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 						nbl_end_crit(vp);
 						in_crit = 0;
 					}
+
+					if (pnfsproxy) {
+						mds_layout_t *l;
+
+						l = pnfs_delete_mds_layout(tvp);
+						if (l) {
+							do_ctl_mds_remove(tvp,
+							    l, cs);
+							mds_layout_put(l);
+						}
+					}
+
 					rfs4_close_all_state(fp);
 				}
 				VN_RELE(tvp);
@@ -6400,6 +6418,23 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		status = check_open_access(args->share_access, cs, req);
 		if (status != NFS4_OK)
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
+	} else if (pnfsproxy) {
+		mds_layout_t *lo;
+
+		status = mds_createfile_get_layout(req, vp, cs, &ct, &lo);
+
+		if (status == NFS4_OK)
+			mds_layout_put(lo);
+
+		/*
+		 * Allow mds_createfile_get_layout() to be verbose
+		 * in what it presents as a status, but be aware
+		 * that it is permissible to not generate a
+		 * layout.
+		 */
+		if (status == NFS4ERR_LAYOUTUNAVAILABLE) {
+			status = NFS4_OK;
+		}
 	}
 	return (status);
 }

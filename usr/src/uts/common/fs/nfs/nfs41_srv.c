@@ -3212,7 +3212,7 @@ mds_lookup_and_findfile(vnode_t *dvp, char *nm, vnode_t **vpp,
 	return (fp);
 }
 
-static int
+int
 do_ctl_mds_remove(vnode_t *vp, mds_layout_t *layout, compound_state_t *cs)
 {
 	fid_t fid;
@@ -4469,7 +4469,7 @@ extern mds_layout_t *mds_gen_default_layout(nfs_server_instance_t *, vnode_t *);
  * We are going to create the file, so we need to get
  * a layout in play for it.
  */
-static nfsstat4
+nfsstat4
 mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
     struct compound_state *cs, caller_context_t *ct, mds_layout_t **plo)
 {
