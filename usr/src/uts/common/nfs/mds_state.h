@@ -105,8 +105,6 @@ typedef struct mds_layout {
 	layouttype4 	mlo_type;
 	layout_core_t	mlo_lc;
 	uint32_t	mlo_flags;
-	rfs4_file_t	*mlo_fp;
-	odl		*mlo_odl;
 	mds_mpd_t	*mlo_mpd;
 	id_t		mlo_mpd_id;
 	list_node_t	mpd_layouts_next;
