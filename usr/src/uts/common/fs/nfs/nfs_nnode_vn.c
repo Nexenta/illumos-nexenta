@@ -439,12 +439,17 @@ nnode_from_fh_v41_nfs(nnode_t **npp, nfs_fh4 *fh4)
 	nnode_key_t key;
 	nnode_fid_key_t fidkey;
 	uint32_t hash;
+	fid_t fid;
 
 	if (fh4->nfs_fh4_len < NFS41_FH_LEN)
 		return (ESTALE);
 
+	fid.fid_len = fh41->fh.v1.obj_fid.len;
+	bcopy(fh41->fh.v1.obj_fid.val, &fid.fid_data,
+	    MIN(fid.fid_len, MAXFIDSZ));
+
 	fidkey.nfk_fsid = &fh41->fh.v1.export_fsid;
-	fidkey.nfk_fid = (fid_t *)&fh41->fh.v1.obj_fid.len;
+	fidkey.nfk_fid = &fid;
 	fidkey.nfk_other = &fh41->fh.v1.flags;
 
 	hash = nnode_key_fid_hash(&fidkey);
