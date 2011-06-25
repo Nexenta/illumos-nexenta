@@ -154,6 +154,8 @@ typedef struct {
 	utf8string	ds_dataset_name;	/* Name of the dataset */
 	uint_t    	ds_attr_len;
 	ds_zfsattr 	*ds_attr_val;	/* XXX Should this be more general? */
+	uint64_t	space_total;
+	uint64_t	space_free;
 } ds_guid_info_t;
 
 /*

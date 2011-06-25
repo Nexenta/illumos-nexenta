@@ -537,6 +537,46 @@ mds_ds_rebooted(ds_owner_t *dop)
 	 */
 }
 
+static void
+mds_update_guid_info(uint_t len, const ds_dev_info *info)
+{
+	int i;
+
+	for (i = 0; i < len; i++, info++) {
+		char name[16];
+		struct ds_guid guid;
+		uint64_t id[2];
+		rfs4_entry_t entry;
+		bool_t no = FALSE;
+
+		if (info->type != ZFS)
+			continue;
+
+		guid.stor_type = ZFS;
+		guid.ds_guid_u.zfsguid.zfsguid_len = sizeof (name);
+		guid.ds_guid_u.zfsguid.zfsguid_val = name;
+
+		id[0] = htonll(info->guid.zpool_guid);
+		id[1] = htonll(info->guid.dataset_guid);
+		bcopy(id, name, sizeof (name));
+
+		rw_enter(&mds_server->ds_guid_info_lock, RW_READER);
+		entry = rfs4_dbsearch(mds_server->ds_guid_info_idx,
+		    (void *)&guid, &no, NULL, RFS4_DBS_VALID);
+
+		if (entry != NULL) {
+			ds_guid_info_t *pgi = (ds_guid_info_t *)entry;
+
+			pgi->space_total = info->space_total;
+			pgi->space_free = info->space_free;
+
+			rfs4_dbe_rele(pgi->dbe);
+		}
+
+		rw_exit(&mds_server->ds_guid_info_lock);
+	}
+}
+
 
 /* ARGSUSED */
 void
@@ -563,6 +603,9 @@ ds_renew(DS_RENEWargs *argp, DS_RENEWres *resp, struct svc_req *rqstp)
 		dop->verifier = argp->ds_boottime;
 	}
 	rfs4_dbe_unlock(dop->dbe);
+
+	mds_update_guid_info(argp->dev_info.dev_info_len,
+	    argp->dev_info.dev_info_val);
 
 	/* if needed call mds_ds_rebooted() to do cleanup. */
 
