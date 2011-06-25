@@ -283,6 +283,28 @@ default:
 };
 
 /*
+ * ds_zfsguid -
+ *
+ *	The data server guid made up of the local zpool guid + dataset id
+ */
+struct ds_zfsguid {
+	uint64_t	zpool_guid;
+	uint64_t	dataset_guid;
+};
+
+/*
+ * ds_dev_info -
+ *
+ *     Information about zvol device
+ */
+struct ds_dev_info {
+	storage_type	type;
+	ds_zfsguid	guid;
+	uint64_t	space_total;
+	uint64_t	space_free;
+};
+
+/*
  * DS_RENEW -
  *
  * A message from the DS to MDS used to exchnage
@@ -300,6 +322,7 @@ default:
 struct DS_RENEWargs {
       	ds_id		ds_id;
       	ds_verifier	ds_boottime;
+	ds_dev_info	dev_info<>;
 };
 
 union DS_RENEWres switch (ds_status status) {
@@ -371,16 +394,6 @@ const DSERV    = 0x00000002;
 struct ds_addr {
 	netaddr4	addr;
 	ds_addruse	validuse;
-};
-
-/*
- * ds_zfsguid -
- *
- *	The data server guid made up of the local zpool guid + dataset id
- */
-struct ds_zfsguid {
-	uint64_t	zpool_guid;
-	uint64_t	dataset_guid;
 };
 
 /*

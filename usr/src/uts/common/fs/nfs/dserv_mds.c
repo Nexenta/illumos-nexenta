@@ -879,6 +879,43 @@ out:
 	return (error);
 }
 
+static void
+ds_renew_args_prepare(dserv_mds_instance_t *inst, DS_RENEWargs *args)
+{
+	unsigned int num = inst->total_datasets;
+	ds_dev_info *di;
+	open_root_objset_t *root;
+	int i;
+
+	bzero(args, sizeof (*args));
+
+	args->ds_id = inst->dmi_ds_id;
+	args->ds_boottime = inst->dmi_verifier;
+
+	args->dev_info.dev_info_len = num;
+	args->dev_info.dev_info_val = di =
+	    kmem_zalloc(num * sizeof (ds_dev_info), KM_SLEEP);
+
+	root = list_head(&inst->dmi_datasets);
+
+	for (i = 0; i < num; i++) {
+		di[i].type = ZFS;
+		di[i].guid.zpool_guid = root->oro_ds_guid.dg_zpool_guid;
+		di[i].guid.dataset_guid = root->oro_ds_guid.dg_objset_guid;
+		di[i].space_total = 0;
+		di[i].space_free = 0;
+
+		root = list_next(&inst->dmi_datasets, root);
+	}
+}
+
+static void
+ds_renew_args_free(DS_RENEWargs *args)
+{
+	kmem_free(args->dev_info.dev_info_val,
+	    args->dev_info.dev_info_len * sizeof (ds_dev_info));
+}
+
 void
 dserv_mds_heartbeat_thread(pid_t *pid)
 {
@@ -895,9 +932,6 @@ dserv_mds_heartbeat_thread(pid_t *pid)
 	mutex_init(&cpr_lock, NULL, MUTEX_DEFAULT, NULL);
 	CALLB_CPR_INIT(&cpr_info, &cpr_lock,
 	    callb_generic_cpr, "pnfs_ds_mds_renew_hb");
-
-	bzero(&args, sizeof (args));
-	bzero(&res, sizeof (res));
 
 	for (;;) {
 		mutex_enter(&cpr_lock);
@@ -940,9 +974,9 @@ dserv_mds_heartbeat_thread(pid_t *pid)
 			break;
 		}
 
-		args.ds_id = inst->dmi_ds_id;
-		args.ds_boottime = inst->dmi_verifier;
+		ds_renew_args_prepare(inst, &args);
 		mutex_exit(&inst->dmi_content_lock);
+		bzero(&res, sizeof (res));
 
 		/*
 		 * Invoke DS_RENEW to the MDS
@@ -950,6 +984,8 @@ dserv_mds_heartbeat_thread(pid_t *pid)
 		error = dserv_mds_call(inst, DS_RENEW,
 		    (caddr_t)&args, xdr_DS_RENEWargs,
 		    (caddr_t)&res, xdr_DS_RENEWres);
+
+		ds_renew_args_free(&args);
 
 		/*
 		 * Detect reboot if the RPC succeeds.
