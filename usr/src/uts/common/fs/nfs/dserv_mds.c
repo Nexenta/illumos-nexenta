@@ -38,6 +38,7 @@
 #include <sys/sdt.h>
 #include <nfs/ds.h>
 #include <sys/dmu.h>
+#include <sys/dsl_prop.h>
 #include <sys/spa.h>
 #include <sys/zap.h>
 #include <sys/txg.h>
@@ -880,6 +881,33 @@ out:
 }
 
 static void
+ds_zvol_get_info(objset_t *os, uint64_t *avail, uint64_t *used)
+{
+	uint64_t *vals[2] = { avail, used };
+	const char *props[2];
+	nvlist_t *nv;
+	int i;
+
+	if (dsl_prop_get_all(os, &nv) != 0)
+		return;
+
+	props[0] = zfs_prop_to_name(ZFS_PROP_AVAILABLE);
+	props[1] = zfs_prop_to_name(ZFS_PROP_USED);
+
+	dmu_objset_stats(os, nv);
+	for (i = 0; i < 2; i++) {
+		nvlist_t *propval;
+
+		if (nvlist_lookup_nvlist(nv, props[i], &propval) != 0)
+			continue;
+
+		nvlist_lookup_uint64(propval, ZPROP_VALUE, vals[i]);
+		nvlist_free(propval);
+	}
+	nvlist_free(nv);
+}
+
+static void
 ds_renew_args_prepare(dserv_mds_instance_t *inst, DS_RENEWargs *args)
 {
 	unsigned int num = inst->total_datasets;
@@ -899,11 +927,17 @@ ds_renew_args_prepare(dserv_mds_instance_t *inst, DS_RENEWargs *args)
 	root = list_head(&inst->dmi_datasets);
 
 	for (i = 0; i < num; i++) {
+		uint64_t used, avail;
+
 		di[i].type = ZFS;
 		di[i].guid.zpool_guid = root->oro_ds_guid.dg_zpool_guid;
 		di[i].guid.dataset_guid = root->oro_ds_guid.dg_objset_guid;
-		di[i].space_total = 0;
-		di[i].space_free = 0;
+
+		avail = used = 0;
+		ds_zvol_get_info(root->oro_osp, &avail, &used);
+
+		di[i].space_total = avail + used;
+		di[i].space_free = avail;
 
 		root = list_next(&inst->dmi_datasets, root);
 	}
