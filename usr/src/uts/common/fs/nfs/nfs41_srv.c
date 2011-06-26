@@ -9403,3 +9403,28 @@ seq_chk_limits(nfs_argop4 *argop, nfs_resop4 *resop, compound_state_t *cs)
 	}
 	return (0);
 }
+
+static void
+pnfs_ds_statfs_walk(rfs4_entry_t entry, void *arg)
+{
+	ds_guid_info_t *pgi = (ds_guid_info_t *)entry;
+	struct statvfs64 *sbp = (struct statvfs64 *)arg;
+
+	if (rfs4_dbe_skip_or_invalid(pgi->dbe))
+		return;
+
+	sbp->f_blocks += pgi->space_total;
+	sbp->f_bfree += pgi->space_free;
+	sbp->f_bavail += pgi->space_free;
+}
+
+void
+pnfs_correct_statfs(struct compound_state *cs, struct statvfs64 *sbp)
+{
+	sbp->f_frsize = 1;
+	sbp->f_blocks = sbp->f_bfree = sbp->f_bavail = 0;
+
+	rw_enter(&mds_server->ds_guid_info_lock, RW_READER);
+	rfs4_dbe_walk(mds_server->ds_guid_info_tab, pnfs_ds_statfs_walk, sbp);
+	rw_exit(&mds_server->ds_guid_info_lock);
+}

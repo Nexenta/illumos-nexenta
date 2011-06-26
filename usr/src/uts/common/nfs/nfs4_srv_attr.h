@@ -58,6 +58,8 @@ int rfs4_fattr4_acl(nfs4_attr_cmd_t, struct nfs4_svgetit_arg *,
 int rfs4_fattr4_layout_hint(nfs4_attr_cmd_t, struct nfs4_svgetit_arg *,
     union nfs4_attr_u *);
 
+extern void pnfs_correct_statfs(struct compound_state *, struct statvfs64 *);
+
 #ifdef	__cplusplus
 }
 #endif

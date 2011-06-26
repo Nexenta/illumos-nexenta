@@ -1924,6 +1924,8 @@ bitmap4_get_sysattrs(struct nfs4_svgetit_arg *sargp)
 			sargp->sbp = NULL;	/* to identify error */
 			return (puterrno4(error));
 		}
+		if (pnfsproxy)
+			pnfs_correct_statfs(sargp->cs, sargp->sbp);
 	}
 
 	return (rfs4_vop_getattr(vp, sargp->vap, 0, cs->cr));
