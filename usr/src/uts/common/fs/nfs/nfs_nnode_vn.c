@@ -28,6 +28,7 @@
 #include <nfs/nfs41_filehandle.h>
 #include <nfs/ds_filehandle.h>
 #include <nfs/nfs41_fhtype.h>
+#include <nfs/mds_state.h>
 
 #include <sys/crc32.h>
 #include <sys/nbmlock.h>
@@ -102,8 +103,6 @@ static kmem_cache_t *nnode_fid_key_v41_cache;
 static kmem_cache_t *nnode_fid_key_v4_cache;
 static kmem_cache_t *nnode_fid_key_v3_cache;
 static kmem_cache_t *nnode_fid_key_vp_cache;
-
-extern int nfs_ds_present;
 
 /* vnode-based nnode ops */
 

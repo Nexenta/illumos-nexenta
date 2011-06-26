@@ -9421,6 +9421,9 @@ pnfs_ds_statfs_walk(rfs4_entry_t entry, void *arg)
 void
 pnfs_correct_statfs(struct compound_state *cs, struct statvfs64 *sbp)
 {
+	if (!nfs_ds_present)
+		return;
+
 	sbp->f_frsize = 1;
 	sbp->f_blocks = sbp->f_bfree = sbp->f_bavail = 0;
 
