@@ -2649,7 +2649,8 @@ mds_op_read(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
-	if (cs->vp->v_type != VREG) {
+	/* there is no "vp" on pnfs DS request */
+	if (cs->vp && cs->vp->v_type != VREG) {
 		*cs->statusp = resp->status =
 		    ((cs->vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
 		goto final;
@@ -4080,7 +4081,7 @@ mds_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
-	if (cs->vp->v_type != VREG) {
+	if (cs->vp && cs->vp->v_type != VREG) {
 		*cs->statusp = resp->status =
 		    ((cs->vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
 		goto final;
