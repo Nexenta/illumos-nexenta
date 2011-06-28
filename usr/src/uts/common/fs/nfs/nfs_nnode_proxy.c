@@ -285,6 +285,7 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 	idx = sp->startidx;
 	for (i = 0; i < segs && ask > 0; i++) {
 		int full, count;
+		int l = offset % sp->stripe_unit;
 
 		argp = &sp->io_array[idx].ds_io_u.read.args;
 		resp = &sp->io_array[idx].ds_io_u.read.res;
@@ -293,7 +294,7 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 		ASSERT(mds_layout_is_dense == 1);
 
 		/* How much do we ask for from this server? */
-		full = MIN(ask, sp->stripe_unit);
+		full = MIN(ask, sp->stripe_unit - l);
 
 		while (full > 0) {
 
@@ -524,6 +525,7 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	idx = sp->startidx;
 	for (i = 0; i < segs && ask > 0; i++) {
 		int full, count;
+		int l = offset % sp->stripe_unit;
 
 		argp = &sp->io_array[idx].ds_io_u.write.args;
 		resp = &sp->io_array[idx].ds_io_u.write.res;
@@ -532,7 +534,7 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 		ASSERT(mds_layout_is_dense == 1);
 
 		/* How much do we ask for from this DS? */
-		full = MIN(ask, sp->stripe_unit);
+		full = MIN(ask, sp->stripe_unit - l);
 
 		while (full > 0) {
 			/* How much do we ask for in this segment? */
