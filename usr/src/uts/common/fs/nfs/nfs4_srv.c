@@ -5378,14 +5378,18 @@ rfs4_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto out;
 	}
 
+	vp = cs->vp;
+	if (vp->v_type != VREG) {
+		*cs->statusp = resp->status =
+		    ((vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
+		goto out;
+	}
+
 	cr = cs->cr;
-	vp = nnop_io_getvp(nn);
 	if (rdonly4(cs->exi, vp, req)) {
-		VN_RELE(vp);
 		*cs->statusp = resp->status = NFS4ERR_ROFS;
 		goto out;
 	}
-	VN_RELE(vp);
 
 	/* caller context gets set as side-effect */
 	if ((stat = nnop_check_stateid(nn, cs, FWRITE, &args->stateid, FALSE,
