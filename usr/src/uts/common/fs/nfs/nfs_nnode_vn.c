@@ -496,6 +496,9 @@ nnode_from_vnode(nnode_t **npp, vnode_t *vp)
 	int error;
 	uint32_t zero = 0;
 
+	if (vp == NULL)
+		return (EINVAL);
+
 	vfs = vp->v_vfsp;
 	fsid = vfs->vfs_fsid;
 	fid.fid_len = sizeof (fid.fid_data);

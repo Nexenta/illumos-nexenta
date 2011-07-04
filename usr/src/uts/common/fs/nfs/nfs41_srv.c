@@ -2635,13 +2635,23 @@ mds_op_read(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__read__start, struct compound_state *, cs,
 	    READ4args, args);
 
-	nn = cs->nn;
-	if (nn == NULL) {
-		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-		goto final;
+	if (cs->nn == NULL) {
+		error = nnode_from_vnode(&cs->nn, cs->vp);
+		if (error != 0) {
+			*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
+			goto final;
+		}
 	}
+
+	nn = cs->nn;
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
+		goto final;
+	}
+
+	if (cs->vp->v_type != VREG) {
+		*cs->statusp = resp->status =
+		    ((cs->vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
 		goto final;
 	}
 
@@ -4036,7 +4046,7 @@ mds_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	WRITE4res *resp = &resop->nfs_resop4_u.opwrite;
 	nnode_io_flags_t nnioflags = NNODE_IO_FLAG_WRITE;
 	int error;
-	nnode_t *nn;
+	nnode_t *nn = NULL;
 	u_offset_t rlimit;
 	struct uio uio;
 	struct iovec iov[NFS_MAX_IOVECS];
@@ -4051,11 +4061,15 @@ mds_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__write__start, struct compound_state *, cs,
 	    WRITE4args *, args);
 
-	nn = cs->nn;
-	if (nn == NULL) {
-		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-		goto final;
+	if (cs->nn == NULL) {
+		error = nnode_from_vnode(&cs->nn, cs->vp);
+		if (error != 0) {
+			*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
+			goto final;
+		}
 	}
+
+	nn = cs->nn;
 	/*
 	 * cs->access is set in call_checkauth4 called in putfh code.  The
 	 * current putfh code will not invoke these security functions on the
@@ -4063,6 +4077,12 @@ mds_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 */
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
+		goto final;
+	}
+
+	if (cs->vp->v_type != VREG) {
+		*cs->statusp = resp->status =
+		    ((cs->vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
 		goto final;
 	}
 

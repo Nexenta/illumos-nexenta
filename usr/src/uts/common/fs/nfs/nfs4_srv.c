@@ -2530,8 +2530,6 @@ do_rfs4_op_lookup(char *nm, struct svc_req *req, struct compound_state *cs)
 	    NULL, NULL, NULL);
 	if (error)
 		return (puterrno4(error));
-	if (nnode_from_vnode(&nn, vp) == 0)
-		nnode_rele(&nn);
 
 	/*
 	 * If the vnode is in a pseudo filesystem, check whether it is visible.
@@ -2994,7 +2992,7 @@ rfs4_op_read(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	READ4args *args = &argop->nfs_argop4_u.opread;
 	READ4res *resp = &resop->nfs_resop4_u.opread;
 	nnode_error_t error;
-	nnode_t *nn;
+	nnode_t *nn = NULL;
 	vnode_t *vp;
 	struct iovec iov;
 	struct uio uio;
@@ -3012,14 +3010,24 @@ rfs4_op_read(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__read__start, struct compound_state *, cs,
 	    READ4args, args);
 
+	if (cs->nn == NULL) {
+		error = nnode_from_vnode(&cs->nn, cs->vp);
+		if (error != 0) {
+			*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
+			goto out;
+		}
+	}
+
 	vp = cs->vp;
 	nn = cs->nn;
-	if (nn == NULL || vp == NULL) {
-		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-		goto out;
-	}
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
+		goto out;
+	}
+
+	if (vp->v_type != VREG) {
+		*cs->statusp = resp->status =
+		    ((vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
 		goto out;
 	}
 
@@ -5340,7 +5348,7 @@ rfs4_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	WRITE4res *resp = &resop->nfs_resop4_u.opwrite;
 	nnode_io_flags_t nnioflags = NNODE_IO_FLAG_WRITE;
 	int error;
-	nnode_t *nn;
+	nnode_t *nn = NULL;
 	vnode_t *vp;
 	u_offset_t rlimit;
 	struct uio uio;
@@ -5356,11 +5364,15 @@ rfs4_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__write__start, struct compound_state *, cs,
 	    WRITE4args *, args);
 
-	nn = cs->nn;
-	if (nn == NULL) {
-		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-		goto out;
+	if (cs->nn == NULL) {
+		error = nnode_from_vnode(&cs->nn, cs->vp);
+		if (error != 0) {
+			*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
+			goto out;
+		}
 	}
+
+	nn = cs->nn;
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
 		goto out;
