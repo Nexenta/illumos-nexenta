@@ -20,6 +20,7 @@
  */
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -149,13 +150,6 @@ mds_op_readdir(nfs_argop4 *argop, nfs_resop4 *resop,
 
 	avers = nfs4_attrvers(cs);
 	ar = args->attr_request;
-	ATTRMAP_MASK(ar, RFS4_RDDIR_SUPP_ATTRMAP(avers));
-	minrddir = ar;
-	if (ATTR_ISSET(ar, MOUNTED_ON_FILEID)) {
-		ATTRMAP_MASK(minrddir, RFS4_MINRDDIR_MNTFILEID(avers));
-	} else {
-		ATTRMAP_MASK(minrddir, RFS4_MINRDDIR_FILEID(avers));
-	}
 
 	lu_set = lg_set = 0;
 	owner.utf8string_len = group.utf8string_len = 0;
@@ -343,6 +337,14 @@ mds_op_readdir(nfs_argop4 *argop, nfs_resop4 *resop,
 	}
 
 	rddir_next_offset = (offset_t)args->cookie;
+	ATTRMAP_MASK(ar, RFS4_RDDIR_SUPP_ATTRMAP(avers));
+	minrddir = ar;
+	if (ATTR_ISSET(ar, MOUNTED_ON_FILEID)) {
+		ATTRMAP_MASK(minrddir, RFS4_MINRDDIR_MNTFILEID(avers));
+	} else {
+		ATTRMAP_MASK(minrddir, RFS4_MINRDDIR_FILEID(avers));
+	}
+
 
 readagain:
 
