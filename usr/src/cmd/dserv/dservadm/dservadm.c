@@ -21,6 +21,8 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
 #pragma ident	"%Z%%M%	%I%	%E% SMI"
@@ -70,11 +72,8 @@ typedef enum {
 	USAGE_DESTROY,
 	USAGE_ENABLE,
 	USAGE_DISABLE,
-	USAGE_ADDSTORAGE,
 	USAGE_ADDSTOR,
-	USAGE_DROPSTORAGE,
 	USAGE_DROPSTOR,
-	USAGE_LISTSTORAGE,
 	USAGE_LISTSTOR,
 	USAGE_ADDMDS,
 	USAGE_DROPMDS,
@@ -94,11 +93,8 @@ static dservadm_cmd_t dservadm_cmd[] = {
 	{"disable", dservadm_disable, USAGE_DISABLE},
 
 	{NULL},
-	{"addstorage", dservadm_addstorage, USAGE_ADDSTORAGE},
 	{"addstor", dservadm_addstorage, USAGE_ADDSTOR},
-	{"dropstorage", dservadm_dropstorage, USAGE_DROPSTORAGE},
 	{"dropstor", dservadm_dropstorage, USAGE_DROPSTOR},
-	{"liststorage", dservadm_liststorage, USAGE_LISTSTORAGE},
 	{"liststor", dservadm_liststorage, USAGE_LISTSTOR},
 
 	{NULL},
@@ -123,20 +119,13 @@ usage_synopsis(dservadm_usage_t which)
 	case USAGE_DISABLE:
 		return ("dservadm disable [ -i <instance> ]");
 
-	case USAGE_ADDSTORAGE:
-		return ("dservadm addstorage [ -i <instance> ] " \
-		    "<pnfs-dataset-name>");
 	case USAGE_ADDSTOR:
 		return ("dservadm addstor [ -i <instance> ] " \
-		    "<pnfs-dataset-name>");
-	case USAGE_DROPSTORAGE:
-		return ("dservadm dropstorage [ -i <instance> ] " \
 		    "<pnfs-dataset-name>");
 	case USAGE_DROPSTOR:
 		return ("dservadm dropstor [ -i <instance> ] " \
 		    "<pnfs-dataset-name>");
-	case USAGE_LISTSTORAGE:
-		return ("dservadm liststorage [ -i <instance> ]");
+
 	case USAGE_LISTSTOR:
 		return ("dservadm liststor [ -i <instance> ]");
 
@@ -167,21 +156,14 @@ usage_desc(dservadm_usage_t which)
 		return ("    Disables dserv service");
 
 	case USAGE_ADDSTOR:
-	case USAGE_ADDSTORAGE:
 		return ("    Add the dataset specified by <dataset-name>"
-		    "\n    to the list of datasets dedicated to pNFS service."
-		    "\n    Alias for addstorage is addstor.");
+		    "\n    to the list of datasets dedicated to pNFS service.");
 	case USAGE_DROPSTOR:
-	case USAGE_DROPSTORAGE:
 		return ("    Drop the dataset specified by <dataset-name>"
 		    "\n    from the list of datasets dedicated to pNFS service."
-		    "\n    Use with caution.  Alias for dropstorage is"
-		    "\n    dropstor.");
+		    "\n    Use with caution.");
 	case USAGE_LISTSTOR:
-	case USAGE_LISTSTORAGE:
-		return ("    List datasets allocated to dserv.  Alias for"
-		    "\n    liststorage is liststor.");
-
+		return ("    List datasets allocated to dserv.");
 	case USAGE_ADDMDS:
 		return ("   Add the metadata server specified by"
 		    "\n   <universal-address>.  <universal-address> must be"
@@ -202,7 +184,7 @@ usage(dservadm_usage_t which)
 	int i;
 
 	fprintf(stderr,
-	    gettext("Usage: dservadm command [ options ] [ args ]\n"));
+	    gettext("Usage: dservadm command [ options ] [ args ]\n\n"));
 
 	if (which != USAGE_NONE) {
 		fprintf(stderr, "%s\n%s\n\n",
@@ -293,8 +275,7 @@ dservadm_addstorage(dserv_handle_t *handle,
 	argv += optind;
 
 	if (argc != 1)
-		usage(USAGE_ADDSTORAGE);
-
+		usage(USAGE_ADDSTOR);
 
 	rc = dserv_addprop(handle, DSERV_PROP_ZPOOLS, argv[0]);
 	if (rc != 0)
@@ -315,7 +296,7 @@ dservadm_dropstorage(dserv_handle_t *handle,
 	argv += optind;
 
 	if (argc != 1)
-		usage(USAGE_DROPSTORAGE);
+		usage(USAGE_DROPSTOR);
 
 	rc = dserv_dropprop(handle, DSERV_PROP_ZPOOLS, argv[0]);
 	if (rc != 0)
