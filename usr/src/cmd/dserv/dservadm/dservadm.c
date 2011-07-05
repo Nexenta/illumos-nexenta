@@ -110,32 +110,32 @@ usage_synopsis(dservadm_usage_t which)
 {
 	switch (which) {
 	case USAGE_CREATE:
-		return ("dservadm create <instance>");
+		return ("create        <instance>");
 	case USAGE_DESTROY:
-		return ("dservadm destroy <instance>");
+		return ("destroy       <instance>");
 
 	case USAGE_ENABLE:
-		return ("dservadm enable [ -i <instance> ]");
+		return ("enable   [ -i <instance> ]");
 	case USAGE_DISABLE:
-		return ("dservadm disable [ -i <instance> ]");
+		return ("disable  [ -i <instance> ]");
 
 	case USAGE_ADDSTOR:
-		return ("dservadm addstor [ -i <instance> ] " \
+		return ("addstor  [ -i <instance> ] " \
 		    "<pnfs-dataset-name>");
 	case USAGE_DROPSTOR:
-		return ("dservadm dropstor [ -i <instance> ] " \
+		return ("dropstor [ -i <instance> ] " \
 		    "<pnfs-dataset-name>");
 
 	case USAGE_LISTSTOR:
-		return ("dservadm liststor [ -i <instance> ]");
+		return ("liststor [ -i <instance> ]");
 
 	case USAGE_ADDMDS:
-		return ("dservadm addmds [ -i <instance> ] "
+		return ("addmds   [ -i <instance> ] "
 		    "<universal-address>");
 	case USAGE_DROPMDS:
-		return ("dservadm dropmds [ -i <instance> ]");
+		return ("dropmds  [ -i <instance> ]");
 	case USAGE_LISTMDS:
-		return ("dservadm listmds [ -i <instance> ]");
+		return ("listmds  [ -i <instance> ]");
 	default:
 		return ("dservadm <command> <arguments>");
 	}
@@ -165,12 +165,12 @@ usage_desc(dservadm_usage_t which)
 	case USAGE_LISTSTOR:
 		return ("    List datasets allocated to dserv.");
 	case USAGE_ADDMDS:
-		return ("   Add the metadata server specified by"
-		    "\n   <universal-address>.  <universal-address> must be"
-		    "\n   of the form [h1.h2.h3.h4.p1.p2].  Only one"
-		    "\n   metadata server can be added per dserv instance.");
+		return ("    Add the metadata server specified by"
+		    "\n    <universal-address>.  <universal-address> must be"
+		    "\n    of the form [h1.h2.h3.h4.p1.p2].  Only one"
+		    "\n    metadata server can be added per dserv instance.");
 	case USAGE_DROPMDS:
-		return ("   Drop the metadata server.");
+		return ("    Drop the metadata server.");
 	case USAGE_LISTMDS:
 		return ("    List the metadata server for this dserv.");
 	default:
@@ -195,9 +195,10 @@ usage(dservadm_usage_t which)
 	for (i = 0; i < NUM_CMDS; i++) {
 		if (dservadm_cmd[i].name == NULL)
 			continue;
-		fprintf(stderr, "%s\n\n",
+		fprintf(stderr, "\t%s\n",
 		    usage_synopsis(dservadm_cmd[i].usage));
 	}
+	fprintf(stderr, "\n");
 
 	exit(2);
 }
