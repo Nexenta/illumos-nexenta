@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/systm.h>
@@ -3180,6 +3181,15 @@ rfs4_state_has_access(rfs4_state_t *sp, int mode, vnode_t *vp)
 		}
 	} else if (mode == FREAD) {
 		if (!(sp->rs_share_access & OPEN4_SHARE_ACCESS_READ)) {
+			/*
+			 * Deny read access if the file was opened
+			 * on write only.
+			 */
+			if (sp->rs_share_access & OPEN4_SHARE_ACCESS_WRITE) {
+				stat = NFS4ERR_OPENMODE;
+				goto out;
+			}
+
 			/*
 			 * If we have OPENed the file with DENYing access
 			 * to both READ and WRITE then no one else could
