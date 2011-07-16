@@ -49,6 +49,7 @@
 #include <nfs/export.h>
 
 uint32_t max_blksize = SPA_MAXBLOCKSIZE;
+uint_t dserv_max_transfer_size = 1024 * 1024;
 
 char *pnfs_dmu_tag = "pNFS_TAG";	/* Tag used for DMU interfaces */
 
@@ -240,6 +241,18 @@ send_nfs4err(nfsstat4 stat, SVCXPRT *xprt)
 	if (!svc_sendreply(xprt,  xdr_COMPOUND4res_srv, (char *)&comp_resp)) {
 		svcerr_systemerr(xprt);
 	}
+}
+
+uint_t
+dserv_max_tsize(void)
+{
+	return (dserv_max_transfer_size + RPC_HEADER_SZ);
+}
+
+uint_t
+dserv_tsize(void)
+{
+	return (dserv_max_transfer_size);
 }
 
 /* the non port 2049 point of entry */
@@ -1120,6 +1133,7 @@ dserv_svc(dserv_svc_args_t *svcargs)
 	struct netbuf addrmask;
 	SVCMASTERXPRT *xprt;
 	char *six;
+	uint_t maxmsg;
 
 	if ((fp = getf(svcargs->fd)) == NULL)
 		return (EBADF);
@@ -1143,11 +1157,9 @@ dserv_svc(dserv_svc_args_t *svcargs)
 	addrmask.buf = kmem_alloc(addrmask.len, KM_SLEEP);
 	bcopy((void *)&svcargs->sin, (void *)addrmask.buf, addrmask.len);
 
-	/*
-	 * XXX - Determine the correct way to set the max receive size
-	 * (the second parameter).
-	 */
-	error = svc_tli_kcreate(fp, 1024 * 1024, svcargs->netid, &addrmask,
+	maxmsg = dserv_max_tsize();
+
+	error = svc_tli_kcreate(fp, maxmsg, svcargs->netid, &addrmask,
 	    &xprt, &dserv_sct, NULL, svcargs->poolid, TRUE);
 	if (error != 0)
 		kmem_free(addrmask.buf, addrmask.len);

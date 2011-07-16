@@ -72,6 +72,7 @@ void ds_dispatch(struct svc_req *, SVCXPRT *xprt);
 #include <nfs/ds_nfs_xdr.h>
 
 extern char *pnfs_dmu_tag;	/* Tag used for DMU interfaces */
+extern uint_t dserv_tsize(void);
 
 #ifdef	__cplusplus
 }
