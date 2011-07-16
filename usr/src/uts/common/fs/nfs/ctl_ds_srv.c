@@ -1028,6 +1028,8 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 	 * ToDo: Check the verifier (args->ds_verifier).
 	 */
 
+	dop->max_req_size = argp->max_req_size;
+
 	/*
 	 * First deal with the universal addresses
 	 */

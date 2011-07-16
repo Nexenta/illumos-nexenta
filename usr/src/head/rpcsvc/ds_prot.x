@@ -478,6 +478,7 @@ struct DS_REPORTAVAILargs {
       	struct ds_addr   ds_addrs<>;
 	ds_attr_version  ds_attrvers;
       	ds_storinfo      ds_storinfo<>;
+	uint32_t	 max_req_size;
 };
 
 /*

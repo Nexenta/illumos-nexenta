@@ -1431,6 +1431,8 @@ dserv_mds_do_reportavail(dserv_mds_instance_t *inst, ds_status *status)
 	args.ds_addrs.ds_addrs_len = acount;
 	args.ds_addrs.ds_addrs_val = kmem_alloc(acount *
 	    sizeof (struct ds_addr), KM_SLEEP);
+	args.max_req_size = dserv_tsize();
+
 	ua = list_head(&inst->dmi_uaddrs);
 	for (i = 0; i < acount; i++) {
 		args.ds_addrs.ds_addrs_val[i].validuse = NFS | DSERV;

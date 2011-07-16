@@ -95,6 +95,7 @@ typedef struct ds_owner {
 	uint32_t	dsi_flags;
 	list_t		ds_addrlist_list;
 	list_t		ds_guid_list;
+	uint_t		max_req_size;		/* max message size */
 } ds_owner_t;
 
 /*

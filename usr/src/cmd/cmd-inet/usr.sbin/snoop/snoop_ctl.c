@@ -783,6 +783,7 @@ ds_reportavail_args_dtl(DS_REPORTAVAILargs *args)
 	sprintf(get_line(0, 0), "DS id = %llu", args->ds_id);
 	sprintf(get_line(0, 0), "Verifier = %llu", args->ds_verifier);
 	sprintf(get_line(0, 0), "Attribute Version = %u", args->ds_attrvers);
+	sprintf(get_line(0, 0), "Max Msg Size = %u", args->max_req_size);
 
 	for (i = 0; i < args->ds_addrs.ds_addrs_len; i++) {
 		sprintf(get_line(0, 0), "Addr[%d]", i);
@@ -839,11 +840,12 @@ ds_reportavail_args(char *line, bool_t summary)
 		longjmp(xdr_err, 1);
 
 	if (summary) {
-		sprintf(line, " DI=%llu A=%d LA=%u LS=%u",
+		sprintf(line, " DI=%llu A=%d LA=%u LS=%u SZ=%u",
 		    args.ds_id,
 		    args.ds_attrvers,
 		    args.ds_addrs.ds_addrs_len,
-		    args.ds_storinfo.ds_storinfo_len);
+		    args.ds_storinfo.ds_storinfo_len,
+		    args.max_req_size);
 	} else {
 		ds_reportavail_args_dtl(&args);
 	}
