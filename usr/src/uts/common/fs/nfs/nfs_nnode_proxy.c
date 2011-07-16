@@ -463,7 +463,7 @@ out:
  */
 static void
 add_write_record(uint64_t offset, int count, int stripewidth, int stripe_unit,
-    char *where, DS_WRITEargs *argp, DS_WRITEres *resp) {
+    char *where, DS_WRITEargs *argp) {
 	ds_filesegbuf *segp;
 
 	segp = &argp->wrv.wrv_val[argp->wrv.wrv_len];
@@ -473,7 +473,6 @@ add_write_record(uint64_t offset, int count, int stripewidth, int stripe_unit,
 	segp->data.data_len = count;
 	segp->data.data_val = where;
 	argp->wrv.wrv_len++;
-	resp->DS_WRITEres_u.res_ok.wrv.wrv_len++;
 	argp->count += count;
 }
 
@@ -536,7 +535,6 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 		int full, l = offset % sp->stripe_unit;
 
 		argp = &sp->io_array[idx].ds_io_u.write.args;
-		resp = &sp->io_array[idx].ds_io_u.write.res;
 
 		/* How much do we ask for from this DS? */
 		full = MIN(ask, sp->stripe_unit - l);
@@ -550,7 +548,7 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 			ASSERT(argp->wrv.wrv_len < segs);
 			add_write_record(offset, count, stripewidth,
 			    sp->stripe_unit, base + (offset - ioffset),
-			    argp, resp);
+			    argp);
 
 			offset += count;
 			ask -= count;
