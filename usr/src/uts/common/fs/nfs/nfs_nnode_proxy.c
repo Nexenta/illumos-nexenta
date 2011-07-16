@@ -479,7 +479,7 @@ add_write_record(int count, char *where, ds_write_t *wr) {
 int
 proxy_do_write(nnode_proxy_data_t *mnd)
 {
-	int i, j, idx;			/* loop counters */
+	int i, idx;			/* loop counters */
 	int segs;			/* total segment count */
 	int len, ask, remain;		/* request/result tracking */
 	int io;				/* which iov in uio */
@@ -508,7 +508,8 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	 * The filehandle is copied to each DS_WRITEargs.
 	 */
 	offset = sp->offset;
-	for (idx = 0; idx < sp->stripe_count; idx++) {
+	idx = sp->startidx;
+	for (i = 0; i < sp->stripe_count; i++) {
 		DS_WRITEargs *argp;
 		ds_write_t *wr = &sp->io_array[idx].ds_io_u.write;
 		uint64_t n;
@@ -526,6 +527,7 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 
 		/* switch offset to next DS */
 		offset += sp->stripe_unit - l;
+		idx = ((idx + 1) % sp->stripe_count);
 	}
 
 	/*
