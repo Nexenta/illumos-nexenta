@@ -97,6 +97,7 @@ main(int argc, char *argv[])
 	dserv_handle_t *handle;
 	char *poolname, *mdsaddr;
 	struct sigaction act;
+	ushort port;
 
 	(void) sigfillset(&act.sa_mask);
 	act.sa_handler = instance_shutdown;
@@ -133,7 +134,7 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
-	mdsaddr = dserv_getmds(handle);
+	mdsaddr = dserv_getmds(handle, &port);
 	if (mdsaddr == NULL) {
 		if (dserv_error(handle) != DSERV_ERR_NONE)
 			dserv_log(handle, LOG_ERR, NULL);

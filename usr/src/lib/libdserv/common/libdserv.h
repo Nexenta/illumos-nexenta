@@ -84,7 +84,7 @@ int dserv_addprop(dserv_handle_t *, const char *, const char *);
 int dserv_dropprop(dserv_handle_t *, const char *, const char *);
 char *dserv_firstpool(dserv_handle_t *);
 char *dserv_nextpool(dserv_handle_t *);
-char *dserv_getmds(dserv_handle_t *);
+char *dserv_getmds(dserv_handle_t *, ushort *);
 
 int dserv_kmod_regpool(dserv_handle_t *, const char *);
 int dserv_kmod_setmds(dserv_handle_t *, dserv_setmds_args_t *);

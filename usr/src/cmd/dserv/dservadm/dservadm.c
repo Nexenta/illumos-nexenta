@@ -410,21 +410,25 @@ dservadm_listmds(dserv_handle_t *handle,
     int argc, char *argv[], dservadm_cmd_t *c)
 {
 	int rc = 0;
+	ushort port;
 	char *mds;
 
 	if (optinstance(handle, argc, argv, c->usage) != 0)
 		return (1);
 
-	printf(gettext("mds:\n"));
+	printf(gettext("mds:   "));
 
-	mds = dserv_getmds(handle);
+	mds = dserv_getmds(handle, &port);
 	if (dserv_error(handle) != DSERV_ERR_NONE) {
 		fprintf(stderr, "%s\n", dserv_strerror(handle));
 		rc = -1;
 		return (rc);
 	}
-	if (mds != NULL)
-		printf("    %s\n", mds);
+	if (mds != NULL) {
+		printf(gettext("%s\n"), mds);
+		if (port != NFS_PORT)
+			printf(gettext("port:  %u\n"), port);
+	}
 
 	return (rc);
 }

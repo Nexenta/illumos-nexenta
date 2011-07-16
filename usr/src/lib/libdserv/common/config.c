@@ -587,7 +587,7 @@ scferr:
 }
 
 char *
-dserv_getmds(dserv_handle_t *handle)
+dserv_getmds(dserv_handle_t *handle, ushort *port)
 {
 	char *val;
 
@@ -597,6 +597,12 @@ dserv_getmds(dserv_handle_t *handle)
 		return (NULL);
 	if (scf_pg_update(handle->dsh_pg_storage) == -1)
 		return (NULL);
+
+	val = dserv_prop_get_string(handle, DSERV_PROP_MDS_PORT);
+	if (val == NULL)
+		return NULL;
+
+	*port = atoi(val);
 
 	val = dserv_prop_get_string(handle, DSERV_PROP_MDS_ADDR);
 	return (val);
