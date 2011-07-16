@@ -257,8 +257,10 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 	DS_READres *resp;
 	ds_filesegbuf *dfp;
 
+	/* Hard-coded for dense stripes since layout doesn't tell me */
+	ASSERT(mds_layout_is_dense == 1);
+
 	sp = mnd->mnd_strategy;
-	ASSERT(sp);
 	len = sp->len;
 
 	/*
@@ -293,36 +295,32 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 	remain = mnd->mnd_uiop->uio_iov[0].iov_len;
 	ioffset = offset = sp->offset;
 	idx = sp->startidx;
-	for (i = 0; i < segs && ask > 0; i++) {
-		int full, count;
-		int l = offset % sp->stripe_unit;
+	while (ask > 0) {
+		int full, l = offset % sp->stripe_unit;
 
 		argp = &sp->io_array[idx].ds_io_u.read.args;
 		resp = &sp->io_array[idx].ds_io_u.read.res;
-
-		/* Hard-coded for dense stripes since layout doesn't tell me */
-		ASSERT(mds_layout_is_dense == 1);
 
 		/* How much do we ask for from this server? */
 		full = MIN(ask, sp->stripe_unit - l);
 
 		while (full > 0) {
+			int count;
 
 			/* How much do we ask for in this segment? */
 			count = MIN(full, remain);
 
+			ASSERT(argp->rdv.rdv_len < segs);
 			add_read_record(offset, count, stripewidth,
 			    sp->stripe_unit, base + (offset - ioffset),
 			    argp, resp);
 
 			offset += count;
 			ask -= count;
-			ASSERT(ask >= 0);
 			remain -= count;
-			ASSERT(remain >= 0);
 			full -= count;
-			ASSERT(full >= 0);
 
+			ASSERT(ask >= 0);
 			if (ask == 0)
 				break;
 			/*
@@ -495,10 +493,11 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	DS_WRITEargs *argp;
 	DS_WRITEres *resp;
 
+	/* Hard-coded for dense stripes since layout doesn't tell me */
+	ASSERT(mds_layout_is_dense == 1);
+
 	sp = mnd->mnd_strategy;
-	ASSERT(sp);
 	len = sp->len;
-	base = mnd->mnd_uiop->uio_iov->iov_base;
 
 	/*
 	 * Guess how many {offset,count} segments need to be
@@ -533,20 +532,18 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	remain = mnd->mnd_uiop->uio_iov[0].iov_len;
 	ioffset = offset = sp->offset;
 	idx = sp->startidx;
-	for (i = 0; i < segs && ask > 0; i++) {
-		int full, count;
-		int l = offset % sp->stripe_unit;
+	while (ask > 0) {
+		int full, l = offset % sp->stripe_unit;
 
 		argp = &sp->io_array[idx].ds_io_u.write.args;
 		resp = &sp->io_array[idx].ds_io_u.write.res;
-
-		/* Hard-coded for dense stripes since layout doesn't tell me */
-		ASSERT(mds_layout_is_dense == 1);
 
 		/* How much do we ask for from this DS? */
 		full = MIN(ask, sp->stripe_unit - l);
 
 		while (full > 0) {
+			int count;
+
 			/* How much do we ask for in this segment? */
 			count = MIN(full, remain);
 
@@ -557,12 +554,10 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 
 			offset += count;
 			ask -= count;
-			ASSERT(ask >= 0);
 			remain -= count;
-			ASSERT(remain >= 0);
 			full -= count;
-			ASSERT(full >= 0);
 
+			ASSERT(ask >= 0);
 			if (ask == 0)
 				break;
 			/*
