@@ -1667,7 +1667,7 @@ extern void	nfs4_pnfs_fini_mi(struct mntinfo4 *);
 extern int	geterrno4(nfsstat4);
 extern nfsstat4	puterrno4(int);
 extern int	nfs4_need_to_bump_seqid(COMPOUND4res_clnt *);
-extern int	nfs4tsize(void);
+extern uint_t	nfs4_max_tsize(void);
 extern int	checkauth4(struct compound_state *, struct svc_req *);
 extern nfsstat4 call_checkauth4(struct compound_state *, struct svc_req *);
 extern int	is_exported_sec(int, struct exportinfo *);

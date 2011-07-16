@@ -64,14 +64,20 @@ uint_t nfs4_max_transfer_size = 32 * 1024;
 uint_t nfs4_max_transfer_size_cots = 1024 * 1024;
 uint_t nfs4_max_transfer_size_rdma = 1024 * 1024;
 
-int
-nfs4tsize(void)
+/*
+ * Server side: Max message size with room for RPC/XDR header
+ */
+uint_t
+nfs4_max_tsize(void)
 {
-	/*
-	 * For the moment, just return nfs4_max_transfer_size until we
-	 * can query the appropriate transport.
-	 */
-	return (nfs4_max_transfer_size);
+	uint_t val = nfs4_max_transfer_size;
+
+	if (val < nfs4_max_transfer_size_cots)
+		val = nfs4_max_transfer_size_cots;
+	if (val < nfs4_max_transfer_size_rdma)
+		val = nfs4_max_transfer_size_rdma;
+
+	return (val + RPC_HEADER_SZ);
 }
 
 uint_t

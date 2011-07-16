@@ -113,6 +113,8 @@ extern rpcvers_t nfs_versmax;
 
 #define	NFS_MAX_IOVECS 12
 
+#define	RPC_HEADER_SZ	1024
+
 /*
  * WebNFS error status
  */

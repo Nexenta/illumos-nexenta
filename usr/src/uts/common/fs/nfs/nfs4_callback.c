@@ -2115,14 +2115,6 @@ nfs4_svc(struct nfs4_svc_args *arg, model_t model)
 	if ((fp = getf(STRUCT_FGET(uap, fd))) == NULL)
 		return (EBADF);
 
-	/*
-	 * Set read buffer size to rsize
-	 * and add room for RPC headers.
-	 */
-	readsize = nfs3tsize() + (RPC_MAXDATASIZE - NFS_MAXDATA);
-	if (readsize < RPC_MAXDATASIZE)
-		readsize = RPC_MAXDATASIZE;
-
 	error = copyinstr((const char *)STRUCT_FGETP(uap, netid), buf,
 	    KNC_STRSIZE, &len);
 	if (error) {
@@ -2180,6 +2172,8 @@ nfs4_svc(struct nfs4_svc_args *arg, model_t model)
 	mutex_enter(&ncg->nfs4_cb_lock);
 	if (cmd & NFS4_SETPORT)
 		nfs4_setport(buf, uaddr, protofmly, proto, ncg);
+
+	readsize = nfs4_max_tsize();
 
 	if (cmd & NFS4_KRPC_START) {
 		error = svc_tli_kcreate(fp, readsize, buf, &addrmask, &cb_xprt,
