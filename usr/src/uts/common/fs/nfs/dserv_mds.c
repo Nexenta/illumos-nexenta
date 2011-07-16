@@ -156,8 +156,6 @@ dserv_mds_instance_init(dserv_mds_instance_t *inst)
 	timespec32_t verf;
 
 	inst->dmi_ds_id = 0;
-	inst->dmi_mds_addr = NULL;
-	inst->dmi_mds_netid = NULL;
 
 	verf.tv_sec = dserv_atoi(hw_serial);
 	if (verf.tv_sec != 0) {
@@ -573,11 +571,6 @@ dserv_mds_instance_teardown()
 		}
 	}
 
-	if (inst->dmi_mds_addr != NULL)
-		dserv_strfree(inst->dmi_mds_addr);
-	if (inst->dmi_mds_netid != NULL)
-		dserv_strfree(inst->dmi_mds_netid);
-
 	kmem_cache_free(dserv_mds_instance_cache, inst);
 	return (0);
 }
@@ -667,11 +660,9 @@ dserv_uaddr2sockaddr(int af, char *ua, void *ap, in_port_t *pp)
  * dserv instance, netid, address and port.
  */
 int
-dserv_mds_setmds(char *netid, char *uaddr)
+dserv_mds_setmds(char *netid, char *addr, ushort port)
 {
 	dserv_mds_instance_t *inst;
-	struct sockaddr_in *addr4;
-	struct sockaddr_in6 *addr6;
 	char *devname;
 	vnode_t *vp;
 	int error;
@@ -682,8 +673,6 @@ dserv_mds_setmds(char *netid, char *uaddr)
 		return (error);
 
 	mutex_enter(&inst->dmi_content_lock);
-	inst->dmi_mds_netid = dserv_strdup(netid);
-	inst->dmi_mds_addr = dserv_strdup(uaddr);
 
 	inst->dmi_knc.knc_semantics = NC_TPI_COTS;
 	if (strcmp(netid, "tcp") == 0) {
@@ -712,21 +701,31 @@ dserv_mds_setmds(char *netid, char *uaddr)
 	VN_RELE(vp);
 
 	if (af == AF_INET) {
+		struct sockaddr_in *addr4;
+		char buf[16];
+		char *s;
+
 		inst->dmi_nb.maxlen = inst->dmi_nb.len =
 		    sizeof (struct sockaddr_in);
 		inst->dmi_nb.buf = kmem_zalloc(inst->dmi_nb.maxlen, KM_SLEEP);
 		addr4 = (struct sockaddr_in *)inst->dmi_nb.buf;
 		addr4->sin_family = af;
-		error = dserv_uaddr2sockaddr(af, uaddr,
-		    &addr4->sin_addr, &addr4->sin_port);
+		if (inet_pton(af, addr, &addr4->sin_addr) == 1) {
+			addr4->sin_port = htons(port);
+		} else
+			error = EINVAL;
 	} else { /* AF_INET6 */
+		struct sockaddr_in6 *addr6;
+
 		inst->dmi_nb.maxlen = inst->dmi_nb.len =
 		    sizeof (struct sockaddr_in6);
 		inst->dmi_nb.buf = kmem_zalloc(inst->dmi_nb.maxlen, KM_SLEEP);
 		addr6 = (struct sockaddr_in6 *)inst->dmi_nb.buf;
 		addr6->sin6_family = af;
-		error = dserv_uaddr2sockaddr(af, uaddr,
-		    &addr6->sin6_addr, &addr6->sin6_port);
+		if (inet_pton(af, addr, &addr6->sin6_addr) == 1) {
+			addr6->sin6_port = htons(port);
+		} else
+			error = EINVAL;
 	}
 
 	if (error == 0)

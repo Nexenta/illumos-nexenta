@@ -261,12 +261,13 @@ struct mds_reclo_args32 {
  */
 
 #define	DSERV_MAX_NETID	32
-#define	DSERV_MAX_UADDR	128
+#define	DSERV_MAX_ADDR	128
 
 typedef struct dserv_dataset_props {
 	char ddp_name[MAXPATHLEN];
 	char ddp_mds_netid[DSERV_MAX_NETID];
-	char ddp_mds_uaddr[DSERV_MAX_UADDR];
+	char ddp_mds_addr[DSERV_MAX_ADDR];
+	uint16_t port;
 } dserv_dataset_props_t;
 
 typedef struct dserv_dataset_info {
@@ -275,7 +276,8 @@ typedef struct dserv_dataset_info {
 
 typedef struct dserv_setmds_args {
 	char dsm_mds_netid[DSERV_MAX_NETID];
-	char dsm_mds_uaddr[DSERV_MAX_UADDR];
+	char dsm_mds_addr[DSERV_MAX_ADDR];
+	uint16_t port;
 } dserv_setmds_args_t;
 
 

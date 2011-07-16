@@ -143,12 +143,15 @@ main(int argc, char *argv[])
 			    gettext("MDS not set; aborting"));
 		exit(1);
 	}
-	if (strlcpy(setmds.dsm_mds_uaddr, mdsaddr,
-	    sizeof (setmds.dsm_mds_uaddr)) >= sizeof (setmds.dsm_mds_uaddr)) {
+	if (strlcpy(setmds.dsm_mds_addr, mdsaddr,
+	    sizeof (setmds.dsm_mds_addr)) >= sizeof (setmds.dsm_mds_addr)) {
 		dserv_log(handle, LOG_ERR,
 		    gettext("MDS address too long; aborting"));
 		exit(1);
 	}
+
+	setmds.port = port;
+
 	/* XXX need a way to have non-tcp addresses */
 	(void) strcpy(setmds.dsm_mds_netid, "tcp");
 	dserv_kmod_setmds(handle, &setmds);

@@ -171,8 +171,6 @@ typedef struct {
 	uint32_t	dmi_flags;
 	struct netbuf	dmi_nb;
 	struct knetconfig dmi_knc;
-	char 		*dmi_mds_addr;
-	char		*dmi_mds_netid;
 	list_t		dmi_datasets;
 	unsigned int	total_datasets;
 	list_t		dmi_mds_sids;
@@ -204,7 +202,7 @@ void dserv_server_teardown(void);
 void dserv_mds_setup(void);
 void dserv_mds_teardown(void);
 int dserv_mds_instance_teardown();
-int dserv_mds_setmds(char *, char *);
+  int dserv_mds_setmds(char *, char *, ushort);
 int dserv_mds_addobjset(const char *);
 int dserv_mds_addport(const char *, const char *, const char *);
 int dserv_mds_reportavail(void);

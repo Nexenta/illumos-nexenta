@@ -47,9 +47,9 @@ libnfs_dserv_push_dataset(libnfs_handle_t *handle, const char *dataset,
 		libnfs_error_set(handle, LIBNFS_ERR_DSERV_LONGMDSINFO);
 		return (-1);
 	}
-	if (strlcpy(kprops.ddp_mds_uaddr, uaddr,
-	    sizeof (kprops.ddp_mds_uaddr)) >=
-	    sizeof (kprops.ddp_mds_uaddr)) {
+	if (strlcpy(kprops.ddp_mds_addr, uaddr,
+	    sizeof (kprops.ddp_mds_addr)) >=
+	    sizeof (kprops.ddp_mds_addr)) {
 		libnfs_error_set(handle, LIBNFS_ERR_DSERV_LONGMDSINFO);
 		return (-1);
 	}
