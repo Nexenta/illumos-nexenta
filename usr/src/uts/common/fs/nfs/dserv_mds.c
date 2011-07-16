@@ -599,62 +599,6 @@ dserv_mds_teardown()
 	avl_destroy(&dserv_mds_instance_avl);
 }
 
-/* stolen from nfs4_srv_deleg.c */
-static int
-dserv_uaddr2sockaddr(int af, char *ua, void *ap, in_port_t *pp)
-{
-	int dots = 0, i, j, len, k;
-	unsigned char c;
-	in_port_t port = 0;
-
-	len = strlen(ua);
-
-	for (i = len-1; i >= 0; i--) {
-
-		if (ua[i] == '.')
-			dots++;
-
-		if (dots == 2) {
-
-			ua[i] = '\0';
-			/*
-			 * We use k to remember were to stick '.' back, since
-			 * ua was kmem_allocateded from the pool len+1.
-			 */
-			k = i;
-			if (inet_pton(af, ua, ap) == 1) {
-
-				c = 0;
-
-				for (j = i+1; j < len; j++) {
-					if (ua[j] == '.') {
-						port = c << 8;
-						c = 0;
-					} else if (ua[j] >= '0' &&
-					    ua[j] <= '9') {
-						c *= 10;
-						c += ua[j] - '0';
-					} else {
-						ua[k] = '.';
-						return (EINVAL);
-					}
-				}
-				port += c;
-
-				*pp = htons(port);
-
-				ua[k] = '.';
-				return (0);
-			} else {
-				ua[k] = '.';
-				return (EINVAL);
-			}
-		}
-	}
-
-	return (EINVAL);
-}
-
 /*
  * dserv_mds_setmds builds a knetconfig structure for the
  * dserv instance, netid, address and port.
