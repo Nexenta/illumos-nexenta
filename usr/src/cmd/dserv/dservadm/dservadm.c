@@ -371,7 +371,7 @@ dservadm_addmds(dserv_handle_t *handle,
 	if (argc != 1)
 		usage(USAGE_ADDMDS);
 
-	rc = dserv_addprop(handle, DSERV_PROP_MDS, argv[0]);
+	rc = dserv_addprop(handle, DSERV_PROP_MDS_ADDR, argv[0]);
 	if (rc != 0)
 		return (rc);
 
@@ -394,7 +394,7 @@ dservadm_dropmds(dserv_handle_t *handle,
 	argc -= optind;
 	argv += optind;
 
-	rc = dserv_dropprop(handle, DSERV_PROP_MDS, NULL);
+	rc = dserv_dropprop(handle, DSERV_PROP_MDS_ADDR, NULL);
 	if (rc != 0)
 		return (rc);
 

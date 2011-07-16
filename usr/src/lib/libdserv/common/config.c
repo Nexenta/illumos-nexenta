@@ -125,7 +125,7 @@ dserv_addmds_enforce_rule(dserv_handle_t *handle,
 	 * that there is no "mds" property in existence yet.
 	 */
 	oldmds = dserv_pg_property_iter(handle, handle->dsh_pg_storage,
-	    DSERV_PROP_MDS, NULL);
+	    DSERV_PROP_MDS_ADDR, NULL);
 	if ((oldmds == NULL)) {
 		if (handle->dsh_error != DSERV_ERR_NONE)
 			goto scferr;
@@ -253,7 +253,7 @@ dserv_addprop(dserv_handle_t *handle, const char *propname,
 	int result;
 
 	if ((strcmp(propname, DSERV_PROP_ZPOOLS) != 0) &&
-	    (strcmp(propname, DSERV_PROP_MDS) != 0) &&
+	    (strcmp(propname, DSERV_PROP_MDS_ADDR) != 0) &&
 	    (strcmp(propname, DSERV_PROP_MDS_PORT) != 0)) {
 		handle->dsh_error = DSERV_ERR_INVALID_PROP;
 		return (-1);
@@ -300,7 +300,7 @@ retry:
 	 */
 	if (strcmp(propname, DSERV_PROP_ZPOOLS) == 0) {
 		result = dserv_addpool_enforce_rule(handle, newprop, propval);
-	} else if (strcmp(propname, DSERV_PROP_MDS) == 0) {
+	} else if (strcmp(propname, DSERV_PROP_MDS_ADDR) == 0) {
 		result = dserv_addmds_enforce_rule(handle, newprop, propval);
 	}
 
@@ -366,7 +366,7 @@ dserv_dropprop(dserv_handle_t *handle, const char *propname,
 	int result;
 
 	if ((strcmp(propname, DSERV_PROP_ZPOOLS) != 0) &&
-	    (strcmp(propname, DSERV_PROP_MDS) != 0) &&
+	    (strcmp(propname, DSERV_PROP_MDS_ADDR) != 0) &&
 	    (strcmp(propname, DSERV_PROP_MDS_PORT) != 0)) {
 		handle->dsh_error = DSERV_ERR_INVALID_PROP;
 		return (-1);
@@ -558,7 +558,7 @@ dserv_getmds(dserv_handle_t *handle)
 		goto scferr;
 
 	mds_iter = dserv_pg_property_iter(handle, handle->dsh_pg_storage,
-	    DSERV_PROP_MDS, mds_iter);
+	    DSERV_PROP_MDS_ADDR, mds_iter);
 	if (mds_iter == NULL)
 		return (NULL);
 
