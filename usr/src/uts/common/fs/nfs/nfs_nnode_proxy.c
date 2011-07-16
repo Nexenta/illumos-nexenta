@@ -259,7 +259,6 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 
 	sp = mnd->mnd_strategy;
 	ASSERT(sp);
-	ioffset = offset = sp->offset;
 	len = sp->len;
 
 	/*
@@ -290,8 +289,9 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 	 */
 	ask = len;
 	io = 0;
-	base = mnd->mnd_uiop->uio_iov[io].iov_base;
-	remain = mnd->mnd_uiop->uio_iov[io].iov_len;
+	base = mnd->mnd_uiop->uio_iov[0].iov_base;
+	remain = mnd->mnd_uiop->uio_iov[0].iov_len;
+	ioffset = offset = sp->offset;
 	idx = sp->startidx;
 	for (i = 0; i < segs && ask > 0; i++) {
 		int full, count;
@@ -333,6 +333,7 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 				ASSERT(io < mnd->mnd_uiop->uio_iovcnt);
 				base = mnd->mnd_uiop->uio_iov[io].iov_base;
 				remain = mnd->mnd_uiop->uio_iov[io].iov_len;
+				ioffset = offset;
 			}
 		}
 
@@ -496,7 +497,6 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 
 	sp = mnd->mnd_strategy;
 	ASSERT(sp);
-	offset = sp->offset;
 	len = sp->len;
 	base = mnd->mnd_uiop->uio_iov->iov_base;
 
@@ -529,9 +529,9 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	 */
 	ask = len;
 	io = 0;
-	base = mnd->mnd_uiop->uio_iov[io].iov_base;
-	remain = mnd->mnd_uiop->uio_iov[io].iov_len;
-	ioffset = offset;
+	base = mnd->mnd_uiop->uio_iov[0].iov_base;
+	remain = mnd->mnd_uiop->uio_iov[0].iov_len;
+	ioffset = offset = sp->offset;
 	idx = sp->startidx;
 	for (i = 0; i < segs && ask > 0; i++) {
 		int full, count;
