@@ -99,10 +99,11 @@ proxy_get_strategy(nnode_proxy_data_t *mnd)
 	mds_layout_t *lp = mnd->mnd_layout;
 	int io_array_size;
 	ds_io_t *io_array;
-	uint64_t segstart, segend, relstart;
+	uint64_t segstart, segend, relstart, maxsize;
 	int i, segidx, startidx;
 	offset_t offset;
 	ssize_t len;
+	unsigned int minreq = 0;
 
 	/*
 	 * XXX
@@ -152,6 +153,7 @@ proxy_get_strategy(nnode_proxy_data_t *mnd)
 	/* Get our DS filehandles and dev descriptors */
 	for (i = 0; i < lp->mlo_lc.lc_stripe_count; i++) {
 		int e;
+		unsigned int reqsz;
 
 		e = mds_alloc_ds_fh(mnd->mnd_fsid, mnd->mnd_fid,
 		    &lp->mlo_lc.lc_mds_sids[i], &io_array[i].fh);
@@ -167,9 +169,17 @@ proxy_get_strategy(nnode_proxy_data_t *mnd)
 			return (NFS4ERR_LAYOUTUNAVAILABLE);
 		}
 
+		reqsz = io_array[i].ds->ds_owner->max_req_size;
+		if (minreq > reqsz || minreq == 0)
+			minreq = reqsz;
+
 		/* Keep track of how many loaded error-free */
 		mnd->mnd_strategy->stripe_count++;
 	}
+
+	maxsize = minreq * mnd->mnd_strategy->stripe_count;
+	if (mnd->mnd_strategy->len > maxsize)
+		mnd->mnd_strategy->len = maxsize;
 
 	return (0);
 }
