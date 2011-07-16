@@ -980,14 +980,14 @@ default:
 struct DS_WRITEargs {
       	nfs_fh4		fh;
       	stable_how4	stable;
-      	count4		count;
-      	ds_filesegbuf	wrv<>;
+	offset4		offset;
+	opaque		data<>;
 };
 
 struct DS_WRITEresok {
       	stable_how4	committed;
       	ds_verifier	writeverf;
-      	count4		wrv<>;
+      	count4		written;
 };
 
 union DS_WRITEres switch (ds_status status) {

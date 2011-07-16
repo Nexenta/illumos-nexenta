@@ -49,7 +49,6 @@ struct mds_layout;
 int ctl_mds_clnt_remove_file(nfs_server_instance_t *, fsid_t, nfs41_fid_t,
     struct mds_layout *);
 
-
 #ifdef	__cplusplus
 }
 #endif

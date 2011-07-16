@@ -51,6 +51,8 @@ static void nnode_proxy_data_free(void *vdata);
 static void nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
     caller_context_t *ct, off64_t off);
 
+extern  bool_t xdr_DS_WRITEargs_send(XDR *, ds_write_t *);
+
 static nnode_data_ops_t proxy_data_ops = {
 	.ndo_io_prep = nnode_vn_io_prep,
 	.ndo_read = nnode_proxy_read,
@@ -459,29 +461,27 @@ out:
 }
 
 /*
- * Add a ds_filesegbuf to the request
+ * Add iovec to the request
  */
 static void
-add_write_record(uint64_t offset, int count, int stripewidth, int stripe_unit,
-    char *where, DS_WRITEargs *argp) {
-	ds_filesegbuf *segp;
+add_write_record(int count, char *where, ds_write_t *wr) {
+	struct iovec *iov;
 
-	segp = &argp->wrv.wrv_val[argp->wrv.wrv_len];
-	segp->offset = (offset / stripewidth)
-	    * stripe_unit
-	    + (offset % stripe_unit);
-	segp->data.data_len = count;
-	segp->data.data_val = where;
-	argp->wrv.wrv_len++;
-	argp->count += count;
+	iov = &wr->iov[wr->iov_count];
+	iov->iov_len = count;
+	iov->iov_base = where;
+
+	wr->iov_count++;
+	wr->count += count;
 }
+
 
 int
 proxy_do_write(nnode_proxy_data_t *mnd)
 {
 	int i, j, idx;			/* loop counters */
 	int segs;			/* total segment count */
-	int len, ask, remain, sent;	/* request/result tracking */
+	int len, ask, remain;		/* request/result tracking */
 	int io;				/* which iov in uio */
 	int stripewidth;
 	int error = 0;
@@ -489,8 +489,6 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	char *base;
 	mds_strategy_t *sp;
 	ds_addrlist_t *dp;
-	DS_WRITEargs *argp;
-	DS_WRITEres *resp;
 
 	/* Hard-coded for dense stripes since layout doesn't tell me */
 	ASSERT(mds_layout_is_dense == 1);
@@ -509,17 +507,25 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	 * Set up filehandles and storage for args and results, one per DS
 	 * The filehandle is copied to each DS_WRITEargs.
 	 */
+	offset = sp->offset;
 	for (idx = 0; idx < sp->stripe_count; idx++) {
-		argp = &sp->io_array[idx].ds_io_u.write.args;
-		resp = &sp->io_array[idx].ds_io_u.write.res;
+		DS_WRITEargs *argp;
+		ds_write_t *wr = &sp->io_array[idx].ds_io_u.write;
+		uint64_t n;
+		int l;
+
+		n = offset / stripewidth;
+		l = offset % sp->stripe_unit;
+
+		argp = &wr->args;
+		argp->offset = n * sp->stripe_unit + l;
+
 		argp->fh.nfs_fh4_len = sp->io_array[idx].fh.nfs_fh4_len;
 		argp->fh.nfs_fh4_val = sp->io_array[idx].fh.nfs_fh4_val;
-		argp->wrv.wrv_len = 0;
-		argp->wrv.wrv_val =
-		    kmem_alloc(segs * sizeof (ds_filesegbuf), KM_SLEEP);
-		resp->DS_WRITEres_u.res_ok.wrv.wrv_len = 0;
-		resp->DS_WRITEres_u.res_ok.wrv.wrv_val =
-		    kmem_zalloc(segs * sizeof (count4), KM_SLEEP);
+		wr->iov = kmem_alloc(segs * sizeof (struct iovec), KM_SLEEP);
+
+		/* switch offset to next DS */
+		offset += sp->stripe_unit - l;
 	}
 
 	/*
@@ -532,9 +538,10 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	ioffset = offset = sp->offset;
 	idx = sp->startidx;
 	while (ask > 0) {
+		ds_write_t *wr;
 		int full, l = offset % sp->stripe_unit;
 
-		argp = &sp->io_array[idx].ds_io_u.write.args;
+		wr = &sp->io_array[idx].ds_io_u.write;
 
 		/* How much do we ask for from this DS? */
 		full = MIN(ask, sp->stripe_unit - l);
@@ -545,10 +552,8 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 			/* How much do we ask for in this segment? */
 			count = MIN(full, remain);
 
-			ASSERT(argp->wrv.wrv_len < segs);
-			add_write_record(offset, count, stripewidth,
-			    sp->stripe_unit, base + (offset - ioffset),
-			    argp);
+			ASSERT(wr->iov_count < segs);
+			add_write_record(count, base + (offset - ioffset), wr);
 
 			offset += count;
 			ask -= count;
@@ -580,17 +585,21 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	ask = len;
 	idx = sp->startidx;
 	for (i = 0; i < sp->stripe_count; i++) {
-		dp = sp->io_array[idx].ds;
-		argp = &sp->io_array[idx].ds_io_u.write.args;
-		resp = &sp->io_array[idx].ds_io_u.write.res;
+		DS_WRITEres *resp;
+		ds_write_t *wr;
+		unsigned int sent;
 
-		if (argp->count == 0) {
+		wr = &sp->io_array[idx].ds_io_u.write;
+		resp = &wr->res;
+		dp = sp->io_array[idx].ds;
+
+		if (wr->count == 0) {
 			idx = ((idx + 1) % sp->stripe_count);
 			continue;
 		}
 
 		error = ctl_mds_clnt_call(dp, DS_WRITE,
-		    xdr_DS_WRITEargs, argp,
+		    xdr_DS_WRITEargs_send, wr,
 		    xdr_DS_WRITEres, resp);
 		if (error)
 			goto out;
@@ -599,23 +608,19 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 			goto out;
 		}
 
-		for (j = 0; j < resp->DS_WRITEres_u.res_ok.wrv.wrv_len; j++) {
-			sent = resp->DS_WRITEres_u.res_ok.wrv.wrv_val[j];
-			ask -= sent;
-			mnd->mnd_uiop->uio_resid -= sent;
-			ASSERT(ask >= 0);
-			if (ask <= 0)
-				goto out;
-		}
+		sent = resp->DS_WRITEres_u.res_ok.written;
+		if (sent > wr->count)
+			sent = wr->count;
+		mnd->mnd_uiop->uio_resid -= sent;
+
 		idx = ((idx + 1) % sp->stripe_count);
 	}
 out:
 	for (i = 0; i < sp->stripe_count; i++) {
-		argp = &sp->io_array[i].ds_io_u.write.args;
-		resp = &sp->io_array[i].ds_io_u.write.res;
-		kmem_free(argp->wrv.wrv_val, segs * sizeof (ds_filesegbuf));
-		kmem_free(resp->DS_WRITEres_u.res_ok.wrv.wrv_val,
-		    segs * sizeof (count4));
+		ds_write_t *wr;
+
+		wr = &sp->io_array[i].ds_io_u.write;
+		kmem_free(wr->iov, segs * sizeof (struct iovec));
 	}
 	return (error);
 }

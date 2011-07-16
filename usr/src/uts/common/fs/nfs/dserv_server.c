@@ -1631,7 +1631,6 @@ ds_write(DS_WRITEargs *argp, DS_WRITEres *resp, struct svc_req *req)
 	int i, segs, length;
 	int prep = 0;
 	DS_WRITEresok *wrok;
-	ds_filesegbuf *segp;
 	mds_ds_fh *ds_fh;
 	nfs_fh4 *otw_fh;
 
@@ -1664,8 +1663,8 @@ ds_write(DS_WRITEargs *argp, DS_WRITEres *resp, struct svc_req *req)
 	ASSERT(wrok);
 
 	/* Got work? */
-	if (argp->count == 0) {
-		wrok->wrv.wrv_len = 0;
+	if (argp->data.data_len == 0) {
+		wrok->written = 0;
 		resp->status = DS_OK;
 		goto final;
 	}
@@ -1674,37 +1673,24 @@ ds_write(DS_WRITEargs *argp, DS_WRITEres *resp, struct svc_req *req)
 	 * Do each requested I/O
 	 */
 	resp->status = DS_OK;
-	segs = argp->wrv.wrv_len;
-	segp = argp->wrv.wrv_val;
-	wrok->wrv.wrv_len = segs;
-	wrok->wrv.wrv_val =
-	    kmem_zalloc(segs * sizeof (count4), KM_SLEEP);
-	for (i = 0; i < segs; i++) {
+	{
 		char *base;
 
-		length = segp[i].data.data_len;
-		offset = segp[i].offset;
 
-		if (length == 0) {
-			wrok->wrv.wrv_val[i] = 0;
-			continue;
-		}
+		length = argp->data.data_len;
+		base = argp->data.data_val;
+		offset = argp->offset;
 
 		nerr = nnop_io_prep(nn, &nnioflags, NULL, &ct,
 		    offset, length, NULL);
 		if (nerr != 0) {
 			resp->status = DSERR_INVAL;
-			wrok->wrv.wrv_val[i] = 0;
 			goto final;
 		}
 		prep = 1;
 
 		if (length > rfs4_tsize(req))
 			length = rfs4_tsize(req);
-
-		/* Find data to write */
-		base = segp[i].data.data_val;
-		ASSERT(base != NULL);
 
 		/* Set up a uio for nnop_write() */
 		iov.iov_base = base;
@@ -1724,8 +1710,7 @@ ds_write(DS_WRITEargs *argp, DS_WRITEres *resp, struct svc_req *req)
 		}
 
 		ASSERT(uio.uio_resid >= 0);
-		ASSERT(wrok->wrv.wrv_val);
-		wrok->wrv.wrv_val[i] = length - uio.uio_resid;
+		wrok->written = length - uio.uio_resid;
 
 		nnop_io_release(nn, nnioflags, &ct);
 		prep = 0;
@@ -1747,11 +1732,6 @@ final:
 static void
 ds_write_free(union ctl_mds_srv_res *dres)
 {
-	DS_WRITEres *wres = (DS_WRITEres *)dres;
-	DS_WRITEresok *wrok;
-
-	wrok = &wres->DS_WRITEres_u.res_ok;
-	kmem_free(wrok->wrv.wrv_val, wrok->wrv.wrv_len * sizeof (count4));
 }
 
 /* ARGSUSED */

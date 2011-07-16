@@ -46,6 +46,9 @@ typedef struct {
 } ds_read_t;
 
 typedef struct {
+	uint_t iov_count;
+	struct iovec *iov;
+	uint_t count;
 	DS_WRITEargs args;
 	DS_WRITEres res;
 } ds_write_t;
