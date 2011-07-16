@@ -130,8 +130,8 @@ usage_synopsis(dservadm_usage_t which)
 		return ("liststor [ -i <instance> ]");
 
 	case USAGE_ADDMDS:
-		return ("addmds   [ -i <instance> ] "
-		    "<universal-address>");
+		return ("addmds   [ -i <instance> ] [ -p <port> ] "
+		    "<ip-address>");
 	case USAGE_DROPMDS:
 		return ("dropmds  [ -i <instance> ]");
 	case USAGE_LISTMDS:
@@ -166,9 +166,10 @@ usage_desc(dservadm_usage_t which)
 		return ("    List datasets allocated to dserv.");
 	case USAGE_ADDMDS:
 		return ("    Add the metadata server specified by"
-		    "\n    <universal-address>.  <universal-address> must be"
-		    "\n    of the form [h1.h2.h3.h4.p1.p2].  Only one"
-		    "\n    metadata server can be added per dserv instance.");
+		    "\n    <ip-address>.  <ip-address> must be"
+		    "\n    of the form [h1.h2.h3.h4].  Only one"
+		    "\n    metadata server can be added per dserv instance."
+		    "\n    Default port is 2049.");
 	case USAGE_DROPMDS:
 		return ("    Drop the metadata server.");
 	case USAGE_LISTMDS:
@@ -204,18 +205,29 @@ usage(dservadm_usage_t which)
 }
 
 static int
-optinstance(dserv_handle_t *handle,
-    int argc, char *argv[], dservadm_usage_t u)
+opt_instance_port(dserv_handle_t *handle,
+    int argc, char *argv[], dservadm_usage_t u,
+    ushort *port)
 {
 	char *instance = DSERV_DEFAULT_INSTANCE;
+	const char *optstring = "i:";
+	int val = NFS_PORT;
 	char c;
+
+	if (port)
+		optstring = "i:p:";
 
 	opterr = 0;
 
-	while ((c = getopt(argc, argv, "i:")) != -1) {
+	while ((c = getopt(argc, argv, optstring)) != -1) {
 		switch (c) {
 		case 'i':
 			instance = strdup(optarg);
+			break;
+		case 'p':
+			val = atoi(optarg);
+			if (val <= 0 || val > 0xffff)
+				usage(u);
 			break;
 		case '?':
 			usage(u);
@@ -223,7 +235,17 @@ optinstance(dserv_handle_t *handle,
 		}
 	}
 
+	if (port)
+		*port = val;
+
 	return (dserv_setinstance(handle, instance, 0));
+}
+
+static int
+optinstance(dserv_handle_t *h,
+    int argc, char *argv[], dservadm_usage_t u)
+{
+	return opt_instance_port(h, argc, argv, u, NULL);
 }
 
 static int
@@ -337,15 +359,16 @@ dservadm_addmds(dserv_handle_t *handle,
     int argc, char *argv[], dservadm_cmd_t *c)
 {
 	int rc;
+	ushort port;
 
-	if (optinstance(handle, argc, argv, c->usage) != 0)
+	if (opt_instance_port(handle, argc, argv, c->usage, &port) != 0)
 		return (1);
+
 	argc -= optind;
 	argv += optind;
 
 	if (argc != 1)
 		usage(USAGE_ADDMDS);
-
 
 	rc = dserv_addprop(handle, DSERV_PROP_MDS, argv[0]);
 	if (rc != 0)
