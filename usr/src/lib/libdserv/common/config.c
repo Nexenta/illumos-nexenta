@@ -543,22 +543,19 @@ scferr:
 	return (NULL);
 }
 
-char *
-dserv_getmds(dserv_handle_t *handle)
+/*
+ * Call rewrites previous results: handle->dsh_astring
+ */
+static char *
+dserv_prop_get_string(dserv_handle_t *handle, const char *propname)
 {
+	scf_iter_t  *mds_iter = NULL;
 	scf_value_t *mds;
-	scf_iter_t *mds_iter = NULL;
 	int state;
 
-	if (handle->dsh_pg_storage == NULL)
-		handle->dsh_pg_storage = dserv_handle_pg(handle, "storage");
-	if (handle->dsh_pg_storage == NULL)
-		return (NULL);
-	if (scf_pg_update(handle->dsh_pg_storage) == -1)
-		goto scferr;
-
 	mds_iter = dserv_pg_property_iter(handle, handle->dsh_pg_storage,
-	    DSERV_PROP_MDS_ADDR, mds_iter);
+	    propname, mds_iter);
+
 	if (mds_iter == NULL)
 		return (NULL);
 
@@ -569,6 +566,7 @@ dserv_getmds(dserv_handle_t *handle)
 	state = scf_iter_next_value(mds_iter, mds);
 	if (state == -1)
 		goto scferr;
+
 	if (state == 0) {
 		scf_value_destroy(mds);
 		return (NULL);
@@ -586,4 +584,20 @@ scferr:
 	if (mds != NULL)
 		scf_value_destroy(mds);
 	return (NULL);
+}
+
+char *
+dserv_getmds(dserv_handle_t *handle)
+{
+	char *val;
+
+	if (handle->dsh_pg_storage == NULL)
+		handle->dsh_pg_storage = dserv_handle_pg(handle, "storage");
+	if (handle->dsh_pg_storage == NULL)
+		return (NULL);
+	if (scf_pg_update(handle->dsh_pg_storage) == -1)
+		return (NULL);
+
+	val = dserv_prop_get_string(handle, DSERV_PROP_MDS_ADDR);
+	return (val);
 }
