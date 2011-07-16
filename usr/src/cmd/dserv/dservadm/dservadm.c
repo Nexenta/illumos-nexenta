@@ -360,6 +360,7 @@ dservadm_addmds(dserv_handle_t *handle,
 {
 	int rc;
 	ushort port;
+	char buf[6];
 
 	if (opt_instance_port(handle, argc, argv, c->usage, &port) != 0)
 		return (1);
@@ -371,6 +372,11 @@ dservadm_addmds(dserv_handle_t *handle,
 		usage(USAGE_ADDMDS);
 
 	rc = dserv_addprop(handle, DSERV_PROP_MDS, argv[0]);
+	if (rc != 0)
+		return (rc);
+
+	sprintf(buf, "%u", port);
+	rc = dserv_addprop(handle, DSERV_PROP_MDS_PORT, buf);
 	if (rc != 0)
 		return (rc);
 
@@ -389,6 +395,10 @@ dservadm_dropmds(dserv_handle_t *handle,
 	argv += optind;
 
 	rc = dserv_dropprop(handle, DSERV_PROP_MDS, NULL);
+	if (rc != 0)
+		return (rc);
+
+	rc = dserv_dropprop(handle, DSERV_PROP_MDS_PORT, NULL);
 	if (rc != 0)
 		return (rc);
 

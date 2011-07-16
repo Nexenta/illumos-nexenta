@@ -253,7 +253,8 @@ dserv_addprop(dserv_handle_t *handle, const char *propname,
 	int result;
 
 	if ((strcmp(propname, DSERV_PROP_ZPOOLS) != 0) &&
-	    (strcmp(propname, DSERV_PROP_MDS) != 0)) {
+	    (strcmp(propname, DSERV_PROP_MDS) != 0) &&
+	    (strcmp(propname, DSERV_PROP_MDS_PORT) != 0)) {
 		handle->dsh_error = DSERV_ERR_INVALID_PROP;
 		return (-1);
 	}
@@ -365,7 +366,8 @@ dserv_dropprop(dserv_handle_t *handle, const char *propname,
 	int result;
 
 	if ((strcmp(propname, DSERV_PROP_ZPOOLS) != 0) &&
-	    (strcmp(propname, DSERV_PROP_MDS) != 0)) {
+	    (strcmp(propname, DSERV_PROP_MDS) != 0) &&
+	    (strcmp(propname, DSERV_PROP_MDS_PORT) != 0)) {
 		handle->dsh_error = DSERV_ERR_INVALID_PROP;
 		return (-1);
 	}

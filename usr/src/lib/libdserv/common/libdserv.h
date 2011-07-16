@@ -39,6 +39,7 @@ extern "C" {
 
 #define	DSERV_PROP_ZPOOLS	"zpools"
 #define	DSERV_PROP_MDS		"mds"
+#define	DSERV_PROP_MDS_PORT	"mds-port"
 
 typedef enum {
 	DSERV_ERR_NONE = 0,
