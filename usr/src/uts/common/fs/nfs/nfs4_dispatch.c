@@ -36,7 +36,7 @@
 #include <nfs/nfs_dispatch.h>
 #include <nfs/nfs4_drc.h>
 
-#define	NFS4_MAX_MINOR_VERSION	0
+#define	NFS4_MAX_MINOR_VERSION	1
 
 /*
  * This is the duplicate request cache for NFSv4
@@ -388,10 +388,6 @@ rfs4_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 	rbp = &res_buf;
 	/* bzero took care of rbp->minorversion = 0 */
 	cap = (COMPOUND4args *)ap;
-	if (cap->minorversion != NFS4_MINOR_v0) {
-		rbp->status = NFS4ERR_MINOR_VERS_MISMATCH;
-		goto sndreply;
-	}
 
 	/*
 	 * Figure out the disposition of the whole COMPOUND
@@ -474,7 +470,6 @@ rfs4_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 		}
 	}
 
-sndreply:
 	/*
 	 * Send out the replayed reply or the 'real' one.
 	 */
@@ -512,22 +507,12 @@ sndreply:
 	return (error);
 }
 
-bool_t
-rfs4_minorvers_mismatch(struct svc_req *req, SVCXPRT *xprt, void *args)
+static int
+rfs4_send_minor_mismatch(SVCXPRT *xprt, COMPOUND4args *argsp)
 {
-	COMPOUND4args		*argsp;
-	COMPOUND4res_srv	 res_buf;
-	COMPOUND4res_srv	*resp;
-
-	if (req->rq_vers != 4)
-		return (FALSE);
-
-	argsp = (COMPOUND4args *)args;
-
-	if (argsp->minorversion <= NFS4_MAX_MINOR_VERSION)
-		return (FALSE);
-
-	resp = &res_buf;
+	COMPOUND4res_srv res;
+	COMPOUND4res_srv *resp = &res;
+	int err = 0;
 
 	/*
 	 * Form a reply tag by copying over the reqeuest tag.
@@ -545,8 +530,26 @@ rfs4_minorvers_mismatch(struct svc_req *req, SVCXPRT *xprt, void *args)
 		DTRACE_PROBE2(nfss__e__minorvers_mismatch,
 		    SVCXPRT *, xprt, char *, resp);
 		svcerr_systemerr(xprt);
+		err++;
 	}
 	rfs4_compound_free((COMPOUND4res *)resp);
+	return (err);
+}
+
+bool_t
+rfs4_minorvers_mismatch(struct svc_req *req, SVCXPRT *xprt, void *args)
+{
+	COMPOUND4args *argsp;
+
+	if (req->rq_vers != 4)
+		return (FALSE);
+
+	argsp = (COMPOUND4args *)args;
+
+	if (argsp->minorversion <= NFS4_MAX_MINOR_VERSION)
+		return (FALSE);
+
+	rfs4_send_minor_mismatch(xprt, argsp);
 	return (TRUE);
 }
 
@@ -624,6 +627,8 @@ rfs4_minor_version_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 	case 0:
 		error = rfs4_dispatch(req, xprt, ap);
 		break;
+	default:
+		error = rfs4_send_minor_mismatch(xprt, cmp);
 	}
 	return (error);
 }
