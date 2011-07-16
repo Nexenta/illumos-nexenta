@@ -330,10 +330,9 @@ inet_atob(char *s, nl7c_addr_t *p)
 			return (1);
 		}
 		p->family = AF_INET6;
-	} else {
+	} else
 		p->family = AF_INET;
-		p->addr.v4 = ntohl(p->addr.v4);
-	}
+
 	return (0);
 }
 

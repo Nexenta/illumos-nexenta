@@ -312,17 +312,7 @@ kgetipnodebyname(
 		if (inet_pton(af, (char *)name, cnf) == 1) {
 			/*
 			 * inet_pton converted the string successfully.
-			 * reset to network order.  swaps based on nfs code
 			 */
-			if (af == AF_INET) {
-				*((uint32_t *)cnf) = htonl(*((uint32_t *)cnf));
-			} else {
-				for (swap = ((void *)cnf), i = 0;
-				    i < hptr->h_length / sizeof (uint16_t);
-				    i++) {
-					swap[i] = htons(swap[i]);
-				}
-			}
 			hptr->h_addrtype = af;
 			hptr->h_addr_list = (char **)((char *)hptr +
 			    sizeof (struct hostent));

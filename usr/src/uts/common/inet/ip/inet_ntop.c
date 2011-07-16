@@ -233,14 +233,16 @@ str2inet_addr(char *cp, ipaddr_t *addrp)
 	char *end;
 	long byte;
 	int i;
-	ipaddr_t addr = 0;
+	uint8_t *addr = (uint8_t *)addrp;
+
+	*addrp = 0;
 
 	for (i = 0; i < 4; i++) {
 		if (ddi_strtol(cp, &end, 10, &byte) != 0 || byte < 0 ||
 		    byte > 255) {
 			return (0);
 		}
-		addr = (addr << 8) | (uint8_t)byte;
+		addr[i] = (uint8_t)byte;
 		if (i < 3) {
 			if (*end != '.') {
 				return (0);
@@ -251,7 +253,7 @@ str2inet_addr(char *cp, ipaddr_t *addrp)
 			cp = end;
 		}
 	}
-	*addrp = addr;
+
 	return (1);
 }
 
@@ -316,7 +318,7 @@ inet_pton(int af, char *inp, void *outp)
 			if (byte < 0 || byte > 0x0ffff) {
 				return (0);
 			}
-			v6buf.v6words_u[i] = (uint16_t)byte;
+			v6buf.v6words_u[i] = htons(byte);
 			if (*end == NULL || i == 7) {
 				inp = end;
 				break;
