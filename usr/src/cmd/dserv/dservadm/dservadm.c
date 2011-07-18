@@ -168,7 +168,7 @@ usage_desc(dservadm_usage_t which)
 	case USAGE_ADDMDS:
 		return ("    Add the metadata server specified by"
 		    "\n    <ip-address>.  <ip-address> must be"
-		    "\n    of the form [h1.h2.h3.h4].  Only one"
+		    "\n    valid IPv4 or IPv6 address.  Only one"
 		    "\n    metadata server can be added per dserv instance."
 		    "\n    Default port is 2049.");
 	case USAGE_DROPMDS:
@@ -371,6 +371,12 @@ dservadm_addmds(dserv_handle_t *handle,
 
 	if (argc != 1)
 		usage(USAGE_ADDMDS);
+
+	if (!dserv_addr_valid(argv[0])) {
+		fprintf(stderr,
+		    gettext("MDS IP address is neither IPv4 or IPv6\n\n"));
+		exit(2);
+	}
 
 	rc = dserv_addprop(handle, DSERV_PROP_MDS_ADDR, argv[0]);
 	if (rc != 0)

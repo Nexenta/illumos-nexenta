@@ -59,6 +59,7 @@ SUNWprivate_1.1 {
 	dserv_dropprop;
 	dserv_firstpool;
 	dserv_nextpool;
+	dserv_addr_valid;
 	dserv_getmds;
 	dserv_kmod_regpool;
 	dserv_kmod_setmds;

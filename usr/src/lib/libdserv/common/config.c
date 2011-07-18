@@ -607,6 +607,15 @@ dserv_str_inetaddr(const char *s, mdsaddr_t *addr, ushort_t port)
 	return (-1);
 }
 
+int
+dserv_addr_valid(const char *s)
+{
+	mdsaddr_t dummy;
+
+	return (!dserv_str_inetaddr(s, &dummy, 0));
+}
+
+
 /*
  * Return number of set MDS addresses
  */
