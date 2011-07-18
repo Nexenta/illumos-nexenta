@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <libintl.h>
 #include <libdserv.h>
+#include <libdserv_impl.h>
 #include <strings.h>
 
 #ifndef TEXT_DOMAIN
@@ -410,24 +411,30 @@ dservadm_listmds(dserv_handle_t *handle,
     int argc, char *argv[], dservadm_cmd_t *c)
 {
 	int rc = 0;
-	ushort port;
 	char *mds;
+	int n;
 
 	if (optinstance(handle, argc, argv, c->usage) != 0)
 		return (1);
 
-	printf(gettext("mds:   "));
-
-	mds = dserv_getmds(handle, &port);
+	n = dserv_getmds(handle);
 	if (dserv_error(handle) != DSERV_ERR_NONE) {
 		fprintf(stderr, "%s\n", dserv_strerror(handle));
 		rc = -1;
 		return (rc);
 	}
-	if (mds != NULL) {
-		printf(gettext("%s\n"), mds);
-		if (port != NFS_PORT)
-			printf(gettext("port:  %u\n"), port);
+
+	if (n > 0) {
+		ushort_t port;
+		int i;
+
+		port = handle->dsh_mdsport;
+		for (i = 0; i < n; i++) {
+			printf(gettext("mds:   %s\n"), handle->dsh_mdsaddr[i]);
+			if (port != NFS_PORT)
+				printf(gettext("port:  %u\n"), port);
+			printf("\n");
+		}
 	}
 
 	return (rc);

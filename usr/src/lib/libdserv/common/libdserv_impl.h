@@ -37,6 +37,7 @@
 
 #include <nfs/nfs4.h>
 #include <libdserv.h>
+#include <netinet/in.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -45,6 +46,7 @@ extern "C" {
 #define	DSERV_SERVICE_FMRI	"svc:/network/dserv"
 #define	DSERV_ERRBUF_SIZE	(1024)
 #define	DSERV_ASTRING_SIZE	(1024)
+#define	DSERV_MDSADDRS		(1)
 
 struct dserv_handle {
 	uint32_t dsh_flags;
@@ -61,6 +63,8 @@ struct dserv_handle {
 	int dsh_svc_pool_id;
 	char dsh_errstring[DSERV_ERRBUF_SIZE];
 	char dsh_astring[DSERV_ASTRING_SIZE];
+	char *dsh_mdsaddr[DSERV_MDSADDRS + 1];	/* null terminated array */
+	ushort_t dsh_mdsport;
 };
 
 /* dsh_flags */

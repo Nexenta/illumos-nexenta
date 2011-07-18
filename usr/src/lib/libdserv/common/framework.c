@@ -25,6 +25,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <libintl.h>
 #include <syslog.h>
 #include <stdarg.h>
@@ -98,6 +99,8 @@ dserv_handle_create()
 	rc->dsh_pg_storage = NULL;
 	rc->dsh_pg_net = NULL;
 	rc->dsh_iter_zpools = NULL;
+
+	bzero(rc->dsh_mdsaddr, sizeof (rc->dsh_mdsaddr));
 
 	return (rc);
 }

@@ -52,17 +52,33 @@ dserv_kmod_regpool(dserv_handle_t *handle, const char *datasetname)
 	return (0);
 }
 
-
 int
-dserv_kmod_setmds(dserv_handle_t *handle, dserv_setmds_args_t *args)
+dserv_kmod_setmds(dserv_handle_t *handle)
 {
 	int err;
+	int i;
 
-	err = _nfssys(DSERV_SETMDS, args);
-	if (err < 0) {
-		handle->dsh_error = DSERV_ERR_NFSSYS;
-		handle->dsh_errno_error = errno;
-		return (-1);
+	for (i = 0; handle->dsh_mdsaddr[i]; i++) {
+		dserv_setmds_args_t setmds;
+		char *mdsaddr = handle->dsh_mdsaddr[i];
+
+		if (strlcpy(setmds.dsm_mds_addr, mdsaddr,
+		    sizeof (setmds.dsm_mds_addr)) >=
+		    sizeof (setmds.dsm_mds_addr)) {
+			return (-1);
+		}
+
+		setmds.port = handle->dsh_mdsport;
+
+		/* XXX need a way to have non-tcp addresses */
+		(void) strcpy(setmds.dsm_mds_netid, "tcp");
+
+		err = _nfssys(DSERV_SETMDS, &setmds);
+		if (err < 0) {
+			handle->dsh_error = DSERV_ERR_NFSSYS;
+			handle->dsh_errno_error = errno;
+			return (-1);
+		}
 	}
 
 	return (0);

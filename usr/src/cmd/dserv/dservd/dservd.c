@@ -93,11 +93,10 @@ instance_shutdown(void)
 int
 main(int argc, char *argv[])
 {
-	dserv_setmds_args_t setmds;
 	dserv_handle_t *handle;
 	char *poolname, *mdsaddr;
 	struct sigaction act;
-	ushort port;
+	int n, err;
 
 	(void) sigfillset(&act.sa_mask);
 	act.sa_handler = instance_shutdown;
@@ -134,8 +133,8 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
-	mdsaddr = dserv_getmds(handle, &port);
-	if (mdsaddr == NULL) {
+	n = dserv_getmds(handle);
+	if (n == 0) {
 		if (dserv_error(handle) != DSERV_ERR_NONE)
 			dserv_log(handle, LOG_ERR, NULL);
 		else
@@ -143,18 +142,13 @@ main(int argc, char *argv[])
 			    gettext("MDS not set; aborting"));
 		exit(1);
 	}
-	if (strlcpy(setmds.dsm_mds_addr, mdsaddr,
-	    sizeof (setmds.dsm_mds_addr)) >= sizeof (setmds.dsm_mds_addr)) {
+
+	err = dserv_kmod_setmds(handle);
+	if (err) {
 		dserv_log(handle, LOG_ERR,
+		    dserv_error(handle) != DSERV_ERR_NONE ? NULL :
 		    gettext("MDS address too long; aborting"));
-		exit(1);
 	}
-
-	setmds.port = port;
-
-	/* XXX need a way to have non-tcp addresses */
-	(void) strcpy(setmds.dsm_mds_netid, "tcp");
-	dserv_kmod_setmds(handle, &setmds);
 
 	dserv_daemon(handle);
 

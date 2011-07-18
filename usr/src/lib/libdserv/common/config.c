@@ -27,6 +27,8 @@
 
 #include "libdserv_impl.h"
 
+static char mdsaddrs[DSERV_MDSADDRS][DSERV_MAX_ADDR];
+
 static scf_propertygroup_t *
 dserv_handle_pg(dserv_handle_t *handle, const char *pgname)
 {
@@ -586,24 +588,38 @@ scferr:
 	return (NULL);
 }
 
-char *
-dserv_getmds(dserv_handle_t *handle, ushort *port)
+/*
+ * Return number of set MDS addresses
+ */
+unsigned int
+dserv_getmds(dserv_handle_t *handle)
 {
-	char *val;
+	char *val, *p;
+	ushort_t port;
 
 	if (handle->dsh_pg_storage == NULL)
 		handle->dsh_pg_storage = dserv_handle_pg(handle, "storage");
 	if (handle->dsh_pg_storage == NULL)
-		return (NULL);
+		return (0);
 	if (scf_pg_update(handle->dsh_pg_storage) == -1)
-		return (NULL);
+		return (0);
 
 	val = dserv_prop_get_string(handle, DSERV_PROP_MDS_PORT);
 	if (val == NULL)
-		return NULL;
+		return (0);
 
-	*port = atoi(val);
+	port = atoi(val);
 
 	val = dserv_prop_get_string(handle, DSERV_PROP_MDS_ADDR);
-	return (val);
+	if (val == NULL)
+		return (0);
+
+	if (strlen(val) >= DSERV_MAX_ADDR)
+		return (0);
+
+	handle->dsh_mdsport = port;
+	handle->dsh_mdsaddr[0] = mdsaddrs[0];
+	strlcpy(handle->dsh_mdsaddr[0], val, DSERV_MAX_ADDR);
+
+	return (1);
 }
