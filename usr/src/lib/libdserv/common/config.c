@@ -26,8 +26,12 @@
 #pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include "libdserv_impl.h"
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-static char mdsaddrs[DSERV_MDSADDRS][DSERV_MAX_ADDR];
+static struct dserv_mdsaddr mdsaddrs[DSERV_MDSADDRS];
 
 static scf_propertygroup_t *
 dserv_handle_pg(dserv_handle_t *handle, const char *pgname)
@@ -588,6 +592,21 @@ scferr:
 	return (NULL);
 }
 
+static int
+dserv_str_inetaddr(const char *s, mdsaddr_t *addr, ushort_t port)
+{
+	if (inet_pton(AF_INET, s, &addr->sin.sin_addr) == 1) {
+		addr->mdsaddr_family = AF_INET;
+		addr->sin.sin_port = htons(port);
+		return (0);
+	} else if (inet_pton(AF_INET6, s, &addr->sin6.sin6_addr) == 1) {
+		addr->mdsaddr_family = AF_INET6;
+		addr->sin6.sin6_port = htons(port);
+		return (0);
+	}
+	return (-1);
+}
+
 /*
  * Return number of set MDS addresses
  */
@@ -596,6 +615,7 @@ dserv_getmds(dserv_handle_t *handle)
 {
 	char *val, *p;
 	ushort_t port;
+	int err;
 
 	if (handle->dsh_pg_storage == NULL)
 		handle->dsh_pg_storage = dserv_handle_pg(handle, "storage");
@@ -618,8 +638,12 @@ dserv_getmds(dserv_handle_t *handle)
 		return (0);
 
 	handle->dsh_mdsport = port;
-	handle->dsh_mdsaddr[0] = mdsaddrs[0];
-	strlcpy(handle->dsh_mdsaddr[0], val, DSERV_MAX_ADDR);
+	handle->dsh_mdsaddr[0] = &mdsaddrs[0];
+	strlcpy(handle->dsh_mdsaddr[0]->name, val, DSERV_MAX_ADDR);
+
+	err = dserv_str_inetaddr(val, &handle->dsh_mdsaddr[0]->addr, port);
+	if (err)
+		return (0);
 
 	return (1);
 }

@@ -430,7 +430,8 @@ dservadm_listmds(dserv_handle_t *handle,
 
 		port = handle->dsh_mdsport;
 		for (i = 0; i < n; i++) {
-			printf(gettext("mds:   %s\n"), handle->dsh_mdsaddr[i]);
+			printf(gettext("mds:   %s\n"),
+			    handle->dsh_mdsaddr[i]->name);
 			if (port != NFS_PORT)
 				printf(gettext("port:  %u\n"), port);
 			printf("\n");

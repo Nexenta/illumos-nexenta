@@ -60,7 +60,7 @@ dserv_kmod_setmds(dserv_handle_t *handle)
 
 	for (i = 0; handle->dsh_mdsaddr[i]; i++) {
 		dserv_setmds_args_t setmds;
-		char *mdsaddr = handle->dsh_mdsaddr[i];
+		char *mdsaddr = handle->dsh_mdsaddr[i]->name;
 
 		if (strlcpy(setmds.dsm_mds_addr, mdsaddr,
 		    sizeof (setmds.dsm_mds_addr)) >=

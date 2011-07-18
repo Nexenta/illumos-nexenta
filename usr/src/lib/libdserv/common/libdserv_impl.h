@@ -48,6 +48,11 @@ extern "C" {
 #define	DSERV_ASTRING_SIZE	(1024)
 #define	DSERV_MDSADDRS		(1)
 
+struct dserv_mdsaddr {
+	char name[DSERV_MAX_ADDR];
+	mdsaddr_t addr;
+};
+
 struct dserv_handle {
 	uint32_t dsh_flags;
 	dserv_error_t dsh_error;
@@ -63,7 +68,8 @@ struct dserv_handle {
 	int dsh_svc_pool_id;
 	char dsh_errstring[DSERV_ERRBUF_SIZE];
 	char dsh_astring[DSERV_ASTRING_SIZE];
-	char *dsh_mdsaddr[DSERV_MDSADDRS + 1];	/* null terminated array */
+	/* null terminated array */
+	struct dserv_mdsaddr *dsh_mdsaddr[DSERV_MDSADDRS + 1];
 	ushort_t dsh_mdsport;
 };
 

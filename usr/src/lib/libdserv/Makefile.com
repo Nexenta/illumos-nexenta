@@ -42,7 +42,7 @@ INCS += -I$(SRCDIR)
 
 C99MODE=	-xc99=%all
 C99LMODE=	-Xc99=%all
-LDLIBS +=	-lc -lumem -lscf
+LDLIBS +=	-lc -lumem -lscf -lnsl
 CPPFLAGS +=	$(INCS) -D_REENTRANT
 
 SRCS=	$(OBJS_COMMON:%.o=$(SRCDIR)/%.c)	\
