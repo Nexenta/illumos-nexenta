@@ -613,12 +613,7 @@ nfssys(enum nfssys_op opcode, void *arg)
 		if (error)
 			return (EFAULT);
 
-		DTRACE_PROBE3(dserv__i__setmds,
-		    char *, smargs.dsm_mds_addr, char *, smargs.dsm_mds_netid,
-		    uint16_t, smargs.port);
-
-		error = dserv_mds_setmds(smargs.dsm_mds_netid,
-		    smargs.dsm_mds_addr, smargs.port);
+		error = dserv_mds_setmds(&smargs.addr);
 		break;
 	}
 

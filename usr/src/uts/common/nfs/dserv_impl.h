@@ -202,7 +202,6 @@ void dserv_server_teardown(void);
 void dserv_mds_setup(void);
 void dserv_mds_teardown(void);
 int dserv_mds_instance_teardown();
-  int dserv_mds_setmds(char *, char *, ushort);
 int dserv_mds_addobjset(const char *);
 int dserv_mds_addport(const char *, const char *, const char *);
 int dserv_mds_reportavail(void);

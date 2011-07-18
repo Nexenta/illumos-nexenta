@@ -282,9 +282,7 @@ typedef union mdsaddr {
 #define	mdsaddr_family	sin.sin_family
 
 typedef struct dserv_setmds_args {
-	char dsm_mds_netid[DSERV_MAX_NETID];
-	char dsm_mds_addr[DSERV_MAX_ADDR];
-	uint16_t port;
+	mdsaddr_t addr;
 } dserv_setmds_args_t;
 
 
@@ -521,6 +519,7 @@ extern int	nfs_getfh(struct nfs_getfh_args *, model_t, cred_t *);
 extern int 	pnfs_collect_layoutstats(
     struct pnfs_getflo_args *, model_t, cred_t *);
 extern int	dserv_svc(dserv_svc_args_t *);
+extern int	dserv_mds_setmds(mdsaddr_t *addr);
 extern int	nfs_svc(struct nfs_svc_args *, model_t);
 extern int	lm_svc(struct lm_svc_args *uap);
 extern int	lm_shutdown(void);

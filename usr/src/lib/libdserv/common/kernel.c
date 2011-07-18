@@ -60,18 +60,8 @@ dserv_kmod_setmds(dserv_handle_t *handle)
 
 	for (i = 0; handle->dsh_mdsaddr[i]; i++) {
 		dserv_setmds_args_t setmds;
-		char *mdsaddr = handle->dsh_mdsaddr[i]->name;
 
-		if (strlcpy(setmds.dsm_mds_addr, mdsaddr,
-		    sizeof (setmds.dsm_mds_addr)) >=
-		    sizeof (setmds.dsm_mds_addr)) {
-			return (-1);
-		}
-
-		setmds.port = handle->dsh_mdsport;
-
-		/* XXX need a way to have non-tcp addresses */
-		(void) strcpy(setmds.dsm_mds_netid, "tcp");
+		setmds.addr = handle->dsh_mdsaddr[i]->addr;
 
 		err = _nfssys(DSERV_SETMDS, &setmds);
 		if (err < 0) {

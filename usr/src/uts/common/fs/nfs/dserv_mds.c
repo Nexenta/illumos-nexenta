@@ -604,7 +604,7 @@ dserv_mds_teardown()
  * dserv instance, netid, address and port.
  */
 int
-dserv_mds_setmds(char *netid, char *addr, ushort port)
+dserv_mds_setmds(mdsaddr_t *addr)
 {
 	dserv_mds_instance_t *inst;
 	char *devname;
@@ -619,16 +619,16 @@ dserv_mds_setmds(char *netid, char *addr, ushort port)
 	mutex_enter(&inst->dmi_content_lock);
 
 	inst->dmi_knc.knc_semantics = NC_TPI_COTS;
-	if (strcmp(netid, "tcp") == 0) {
+
+	af = addr->mdsaddr_family;
+	if (af == AF_INET) {
 		inst->dmi_knc.knc_protofmly = "inet";
 		inst->dmi_knc.knc_proto = "tcp";
 		devname = "/dev/tcp";
-		af = AF_INET;
-	} else if (strcmp(netid, "tcp6") == 0) {
+	} else if (af == AF_INET6) {
 		inst->dmi_knc.knc_protofmly = "inet6";
 		inst->dmi_knc.knc_proto = "tcp"; /* why not tcp6? */
 		devname = "/dev/tcp6";
-		af = AF_INET6;
 	} else {
 		error = EINVAL;
 		goto out;
@@ -645,31 +645,17 @@ dserv_mds_setmds(char *netid, char *addr, ushort port)
 	VN_RELE(vp);
 
 	if (af == AF_INET) {
-		struct sockaddr_in *addr4;
-		char buf[16];
-		char *s;
+		unsigned int size = sizeof (struct sockaddr_in);
 
-		inst->dmi_nb.maxlen = inst->dmi_nb.len =
-		    sizeof (struct sockaddr_in);
-		inst->dmi_nb.buf = kmem_zalloc(inst->dmi_nb.maxlen, KM_SLEEP);
-		addr4 = (struct sockaddr_in *)inst->dmi_nb.buf;
-		addr4->sin_family = af;
-		if (inet_pton(af, addr, &addr4->sin_addr) == 1) {
-			addr4->sin_port = htons(port);
-		} else
-			error = EINVAL;
+		inst->dmi_nb.maxlen = inst->dmi_nb.len = size;
+		inst->dmi_nb.buf = kmem_zalloc(size, KM_SLEEP);
+		memcpy(inst->dmi_nb.buf, &addr->sin, size);
 	} else { /* AF_INET6 */
-		struct sockaddr_in6 *addr6;
+		unsigned int size = sizeof (struct sockaddr_in6);
 
-		inst->dmi_nb.maxlen = inst->dmi_nb.len =
-		    sizeof (struct sockaddr_in6);
-		inst->dmi_nb.buf = kmem_zalloc(inst->dmi_nb.maxlen, KM_SLEEP);
-		addr6 = (struct sockaddr_in6 *)inst->dmi_nb.buf;
-		addr6->sin6_family = af;
-		if (inet_pton(af, addr, &addr6->sin6_addr) == 1) {
-			addr6->sin6_port = htons(port);
-		} else
-			error = EINVAL;
+		inst->dmi_nb.maxlen = inst->dmi_nb.len = size;
+		inst->dmi_nb.buf = kmem_zalloc(size, KM_SLEEP);
+		memcpy(inst->dmi_nb.buf, &addr->sin6, size);
 	}
 
 	if (error == 0)
