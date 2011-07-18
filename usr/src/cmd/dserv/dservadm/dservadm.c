@@ -208,7 +208,7 @@ usage(dservadm_usage_t which)
 static int
 opt_instance_port(dserv_handle_t *handle,
     int argc, char *argv[], dservadm_usage_t u,
-    ushort *port)
+    ushort_t *port)
 {
 	char *instance = DSERV_DEFAULT_INSTANCE;
 	const char *optstring = "i:";
@@ -246,7 +246,7 @@ static int
 optinstance(dserv_handle_t *h,
     int argc, char *argv[], dservadm_usage_t u)
 {
-	return opt_instance_port(h, argc, argv, u, NULL);
+	return (opt_instance_port(h, argc, argv, u, NULL));
 }
 
 static int
@@ -360,7 +360,7 @@ dservadm_addmds(dserv_handle_t *handle,
     int argc, char *argv[], dservadm_cmd_t *c)
 {
 	int rc;
-	ushort port;
+	ushort_t port;
 	char buf[6];
 
 	if (opt_instance_port(handle, argc, argv, c->usage, &port) != 0)
