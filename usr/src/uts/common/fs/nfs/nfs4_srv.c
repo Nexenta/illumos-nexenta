@@ -5561,6 +5561,12 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			*rv = 1;
 		return;
 	}
+
+	if (args->array_len > NFS4_COMPOUND_LIMIT) {
+		*cs.statusp = NFS4ERR_RESOURCE;
+		return;
+	}
+
 	resp->array_len = args->array_len;
 	resp->array = kmem_zalloc(args->array_len * sizeof (nfs_resop4),
 	    KM_SLEEP);
