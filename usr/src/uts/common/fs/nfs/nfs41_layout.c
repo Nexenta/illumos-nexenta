@@ -930,23 +930,37 @@ mds_layout_put(mds_layout_t *l)
 	rfs4_dbe_rele(l->mlo_dbe);
 }
 
-/* Find vnode <-> layout */
-
 /*
- * Get layout: get from cache or read from disk
+ * Find vnode <-> layout
+ *
+ * Each file layout consist of two level db:
+ *
+ *    1st:  layout_vnode  layout_vnode  layout_vnode
+ *                    \        |        /
+ *    2nd:                mds_layout_t
+ *
+ * Different layout_vnode can have one mds_laoyut, as layout for different
+ * files (vnode-s) can be the same.
  */
 
+/*
+ * Get layout: get from cache or go to 2nd level:
+ *
+ *          lc == NULL,  read mds_layout from disk;
+ *          lc != NULL,  use 'lc' to get from mds_layout_tab.
+ */
 static struct layout_vnode *
-lookup_layout_vnode(vnode_t *vp, layout_core_t *lc, bool_t *create)
+lookup_layout_vnode(vnode_t *vp, layout_core_t *lc)
 {
 	struct layout_vnode *lnode;
 	struct layout_arg larg;
+	bool_t yes = TRUE;
 	rfs4_entry_t e;
 
 	larg.la_vnode = vp;
 	larg.la_lcore = lc;
 
-	e = rfs4_dbsearch(layout_vnode_idx, vp, create, &larg, RFS4_DBS_VALID);
+	e = rfs4_dbsearch(layout_vnode_idx, vp, &yes, &larg, RFS4_DBS_VALID);
 	if (e == NULL)
 		return (NULL);
 
@@ -961,9 +975,8 @@ pnfs_get_mds_layout(vnode_t *vp)
 {
 	struct layout_vnode *lnode;
 	mds_layout_t *layout = NULL;
-	bool_t yes = TRUE;
 
-	lnode = lookup_layout_vnode(vp, NULL, &yes);
+	lnode = lookup_layout_vnode(vp, NULL);
 	if (lnode) {
 		layout = lnode->layout;
 		rfs4_dbe_rele(lnode->dbe);
@@ -977,9 +990,8 @@ pnfs_add_mds_layout(vnode_t *vp, layout_core_t *lc)
 {
 	struct layout_vnode *lnode;
 	mds_layout_t *layout = NULL;
-	bool_t yes = TRUE;
 
-	lnode = lookup_layout_vnode(vp, lc, &yes);
+	lnode = lookup_layout_vnode(vp, lc);
 	if (lnode) {
 		layout = lnode->layout;
 		rfs4_dbe_rele(lnode->dbe);
@@ -1005,9 +1017,8 @@ pnfs_delete_mds_layout(vnode_t *vp)
 {
 	struct layout_vnode *lnode;
 	mds_layout_t *layout = NULL;
-	bool_t yes = TRUE;
 
-	lnode = lookup_layout_vnode(vp, NULL, &yes);
+	lnode = lookup_layout_vnode(vp, NULL);
 	if (lnode) {
 		layout = lnode->layout;
 		rfs4_dbe_invalidate(lnode->dbe);
