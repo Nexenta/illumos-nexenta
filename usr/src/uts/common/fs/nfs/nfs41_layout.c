@@ -1005,9 +1005,9 @@ pnfs_delete_mds_layout(vnode_t *vp)
 {
 	struct layout_vnode *lnode;
 	mds_layout_t *layout = NULL;
-	bool_t nocreate = FALSE;
+	bool_t yes = TRUE;
 
-	lnode = lookup_layout_vnode(vp, NULL, &nocreate);
+	lnode = lookup_layout_vnode(vp, NULL, &yes);
 	if (lnode) {
 		layout = lnode->layout;
 		rfs4_dbe_invalidate(lnode->dbe);
