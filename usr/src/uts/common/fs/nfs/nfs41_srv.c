@@ -4402,6 +4402,16 @@ mds_compound(compound_state_t *cs,
 		goto out;
 	}
 
+	if (cs->sp != NULL) {
+		sess_channel_t *fore_chan = cs->sp->sn_fore;
+
+		if (args->array_len > fore_chan->cn_attrs.ca_maxoperations) {
+			*cs->statusp = NFS4ERR_TOO_MANY_OPS;
+			rfs41_err_resp(args, resp, *cs->statusp);
+			goto out;
+		}
+	}
+
 	/*
 	 * Everything kosher; allocate results array
 	 */
@@ -9303,6 +9313,9 @@ sess_chan_limits(sess_channel_t *scp)
 		    char *, "maxreqs: ", count4, maxreqs,
 		    char *, "\tAdjusting to: ", count4, slrc_slot_size);
 	}
+
+	if (scp->cn_attrs.ca_maxoperations > NFS4_COMPOUND_LIMIT)
+		scp->cn_attrs.ca_maxoperations = NFS4_COMPOUND_LIMIT;
 
 	/*
 	 * Lower limit should be set to smallest sane COMPOUND. Even
