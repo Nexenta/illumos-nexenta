@@ -4026,46 +4026,32 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			    NULL, 0)) == EEXIST)
 				error = ENOTEMPTY;
 		}
-	} else {
-		if ((error = VOP_REMOVE(dvp, name, cs->cr, NULL, 0)) == 0 &&
-		    fp != NULL) {
-			struct vattr va;
-			vnode_t *tvp;
+	} else if ((error = VOP_REMOVE(dvp, name, cs->cr, NULL, 0)) == 0) {
+		struct vattr va;
 
-			rfs4_dbe_lock(fp->rf_dbe);
-			tvp = fp->rf_vp;
-			if (tvp)
-				VN_HOLD(tvp);
-			rfs4_dbe_unlock(fp->rf_dbe);
+		/*
+		 * This is va_seq safe because we are not
+		 * manipulating dvp.
+		 */
+		va.va_mask = AT_NLINK;
+		if (!VOP_GETATTR(vp, &va, 0, cs->cr, NULL) &&
+		    va.va_nlink == 0) {
+			/* Remove state on file remove */
+			if (in_crit) {
+				nbl_end_crit(vp);
+				in_crit = 0;
+			}
 
-			if (tvp) {
-				/*
-				 * This is va_seq safe because we are not
-				 * manipulating dvp.
-				 */
-				va.va_mask = AT_NLINK;
-				if (!VOP_GETATTR(tvp, &va, 0, cs->cr, NULL) &&
-				    va.va_nlink == 0) {
-					/* Remove state on file remove */
-					if (in_crit) {
-						nbl_end_crit(vp);
-						in_crit = 0;
-					}
+			if (pnfsproxy) {
+				mds_layout_t *l;
 
-					if (pnfsproxy) {
-						mds_layout_t *l;
-
-						l = pnfs_delete_mds_layout(tvp);
-						if (l) {
-							do_ctl_mds_remove(tvp,
-							    l, cs);
-							mds_layout_put(l);
-						}
-					}
-
-					rfs4_close_all_state(fp);
+				l = pnfs_delete_mds_layout(vp);
+				if (l) {
+					do_ctl_mds_remove(vp, l, cs);
+					mds_layout_put(l);
 				}
-				VN_RELE(tvp);
+				if (fp)
+					rfs4_close_all_state(fp);
 			}
 		}
 	}
