@@ -3039,31 +3039,6 @@ final:
 }
 
 /*
- * A directory entry is a valid nfsv4 entry if
- * - it has a non-zero ino
- * - it is not a dot or dotdot name
- * - it is visible in a pseudo export or in a real export that can
- *   only have a limited view.
- */
-static bool_t
-valid_nfs4_entry(struct exportinfo *exi, struct dirent64 *dp,
-		int *expseudo, int check_visible)
-{
-	if (dp->d_ino == 0 || NFS_IS_DOTNAME(dp->d_name)) {
-		*expseudo = 0;
-		return (FALSE);
-	}
-
-	if (! check_visible) {
-		*expseudo = 0;
-		return (TRUE);
-	}
-
-	return (nfs_visible_inode(exi, dp->d_ino, expseudo));
-}
-
-
-/*
  * readlink: args: CURRENT_FH.
  *	res: status. If success - CURRENT_FH unchanged, return linktext.
  */
