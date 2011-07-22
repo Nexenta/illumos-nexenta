@@ -388,7 +388,6 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	int error;
 	vnode_t *vp;
 	vnode_t *dvp;
-	nnode_t *nn, *nnres;
 	struct vattr *vap;
 	struct vattr va;
 	struct vattr *dvap;
@@ -449,8 +448,6 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 		resp->status = NFS3ERR_NOENT;
 		goto out1;
 	}
-	if (nnode_from_fh_v3(&nn, fhp, exi) == 0)
-		nnode_rele(&nn);
 
 	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
 	name = nfscmd_convname(ca, exi, args->what.name,
@@ -504,10 +501,6 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	} else {
 		error = VOP_LOOKUP(dvp, name, &vp,
 		    NULL, 0, NULL, cr, NULL, NULL, NULL);
-		if (error == 0) {
-			if (nnode_from_vnode(&nnres, vp) == 0)
-				nnode_rele(&nnres);
-		}
 	}
 
 	if (name != args->what.name)
