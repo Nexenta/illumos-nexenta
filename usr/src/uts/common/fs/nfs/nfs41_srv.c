@@ -8188,6 +8188,11 @@ mds_op_bind_conn_to_session(nfs_argop4 *argop, nfs_resop4 *resop,
 	    struct compound_state *, cs,
 	    BIND_CONN_TO_SESSION4args *, args);
 
+	if (cs->op_ndx != 0) {
+		*cs->statusp = resp->bctsr_status = NFS4ERR_NOT_ONLY_OP;
+		goto final;
+	}
+
 	/*
 	 * Find session and check for clientid and lease expiration
 	 */
