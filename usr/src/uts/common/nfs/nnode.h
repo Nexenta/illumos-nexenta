@@ -270,10 +270,12 @@ int nnode_clear_flag(nnode_t *, uint32_t);
 /* nnode flags */
 #define	NNODE_OBJ_REMOVE_IN_PROGRESS	0x01
 #define	NNODE_OBJ_REMOVED		0x02
+#define	NNODE_INVALIDATED		0x04
 
 #define	NNODE_VALID_FLAG_BITS (\
-    NNODE_OBJ_REMOVE_IN_PROGRESS | \
-    NNODE_OBJ_REMOVED)
+    NNODE_OBJ_REMOVE_IN_PROGRESS	| \
+    NNODE_OBJ_REMOVED			| \
+    NNODE_INVALIDATED)
 
 /* nnode teardown function */
 int nnode_teardown_by_instance();

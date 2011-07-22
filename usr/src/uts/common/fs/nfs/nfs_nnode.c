@@ -233,7 +233,8 @@ nnode_bucket_proc_maxage(nnode_bucket_sweep_task_t *task, nnode_t *nn)
 	 * Bail out if it's in use, or if it's recently accessed.
 	 */
 	if ((nn->nn_refcount > 0) ||
-	    (nn->nn_last_access >= task->nbst_maxage)) {
+	    (!(nn->nn_flags & NNODE_INVALIDATED) &&
+	    (nn->nn_last_access >= task->nbst_maxage))) {
 		mutex_exit(&nn->nn_lock);
 		return;
 	}
@@ -452,6 +453,9 @@ nnode_compare(const void *va, const void *vb)
 	const nnode_t *b = (nnode_t *)vb;
 	pid_t rc;
 
+	NFS_AVL_COMPARE((a->nn_flags & NNODE_INVALIDATED),
+	    (b->nn_flags & NNODE_INVALIDATED));
+
 	/*
 	 * NFS_AVL_RETURN() does nothing if rc is zero.
 	 * If rc is not zero, it causes this function to return 1 or -1.
@@ -634,6 +638,7 @@ nnode_do_lookup(nnode_t **npp, nnode_key_t *nkey, uint32_t hash,
 	key.nn_key = nkey->nk_keydata;
 	key.nn_key_compare = nkey->nk_compare;
 	key.nn_instance_id = nnode_get_my_instance();
+	key.nn_flags = 0;
 
 	hash %= nnode_hash_size;
 	bucket = nnode_hash[hash];
