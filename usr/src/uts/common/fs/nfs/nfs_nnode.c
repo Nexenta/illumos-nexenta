@@ -47,6 +47,11 @@ static void nnode_async_free(nnode_t *);
 static void nnode_periodic_gc(void *);
 static void nnode_sweep(nnode_bucket_sweep_task_t *);
 
+struct nnbuild_args {
+	nnode_init_function_t nninit;
+	void *data;
+};
+
 extern pri_t minclsyspri;
 
 /* globals */
@@ -611,10 +616,10 @@ nnode_clear_flag(nnode_t *np, uint32_t flag)
 	return (1);
 }
 
-
-int
-nnode_find_or_create(nnode_t **npp, nnode_key_t *nkey, uint32_t hash,
-    void *data, nnode_init_function_t nnbuild)
+/* if cargs is NULL, do only searching */
+static int
+nnode_do_lookup(nnode_t **npp, nnode_key_t *nkey, uint32_t hash,
+    struct nnbuild_args *cargs)
 {
 	nnode_bucket_t *bucket;
 	krw_t rw = RW_READER;
@@ -653,6 +658,11 @@ again:
 		return (0);
 	}
 
+	if (cargs == NULL) {
+		rw_exit(&bucket->nb_lock);
+		return (ENOENT);
+	}
+
 	/*
 	 * not found; try to upgrade the lock, or drop the lock and
 	 * re-grab as a writer and re-search the tree, since another
@@ -671,13 +681,30 @@ again:
 	 * create the nnode, as well as modify the AVL tree by
 	 * inserting the nnode.
 	 */
-	rc = nnode_build(npp, data, nnbuild);
+	rc = nnode_build(npp, cargs->data, cargs->nninit);
 	if (rc == 0)
 		avl_insert(&bucket->nb_tree, *npp, where);
 
 	rw_exit(&bucket->nb_lock);
 
 	return (rc);
+}
+
+int
+nnode_find_or_create(nnode_t **npp, nnode_key_t *nkey, uint32_t hash,
+    void *data, nnode_init_function_t nnbuild)
+{
+	struct nnbuild_args args;
+
+	args.nninit = nnbuild;
+	args.data = data;
+	return (nnode_do_lookup(npp, nkey, hash, &args));
+}
+
+int
+nnode_try_find(nnode_t **npp, nnode_key_t *nkey, uint32_t hash)
+{
+	return (nnode_do_lookup(npp, nkey, hash, NULL));
 }
 
 void

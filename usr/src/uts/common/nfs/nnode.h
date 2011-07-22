@@ -281,6 +281,7 @@ int nnode_teardown_by_instance();
 typedef nnode_error_t (*nnode_init_function_t)(nnode_seed_t *, void *);
 int nnode_find_or_create(nnode_t **, nnode_key_t *, uint32_t, void *,
     nnode_init_function_t);
+int nnode_try_find(nnode_t **, nnode_key_t *, uint32_t);
 
 #ifdef	__cplusplus
 }
