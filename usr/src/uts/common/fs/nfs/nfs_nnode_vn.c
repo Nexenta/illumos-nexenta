@@ -485,8 +485,8 @@ nnode_from_fh_v41(nnode_t **npp, nfs_fh4 *fh4)
 	}
 }
 
-nnode_error_t
-nnode_from_vnode(nnode_t **npp, vnode_t *vp)
+static int
+nnode_lookup_vnode(nnode_t **npp, vnode_t *vp, bool_t create)
 {
 	nnode_fid_key_t fidkey;
 	nnode_key_t key;
@@ -517,12 +517,38 @@ nnode_from_vnode(nnode_t **npp, vnode_t *vp)
 	key.nk_keydata = &fidkey;
 	key.nk_compare = nnode_compare_fsid;
 
+	if (!create) {
+		error = nnode_try_find(npp, &key, hash);
+		ASSERT((error == 0) || (error == ENOENT));
+		return (error);
+	}
+
 	vpdata.nsv_vp = vp;
 	vpdata.nsv_fsid = fsid;
 	vpdata.nsv_fidp = &fid;
 
 	return (nnode_find_or_create(npp, &key, hash, &vpdata,
 	    nnode_build_vp));
+}
+
+nnode_error_t
+nnode_from_vnode(nnode_t **npp, vnode_t *vp)
+{
+	return (nnode_lookup_vnode(npp, vp, TRUE));
+}
+
+/* Search in cache */
+nnode_t *
+nnode_find_by_vnode(vnode_t *vp)
+{
+	nnode_t *nn;
+	int error;
+
+	error = nnode_lookup_vnode(&nn, vp, FALSE);
+	if (error)
+		return (NULL);
+
+	return (nn);
 }
 
 static uint32_t
