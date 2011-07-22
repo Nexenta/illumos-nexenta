@@ -4001,6 +4001,9 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			if ((error = VOP_RMDIR(dvp, name, rootdir, cs->cr,
 			    NULL, 0)) == EEXIST)
 				error = ENOTEMPTY;
+
+			if (error == 0)
+				nnode_vnode_invalidate(vp);
 		}
 	} else if ((error = VOP_REMOVE(dvp, name, cs->cr, NULL, 0)) == 0) {
 		struct vattr va;
@@ -4017,6 +4020,9 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 				nbl_end_crit(vp);
 				in_crit = 0;
 			}
+
+			/* Need to clear nnode from cache */
+			nnode_vnode_invalidate(vp);
 
 			if (pnfsproxy) {
 				mds_layout_t *l;

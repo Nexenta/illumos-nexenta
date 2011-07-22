@@ -3430,6 +3430,8 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			if ((error = VOP_RMDIR(dvp, nm, rootdir,
 			    cs->cr, &ct, 0)) == EEXIST)
 				error = ENOTEMPTY;
+			if (error == 0)
+				nnode_vnode_invalidate(vp);
 		}
 	} else if ((error = VOP_REMOVE(dvp, nm, cs->cr, &ct, 0)) == 0) {
 		struct vattr va;
@@ -3446,6 +3448,9 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 				nbl_end_crit(vp);
 				in_crit = 0;
 			}
+
+			/* Need to clear nnode from cache */
+			nnode_vnode_invalidate(vp);
 
 			/* Remove the layout */
 			l = pnfs_delete_mds_layout(vp);

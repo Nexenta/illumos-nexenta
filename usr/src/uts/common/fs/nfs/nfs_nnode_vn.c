@@ -551,6 +551,18 @@ nnode_find_by_vnode(vnode_t *vp)
 	return (nn);
 }
 
+/* Mark nnode as invalidated */
+void
+nnode_vnode_invalidate(vnode_t *vp)
+{
+	nnode_t *nn = nnode_find_by_vnode(vp);
+
+	if (nn) {
+		nnode_set_flag(nn, NNODE_INVALIDATED);
+		nnode_rele(&nn);
+	}
+}
+
 static uint32_t
 nnode_key_fid_hash(nnode_fid_key_t *key)
 {

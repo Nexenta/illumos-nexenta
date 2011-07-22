@@ -251,6 +251,7 @@ nnode_error_t nnode_from_fh_v4(nnode_t **, nfs_fh4 *);
 nnode_error_t nnode_from_fh_v3(nnode_t **, nfs_fh3 *, struct exportinfo *);
 nnode_error_t nnode_from_vnode(nnode_t **, vnode_t *);
 nnode_t *nnode_find_by_vnode(vnode_t *vp);
+void nnode_vnode_invalidate(vnode_t *);
 
 void nnode_rele(nnode_t **);
 void nnode_free_export(struct exportinfo *);
