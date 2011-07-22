@@ -414,13 +414,14 @@ nnode_from_fh_v4(nnode_t **npp, nfs_fh4 *fh4)
 	nnode_key_t key;
 	nfs_fh4_fmt_t *fh4fmt = (nfs_fh4_fmt_t *)fh4->nfs_fh4_val;
 	uint32_t hash;
+	uint32_t zero = 0;
 
 	if (fh4->nfs_fh4_len < NFS_FH4_LEN)
 		return (NNODE_ERROR_BADFH);
 
 	fidkey.nfk_fsid = &fh4fmt->fh4_fsid;
 	fidkey.nfk_fid = (fid_t *)&fh4fmt->fh4_len;
-	fidkey.nfk_other = &fh4fmt->fh4_flag;
+	fidkey.nfk_other = &zero;
 
 	hash = nnode_key_fid_hash(&fidkey);
 
@@ -437,6 +438,7 @@ nnode_from_fh_v41_nfs(nnode_t **npp, nfs_fh4 *fh4)
 	nfs41_fh_fmt_t *fh41 = (nfs41_fh_fmt_t *)fh4->nfs_fh4_val;
 	nnode_key_t key;
 	nnode_fid_key_t fidkey;
+	uint32_t zero = 0;
 	uint32_t hash;
 	fid_t fid;
 
@@ -449,7 +451,7 @@ nnode_from_fh_v41_nfs(nnode_t **npp, nfs_fh4 *fh4)
 
 	fidkey.nfk_fsid = &fh41->fh.v1.export_fsid;
 	fidkey.nfk_fid = &fid;
-	fidkey.nfk_other = &fh41->fh.v1.flags;
+	fidkey.nfk_other = &zero;
 
 	hash = nnode_key_fid_hash(&fidkey);
 
