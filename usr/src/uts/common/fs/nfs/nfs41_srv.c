@@ -289,6 +289,10 @@ static void mds_op_reclaim_complete(nfs_argop4 *, nfs_resop4 *,
 
 static int	seq_chk_limits(nfs_argop4 *, nfs_resop4 *, compound_state_t *);
 
+static bool_t	valid_first_compound_op(nfs_opnum4);
+
+static nfsstat4 verify_compound_args(compound_state_t *, COMPOUND4args *);
+
 nfsstat4 check_open_access(uint32_t,
 			struct compound_state *, struct svc_req *);
 nfsstat4 rfs4_client_sysid(rfs4_client_t *, sysid_t *);
@@ -4302,6 +4306,7 @@ mds_compound(compound_state_t *cs,
 {
 	cred_t *cr;
 	size_t	reslen;
+	nfsstat4 err;
 
 	if (rv != NULL)
 		*rv = 0;
@@ -4371,45 +4376,11 @@ mds_compound(compound_state_t *cs,
 	if (args->array_len == 0)
 		goto out;
 
-	/*
-	 * Any operations _other_ than the ones listed below, should _not_
-	 * appear as the first operation in a compound. If so we will
-	 * error out. We use the opilleagal.status without regard to
-	 * the actual operation since we know that status always appears
-	 * as the first element for all the operations.
-	 */
-	switch (args->array[0].argop) {
-	case OP_SEQUENCE:
-	case OP_EXCHANGE_ID:
-	case OP_CREATE_SESSION:
-	case OP_DESTROY_SESSION:
-		break;
-
-	case OP_BIND_CONN_TO_SESSION:
-		/*
-		 * Should be the _only_ op in compound
-		 */
-		if (args->array_len != 1) {
-			*cs->statusp = NFS4ERR_NOT_ONLY_OP;
-			rfs41_err_resp(args, resp, *cs->statusp);
-			goto out;
-		}
-		break;
-
-	default:
-		*cs->statusp = NFS4ERR_OP_NOT_IN_SESSION;
+	err = verify_compound_args(cs, args);
+	if (err != NFS4_OK) {
+		*cs->statusp = err;
 		rfs41_err_resp(args, resp, *cs->statusp);
 		goto out;
-	}
-
-	if (cs->sp != NULL) {
-		sess_channel_t *fore_chan = cs->sp->sn_fore;
-
-		if (args->array_len > fore_chan->cn_attrs.ca_maxoperations) {
-			*cs->statusp = NFS4ERR_TOO_MANY_OPS;
-			rfs41_err_resp(args, resp, *cs->statusp);
-			goto out;
-		}
 	}
 
 	/*
@@ -9302,6 +9273,53 @@ tohex(const void *bytes, int len)
 	}
 
 	return (rc);
+}
+
+/*
+ * The function checks if given compound operation is allowed
+ * to be the very fist operation in compound array.
+ */
+static bool_t
+valid_first_compound_op(nfs_opnum4 op)
+{
+	if (op == OP_BIND_CONN_TO_SESSION ||
+	    op == OP_SEQUENCE		  ||
+	    op == OP_EXCHANGE_ID	  ||
+	    op == OP_CREATE_SESSION	  ||
+	    op == OP_DESTROY_SESSION)
+		return (TRUE);
+
+	return (FALSE);
+}
+
+/*
+ * The function verifies arguments passed to mds_op_compound.
+ * If agrguments are valid, NFS4_OK is returned, otherwise
+ * function returns correspoinding NFS4 error code.
+ */
+static nfsstat4
+verify_compound_args(compound_state_t *cs, COMPOUND4args *args)
+{
+	if (args->array_len == 0)
+		return (NFS4_OK);
+
+	if (!valid_first_compound_op(args->array[0].argop))
+		return (NFS4ERR_OP_NOT_IN_SESSION);
+
+	if (cs->sp != NULL) {
+		sess_channel_t *fore_chan = cs->sp->sn_fore;
+
+		if (args->array_len > fore_chan->cn_attrs.ca_maxoperations)
+			return (NFS4ERR_TOO_MANY_OPS);
+	} else if (args->array_len != 1) {
+		/*
+		 * Compound is outside the session, then there must be
+		 * only one operation in request.
+		 */
+		return (NFS4ERR_NOT_ONLY_OP);
+	}
+
+	return (NFS4_OK);
 }
 
 extern slotid4 slrc_slot_size;
