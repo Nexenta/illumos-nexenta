@@ -59,6 +59,18 @@ int	max_conns_allowed = -1;	/* used by cots_listen_event() */
 
 static dserv_handle_t *do_all_handle;
 
+static int
+make_sock_nonblock(int sock)
+{
+	int flags;
+
+	flags = fcntl(sock, F_GETFL, 0);
+	if (flags < 0)
+		return (-1);
+
+	return (fcntl(sock, F_SETFL, flags | O_NONBLOCK));
+}
+
 /*
  * The function gets DS IP address and saves it to ds_sa.
  * DS IP address is detected during the attempt to connect
@@ -76,8 +88,18 @@ get_dserv_address(const struct sockaddr *mds_sa,
 	if (sock < 0)
 		return (-1);
 
-	if ((ret = connect(sock, mds_sa, addrlen)) < 0)
+	/*
+	 * Make socket nonblocking in order to prevent
+	 * dservd from blocking in connect(). We don't need to
+	 * make real connect to MDS, we just want to determine
+	 * local IP address DS uses to connect to MDS.
+	 */
+	if ((ret = make_sock_nonblock(sock) < 0))
 		goto out;
+
+	if ((ret = connect(sock, mds_sa, addrlen)) < 0)
+		if (errno != EINPROGRESS)
+			goto out;
 
 	ret = getsockname(sock, ds_sa, &addrlen);
 
