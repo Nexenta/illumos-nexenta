@@ -101,11 +101,7 @@ get_uaddr(struct sockaddr *mds_sa,
 	socklen_t addrlen;
 	struct netbuf cli_nb;
 	char *uaddr = NULL;
-	union {
-		struct sockaddr sa;
-		struct sockaddr_in sin;
-		struct sockaddr_in6 sin6;
-	} ds_addr;
+	dsaddr_t ds_addr;
 
 	addrlen = (mds_sa->sa_family == AF_INET) ?
 	    sizeof (struct sockaddr_in) : sizeof (struct sockaddr_in6);
@@ -176,8 +172,7 @@ do_dserv_setport(struct netconfig *nconf, struct netbuf *addr)
 		if (mdsaddr->addr.mdsaddr_family != mds_af)
 			continue;
 
-		uaddr = get_uaddr((struct sockaddr *)&mdsaddr->addr,
-		    nconf, addr);
+		uaddr = get_uaddr(&mdsaddr->addr.sa, nconf, addr);
 
 		if (uaddr == NULL) {
 			dserv_log(do_all_handle, LOG_WARNING,

@@ -274,10 +274,14 @@ typedef struct dserv_dataset_info {
 	char	dataset_name[MAXPATHLEN];
 } dserv_dataset_info_t;
 
-typedef union mdsaddr {
+union mdsaddr {
+	struct sockaddr		sa;
 	struct sockaddr_in	sin;
 	struct sockaddr_in6	sin6;
-} mdsaddr_t;
+};
+
+typedef union mdsaddr mdsaddr_t;
+typedef union mdsaddr dsaddr_t;
 
 #define	mdsaddr_family	sin.sin_family
 
