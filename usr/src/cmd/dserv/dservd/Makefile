@@ -34,7 +34,7 @@ MANIFEST=	dserv.xml
 include ../../Makefile.cmd
 
 POFILE = 	$(PROG)_all.po
-LDLIBS +=	-ldserv -lnsl
+LDLIBS +=	-ldserv -lnsl -lsocket
 CPPFLAGS +=	-I../../fs.d/nfs/lib -I.
 
 lint := LINTFLAGS = -ux

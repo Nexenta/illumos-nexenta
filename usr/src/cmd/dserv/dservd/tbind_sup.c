@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <nfs/nfs.h>
@@ -57,46 +59,150 @@ int	max_conns_allowed = -1;	/* used by cots_listen_event() */
 
 static dserv_handle_t *do_all_handle;
 
-static char *
-get_uaddr(struct netconfig *nconf, struct netbuf *nb)
+/*
+ * The function gets DS IP address and saves it to ds_sa.
+ * DS IP address is detected during the attempt to connect
+ * to MDS specified by mds_sa.
+ *
+ * On success function returns 0 and negative value otherwise.
+ */
+static int
+get_dserv_address(const struct sockaddr *mds_sa,
+    socklen_t addrlen, struct sockaddr *ds_sa)
 {
-	struct nfs_svc_args nsa;
-	char *ua, *ua2, *mua = NULL;
-	char me[MAXHOSTNAMELEN];
-	struct nd_addrlist *nas;
-	struct nd_hostserv hs;
-	struct nd_mergearg ma;
+	int ret, sock;
 
-	ua = taddr2uaddr(nconf, nb);
+	sock = socket(mds_sa->sa_family, SOCK_STREAM, 0);
+	if (sock < 0)
+		return (-1);
 
-	if (ua == NULL) {
+	if ((ret = connect(sock, mds_sa, addrlen)) < 0)
+		goto out;
+
+	ret = getsockname(sock, ds_sa, &addrlen);
+
+out:
+	close(sock);
+	return (ret);
+}
+
+/*
+ * The function gets DS IP address and represents it
+ * in a form of uaddr concatenating the address with
+ * port given in nb_port netbuf.
+ *
+ * On success function returns valid uaddr and NULL
+ * otherwise.
+ */
+static char *
+get_uaddr(struct sockaddr *mds_sa,
+    struct netconfig *nconf, struct netbuf *nb_port)
+{
+	socklen_t addrlen;
+	struct netbuf cli_nb;
+	char *uaddr = NULL;
+	union {
+		struct sockaddr sa;
+		struct sockaddr_in sin;
+		struct sockaddr_in6 sin6;
+	} ds_addr;
+
+	addrlen = (mds_sa->sa_family == AF_INET) ?
+	    sizeof (struct sockaddr_in) : sizeof (struct sockaddr_in6);
+
+	if (get_dserv_address(mds_sa, addrlen, &ds_addr.sa) < 0)
 		return (NULL);
+
+	/* Fetch port from nb_port netbuf and save it ds_addr */
+	if (mds_sa->sa_family == AF_INET) {
+		struct sockaddr_in *sin;
+
+		sin = (struct sockaddr_in *)nb_port->buf;
+		ds_addr.sin.sin_port = sin->sin_port;
+	} else {
+		struct sockaddr_in6 *sin6;
+
+		sin6 = (struct sockaddr_in6 *)nb_port->buf;
+		ds_addr.sin6.sin6_port = sin6->sin6_port;
 	}
 
-	gethostname(me, MAXHOSTNAMELEN);
+	cli_nb.buf = (char *)&ds_addr.sa;
+	cli_nb.len = cli_nb.maxlen = addrlen;
+	uaddr = taddr2uaddr(nconf, &cli_nb);
 
-	hs.h_host = me;
-	hs.h_serv = "nfs";
-	if (netdir_getbyname(nconf, &hs, &nas)) {
-		return (NULL);
+	return (uaddr);
+}
+
+static int
+do_dserv_krpc_start(struct netconfig *nconf, struct netbuf *addr, int fd)
+{
+	dserv_svc_args_t svcargs;
+
+	svcargs.fd = fd;
+	bcopy(addr->buf, &svcargs.sin, addr->len);
+	(void) strlcpy(svcargs.netid,
+	    nconf->nc_netid, sizeof (svcargs.netid));
+
+	return (dserv_kmod_svc(do_all_handle, &svcargs));
+}
+
+static int
+do_dserv_setport(struct netconfig *nconf, struct netbuf *addr)
+{
+	int result = 0, mds_af;
+	dserv_setport_args_t setportargs;
+	struct dserv_mdsaddr **p;
+	char *uaddr;
+
+	mds_af = ((struct sockaddr_in *)addr->buf)->sin_family;
+	(void) strlcpy(setportargs.dsa_proto, nconf->nc_proto,
+	    sizeof (setportargs.dsa_proto));
+	(void) strlcpy(setportargs.dsa_name, getenv("SMF_FMRI"),
+	    sizeof (setportargs.dsa_name));
+
+
+	/*
+	 * dsh_mdsaddr array contains different IP addresses of
+	 * one MDS server. Here we try to register all possible
+	 * DS addresses that can be used for DS multipathing.
+	 */
+	for (p = &do_all_handle->dsh_mdsaddr[0]; *p != NULL; p++) {
+		struct dserv_mdsaddr *mdsaddr = *p;
+
+		/*
+		 * skip address if its address family is not compatible
+		 * with family of MDS address.
+		 */
+		if (mdsaddr->addr.mdsaddr_family != mds_af)
+			continue;
+
+		uaddr = get_uaddr((struct sockaddr *)&mdsaddr->addr,
+		    nconf, addr);
+
+		if (uaddr == NULL) {
+			dserv_log(do_all_handle, LOG_WARNING,
+			    gettext("NFS4_SETPORT: get_uaddr failed for "
+					"MDS %s\n"), mdsaddr->name);
+			result = 1;
+			continue;
+		}
+
+		(void) strlcpy(setportargs.dsa_uaddr, uaddr,
+		    sizeof (setportargs.dsa_uaddr));
+
+		result = dserv_kmod_setport(do_all_handle,
+		    &setportargs);
+		free(uaddr);
+
+		if (result != 0) {
+			dserv_log(do_all_handle, LOG_ERR,
+			    gettext("NFS4_SETPOR: failed for MDS %s\n"),
+			    mdsaddr->name);
+			break;
+		}
 	}
 
-	ua2 = taddr2uaddr(nconf, nas->n_addrs);
-
-	if (ua2 == NULL) {
-		return (NULL);
-	}
-
-	ma.s_uaddr = ua;
-	ma.c_uaddr = ua2;
-	ma.m_uaddr = NULL;
-
-	if (netdir_options(nconf, ND_MERGEADDR, 0, (char *)&ma)) {
-		return (NULL);
-	}
-
-	mua = ma.m_uaddr;
-	return (mua);
+	return (result);
 }
 
 /*
@@ -108,53 +214,30 @@ static int
 dserv_service(int fd, struct netbuf *addrmask, struct netconfig *nconf,
     int cmd, struct netbuf *addr)
 {
-	dserv_svc_args_t svcargs;
-	dserv_setport_args_t setportargs;
-	char *uaddr;
-	int result;
+	int result = 0;
 
 	/* ignore non tcp proto */
 	if (strncasecmp(nconf->nc_proto, NC_TCP, strlen(NC_TCP)))
 		return (0);
 
-	if (cmd & NFS4_KRPC_START) {
-		svcargs.fd = fd;
-		bcopy(addr->buf, &svcargs.sin, addr->len);
-		(void) strlcpy(svcargs.netid,
-		    nconf->nc_netid, sizeof (svcargs.netid));
-		uaddr = get_uaddr(nconf, addr);
-		if (uaddr != NULL) {
-			dserv_log(do_all_handle, LOG_INFO,
-			    gettext("NFS4_KRPC_START: %s"), uaddr);
-			free(uaddr);
-		}
-		result = dserv_kmod_svc(do_all_handle, &svcargs);
-	}
+	if (cmd & NFS4_KRPC_START)
+		result = do_dserv_krpc_start(nconf, addr, fd);
 
-	if (cmd & NFS4_SETPORT) {
-		uaddr = get_uaddr(nconf, addr);
-		if (uaddr == NULL) {
-			dserv_log(do_all_handle, LOG_INFO,
-			    gettext("NFS4_SETPORT: get_uaddr failed"));
-			return (1);
-		}
-		(void) strlcpy(setportargs.dsa_uaddr, uaddr,
-		    sizeof (setportargs.dsa_uaddr));
-		(void) strlcpy(setportargs.dsa_proto, nconf->nc_proto,
-		    sizeof (setportargs.dsa_proto));
-		(void) strlcpy(setportargs.dsa_name, getenv("SMF_FMRI"),
-		    sizeof (setportargs.dsa_name));
+	if ((result == 0) && (cmd & NFS4_SETPORT))
+		result = do_dserv_setport(nconf, addr);
 
-		result = dserv_kmod_setport(do_all_handle, &setportargs);
-	}
-
-	if (result != 0) {
+	/*
+	 * result can be either negative, positive or 0.
+	 * Negative error code denotes errors happened
+	 * inside libdserv. Positive error code denotes all
+	 * other errors.
+	 */
+	if (result < 0) {
 		dserv_log(do_all_handle, LOG_ERR, NULL);
 		errno = do_all_handle->dsh_errno_error;
-		return (-1);
 	}
 
-	return (0);
+	return (result);
 }
 
 void
