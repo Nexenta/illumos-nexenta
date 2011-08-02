@@ -81,12 +81,21 @@ instance_shutdown(void)
 		exit(1);
 	}
 	error = dserv_kmod_instance_shutdown(handle);
-	if (error) {
+	if (error && error != ESRCH) {
 		dserv_log(handle, LOG_ERR,
 		    gettext("ERROR on dserv_kmod_instance_shutdown"));
 	}
 
 	dserv_handle_destroy(handle);
+}
+
+static void
+sigterm_handler(void)
+{
+	/*
+	 * Just exit here.
+	 * atexit hanler will do all work for us.
+	 */
 	exit(0);
 }
 
@@ -99,10 +108,11 @@ main(int argc, char *argv[])
 	int n, err;
 
 	(void) sigfillset(&act.sa_mask);
-	act.sa_handler = instance_shutdown;
+	act.sa_handler = sigterm_handler;
 	act.sa_flags = 0;
 
 	(void) sigaction(SIGTERM, &act, NULL);
+	(void) atexit(instance_shutdown);
 
 	daemonize();
 
