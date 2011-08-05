@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/list.h>
@@ -170,7 +172,7 @@ dserv_mds_instance_init(dserv_mds_instance_t *inst)
 
 	inst->dmi_verifier = *(uint64_t *)&verf;
 	inst->dmi_teardown_in_progress = B_FALSE;
-	inst->dmi_recov_in_progress = B_FALSE;
+	inst->dmi_recov_in_progress = B_TRUE;
 	inst->total_datasets = 0;
 }
 
@@ -921,6 +923,39 @@ dserv_mds_heartbeat_thread(pid_t *pid)
 			break;
 		}
 
+		/*
+		 * there are 2 cases when we must call exibi/reportavail -
+		 * 1. first time we enter the thread -since we haven't called
+		 *    exibi/reportavail before creating the thread
+		 * 2. if we're recovering from a MDS reboot
+		 */
+		mutex_exit(&inst->dmi_content_lock);
+		if (inst->dmi_recov_in_progress) {
+			error = dserv_mds_exibi(inst, &status);
+			if (error || status != DS_OK) {
+				DTRACE_PROBE(dserv__i__exibi_failed);
+				dserv_instance_exit(inst);
+				continue;
+			}
+
+			/* DS_EXIBI is done, now do DS_REPORTAVAIL. */
+			error = dserv_mds_do_reportavail(inst, &status);
+			if (error || status != DS_OK) {
+				DTRACE_PROBE(dserv__i__reportavail_failed);
+				dserv_instance_exit(inst);
+				continue;
+			}
+
+			/*
+			 * Recovery is done. Mark all the
+			 * appropriate flags so that we are
+			 * ready for the next round of recovery
+			 * actions.
+			 */
+			inst->dmi_recov_in_progress = B_FALSE;
+		}
+
+		mutex_enter(&inst->dmi_content_lock);
 		ds_renew_args_prepare(inst, &args);
 		mutex_exit(&inst->dmi_content_lock);
 		bzero(&res, sizeof (res));
@@ -939,59 +974,27 @@ dserv_mds_heartbeat_thread(pid_t *pid)
 		 */
 		DTRACE_PROBE2(dserv__i__dserv_mds_call_resp_status,
 		    int, res.status, int, error);
-		if (error == 0) {
 
-			/*
-			 * error == 0 simply implies that the DS_RENEW RPC
-			 * succeeded, not necessarily with DS_OK though.  Take
-			 * recovery actions if MDS reboot is detected.
-			 */
-			mutex_enter(&inst->dmi_content_lock);
-			if (res.status == DSERR_STALE_DSID ||
-			    inst->dmi_recov_in_progress == B_TRUE ||
-			    inst->dmi_mds_boot_verifier !=
-			    res.DS_RENEWres_u.mds_boottime) {
-				DTRACE_PROBE(dserv__i__dserv_recovery_starts);
-
-				/*
-				 * Spawning another thread to do recovery seems
-				 * like an overkill here, so doing it inline.
-				 * First do DS_EXIBI, and continue on to
-				 * DS_REPORTAVAIL only if DS_EXIBI passes.
-				 */
-				inst->dmi_recov_in_progress = B_TRUE;
-				mutex_exit(&inst->dmi_content_lock);
-
-				error = dserv_mds_exibi(inst, &status);
-				if (error || status != DS_OK) {
-					DTRACE_PROBE(dserv__i__exibi_failed);
-					dserv_instance_exit(inst);
-					continue;
-				}
-
-				/* DS_EXIBI is done, now do DS_REPORTAVAIL. */
-				error = dserv_mds_do_reportavail(inst, &status);
-				if (error || status != DS_OK) {
-					DTRACE_PROBE(
-					    dserv__i__reportavail_failed);
-					dserv_instance_exit(inst);
-					continue;
-				} else {
-					/*
-					 * Recovery is done. Mark all the
-					 * appropriate flags so that we are
-					 * ready for the next round of recovery
-					 * actions.
-					 */
-					mutex_enter(&inst->dmi_content_lock);
-					inst->dmi_recov_in_progress = B_FALSE;
-					mutex_exit(&inst->dmi_content_lock);
-				}
-			} else {
-				DTRACE_PROBE(dserv__i__dserv_no_recovery);
-				mutex_exit(&inst->dmi_content_lock);
-			}
+		if (error != 0) {
+			dserv_instance_exit(inst);
+			continue;
 		}
+
+		/*
+		 * error == 0 simply implies that the DS_RENEW RPC
+		 * succeeded, not necessarily with DS_OK though.  Take
+		 * recovery actions if MDS reboot is detected.
+		 */
+		mutex_enter(&inst->dmi_content_lock);
+		if (res.status == DSERR_STALE_DSID ||
+		    inst->dmi_mds_boot_verifier !=
+		    res.DS_RENEWres_u.mds_boottime) {
+
+			DTRACE_PROBE(dserv__i__dserv_recovery_starts);
+			inst->dmi_recov_in_progress = B_TRUE;
+		}
+
+		mutex_exit(&inst->dmi_content_lock);
 		dserv_instance_exit(inst);
 	}
 
@@ -1033,10 +1036,8 @@ dserv_mds_addport(const char *uaddr, const char *proto, const char *aname)
 	inst->dmi_name = dserv_strdup(in);
 	mutex_exit(&inst->dmi_content_lock);
 
-	error = dserv_mds_exibi(inst, &status);
-
 	dserv_instance_exit(inst);
-	return (error);
+	return (0);
 }
 
 int
@@ -1241,30 +1242,20 @@ dserv_mds_reportavail()
 	dserv_mds_instance_t *inst = NULL;
 	int error = 0;
 	pid_t *pid = NULL;
-	ds_status status = 0;
 
 	error = dserv_instance_enter(RW_READER, B_FALSE, &inst, NULL);
 	if (error) {
 		return (error);
 	}
 
-	error = dserv_mds_do_reportavail(inst, &status);
-
 	/*
-	 * If the first DS_REPORTAVAIL (and the previous  DS_EXIBI)
-	 * completes successfully, start a heartbeat thread from the DS
+	 * Start a heartbeat thread from the DS
 	 * to the MDS. Using the heartbeat thread, the DS will detect
 	 * MDS reboot and the MDS will detect DS reboot. DS_RENEW is
 	 * the control protocol operation that gets invoked in the
 	 * heartbeat thread.
 	 *
-	 * There are two reasons for starting the heartbeat
-	 * thread here:
-	 *
-	 * 1. No point starting the heartbeat if the initial set of
-	 * exchanges between the DS and MDS return in an error.
-	 *
-	 * 2. We could start the heartbeat thread in the user space,
+	 * We could start the heartbeat thread in the user space,
 	 * and issue a system call for doing DS_RENEW, but that would
 	 * be inefficient, since the DS_RENEW is a frequently executed
 	 * operation.
@@ -1275,7 +1266,7 @@ dserv_mds_reportavail()
 	 * instances can be serving a different pNFS communities and/or
 	 * datasets.
 	 */
-	if (error == 0 && status == DS_OK) {
+	if (error == 0) {
 		DTRACE_PROBE1(dserv__i__dmi_pid, int, inst->dmi_pid);
 		pid = kmem_zalloc(sizeof (pid_t), KM_NOSLEEP);
 		mutex_enter(&inst->dmi_content_lock);
