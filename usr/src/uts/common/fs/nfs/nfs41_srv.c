@@ -1019,6 +1019,13 @@ mds_op_secinfonn(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	*cs->statusp = respnn->status = do_rfs4_op_secinfo(cs, NULL,
 	    dotdot, (SECINFO4res *)respnn);
 
+	/* Cleanup FH as described at 18.45.3. */
+	if (respnn->status == NFS4_OK) {
+		VN_RELE(cs->vp);
+		cs->vp = NULL;
+		if (cs->nn)
+			nnode_rele(&cs->nn);
+	}
 final:
 	DTRACE_NFSV4_2(op__secinfo__no__name__done,
 	    struct compound_state *, cs,
@@ -1087,6 +1094,14 @@ mds_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	*cs->statusp = resp->status = do_rfs4_op_secinfo(cs, nm, dotdot, resp);
 
 	kmem_free(nm, len);
+
+	/* Cleanup FH as described at 18.45.3. */
+	if (resp->status == NFS4_OK) {
+		VN_RELE(cs->vp);
+		cs->vp = NULL;
+		if (cs->nn)
+			nnode_rele(&cs->nn);
+	}
 
 final:
 	DTRACE_NFSV4_2(op__secinfo__done, struct compound_state *, cs,
