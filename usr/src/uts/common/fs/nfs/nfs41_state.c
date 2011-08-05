@@ -713,6 +713,11 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 	 * is processed below since it affects direction and setup of the
 	 * backchannel accordingly.
 	 */
+	if (!nfs41_csa_flags_valid(ap->cs_aotw.csa_flags)) {
+		ap->cs_error = NFS4ERR_INVAL;
+		return (FALSE);
+	}
+
 	sp->sn_csflags = 0;
 	if (ap->cs_aotw.csa_flags & CREATE_SESSION4_FLAG_PERSIST)
 		/* XXX - Worry about persistence later */

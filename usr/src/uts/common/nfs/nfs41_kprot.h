@@ -758,6 +758,7 @@ typedef struct channel_attrs4 channel_attrs4;
 #define	CREATE_SESSION4_FLAG_PERSIST 0x00000001
 #define	CREATE_SESSION4_FLAG_CONN_BACK_CHAN 0x00000002
 #define	CREATE_SESSION4_FLAG_CONN_RDMA 0x00000004
+#define	CREATE_SESSION41_FLAG_MASK	0x07
 
 /* added manually; ie. not part of rpcgened mojo */
 typedef struct {

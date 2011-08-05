@@ -9325,6 +9325,16 @@ sess_chan_limits(sess_channel_t *scp)
 	return (NFS4_OK);
 }
 
+/* check csa_flags for OP_CREATE_SESSION */
+bool_t
+nfs41_csa_flags_valid(uint32_t flags)
+{
+	if (flags & ~CREATE_SESSION41_FLAG_MASK)
+		return (FALSE);
+
+	return (TRUE);
+}
+
 static int
 seq_chk_limits(nfs_argop4 *argop, nfs_resop4 *resop, compound_state_t *cs)
 {

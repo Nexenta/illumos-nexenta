@@ -1815,6 +1815,7 @@ extern void	 mds_clean_up_grants(rfs4_client_t *);
 extern void	 mds_clean_up_trunkinfo(rfs4_client_t *);
 extern char	*tohex(const void *, int);
 extern nfsstat4	 sess_chan_limits(sess_channel_t *);
+extern bool_t	 nfs41_csa_flags_valid(uint32_t);
 
 /*
  * NFS4.1 Slot replay cache.
