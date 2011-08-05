@@ -24,8 +24,8 @@
 
 /* Some internal definitions */
 
-#ifndef __NFS_DEFS_H__
-#define	__NFS_DEFS_H__
+#ifndef _NFS_CONFIG_H_
+#define	_NFS_CONFIG_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,4 +48,4 @@ extern "C" {
 }
 #endif
 
-#endif /* __NFS_DEFS_H__ */
+#endif /* _NFS_CONFIG_H_ */

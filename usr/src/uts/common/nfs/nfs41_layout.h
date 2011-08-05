@@ -26,8 +26,8 @@
  * Copyright 2011 Nexenta, Inc.  All rights reserved.
  */
 
-#ifndef __NFS41_LAYOUT_H__
-#define	__NFS41_LAYOUT_H__
+#ifndef _NFS41_LAYOUT_H_
+#define	_NFS41_LAYOUT_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,4 +127,4 @@ extern void nfs41_device_init(nfs_server_instance_t *);
 }
 #endif
 
-#endif	/* __NFS41_LAYOUT_H__ */
+#endif	/* _NFS41_LAYOUT_H_ */

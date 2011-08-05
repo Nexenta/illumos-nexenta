@@ -26,8 +26,8 @@
  * Use is subject to license terms.
  */
 
-#ifndef __NFS41_DS_ADDR_H__
-#define	__NFS41_DS_ADDR_H__
+#ifndef _NFS41_DS_ADDR_H_
+#define	_NFS41_DS_ADDR_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,4 +65,4 @@ extern void nfs41_ds_addr_init(nfs_server_instance_t *);
 }
 #endif
 
-#endif	/* __NFS41_DS_ADDR_H__ */
+#endif	/* _NFS41_DS_ADDR_H_ */

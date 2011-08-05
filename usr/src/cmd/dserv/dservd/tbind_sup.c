@@ -199,7 +199,7 @@ do_dserv_setport(struct netconfig *nconf, struct netbuf *addr)
 		if (uaddr == NULL) {
 			dserv_log(do_all_handle, LOG_WARNING,
 			    gettext("NFS4_SETPORT: get_uaddr failed for "
-			        "MDS %s\n"), mdsaddr->name);
+			    "MDS %s\n"), mdsaddr->name);
 			result = 1;
 			continue;
 		}
