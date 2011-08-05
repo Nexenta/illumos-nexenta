@@ -27,6 +27,10 @@
 #ifndef __NFS_DEFS_H__
 #define	__NFS_DEFS_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifdef DEBUG
 #define	TABSIZE		17
 #define	MDS_TABSIZE	17
@@ -39,5 +43,9 @@
 #define	MDS_MAXTABSZ	1024*1024
 
 #define	ADDRHASH(key) ((unsigned long)(key) >> 3)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __NFS_DEFS_H__ */

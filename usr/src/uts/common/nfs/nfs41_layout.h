@@ -29,6 +29,10 @@
 #ifndef __NFS41_LAYOUT_H__
 #define	__NFS41_LAYOUT_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define	MDS_MAX_LAYOUT_DEVS 16
 
 /*
@@ -118,5 +122,9 @@ extern void mds_nuke_layout(nfs_server_instance_t *, uint32_t);
 
 extern void nfs41_layout_init(nfs_server_instance_t *);
 extern void nfs41_device_init(nfs_server_instance_t *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif	/* __NFS41_LAYOUT_H__ */

@@ -29,6 +29,10 @@
 #ifndef __NFS41_DS_ADDR_H__
 #define	__NFS41_DS_ADDR_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * ds_addrlist:
  *
@@ -56,5 +60,9 @@ extern ds_addrlist_t *mds_find_ds_addrlist_by_uaddr(nfs_server_instance_t *,
     char *);
 extern void mds_ds_addrlist_rele(ds_addrlist_t *);
 extern void nfs41_ds_addr_init(nfs_server_instance_t *);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif	/* __NFS41_DS_ADDR_H__ */
