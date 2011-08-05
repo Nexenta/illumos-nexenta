@@ -7550,7 +7550,6 @@ mds_op_create_session(nfs_argop4 *argop, nfs_resop4 *resop,
 		 * If the same sequenceid, then must be a replay of a
 		 * previous CREATE_SESSION; return the cached result.
 		 */
-replay:
 		crp = (CREATE_SESSION4resok *)&cp->rc_contrived.cs_res;
 		*cs->statusp = resp->csr_status =
 		    cp->rc_contrived.cs_slot.status;
