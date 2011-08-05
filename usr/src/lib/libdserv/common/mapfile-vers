@@ -44,6 +44,7 @@ SUNWprivate_1.1 {
 	dserv_handle_destroy;
 	dserv_error;
 	dserv_error_reset;
+	dserv_errno;
 	dserv_strerror;
 	dserv_setinstance;
 	dserv_dropinstance;

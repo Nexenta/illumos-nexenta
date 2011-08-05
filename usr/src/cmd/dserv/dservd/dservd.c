@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -81,7 +83,7 @@ instance_shutdown(void)
 		exit(1);
 	}
 	error = dserv_kmod_instance_shutdown(handle);
-	if (error && error != ESRCH) {
+	if (error < 0 && dserv_errno(handle) != ESRCH) {
 		dserv_log(handle, LOG_ERR,
 		    gettext("ERROR on dserv_kmod_instance_shutdown"));
 	}
@@ -107,6 +109,8 @@ main(int argc, char *argv[])
 	struct sigaction act;
 	int n, err;
 
+	daemonize();
+
 	(void) sigfillset(&act.sa_mask);
 	act.sa_handler = sigterm_handler;
 	act.sa_flags = 0;
@@ -114,7 +118,6 @@ main(int argc, char *argv[])
 	(void) sigaction(SIGTERM, &act, NULL);
 	(void) atexit(instance_shutdown);
 
-	daemonize();
 
 	/* no need for _create_daemon_lock; we use SMF(5). */
 	svcsetprio();
