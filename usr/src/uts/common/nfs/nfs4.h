@@ -502,7 +502,10 @@ typedef struct {
 #define	CTOBSD(c)	((sess_bcsd_t *)c->cn_csd)
 #define	SNTOBC(s)	((sess_channel_t *)(((mds_session_t *)(s))->sn_back))
 
-#define	MAXSLOTS	1024			/* XXX - For now */
+/*
+ * Maximum number of concurrent COMPOUND requests per session
+ */
+#define	MAXSLOTS	256
 
 typedef struct {
 	state_protect_how4	 sp_type;
