@@ -830,6 +830,7 @@ ds_renew_args_prepare(dserv_mds_instance_t *inst, DS_RENEWargs *args)
 	open_root_objset_t *root;
 	int i;
 
+	ASSERT(MUTEX_HELD(&inst->dmi_content_lock));
 	bzero(args, sizeof (*args));
 
 	args->ds_id = inst->dmi_ds_id;
@@ -865,12 +866,30 @@ ds_renew_args_free(DS_RENEWargs *args)
 	    args->dev_info.dev_info_len * sizeof (ds_dev_info));
 }
 
+static int
+dserv_do_renew(dserv_mds_instance_t *inst, DS_RENEWres *res)
+{
+	DS_RENEWargs args;
+	int error;
+
+	mutex_enter(&inst->dmi_content_lock);
+	ds_renew_args_prepare(inst, &args);
+	mutex_exit(&inst->dmi_content_lock);
+
+	bzero(res, sizeof (*res));
+	error = dserv_mds_call(inst, DS_RENEW,
+	    (caddr_t)&args, xdr_DS_RENEWargs,
+	    (caddr_t)res, xdr_DS_RENEWres);
+
+	ds_renew_args_free(&args);
+	return (error);
+}
+
 void
 dserv_mds_heartbeat_thread(pid_t *pid)
 {
 	int 			error = 0;
-	DS_RENEWargs 		args;
-	DS_RENEWres  		res;
+	DS_RENEWres 		res;
 	dserv_mds_instance_t	*inst = NULL;
 	callb_cpr_t		cpr_info;
 	kmutex_t		cpr_lock;
@@ -955,26 +974,10 @@ dserv_mds_heartbeat_thread(pid_t *pid)
 			inst->dmi_recov_in_progress = B_FALSE;
 		}
 
-		mutex_enter(&inst->dmi_content_lock);
-		ds_renew_args_prepare(inst, &args);
-		mutex_exit(&inst->dmi_content_lock);
-		bzero(&res, sizeof (res));
-
 		/*
 		 * Invoke DS_RENEW to the MDS
 		 */
-		error = dserv_mds_call(inst, DS_RENEW,
-		    (caddr_t)&args, xdr_DS_RENEWargs,
-		    (caddr_t)&res, xdr_DS_RENEWres);
-
-		ds_renew_args_free(&args);
-
-		/*
-		 * Detect reboot if the RPC succeeds.
-		 */
-		DTRACE_PROBE2(dserv__i__dserv_mds_call_resp_status,
-		    int, res.status, int, error);
-
+		error = dserv_do_renew(inst, &res);
 		if (error != 0) {
 			dserv_instance_exit(inst);
 			continue;
