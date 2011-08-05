@@ -65,8 +65,6 @@ static nnode_data_ops_t proxy_data_ops = {
 	.ndo_free = nnode_proxy_data_free
 };
 
-ksema_t proxy_sema;
-
 static kmem_cache_t *nnode_proxy_data_cache;
 
 extern nfsstat4 mds_get_file_layout(vnode_t *, mds_layout_t **);
@@ -409,8 +407,6 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 
 	ASSERT((*flags & (NNODE_IO_FLAG_WRITE | NNODE_IO_FLAG_EOF)) == 0);
 
-	sema_p(&proxy_sema);
-
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
 
@@ -427,7 +423,6 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 		 * that time if we can't get a layout.
 		 */
 		mutex_exit(&mnd->mnd_lock);
-		sema_v(&proxy_sema);
 		return (nnode_vn_read(vdata, flags, cr, ct, uiop, ioflag));
 	}
 	rc = proxy_get_strategy(mnd);
@@ -456,7 +451,6 @@ out:
 	proxy_free_strategy(mnd);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
-	sema_v(&proxy_sema);
 	return (rc);
 }
 
@@ -641,8 +635,6 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 
 	ASSERT(*flags & NNODE_IO_FLAG_WRITE);
 
-	sema_p(&proxy_sema);
-
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
 
@@ -659,7 +651,6 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		 * that time if we can't get a layout.
 		 */
 		mutex_exit(&mnd->mnd_lock);
-		sema_v(&proxy_sema);
 		return (
 		    nnode_vn_write(vdata, flags, uiop, ioflags, cr, ct, wcc));
 	}
@@ -709,7 +700,6 @@ out:
 	proxy_free_strategy(mnd);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
-	sema_v(&proxy_sema);
 	return (rc);
 }
 
@@ -816,7 +806,6 @@ nnode_proxy_data_destroy(void *vdata, void *foo)
 void
 nnode_proxy_init(void)
 {
-	sema_init(&proxy_sema, 4, NULL, SEMA_DEFAULT, NULL);
 	nnode_proxy_data_cache = kmem_cache_create("nnode_proxy_data_cache",
 	    sizeof (nnode_proxy_data_t), 0,
 	    nnode_proxy_data_construct, nnode_proxy_data_destroy, NULL,
@@ -827,5 +816,4 @@ void
 nnode_proxy_fini(void)
 {
 	kmem_cache_destroy(nnode_proxy_data_cache);
-	sema_destroy(&proxy_sema);
 }
