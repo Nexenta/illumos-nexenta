@@ -1154,13 +1154,10 @@ cp_ds_mds_checkstateid(mds_ds_fh *fh, struct compound_state *cs,
 	 * I/O even if the recovery is in progress.
 	 */
 
-	mutex_enter(&inst->dmi_content_lock);
-	if (inst->dmi_recov_in_progress == B_TRUE) {
-		mutex_exit(&inst->dmi_content_lock);
+	if (inst->dmi_recov_in_progress) {
 		status = NFS4ERR_DELAY;
-		return (status);
+		goto out;
 	}
-	mutex_exit(&inst->dmi_content_lock);
 
 	/*
 	 * XXX: check some sort of cache or something. The design for the
