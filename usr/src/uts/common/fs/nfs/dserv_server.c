@@ -1629,17 +1629,17 @@ ds_write(DS_WRITEargs *argp, DS_WRITEres *resp, struct svc_req *req)
 	u_offset_t offset;
 	caller_context_t ct;
 	int i, segs, length;
-	int prep = 0;
 	DS_WRITEresok *wrok;
 	mds_ds_fh *ds_fh;
 	nfs_fh4 *otw_fh;
+	char *base;
 
 	/* Find nnode from filehandle */
 	otw_fh =  &argp->fh;
 	ds_fh = get_mds_ds_fh(otw_fh);
 	if ((ds_fh == NULL)) {
 		resp->status = DSERR_BADHANDLE;
-		goto final;
+		goto out;
 	}
 	nerr = nnode_from_fh_ds(&nn, ds_fh);
 	free_mds_ds_fh(ds_fh);
@@ -1649,10 +1649,10 @@ ds_write(DS_WRITEargs *argp, DS_WRITEres *resp, struct svc_req *req)
 		break;
 	case ESTALE:
 		resp->status = DSERR_STALE;
-		goto final;
+		goto out;
 	default:
 		resp->status = DSERR_BADHANDLE;
-		goto final;
+		goto out;
 	}
 
 	ct.cc_sysid = 0;
@@ -1666,63 +1666,47 @@ ds_write(DS_WRITEargs *argp, DS_WRITEres *resp, struct svc_req *req)
 	if (argp->data.data_len == 0) {
 		wrok->written = 0;
 		resp->status = DS_OK;
-		goto final;
+		goto out;
 	}
 
 	/*
-	 * Do each requested I/O
+	 * Do requested I/O
 	 */
-	resp->status = DS_OK;
-	{
-		char *base;
+	length = argp->data.data_len;
+	if (length > rfs4_tsize(req))
+		length = rfs4_tsize(req);
 
-
-		length = argp->data.data_len;
-		base = argp->data.data_val;
-		offset = argp->offset;
-
-		nerr = nnop_io_prep(nn, &nnioflags, NULL, &ct,
-		    offset, length, NULL);
-		if (nerr != 0) {
-			resp->status = DSERR_INVAL;
-			goto final;
-		}
-		prep = 1;
-
-		if (length > rfs4_tsize(req))
-			length = rfs4_tsize(req);
-
-		/* Set up a uio for nnop_write() */
-		iov.iov_base = base;
-		iov.iov_len = length;
-		uio.uio_iov = &iov;
-		uio.uio_iovcnt = 1;
-		uio.uio_segflg = UIO_SYSSPACE;
-		uio.uio_extflg = UIO_COPY_CACHED;
-		uio.uio_loffset = offset;
-		uio.uio_resid = length;
-
-		nerr = nnop_write(nn, &nnioflags, &uio, 0, NULL, &ct, NULL);
-
-		if (nerr) {
-			resp->status = DSERR_INVAL;
-			goto final;
-		}
-
-		ASSERT(uio.uio_resid >= 0);
-		wrok->written = length - uio.uio_resid;
-
-		nnop_io_release(nn, nnioflags, &ct);
-		prep = 0;
+	nerr = nnop_io_prep(nn, &nnioflags, NULL, &ct,
+	    argp->offset, length, NULL);
+	if (nerr != 0) {
+		resp->status = DSERR_INVAL;
+		goto out;
 	}
 
+	/* Set up a uio for nnop_write() */
+	iov.iov_base = argp->data.data_val;
+	iov.iov_len = length;
+	uio.uio_iov = &iov;
+	uio.uio_iovcnt = 1;
+	uio.uio_segflg = UIO_SYSSPACE;
+	uio.uio_extflg = UIO_COPY_CACHED;
+	uio.uio_loffset = argp->offset;
+	uio.uio_resid = length;
+
+	nerr = nnop_write(nn, &nnioflags, &uio, 0, NULL, &ct, NULL);
+
+	if (nerr) {
+		resp->status = DSERR_INVAL;
+		goto out_release;
+	}
+
+	ASSERT(uio.uio_resid >= 0);
+	wrok->written = length - uio.uio_resid;
 	resp->status = DS_OK;
 
-final:
-
-	if (prep)
-		nnop_io_release(nn, nnioflags, &ct);
-
+out_release:
+	nnop_io_release(nn, nnioflags, &ct);
+out:
 	if (nn != NULL)
 		nnode_rele(&nn);
 
