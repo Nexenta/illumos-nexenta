@@ -71,6 +71,7 @@ int dserv_setinstance(dserv_handle_t *, const char *, int);
 void dserv_dropinstance(dserv_handle_t *);
 int dserv_myinstance(dserv_handle_t *);
 dserv_error_t dserv_error(dserv_handle_t *);
+int dserv_errno(const dserv_handle_t *);
 void dserv_error_reset(dserv_handle_t *);
 const char *dserv_strerror(dserv_handle_t *);
 int dserv_enable(dserv_handle_t *);

@@ -135,6 +135,12 @@ dserv_error(dserv_handle_t *handle)
 	return (handle->dsh_error);
 }
 
+int
+dserv_errno(const dserv_handle_t *handle)
+{
+	return (handle->dsh_errno_error);
+}
+
 void
 dserv_error_reset(dserv_handle_t *handle)
 {
