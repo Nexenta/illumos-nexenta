@@ -9262,11 +9262,12 @@ tohex(const void *bytes, int len)
 static bool_t
 valid_first_compound_op(nfs_opnum4 op)
 {
-	if (op == OP_BIND_CONN_TO_SESSION ||
-	    op == OP_SEQUENCE		  ||
-	    op == OP_EXCHANGE_ID	  ||
-	    op == OP_CREATE_SESSION	  ||
-	    op == OP_DESTROY_SESSION)
+	if (op == OP_BIND_CONN_TO_SESSION	||
+	    op == OP_SEQUENCE			||
+	    op == OP_EXCHANGE_ID		||
+	    op == OP_CREATE_SESSION		||
+	    op == OP_DESTROY_SESSION		||
+	    op == OP_ILLEGAL)
 		return (TRUE);
 
 	return (FALSE);
