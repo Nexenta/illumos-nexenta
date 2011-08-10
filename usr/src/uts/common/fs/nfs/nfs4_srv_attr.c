@@ -812,15 +812,14 @@ rfs4_fattr4_filehandle(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 /*
  * Server side compare of a filehandle from the wire to a native
  * server filehandle.
+ *  wirefh:	raw data (non decoded)
+ *  srvfh:	good v41 filehandle
  */
 static int
 rfs41fhcmp(nfs_fh4 *wirefh, nfs_fh4 *srvfh)
 {
 	nfs41_fh_fmt_t fh;
 	XDR xdr;
-
-	if (wirefh->nfs_fh4_len != srvfh->nfs_fh4_len)
-		return (1);
 
 	ASSERT(IS_P2ALIGNED(wirefh->nfs_fh4_val, sizeof (uint32_t)));
 	bzero(&fh, sizeof (nfs41_fh_fmt_t));
