@@ -774,19 +774,9 @@ rfs4_fattr4_filehandle(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 		 * If sarg->cs->fh is all zeros then should makefh a new
 		 * one, otherwise, copy that one over.
 		 */
+		ASSERT(sarg->cs->vp != NULL);
+
 		fh = &sarg->cs->fh;
-		if (sarg->cs->fh.nfs_fh4_len == 0) {
-			if (sarg->rdattr_error && (sarg->cs->vp == NULL))
-				return (-1);	/* okay if rdattr_error */
-			ASSERT(sarg->cs->vp != NULL);
-			na->filehandle.nfs_fh4_val =
-			    kmem_alloc(NFS_FH4_LEN, KM_SLEEP);
-			if (sarg->cs->sp)
-				return (mknfs41_fh(&na->filehandle,
-				    sarg->cs->vp, sarg->cs->exi));
-			return (makefh4(&na->filehandle, sarg->cs->vp,
-			    sarg->cs->exi));
-		}
 		na->filehandle.nfs_fh4_val =
 		    kmem_alloc(fh->nfs_fh4_len, KM_SLEEP);
 		nfs_fh4_copy(fh, &na->filehandle);
@@ -864,16 +854,9 @@ rfs41_fattr4_filehandle(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 		 * If sarg->cs->fh is all zeros then should makefh a new
 		 * one, otherwise, copy that one over.
 		 */
+		ASSERT(sarg->cs->vp != NULL);
+
 		fh = &sarg->cs->fh;
-		if (sarg->cs->fh.nfs_fh4_len == 0) {
-			if (sarg->rdattr_error && (sarg->cs->vp == NULL))
-				return (-1);	/* okay if rdattr_error */
-			ASSERT(sarg->cs->vp != NULL);
-			na->filehandle.nfs_fh4_val =
-			    kmem_alloc(NFS41_FH_LEN, KM_SLEEP);
-			return (mknfs41_fh(&na->filehandle, sarg->cs->vp,
-			    sarg->cs->exi));
-		}
 		na->filehandle.nfs_fh4_val =
 		    kmem_alloc(fh->nfs_fh4_len, KM_SLEEP);
 		nfs_fh4_copy(fh, &na->filehandle);
