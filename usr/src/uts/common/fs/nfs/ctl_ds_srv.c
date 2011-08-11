@@ -425,11 +425,7 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	cs = rfs41_compound_state_alloc(mds_server);
 	cs->vp = vp;
 	cs->nn = np;
-
-	if (argp->mode & DS_USE_SESSION)
-		cs->flags |= NFS_USE_SESSION;
-
-	argp->mode &= DS_MODE_MASK;
+	cs->flags |= NFS_USE_SESSION;
 
 	/*
 	 * Do a checkstate via nnode interface.

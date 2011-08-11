@@ -157,9 +157,6 @@ struct DS_CHECKSTATEargs {
 	int mode;
 };
 
-const	DS_MODE_MASK	= 0xff;
-const	DS_USE_SESSION	= 0x100; /* Don't overlap FWRITE, FREAD, ... flags */
-
 /*
  * ds_filestate -
  *
