@@ -7391,29 +7391,25 @@ case1:			/* case 1 - utok */
 			}
 
 		} else { /* UPDATE */
-			if (rfs4_cmp_cred_princ(cp->rc_cr_set, cs)) {
-				if (old_verifier_arg == cip->verifier) {
-					/* case 6 - utok */
-					*cs->statusp = NFS4_OK;
-					resp->eir_status = NFS4_OK;
-					rok->eir_clientid = cp->rc_clientid;
-					rok->eir_sequenceid =
-					    cp->rc_contrived.xi_sid;
-					/* trickle down to "out" */
-				} else {
-					/* case 8 - utok */
-					*cs->statusp = NFS4ERR_NOT_SAME;
-					resp->eir_status = NFS4ERR_NOT_SAME;
-					rfs4_client_rele(cp);
-					goto final;
-				}
-			} else {
-				/* case 9 - utok */
+			if (old_verifier_arg != cip->verifier) {
+				/* 18.35.4 case 8 */
 				*cs->statusp = resp->eir_status =
 				    NFS4ERR_NOT_SAME;
 				rfs4_client_rele(cp);
 				goto final;
 			}
+			if (!rfs4_cmp_cred_princ(cp->rc_cr_set, cs)) {
+				/* 18.35.4 case 9 */
+				*cs->statusp = resp->eir_status = NFS4ERR_PERM;
+				rfs4_client_rele(cp);
+				goto final;
+			}
+
+			/* case 6 - utok */
+			*cs->statusp = resp->eir_status = NFS4_OK;
+			rok->eir_clientid = cp->rc_clientid;
+			rok->eir_sequenceid = cp->rc_contrived.xi_sid;
+			/* trickle down to "out" */
 		}
 
 	} else { /* UNCONFIRMED */
