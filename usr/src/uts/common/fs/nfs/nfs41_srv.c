@@ -7409,7 +7409,8 @@ case1:			/* case 1 - utok */
 				}
 			} else {
 				/* case 9 - utok */
-				*cs->statusp = resp->eir_status = NFS4ERR_PERM;
+				*cs->statusp = resp->eir_status =
+				    NFS4ERR_NOT_SAME;
 				rfs4_client_rele(cp);
 				goto final;
 			}
