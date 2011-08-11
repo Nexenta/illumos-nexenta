@@ -365,7 +365,6 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	nfsstat4 stat;
 	nnode_error_t error;
 	bool_t deleg;
-	nnode_t *np;
 	clientid4 clientid;
 	vnode_t *vp;
 	rfs4_file_t *fp;
@@ -407,24 +406,11 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	}
 
 	/*
-	 * We need to invoke the check_stateid through the nnode interface.
-	 * Currently we do not have a method for deriving an nnode from a DS
-	 * filehandle. Hence, we are using vnodes.
-	 */
-	error = nnode_from_vnode(&np, vp);
-	if (error != 0) {
-		VN_RELE(vp);
-		resp->status = DSERR_BADHANDLE;
-		return;
-	}
-
-	/*
 	 * Allocate a compound struct, needed by the function
 	 * that gets called via the nnode interface.
 	 */
 	cs = rfs41_compound_state_alloc(mds_server);
 	cs->vp = vp;
-	cs->nn = np;
 	cs->flags |= NFS_USE_SESSION;
 
 	/*
@@ -437,7 +423,8 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	 * with v4.1 bits as well.
 	 */
 	deleg = FALSE;
-	if ((stat = nnop_check_stateid(np, cs, argp->mode, &argp->stateid,
+
+	if ((stat = check_stateid(argp->mode, cs, vp, &argp->stateid,
 	    FALSE, &deleg, TRUE, NULL, &clientid)) != NFS4_OK) {
 		resp->status = get_ds_status(stat);
 		rfs41_compound_state_free(cs);
