@@ -7339,7 +7339,27 @@ case1:			/* case 1 - utok */
 	old_verifier_arg = cp->rc_nfs_client.verifier;
 	if (CLID_REC_CONFIRMED(cp)) {
 		if (!update) {
-			if (!rfs4_cmp_cred_princ(cp->rc_cr_set, cs)) {
+			if (old_verifier_arg != cip->verifier) {
+				/* case 5 - utok */
+				/*
+				 * previous incarnation of clientid is first
+				 * hidden such that any subsequent lookups
+				 * will not find it in DB, then the current
+				 * reference to it is dropped; this will
+				 * force the reaper thread to clean it up.
+				 */
+				ocp = cp;
+				mds_clean_up_sessions(ocp);
+				rfs4_dbe_hide(ocp->rc_dbe);
+				rfs4_client_rele(ocp);
+
+				cp = client_record(cip, cs);
+				ASSERT(cp != NULL);
+				*cs->statusp = resp->eir_status = NFS4_OK;
+				rok->eir_clientid = cp->rc_clientid;
+				rok->eir_sequenceid = cp->rc_contrived.xi_sid;
+				/* trickle down to "out" */
+			} else if (!rfs4_cmp_cred_princ(cp->rc_cr_set, cs)) {
 				/* case 3 */
 				if (rfs4_lease_expired(cp)) {
 					rfs4_client_close(cp);
@@ -7362,26 +7382,6 @@ case1:			/* case 1 - utok */
 				rok->eir_sequenceid = cp->rc_contrived.xi_sid;
 				/* trickle down to "out" */
 
-			} else if (old_verifier_arg != cip->verifier) {
-				/* case 5 - utok */
-				/*
-				 * previous incarnation of clientid is first
-				 * hidden such that any subsequent lookups
-				 * will not find it in DB, then the current
-				 * reference to it is dropped; this will
-				 * force the reaper thread to clean it up.
-				 */
-				ocp = cp;
-				mds_clean_up_sessions(ocp);
-				rfs4_dbe_hide(ocp->rc_dbe);
-				rfs4_client_rele(ocp);
-
-				cp = client_record(cip, cs);
-				ASSERT(cp != NULL);
-				*cs->statusp = resp->eir_status = NFS4_OK;
-				rok->eir_clientid = cp->rc_clientid;
-				rok->eir_sequenceid = cp->rc_contrived.xi_sid;
-				/* trickle down to "out" */
 			} else {
 				/* something is really wacky in srv state */
 				*cs->statusp = resp->eir_status =
