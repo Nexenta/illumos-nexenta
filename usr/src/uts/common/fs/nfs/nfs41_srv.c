@@ -3887,9 +3887,8 @@ mds_op_savefh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto final;
 	}
-	if (cs->saved_vp != NULL) {
-		VN_RELE(cs->saved_vp);
-	}
+
+	rfs4_cs_invalidate_savedfh(cs);
 	cs->saved_vp = cs->vp;
 	VN_HOLD(cs->saved_vp);
 	cs->saved_exi = cs->exi;
