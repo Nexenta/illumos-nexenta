@@ -1021,8 +1021,7 @@ mds_op_secinfonn(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	/* Cleanup FH as described at 18.45.3. */
 	if (respnn->status == NFS4_OK) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
+		rfs4_cs_invalidate_fh(cs);
 		if (cs->nn)
 			nnode_rele(&cs->nn);
 	}
@@ -1097,8 +1096,7 @@ mds_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	/* Cleanup FH as described at 18.45.3. */
 	if (resp->status == NFS4_OK) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
+		rfs4_cs_invalidate_fh(cs);
 		if (cs->nn)
 			nnode_rele(&cs->nn);
 	}
