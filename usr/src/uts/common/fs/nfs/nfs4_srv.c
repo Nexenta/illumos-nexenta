@@ -4553,19 +4553,19 @@ rfs4_op_restorefh(nfs_argop4 *args, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_1(op__restorefh__start, struct compound_state *, cs);
 
 	/* No need to check cs->access - we are not accessing any object */
-	if ((cs->saved_vp == NULL) || (cs->saved_fh.nfs_fh4_val == NULL)) {
+	if (!rfs4_cs_has_savedfh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_RESTOREFH;
 		goto out;
 	}
-	if (cs->vp != NULL) {
-		VN_RELE(cs->vp);
-	}
+
+	rfs4_cs_invalidate_fh(cs);
 	cs->vp = cs->saved_vp;
-	cs->saved_vp = NULL;
+	VN_HOLD(cs->vp);
 	cs->exi = cs->saved_exi;
 	nfs_fh4_copy(&cs->saved_fh, &cs->fh);
 	*cs->statusp = resp->status = NFS4_OK;
 	cs->deleg = FALSE;
+	rfs4_cs_invalidate_savedfh(cs);
 
 out:
 	DTRACE_NFSV4_2(op__restorefh__done, struct compound_state *, cs,
