@@ -6790,11 +6790,8 @@ rfs4_do_opendelcur(struct compound_state *cs, struct svc_req *req,
 	 */
 
 	ASSERT(cs->vp != NULL);
-	VN_RELE(cs->vp);
-	VN_HOLD(dsp->rds_finfo->rf_vp);
-	cs->vp = dsp->rds_finfo->rf_vp;
-
-	if (error = makefh4(&cs->fh, cs->vp, cs->exi)) {
+	error = rfs4_cs_update_fh(cs, dsp->rds_finfo->rf_vp);
+	if (error != 0) {
 		rfs4_deleg_state_rele(dsp);
 		*cs->statusp = resp->status = puterrno4(error);
 		return;
@@ -7235,8 +7232,7 @@ out:
 				goto finish;
 			}
 
-			VN_RELE(cs->vp);
-
+			rfs4_cs_invalidate_fh(cs);
 			cs->vp = nfs4_fhtovp(&oo->ro_reply_fh, cs->exi,
 			    &resp->status);
 
