@@ -2869,11 +2869,6 @@ mds_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	rfs4_cs_invalidate_fh(cs);
 
-	/*
-	 * release the old nnode and cred.
-	 */
-	if (cs->nn)
-		nnode_rele(&cs->nn);
 	if (cs->cr) {
 		crfree(cs->cr);
 		cs->cr = NULL;
@@ -2896,23 +2891,24 @@ mds_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			DTRACE_PROBE(nfss41__e__chkexp);
 			goto final;
 		}
-	}
 
-	error = nnode_from_fh_v41(&cs->nn, &args->object);
-	if (error != 0) {
-		resp->status = *cs->statusp = nnode_stat4(error, 1);
-		goto final;
+		/*
+		 * DS doesn't have vnode on its pNFS dataset. So get
+		 * vnode only when we deal with MDS and then FH41_TYPE_NFS
+		 * filehandle.
+		 */
+		cs->vp = nfs41_fhtovp(&args->object, cs->exi, cs->statusp);
+		if (cs->vp == NULL) {
+			resp->status = *cs->statusp;
+			goto final;
+		}
 	}
-	ASSERT(cs->nn != NULL);
-
-	cs->vp = nnop_io_getvp(cs->nn);
 
 	cs->cr = crdup(cs->basecr);
 	ASSERT(cs->cr != NULL);
 
 	if (fhp->type == FH41_TYPE_NFS) {
 		if ((resp->status = call_checkauth4(cs, req)) != NFS4_OK) {
-			nnode_rele(&cs->nn);
 			crfree(cs->cr);
 			cs->cr = NULL;
 			rfs4_cs_invalidate_fh(cs);

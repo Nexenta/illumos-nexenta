@@ -3360,9 +3360,6 @@ rfs4_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	    PUTFH4args *, args);
 
 	rfs4_cs_invalidate_fh(cs);
-	if (cs->nn)
-		nnode_rele(&cs->nn);
-
 	if (cs->cr) {
 		crfree(cs->cr);
 		cs->cr = NULL;
@@ -3386,12 +3383,11 @@ rfs4_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	ASSERT(cs->cr != NULL);
 
-	error = nnode_from_fh_v4(&cs->nn, &args->object);
-	if (error != 0) {
-		*cs->statusp = resp->status = nnode_stat4(error, 0);
+	cs->vp = nfs4_fhtovp(&args->object, cs->exi, cs->statusp);
+	if (cs->vp == NULL) {
+		resp->status = *cs->statusp;
 		goto out;
 	}
-	cs->vp = nnop_io_getvp(cs->nn);
 
 	if ((resp->status = call_checkauth4(cs, req)) != NFS4_OK) {
 		rfs4_cs_invalidate_fh(cs);
