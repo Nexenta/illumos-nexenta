@@ -4802,14 +4802,14 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		}
 	}
 
-	error = mknfs41_fh(&cs->fh, vp, cs->exi);
+	error = rfs4_cs_update_fh(cs, vp);
+	VN_RELE(vp);
 	/*
 	 * Force modified data and metadata out to stable storage.
 	 */
 	(void) VOP_FSYNC(vp, FNODSYNC, cs->cr, NULL);
 
 	if (error) {
-		VN_RELE(vp);
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
 		return (puterrno4(error));
 	}
@@ -4818,11 +4818,6 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	if (dvp->v_flag & V_XATTRDIR)
 		FH41_SET_FLAG((nfs41_fh_fmt_t *)cs->fh.nfs_fh4_val,
 		    FH41_NAMEDATTR);
-
-	if (cs->vp)
-		VN_RELE(cs->vp);
-
-	cs->vp = vp;
 
 	/*
 	 * if we did not create the file, we will need to check

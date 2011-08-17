@@ -6361,7 +6361,8 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		}
 	}
 
-	error = makefh4(&cs->fh, vp, cs->exi);
+	error = rfs4_cs_update_fh(cs, vp);
+	VN_RELE(vp);
 
 	/*
 	 * Force modified data and metadata out to stable storage.
@@ -6369,7 +6370,6 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	(void) VOP_FSYNC(vp, FNODSYNC, cs->cr, NULL);
 
 	if (error) {
-		VN_RELE(vp);
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
 		return (puterrno4(error));
 	}
@@ -6377,11 +6377,6 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	/* if parent dir is attrdir, set namedattr fh flag */
 	if (dvp->v_flag & V_XATTRDIR)
 		FH4_SET_FLAG(&cs->fh, FH4_NAMEDATTR);
-
-	if (cs->vp)
-		VN_RELE(cs->vp);
-
-	cs->vp = vp;
 
 	/*
 	 * if we did not create the file, we will need to check
