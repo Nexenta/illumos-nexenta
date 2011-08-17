@@ -3031,16 +3031,18 @@ rfs4_op_read(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__read__start, struct compound_state *, cs,
 	    READ4args, args);
 
-	if (cs->nn == NULL) {
-		error = nnode_from_vnode(&cs->nn, cs->vp);
-		if (error != 0) {
-			*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-			goto out;
-		}
+	if (!rfs4_cs_has_fh(cs)) {
+		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	error = nnode_from_fh_v4(&nn, &cs->fh);
+	if (error != 0) {
+		*cs->statusp = resp->status = nnode_stat4(error, 0);
+		goto out;
 	}
 
 	vp = cs->vp;
-	nn = cs->nn;
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
 		goto out;
@@ -3211,6 +3213,8 @@ doio_read:
 
 out:
 	nnop_io_release(nn, nnioflags, &ct);
+	if (nn != NULL)
+		nnode_rele(&nn);
 
 	DTRACE_NFSV4_2(op__read__done, struct compound_state *, cs,
 	    READ4res *, resp);
@@ -5321,15 +5325,17 @@ rfs4_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__write__start, struct compound_state *, cs,
 	    WRITE4args *, args);
 
-	if (cs->nn == NULL) {
-		error = nnode_from_vnode(&cs->nn, cs->vp);
-		if (error != 0) {
-			*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-			goto out;
-		}
+	if (!rfs4_cs_has_fh(cs)) {
+		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
+		goto out;
 	}
 
-	nn = cs->nn;
+	error = nnode_from_fh_v4(&nn, &cs->fh);
+	if (error != 0) {
+		*cs->statusp = resp->status = nnode_stat4(error, 0);
+		goto out;
+	}
+
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
 		goto out;
@@ -5462,6 +5468,8 @@ err:
 	nnop_update(nn, nnioflags, cr, &ct, args->offset + resp->count);
 out:
 	nnop_io_release(nn, nnioflags, &ct);
+	if (nn != NULL)
+		nnode_rele(&nn);
 
 	DTRACE_NFSV4_2(op__write__done, struct compound_state *, cs,
 	    WRITE4res *, resp);
