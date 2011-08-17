@@ -1382,6 +1382,7 @@ rfs4_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	avers = nfs4_attrvers(cs);
 	resp->attrset = NFS4_EMPTY_ATTRMAP(avers);
+	resp->cinfo.atomic = FALSE;
 
 	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
@@ -1647,8 +1648,6 @@ rfs4_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	(void) VOP_FSYNC(dvp, 0, cr, NULL);
 
 	if (resp->status != NFS4_OK) {
-		if (vp != NULL)
-			VN_RELE(vp);
 		nfs4_ntov_table_free(&ntov, &sarg);
 		resp->attrset = NFS4_EMPTY_ATTRMAP(avers);
 		goto out;
@@ -1689,23 +1688,6 @@ rfs4_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	ATTRMAP_MASK(resp->attrset, args->createattrs.attrmask);
 	nfs4_ntov_table_free(&ntov, &sarg);
 
-	error = makefh4(&cs->fh, vp, cs->exi);
-	if (error) {
-		*cs->statusp = resp->status = puterrno4(error);
-	}
-
-	/*
-	 * The cinfo.atomic = TRUE only if we got no errors, we have
-	 * non-zero va_seq's, and it has incremented by exactly one
-	 * during the creation and it didn't change during the VOP_LOOKUP
-	 * or VOP_FSYNC.
-	 */
-	if (!error && bva.va_seq && iva.va_seq && ava.va_seq &&
-	    iva.va_seq == (bva.va_seq + 1) && iva.va_seq == ava.va_seq)
-		resp->cinfo.atomic = TRUE;
-	else
-		resp->cinfo.atomic = FALSE;
-
 	/*
 	 * Force modified metadata out to stable storage.
 	 *
@@ -1716,16 +1698,28 @@ rfs4_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	else
 		(void) VOP_FSYNC(vp, syncval, cr, NULL);
 
-	if (resp->status != NFS4_OK) {
-		VN_RELE(vp);
+	error = rfs4_cs_update_fh(cs, vp);
+	if (error) {
+		*cs->statusp = resp->status = puterrno4(error);
+		resp->cinfo.atomic = FALSE;
 		goto out;
 	}
-	if (cs->vp)
-		VN_RELE(cs->vp);
 
-	cs->vp = vp;
+	/*
+	 * The cinfo.atomic = TRUE only if we got no errors, we have
+	 * non-zero va_seq's, and it has incremented by exactly one
+	 * during the creation and it didn't change during the VOP_LOOKUP
+	 * or VOP_FSYNC.
+	 */
+	if (bva.va_seq && iva.va_seq && ava.va_seq &&
+	    iva.va_seq == (bva.va_seq + 1) && iva.va_seq == ava.va_seq)
+		resp->cinfo.atomic = TRUE;
+
 	*cs->statusp = resp->status = NFS4_OK;
 out:
+	if (vp != NULL)
+		VN_RELE(vp);
+
 	DTRACE_NFSV4_2(op__create__done, struct compound_state *, cs,
 	    CREATE4res *, resp);
 }
