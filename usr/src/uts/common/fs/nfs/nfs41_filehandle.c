@@ -83,28 +83,7 @@ mknfs41_fh(nfs_fh4 *otw_fh, vnode_t *vp, struct exportinfo *exi)
  * This function understands FH_TYPE_NFS version 1 filehandles.
  */
 vnode_t *
-nfs41_fhtovp(nfs_fh4 *otw_fh, compound_state_t *cs)
-{
-	/*
-	 * If the compound state does not hold the export info, the
-	 * filehandle must be stale (or we were called too soon).
-	 */
-	if (cs->exi == NULL) {
-		*cs->statusp = NFS4ERR_STALE;
-		return (NULL);
-	}
-
-	ASSERT(cs->exi->exi_vp != NULL);
-	if (cs->exi->exi_vp == NULL) {
-		*cs->statusp = NFS4ERR_STALE;
-		return (NULL);
-	}
-
-	return (nfs41_fhtovp_exi(otw_fh, cs->exi, cs->statusp));
-}
-
-vnode_t *
-nfs41_fhtovp_exi(nfs_fh4 *otw_fh, exportinfo_t *exi, nfsstat4 *statusp)
+nfs41_fhtovp(nfs_fh4 *otw_fh, exportinfo_t *exi, nfsstat4 *statusp)
 {
 	int error;
 	fid_t fidp;
@@ -112,6 +91,12 @@ nfs41_fhtovp_exi(nfs_fh4 *otw_fh, exportinfo_t *exi, nfsstat4 *statusp)
 	vfs_t *vfsp;
 	vnode_t *vp;
 
+	if (exi == NULL) {
+		*statusp = NFS4ERR_STALE;
+		return (NULL);
+	}
+
+	ASSERT(exi->exi_vp != NULL);
 	vfsp = exi->exi_vp->v_vfsp;
 
 	ASSERT(vfsp != NULL);

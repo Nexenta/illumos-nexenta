@@ -78,8 +78,7 @@ typedef struct {
 #define	FH41_ATTRDIR	2
 
 #ifndef USE_FOR_SNOOP
-extern vnode_t *nfs41_fhtovp(nfs_fh4 *, compound_state_t *);
-extern vnode_t *nfs41_fhtovp_exi(nfs_fh4 *, struct exportinfo *, nfsstat4 *);
+extern vnode_t *nfs41_fhtovp(nfs_fh4 *, struct exportinfo *, nfsstat4 *);
 extern int mknfs41_fh(nfs_fh4 *, vnode_t *, struct exportinfo *);
 #endif
 

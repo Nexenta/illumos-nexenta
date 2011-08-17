@@ -857,7 +857,7 @@ nnode_build_v41(nnode_seed_t *seed, void *vfh)
 
 	exi = checkexport4(key->nfk_fsid, key->nfk_xfid, NULL);
 	if (exi != NULL)
-		vp = nfs41_fhtovp_exi(fh, exi, &stat);
+		vp = nfs41_fhtovp(fh, exi, &stat);
 	if ((exi == NULL) || (vp == NULL)) {
 		rc = ESTALE;
 		goto out;
