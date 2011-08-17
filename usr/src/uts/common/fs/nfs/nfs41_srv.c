@@ -2353,13 +2353,12 @@ mds_do_lookup(char *nm, uint_t buflen, struct svc_req *req,
 		}
 	}
 
-	error = mknfs41_fh(&cs->fh, vp, cs->exi);
+	error = rfs4_cs_update_fh(cs, vp);
+	VN_RELE(vp);
 
 err_out:
-	if (error) {
-		VN_RELE(vp);
+	if (error)
 		return (puterrno4(error));
-	}
 
 	/*
 	 * if did lookup on attrdir and didn't lookup .., set named
@@ -2368,13 +2367,8 @@ err_out:
 	if (attrdir && ! dotdot)
 		FH41_SET_FLAG(fhp, FH41_NAMEDATTR);
 
-	if (cs->vp != NULL)
-		VN_RELE(cs->vp);
-
 	/* Assume false for now, open proc will set this */
 	cs->mandlock = FALSE;
-	cs->vp = vp;
-
 	return (NFS4_OK);
 }
 
