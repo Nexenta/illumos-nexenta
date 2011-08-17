@@ -362,6 +362,7 @@ rfs41_compound_state_alloc(nfs_server_instance_t *instp)
 	cs->cont = TRUE;
 	cs->fh.nfs_fh4_val = cs->fhbuf;
 	cs->flags = 0;
+	cs->minorversion = NFS4_MINOR_v1;
 
 	return (cs);
 }

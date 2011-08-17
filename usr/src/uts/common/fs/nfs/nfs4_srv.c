@@ -471,6 +471,7 @@ rfs4_init_compound_state(struct compound_state *cs)
 	cs->cont = TRUE;
 	cs->access = CS_ACCESS_DENIED;
 	cs->fh.nfs_fh4_val = cs->fhbuf;
+	cs->minorversion = NFS4_MINOR_v0;
 }
 
 void
