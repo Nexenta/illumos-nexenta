@@ -954,9 +954,17 @@ rfs4_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	char *nm;
 	struct sockaddr *ca;
 	char *name = NULL;
+	nfsstat4 stat = NFS4_OK;
 
 	DTRACE_NFSV4_2(op__secinfo__start, struct compound_state *, cs,
 	    SECINFO4args *, args);
+
+	/*
+	 * Current file handle should have been set before
+	 * getting into this function. If not, return error.
+	 */
+	if (!rfs4_cs_has_fh(cs))
+		stat = NFS4ERR_NOFILEHANDLE;
 
 	/*
 	 * OP_SECINFO_NONAME uses the same underlying results struct
@@ -967,16 +975,13 @@ rfs4_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		SECINFO_NO_NAME4res *respnn =
 		    &resop->nfs_resop4_u.opsecinfo_no_name;
 
-		/*
-		 * Current file handle (cfh) should have been set before
-		 * getting into this function. If not, return error.
-		 */
-		if (!rfs4_cs_has_fh(cs)) {
-			*cs->statusp = respnn->status = NFS4ERR_NOFILEHANDLE;
-			goto out;
+		if (stat == NFS4_OK) {
+			stat = do_rfs4_op_secinfo(cs, NULL,
+			    style == SECINFO_STYLE4_PARENT,
+			    (SECINFO4res *)respnn);
 		}
-		*cs->statusp = respnn->status = do_rfs4_op_secinfo(cs, NULL,
-		    style == SECINFO_STYLE4_PARENT, (SECINFO4res *)respnn);
+
+		*cs->statusp = respnn->status = stat;
 		goto out;
 	}
 
@@ -984,15 +989,11 @@ rfs4_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * OP_SECINFO
 	 */
 	resp = &resop->nfs_resop4_u.opsecinfo;
-
-	/*
-	 * Current file handle (cfh) should have been set before
-	 * getting into this function. If not, return error.
-	 */
-	if (!rfs4_cs_has_fh(cs)) {
-		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
+	if (stat != NFS4_OK) {
+		*cs->statusp = resp->status = stat;
 		goto out;
 	}
+
 	if (cs->vp->v_type != VDIR) {
 		*cs->statusp = resp->status = NFS4ERR_NOTDIR;
 		goto out;
