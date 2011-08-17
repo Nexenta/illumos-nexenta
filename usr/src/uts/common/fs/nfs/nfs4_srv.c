@@ -3354,10 +3354,7 @@ rfs4_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__putfh__start, struct compound_state *, cs,
 	    PUTFH4args *, args);
 
-	if (cs->vp) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
-	}
+	rfs4_cs_invalidate_fh(cs);
 	if (cs->nn)
 		nnode_rele(&cs->nn);
 
@@ -3392,8 +3389,7 @@ rfs4_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	cs->vp = nnop_io_getvp(cs->nn);
 
 	if ((resp->status = call_checkauth4(cs, req)) != NFS4_OK) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
+		rfs4_cs_invalidate_fh(cs);
 		goto out;
 	}
 

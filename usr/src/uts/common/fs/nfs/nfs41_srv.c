@@ -2864,15 +2864,13 @@ mds_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__putfh__start, struct compound_state *, cs,
 	    PUTFH4args *, args);
 
+	rfs4_cs_invalidate_fh(cs);
+
 	/*
-	 * release the old nnode, vnode and cred.
+	 * release the old nnode and cred.
 	 */
 	if (cs->nn)
 		nnode_rele(&cs->nn);
-	if (cs->vp) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
-	}
 	if (cs->cr) {
 		crfree(cs->cr);
 		cs->cr = NULL;
@@ -2912,10 +2910,9 @@ mds_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	if (fhp->type == FH41_TYPE_NFS) {
 		if ((resp->status = call_checkauth4(cs, req)) != NFS4_OK) {
 			nnode_rele(&cs->nn);
-			VN_RELE(cs->vp);
-			cs->vp = NULL;
 			crfree(cs->cr);
 			cs->cr = NULL;
+			rfs4_cs_invalidate_fh(cs);
 			*cs->statusp = resp->status;
 			DTRACE_PROBE(nfss41__e__fail_auth);
 			goto final;
