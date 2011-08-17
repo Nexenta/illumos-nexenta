@@ -1020,11 +1020,9 @@ mds_op_secinfonn(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	    dotdot, (SECINFO4res *)respnn);
 
 	/* Cleanup FH as described at 18.45.3. */
-	if (respnn->status == NFS4_OK) {
+	if (respnn->status == NFS4_OK)
 		rfs4_cs_invalidate_fh(cs);
-		if (cs->nn)
-			nnode_rele(&cs->nn);
-	}
+
 final:
 	DTRACE_NFSV4_2(op__secinfo__no__name__done,
 	    struct compound_state *, cs,
@@ -1095,11 +1093,8 @@ mds_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	kmem_free(nm, len);
 
 	/* Cleanup FH as described at 18.45.3. */
-	if (resp->status == NFS4_OK) {
+	if (resp->status == NFS4_OK)
 		rfs4_cs_invalidate_fh(cs);
-		if (cs->nn)
-			nnode_rele(&cs->nn);
-	}
 
 final:
 	DTRACE_NFSV4_2(op__secinfo__done, struct compound_state *, cs,
@@ -1366,17 +1361,18 @@ mds_op_commit(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__commit__start, struct compound_state *, cs,
 	    COMMIT4args *, args);
 
+	/*
+	 * XXX kludge: fake the commit if we are a data server
+	 * This will be replaced once we have nnop_commit().
+	 */
+	if (rfs4_cs_has_fh(cs) && (cs->vp == NULL)) {
+		*cs->statusp = resp->status = NFS4_OK;
+		resp->writeverf = cs->instp->Write4verf;
+		goto final;
+	}
+
 	if (!rfs4_cs_has_fh(cs)) {
-		/*
-		 * XXX kludge: fake the commit if we are a data server
-		 * This will be replaced once we have nnop_commit().
-		 */
-		if (cs->nn != NULL) {
-			*cs->statusp = resp->status = NFS4_OK;
-			resp->writeverf = cs->instp->Write4verf;
-		} else {
-			*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-		}
+		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto final;
 	}
 	if (cs->access == CS_ACCESS_DENIED) {

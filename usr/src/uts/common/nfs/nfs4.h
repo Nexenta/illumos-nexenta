@@ -1414,7 +1414,6 @@ typedef struct compound_state {
 	uint_t 		access;		/* access perm on vp per request */
 	bool_t 		deleg;		/* TRUE if current fh has */
 					/* write delegated */
-	nnode_t		*nn;
 	vnode_t 	*vp;		/* modified by PUTFH, and by ops that */
 					/* input to GETFH */
 	bool_t 		mandlock;	/* Is mandatory locking in effect */

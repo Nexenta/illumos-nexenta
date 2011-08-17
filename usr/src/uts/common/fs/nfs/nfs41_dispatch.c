@@ -370,9 +370,6 @@ rfs41_compound_state_alloc(nfs_server_instance_t *instp)
 void
 rfs41_compound_state_free(compound_state_t *cs)
 {
-	if (cs->nn != NULL) {
-		nnode_rele(&cs->nn);
-	}
 	if (cs->vp) {
 		VN_RELE(cs->vp);
 		cs->vp = NULL;

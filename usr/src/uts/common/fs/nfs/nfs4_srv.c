@@ -5615,8 +5615,6 @@ bail:
 	DTRACE_NFSV4_2(compound__done, struct compound_state *, &cs,
 	    COMPOUND4res *, resp);
 
-	if (cs.nn)
-		nnode_rele(&cs.nn);
 	if (cs.vp)
 		VN_RELE(cs.vp);
 	if (cs.saved_vp)
