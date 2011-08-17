@@ -2768,11 +2768,7 @@ mds_op_putpubfh(nfs_argop4 *args, nfs_resop4 *resop, struct svc_req *req,
 
 	DTRACE_NFSV4_1(op__putpubfh__start, struct compound_state *, cs);
 
-	if (cs->vp) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
-	}
-
+	rfs4_cs_invalidate_fh(cs);
 	if (cs->cr)
 		crfree(cs->cr);
 
@@ -2784,12 +2780,15 @@ mds_op_putpubfh(nfs_argop4 *args, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
-	error = mknfs41_fh(&cs->fh, vp, exi_public);
+	sav_exi = cs->exi;
+	cs->exi = exi_public;
+	error = rfs4_cs_update_fh(cs, vp);
 	if (error != 0) {
+		cs->exi = sav_exi;
 		*cs->statusp = resp->status = puterrno4(error);
 		goto final;
 	}
-	sav_exi = cs->exi;
+
 	if (exi_public == exi_root) {
 		/*
 		 * No filesystem is actually shared public, so we default
@@ -2810,20 +2809,11 @@ mds_op_putpubfh(nfs_argop4 *args, nfs_resop4 *resop, struct svc_req *req,
 		 */
 		exi = checkexport4(&fhp->fh.v1.export_fsid, &exp_fid, NULL);
 		cs->exi = ((exi != NULL) ? exi : exi_public);
-	} else {
-		/*
-		 * it's a properly shared filesystem
-		 */
-		cs->exi = exi_public;
 	}
 
-	VN_HOLD(vp);
-	cs->vp = vp;
-
 	if ((resp->status = call_checkauth4(cs, req)) != NFS4_OK) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
 		cs->exi = sav_exi;
+		rfs4_cs_invalidate_fh(cs);
 		goto final;
 	}
 
