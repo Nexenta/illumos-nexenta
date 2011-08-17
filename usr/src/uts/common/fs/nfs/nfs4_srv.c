@@ -2466,13 +2466,11 @@ do_rfs4_op_lookup(char *nm, struct svc_req *req, struct compound_state *cs)
 {
 	int error;
 	int different_export = 0;
-	vnode_t *vp, *tvp, *pre_tvp = NULL, *oldvp = NULL;
+	vnode_t *vp, *tvp, *pre_tvp = NULL;
 	struct exportinfo *exi = NULL, *pre_exi = NULL;
 	nfsstat4 stat;
 	fid_t fid;
 	int attrdir, dotdot, walk;
-	bool_t is_newvp = FALSE;
-	nnode_t *nn;
 
 	if (cs->vp->v_flag & V_XATTRDIR) {
 		attrdir = 1;
@@ -2586,6 +2584,7 @@ do_rfs4_op_lookup(char *nm, struct svc_req *req, struct compound_state *cs)
 	}
 
 	if (different_export) {
+		vnode_t *oldvp;
 
 		bzero(&fid, sizeof (fid));
 		fid.fid_len = MAXFIDSZ;
@@ -2641,12 +2640,11 @@ do_rfs4_op_lookup(char *nm, struct svc_req *req, struct compound_state *cs)
 
 		oldvp = cs->vp;
 		cs->vp = vp;
-		is_newvp = TRUE;
 
 		stat = call_checkauth4(cs, req);
+		cs->vp = oldvp;
 		if (stat != NFS4_OK) {
-			VN_RELE(cs->vp);
-			cs->vp = oldvp;
+			VN_RELE(vp);
 			return (stat);
 		}
 	}
@@ -2712,20 +2710,9 @@ do_rfs4_op_lookup(char *nm, struct svc_req *req, struct compound_state *cs)
 
 err_out:
 	if (error) {
-		if (is_newvp) {
-			VN_RELE(cs->vp);
-			cs->vp = oldvp;
-		} else
-			VN_RELE(vp);
+		VN_RELE(vp);
 		return (puterrno4(error));
 	}
-
-	if (!is_newvp) {
-		if (cs->vp)
-			VN_RELE(cs->vp);
-		cs->vp = vp;
-	} else if (oldvp)
-		VN_RELE(oldvp);
 
 	/*
 	 * if did lookup on attrdir and didn't lookup .., set named
@@ -2734,8 +2721,12 @@ err_out:
 	if (attrdir && ! dotdot)
 		FH4_SET_FLAG(&cs->fh, FH4_NAMEDATTR);
 
+	if (cs->vp != NULL)
+		VN_RELE(cs->vp);
+
 	/* Assume false for now, open proc will set this */
 	cs->mandlock = FALSE;
+	cs->vp = vp;
 
 	return (NFS4_OK);
 }

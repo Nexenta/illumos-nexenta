@@ -2115,12 +2115,11 @@ mds_do_lookup(char *nm, uint_t buflen, struct svc_req *req,
 {
 	int error;
 	int different_export = 0;
-	vnode_t *vp, *tvp, *pre_tvp = NULL, *oldvp = NULL;
+	vnode_t *vp, *tvp, *pre_tvp = NULL;
 	struct exportinfo *exi = NULL, *pre_exi = NULL;
 	nfsstat4 stat;
 	fid_t fid;
 	int attrdir, dotdot, walk;
-	bool_t is_newvp = FALSE;
 	caller_context_t ct;
 	nfs41_fh_fmt_t *fhp;
 
@@ -2240,6 +2239,8 @@ mds_do_lookup(char *nm, uint_t buflen, struct svc_req *req,
 	}
 
 	if (different_export) {
+		vnode_t *oldvp;
+
 		bzero(&fid, sizeof (fid));
 		fid.fid_len = MAXFIDSZ;
 		error = vop_fid_pseudo(vp, &fid);
@@ -2293,15 +2294,13 @@ mds_do_lookup(char *nm, uint_t buflen, struct svc_req *req,
 		crfree(cs->cr);
 		cs->cr = crdup(cs->basecr);
 
-		if (cs->vp)
-			oldvp = cs->vp;
+		oldvp = cs->vp;
 		cs->vp = vp;
-		is_newvp = TRUE;
 
 		stat = call_checkauth4(cs, req);
+		cs->vp = oldvp;
 		if (stat != NFS4_OK) {
-			VN_RELE(cs->vp);
-			cs->vp = oldvp;
+			VN_RELE(vp);
 			return (stat);
 		}
 	}
@@ -2364,20 +2363,9 @@ mds_do_lookup(char *nm, uint_t buflen, struct svc_req *req,
 
 err_out:
 	if (error) {
-		if (is_newvp) {
-			VN_RELE(cs->vp);
-			cs->vp = oldvp;
-		} else
-			VN_RELE(vp);
+		VN_RELE(vp);
 		return (puterrno4(error));
 	}
-
-	if (!is_newvp) {
-		if (cs->vp)
-			VN_RELE(cs->vp);
-		cs->vp = vp;
-	} else if (oldvp)
-		VN_RELE(oldvp);
 
 	/*
 	 * if did lookup on attrdir and didn't lookup .., set named
@@ -2386,8 +2374,12 @@ err_out:
 	if (attrdir && ! dotdot)
 		FH41_SET_FLAG(fhp, FH41_NAMEDATTR);
 
+	if (cs->vp != NULL)
+		VN_RELE(cs->vp);
+
 	/* Assume false for now, open proc will set this */
 	cs->mandlock = FALSE;
+	cs->vp = vp;
 
 	return (NFS4_OK);
 }
