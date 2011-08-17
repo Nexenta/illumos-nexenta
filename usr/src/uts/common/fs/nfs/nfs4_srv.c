@@ -3414,11 +3414,7 @@ rfs4_op_putrootfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	DTRACE_NFSV4_1(op__putrootfh__start, struct compound_state *, cs);
 
-	if (cs->vp) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
-	}
-
+	rfs4_cs_invalidate_fh(cs);
 	if (cs->cr)
 		crfree(cs->cr);
 
@@ -3456,21 +3452,17 @@ rfs4_op_putrootfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * Now make a filehandle based on the root
 	 * export and root vnode.
 	 */
-	error = makefh4(&cs->fh, rootdir, exi);
+	sav_exi = cs->exi;
+	cs->exi = exi;
+	error = rfs4_cs_update_fh(cs, rootdir);
 	if (error != 0) {
+		cs->exi = sav_exi;
 		*cs->statusp = resp->status = puterrno4(error);
 		goto out;
 	}
 
-	sav_exi = cs->exi;
-	cs->exi = exi;
-
-	VN_HOLD(rootdir);
-	cs->vp = rootdir;
-
 	if ((resp->status = call_checkauth4(cs, req)) != NFS4_OK) {
-		VN_RELE(rootdir);
-		cs->vp = NULL;
+		rfs4_cs_invalidate_fh(cs);
 		cs->exi = sav_exi;
 		goto out;
 	}
