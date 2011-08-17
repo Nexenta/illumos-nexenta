@@ -420,7 +420,7 @@ rfs4_op_readdir(nfs_argop4 *argop, nfs_resop4 *resop,
 	/* Maximum read and write size */
 	maxread = maxwrite = rfs4_tsize(req);
 
-	if (dvp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}

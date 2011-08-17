@@ -971,7 +971,7 @@ rfs4_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		 * Current file handle (cfh) should have been set before
 		 * getting into this function. If not, return error.
 		 */
-		if (cs->vp == NULL) {
+		if (!rfs4_cs_has_fh(cs)) {
 			*cs->statusp = respnn->status = NFS4ERR_NOFILEHANDLE;
 			goto out;
 		}
@@ -989,7 +989,7 @@ rfs4_op_secinfo(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * Current file handle (cfh) should have been set before
 	 * getting into this function. If not, return error.
 	 */
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -1102,7 +1102,7 @@ rfs4_op_access(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__access__start, struct compound_state *, cs,
 	    ACCESS4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -1227,7 +1227,7 @@ rfs4_op_commit(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__commit__start, struct compound_state *, cs,
 	    COMMIT4args *, args);
 
-	if (vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -1383,7 +1383,7 @@ rfs4_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	avers = nfs4_attrvers(cs);
 	resp->attrset = NFS4_EMPTY_ATTRMAP(avers);
 
-	if (dvp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -2215,7 +2215,7 @@ rfs4_op_getattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__getattr__start, struct compound_state *, cs,
 	    GETATTR4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -2271,7 +2271,7 @@ rfs4_op_getfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	DTRACE_NFSV4_1(op__getfh__start, struct compound_state *, cs);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -2360,19 +2360,17 @@ rfs4_op_link(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__link__start, struct compound_state *, cs,
 	    LINK4args *, args);
 
-	/* SAVED_FH: source object */
-	vp = cs->saved_vp;
-	if (vp == NULL) {
+	if (!rfs4_cs_has_fh(cs) || !rfs4_cs_has_savedfh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	/* CURRENT_FH: target directory */
+	/*
+	 * SAVED_FH: source object
+	 * CURRENT_FH: target directory
+	 */
+	vp = cs->saved_vp;
 	dvp = cs->vp;
-	if (dvp == NULL) {
-		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-		goto out;
-	}
 
 	/*
 	 * If there is a non-shared filesystem mounted on this vnode,
@@ -2792,7 +2790,7 @@ rfs4_op_lookup(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__lookup__start, struct compound_state *, cs,
 	    LOOKUP4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -2854,7 +2852,7 @@ rfs4_op_lookupp(nfs_argop4 *args, nfs_resop4 *resop, struct svc_req *req,
 
 	DTRACE_NFSV4_1(op__lookupp__start, struct compound_state *, cs);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -2894,7 +2892,7 @@ rfs4_op_openattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__openattr__start, struct compound_state *, cs,
 	    OPENATTR4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -3540,13 +3538,13 @@ rfs4_op_readlink(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	DTRACE_NFSV4_1(op__readlink__start, struct compound_state *, cs);
 
-	/* CURRENT_FH: directory */
-	vp = cs->vp;
-	if (vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
+	/* CURRENT_FH: directory */
+	vp = cs->vp;
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
 		goto out;
@@ -4172,19 +4170,14 @@ rfs4_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	in_crit_src = in_crit_targ = 0;
 	fp_rele_grant_hold = sfp_rele_grant_hold = 0;
 
-	/* CURRENT_FH: target directory */
-	ndvp = cs->vp;
-	if (ndvp == NULL) {
+	if (!rfs4_cs_has_fh(cs) || !rfs4_cs_has_savedfh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	/* SAVED_FH: from directory */
+	/* CURRENT_FH: target directory, SAVED_FH: from directory */
+	ndvp = cs->vp;
 	odvp = cs->saved_vp;
-	if (odvp == NULL) {
-		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
-		goto out;
-	}
 
 	if (cs->access == CS_ACCESS_DENIED) {
 		*cs->statusp = resp->status = NFS4ERR_ACCESS;
@@ -4630,7 +4623,7 @@ rfs4_op_savefh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_1(op__savefh__start, struct compound_state *, cs);
 
 	/* No need to check cs->access - we are not accessing any object */
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -4857,7 +4850,7 @@ do_rfs4_set_attrs(attrmap4 *resp, fattr4 *fattrp, struct compound_state *cs,
 	nvmap = NFS4_NTOV_MAP(avers);
 	nvmap_size = NFS4_NTOV_MAP_SIZE(avers);
 
-	if (vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		if (resp)
 			*resp = NFS4_EMPTY_ATTRMAP(avers);
 		return (NFS4ERR_NOFILEHANDLE);
@@ -5175,7 +5168,7 @@ rfs4_op_setattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__setattr__start, struct compound_state *, cs,
 	    SETATTR4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -5243,7 +5236,7 @@ rfs4_op_verify(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__verify__start, struct compound_state *, cs,
 	    VERIFY4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -5304,7 +5297,7 @@ rfs4_op_nverify(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	DTRACE_NFSV4_2(op__nverify__start, struct compound_state *, cs,
 	    NVERIFY4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		DTRACE_NFSV4_2(op__nverify__done, struct compound_state *, cs,
 		    NVERIFY4res *, resp);
@@ -5823,7 +5816,7 @@ rfs4_lookup(component4 *component, struct svc_req *req,
 	struct sockaddr *ca;
 	char *name;
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		return (NFS4ERR_NOFILEHANDLE);
 	}
 	if (cs->vp->v_type != VDIR) {
@@ -7081,7 +7074,7 @@ rfs4_op_open(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__open__start, struct compound_state *, cs,
 	    OPEN4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto end;
 	}
@@ -7299,8 +7292,10 @@ out:
 			cs->vp = nfs4_fhtovp(&oo->ro_reply_fh, cs->exi,
 			    &resp->status);
 
-			if (cs->vp == NULL)
+			if (cs->vp == NULL) {
+				*cs->statusp = resp->status;
 				goto finish;
+			}
 
 			nfs_fh4_copy(&oo->ro_reply_fh, &cs->fh);
 		}
@@ -7361,7 +7356,7 @@ rfs4_op_open_confirm(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__open__confirm__start, struct compound_state *, cs,
 	    OPEN_CONFIRM4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -7476,7 +7471,7 @@ rfs4_op_open_downgrade(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__open__downgrade__start, struct compound_state *, cs,
 	    OPEN_DOWNGRADE4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -8021,7 +8016,7 @@ rfs4_op_close(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__close__start, struct compound_state *, cs,
 	    CLOSE4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -8487,7 +8482,7 @@ rfs4_op_lock(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__lock__start, struct compound_state *, cs,
 	    LOCK4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		DTRACE_NFSV4_2(op__lock__done, struct compound_state *,
 		    cs, LOCK4res *, resp);
@@ -8907,7 +8902,7 @@ rfs4_op_locku(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__locku__start, struct compound_state *, cs,
 	    LOCKU4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		DTRACE_NFSV4_2(op__locku__done, struct compound_state *, cs,
 		    LOCKU4res *, resp);
@@ -9042,7 +9037,7 @@ rfs4_op_lockt(nfs_argop4 *argop, nfs_resop4 *resop,
 	DTRACE_NFSV4_2(op__lockt__start, struct compound_state *, cs,
 	    LOCKT4args *, args);
 
-	if (cs->vp == NULL) {
+	if (!rfs4_cs_has_fh(cs)) {
 		*cs->statusp = resp->status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
