@@ -231,6 +231,8 @@ void		rfs4_op_verify(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 static void	rfs4_op_write(nfs_argop4 *, nfs_resop4 *, struct svc_req *,
 			struct compound_state *);
 
+static void do_rfs4_invalidate_fh(nfs_fh4 *, vnode_t **);
+
 nfsstat4 check_open_access(uint32_t,
 				struct compound_state *, struct svc_req *);
 nfsstat4 rfs4_client_sysid(rfs4_client_t *, sysid_t *);
@@ -472,6 +474,49 @@ rfs4_init_compound_state(struct compound_state *cs)
 	cs->access = CS_ACCESS_DENIED;
 	cs->fh.nfs_fh4_val = cs->fhbuf;
 	cs->minorversion = NFS4_MINOR_v0;
+}
+
+/*
+ * NOTE: on success does VN_HOLD on vp
+ */
+int
+rfs4_cs_update_fh(compound_state_t *cs, vnode_t *vp)
+{
+	int error;
+
+	switch (cs->minorversion) {
+	case NFS4_MINOR_v0:
+		error = makefh4(&cs->fh, vp, cs->exi);
+		break;
+	case NFS4_MINOR_v1:
+		error = mknfs41_fh(&cs->fh, vp, cs->exi);
+		break;
+	default:
+		VERIFY(0);
+	}
+
+	if (error != 0)
+		return (error);
+
+	if (cs->vp != NULL)
+		VN_RELE(cs->vp);
+
+	cs->vp = vp;
+	VN_HOLD(vp);
+
+	return (0);
+}
+
+void
+rfs4_cs_invalidate_fh(compound_state_t *cs)
+{
+	do_rfs4_invalidate_fh(&cs->fh, &cs->vp);
+}
+
+void
+rfs4_cs_invalidate_savedfh(compound_state_t *cs)
+{
+	do_rfs4_invalidate_fh(&cs->saved_fh, &cs->saved_vp);
 }
 
 void
@@ -9550,4 +9595,15 @@ client_is_downrev(nfs_server_instance_t *instp, struct svc_req *req)
 	is_downrev = ci->ri_no_referrals;
 	rfs4_dbe_rele(ci->ri_dbe);
 	return (is_downrev);
+}
+
+static void
+do_rfs4_invalidate_fh(nfs_fh4 *fhp, vnode_t **vp)
+{
+	if (*vp != NULL) {
+		VN_RELE(*vp);
+		*vp = NULL;
+	}
+
+	fhp->nfs_fh4_len = 0;
 }

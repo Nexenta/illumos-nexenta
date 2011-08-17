@@ -1444,8 +1444,14 @@ typedef struct compound_state {
 	int		flags;
 } compound_state_t;
 
+#define	rfs4_cs_has_fh(_cs)		((_cs)->fh.nfs_fh4_len != 0)
+#define	rfs4_cs_has_savedfh(_cs)	((_cs)->saved_fh.nfs_fh4_len != 0)
+
 void rfs41_compound_free(COMPOUND4res *);
 extern	void		rfs4_init_compound_state(struct compound_state *);
+extern int rfs4_cs_update_fh(compound_state_t *cs, vnode_t *vp);
+extern void rfs4_cs_invalidate_fh(compound_state_t *cs);
+extern void rfs4_cs_invalidate_savedfh(compound_state_t *cs);
 extern	compound_state_t *
     rfs41_compound_state_alloc(nfs_server_instance_t *);
 extern	void rfs41_compound_state_free(compound_state_t *);
