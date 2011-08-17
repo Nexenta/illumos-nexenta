@@ -3045,12 +3045,6 @@ rfs4_op_read(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto out;
 	}
 
-	if (vp->v_type != VREG) {
-		*cs->statusp = resp->status =
-		    ((vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
-		goto out;
-	}
-
 	/* caller context gets set as side-effect */
 	if ((stat = nnop_check_stateid(nn, cs, FREAD, &args->stateid, FALSE,
 	    deleg, TRUE, &ct, NULL)) != NFS4_OK) {
@@ -5362,12 +5356,6 @@ rfs4_op_write(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	}
 
 	vp = cs->vp;
-	if (vp->v_type != VREG) {
-		*cs->statusp = resp->status =
-		    ((vp->v_type == VDIR) ? NFS4ERR_ISDIR : NFS4ERR_INVAL);
-		goto out;
-	}
-
 	cr = cs->cr;
 	if (rdonly4(cs->exi, vp, req)) {
 		*cs->statusp = resp->status = NFS4ERR_ROFS;
