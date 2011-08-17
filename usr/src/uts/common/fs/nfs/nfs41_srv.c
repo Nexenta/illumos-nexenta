@@ -2545,15 +2545,11 @@ mds_op_openattr(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	ASSERT(avp->v_flag & V_XATTRDIR);
 
-	error = mknfs41_fh(&cs->fh, avp, cs->exi);
+	error = rfs4_cs_update_fh(cs, avp);
+	VN_RELE(avp);
 
-	if (error) {
-		VN_RELE(avp);
+	if (error)
 		goto error_out;
-	}
-
-	VN_RELE(cs->vp);
-	cs->vp = avp;
 
 	/*
 	 * There is no requirement for an attrdir fh flag
