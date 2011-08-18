@@ -415,15 +415,8 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 
 	rc = proxy_get_layout(mnd);
 	if (rc != 0) {
-		/*
-		 * XXX
-		 * This fallback to the 'vn' op will not be valid
-		 * when the variable 'nfs_ds_present' is replaced
-		 * by per-export awareness.  Should error out at
-		 * that time if we can't get a layout.
-		 */
 		mutex_exit(&mnd->mnd_lock);
-		return (nnode_vn_read(vdata, flags, cr, ct, uiop, ioflag));
+		return (NFS4ERR_IO);
 	}
 	rc = proxy_get_strategy(mnd);
 	if (rc != 0)
@@ -643,16 +636,8 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 
 	rc = proxy_get_layout(mnd);
 	if (rc != 0) {
-		/*
-		 * XXX
-		 * This fallback to the 'vn' op will not be valid
-		 * when the variable 'nfs_ds_present' is replaced
-		 * by per-export awareness.  Should error out at
-		 * that time if we can't get a layout.
-		 */
 		mutex_exit(&mnd->mnd_lock);
-		return (
-		    nnode_vn_write(vdata, flags, uiop, ioflags, cr, ct, wcc));
+		return (NFS4ERR_IO);
 	}
 	rc = proxy_get_strategy(mnd);
 	if (rc != 0)
