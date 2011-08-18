@@ -60,6 +60,7 @@ extern "C" {
 #define	SHOPT_INDEX	"index"
 #define	SHOPT_LOG	"log"
 #define	SHOPT_NOACLFAB	"noaclfab"
+#define	SHOPT_PNFS	"pnfs"
 
 /* XXX The following are added for testing volatile fh's purposes only */
 #ifdef VOLATILE_FH_TEST

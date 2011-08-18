@@ -184,6 +184,8 @@ struct exportdata32 {
 #define	EX_NOACLFAB	0x2000	/* If set, NFSv2 and v3 servers doesn't */
 				/* fabricate ACL for VOP_GETSECATTR OTW call */
 
+#define	EX_PNFS		0x4000	/* Enable pnfs feature */
+
 #ifdef	_KERNEL
 
 #define	RPC_IDEMPOTENT	0x1	/* idempotent or not */
