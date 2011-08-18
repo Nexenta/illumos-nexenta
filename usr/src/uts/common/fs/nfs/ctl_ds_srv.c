@@ -73,17 +73,6 @@ static void get_access_mode(compound_state_t *, DS_CHECKSTATEres *);
 ds_owner_t *mds_dsinfo_alloc(DS_EXIBIargs *);
 
 /*
- * XXX
- * This variable is used to select regular NFS server behaviour
- * (no DSs) vs. the need to use proxy I/O to read/write data
- * from the DSs.  At some point, this needs to be replaced by
- * a per-export setting that indicates whether data is local
- * or remote, so that we can handle both pNFS and locally-
- * provisioned UFS or other data.
- */
-int nfs_ds_present = 0;			/* Has a DS checked in yet? */
-
-/*
  * Dispatch structure for the control protocol
  */
 struct nfs_cp_disp {
@@ -1122,12 +1111,6 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 		res_ok->guid_map.guid_map_len = 0;
 		res_ok->guid_map.guid_map_val = NULL;
 	}
-
-	/*
-	 * Make sure we set the bit that we've seen a DS check in
-	 */
-	if (nfs_ds_present == 0)
-		nfs_ds_present = 1;
 
 	rfs4_dbe_rele(dop->dbe);   /* search */
 

@@ -172,8 +172,6 @@ extern ds_guid_info_t *mds_find_ds_guid_info_by_id(ds_guid_t *guid);
 extern int uaddr2sockaddr(int, char *, void *, in_port_t *);
 extern bool_t rfs41_invalid_expiry(rfs4_entry_t);
 
-extern int nfs_ds_present;
-
 #ifdef	__cplusplus
 }
 #endif
