@@ -43,7 +43,6 @@ static void nnode_fid_key_vp_free(void *);
 static nnode_error_t nnode_build_v41(nnode_seed_t *, void *);
 static nnode_error_t nnode_build_v4(nnode_seed_t *, void *);
 static nnode_error_t nnode_build_v3(nnode_seed_t *, void *);
-static nnode_error_t nnode_build_vp(nnode_seed_t *, void *);
 static int nnode_fid_key_v41_construct(void *, void *, int);
 static int nnode_fid_key_v4_construct(void *, void *, int);
 static int nnode_fid_key_v3_construct(void *, void *, int);
@@ -486,7 +485,7 @@ nnode_from_fh_v41(nnode_t **npp, nfs_fh4 *fh4)
 }
 
 static int
-nnode_lookup_vnode(nnode_t **npp, vnode_t *vp, bool_t create)
+nnode_lookup_vnode(nnode_t **npp, vnode_t *vp)
 {
 	nnode_fid_key_t fidkey;
 	nnode_key_t key;
@@ -497,9 +496,6 @@ nnode_lookup_vnode(nnode_t **npp, vnode_t *vp, bool_t create)
 	fsid_t fsid;
 	int error;
 	uint32_t zero = 0;
-
-	if (vp == NULL)
-		return (EINVAL);
 
 	vfs = vp->v_vfsp;
 	fsid = vfs->vfs_fsid;
@@ -517,24 +513,9 @@ nnode_lookup_vnode(nnode_t **npp, vnode_t *vp, bool_t create)
 	key.nk_keydata = &fidkey;
 	key.nk_compare = nnode_compare_fsid;
 
-	if (!create) {
-		error = nnode_try_find(npp, &key, hash);
-		ASSERT((error == 0) || (error == ENOENT));
-		return (error);
-	}
-
-	vpdata.nsv_vp = vp;
-	vpdata.nsv_fsid = fsid;
-	vpdata.nsv_fidp = &fid;
-
-	return (nnode_find_or_create(npp, &key, hash, &vpdata,
-	    nnode_build_vp));
-}
-
-nnode_error_t
-nnode_from_vnode(nnode_t **npp, vnode_t *vp)
-{
-	return (nnode_lookup_vnode(npp, vp, TRUE));
+	error = nnode_try_find(npp, &key, hash);
+	ASSERT((error == 0) || (error == ENOENT));
+	return (error);
 }
 
 /* Search in cache */
@@ -544,7 +525,7 @@ nnode_find_by_vnode(vnode_t *vp)
 	nnode_t *nn;
 	int error;
 
-	error = nnode_lookup_vnode(&nn, vp, FALSE);
+	error = nnode_lookup_vnode(&nn, vp);
 	if (error)
 		return (NULL);
 
@@ -772,54 +753,6 @@ nnode_build_v3(nnode_seed_t *seed, void *vv3seed)
 
 out:
 	return (rc);
-}
-
-/*
- * Initialize the nnode_seed_t.  Each of the data structures
- * nnode_vn_data_t, nnode_vn_md_t, and nnode_vn_state_t are
- * allocated, and each has one reference to a vnode.  Thus,
- * the corresponding free functions need a VN_RELE() for the
- * held vnode.
- */
-static nnode_error_t
-nnode_build_vp(nnode_seed_t *seed, void *vvpseed)
-{
-	nnode_seed_vpdata_t *vpseed = vvpseed;
-	nnode_fid_key_vp_t *key;
-	nnode_vn_md_t *md;
-	nnode_vn_state_t *state;
-	fsid_t fsid;
-	int fidlen;
-	char *fid;
-
-	key = kmem_cache_alloc(nnode_fid_key_vp_cache, KM_SLEEP);
-	key->nfk_real_fsid = vpseed->nsv_fsid;
-	bcopy(vpseed->nsv_fidp, &key->nfk_real_fid,
-	    sizeof (key->nfk_real_fid));
-
-	fsid = vpseed->nsv_fsid;
-	fidlen = vpseed->nsv_fidp->fid_len;
-	fid = vpseed->nsv_fidp->fid_data;
-
-	/* XXX: Is it okay to pass NULL for the exi? */
-	nnode_data_setup(seed, vpseed->nsv_vp, fsid, fidlen, fid, NULL);
-	VN_HOLD(vpseed->nsv_vp);
-	md = nnode_vn_md_alloc();
-	md->nvm_vp = vpseed->nsv_vp;
-	VN_HOLD(md->nvm_vp);
-	state = nnode_vn_state_alloc();
-	state->nvs_vp = vpseed->nsv_vp;
-	VN_HOLD(state->nvs_vp);
-
-	seed->ns_key = key;
-	seed->ns_key_compare = nnode_compare_fsid;
-	seed->ns_key_free = nnode_fid_key_vp_free;
-	seed->ns_metadata_ops = &nnode_vn_md_ops;
-	seed->ns_metadata = md;
-	seed->ns_state_ops = &nnode_vn_state_ops;
-	seed->ns_state = state;
-
-	return (0);
 }
 
 /*

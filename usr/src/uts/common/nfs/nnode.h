@@ -249,7 +249,6 @@ extern nnode_error_t (*nnode_from_fh_ds)(nnode_t **, struct mds_ds_fh *);
 nnode_error_t nnode_from_fh_v41(nnode_t **, nfs_fh4 *);
 nnode_error_t nnode_from_fh_v4(nnode_t **, nfs_fh4 *);
 nnode_error_t nnode_from_fh_v3(nnode_t **, nfs_fh3 *, struct exportinfo *);
-nnode_error_t nnode_from_vnode(nnode_t **, vnode_t *);
 nnode_t *nnode_find_by_vnode(vnode_t *vp);
 void nnode_vnode_invalidate(vnode_t *);
 
