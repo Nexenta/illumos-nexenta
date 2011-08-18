@@ -252,7 +252,7 @@ findopt(char *name)
 	if (name != NULL) {
 		for (i = 0; optdefs[i].tag != NULL; i++) {
 			if (strcmp(optdefs[i].tag, name) == 0)
-				return (i);
+				return (optdefs[i].index);
 		}
 		if (findcharset(name))
 			return (OPT_CHARSET_MAP);
