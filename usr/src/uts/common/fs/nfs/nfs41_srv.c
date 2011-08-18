@@ -4393,15 +4393,14 @@ mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
     struct compound_state *cs, caller_context_t *ct, mds_layout_t **plo)
 {
 	vattr_t		spe_va;
-
 	int		i;
-
 	layout_core_t	lc;
-
 	int		error;
 	struct netbuf	*claddr;
-
 	nfsstat4	status = NFS4_OK;
+
+	if (!pnfs_enabled(cs->exi))
+		return (NFS4ERR_LAYOUTUNAVAILABLE);
 
 	spe_va.va_mask = AT_GID|AT_UID;
 	error = VOP_GETATTR(vp, &spe_va, 0, cs->cr, ct);
@@ -8350,8 +8349,6 @@ mds_get_file_layout(vnode_t *vp, mds_layout_t **plp)
 	return (NFS4_OK);
 }
 
-int no_layouts = 0;
-
 static void
 mds_free_fh_list(nfs_fh4 *nfl_fh_list, int count)
 {
@@ -8388,7 +8385,7 @@ mds_fetch_layout(struct compound_state *cs,
 	int  xdr_size = 0;
 	char *xdr_buffer;
 
-	if (no_layouts ||
+	if (!pnfs_enabled(cs->exi) ||
 	    mds_get_file_layout(cs->vp, &lp) != NFS4_OK)
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
 

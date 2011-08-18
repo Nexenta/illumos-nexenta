@@ -697,7 +697,7 @@ void
 nnode_data_setup(nnode_seed_t *seed, vnode_t *vp, fsid_t fsid,
     int len, char *fid, exportinfo_t *exi)
 {
-	if (nfs_ds_present)
+	if (pnfs_enabled(exi))
 		nnode_proxy_data_setup(seed, vp, fsid, len, fid);
 	else
 		nnode_vn_data_setup(seed, vp, exi);

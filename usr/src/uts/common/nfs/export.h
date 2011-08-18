@@ -571,6 +571,12 @@ extern int
 client_is_downrev(nfs_server_instance_t *instp, struct svc_req *);
 extern char    *build_symlink(vnode_t *, cred_t *, size_t *);
 
+static bool_t
+pnfs_enabled(const struct exportinfo *exi)
+{
+	return (exi->exi_export.ex_flags & EX_PNFS);
+}
+
 /*
  * Functions that handle the NFSv4 server namespace
  */

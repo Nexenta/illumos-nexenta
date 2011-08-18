@@ -91,8 +91,6 @@ extern int nfs_loaned_buffers;
 
 static int rdma_setup_read_data4(READ4args *, READ4res *);
 
-int pnfsproxy = 1;
-
 /*
  * Used to bump the stateid4.seqid value and show changes in the stateid
  */
@@ -1965,7 +1963,7 @@ bitmap4_get_sysattrs(struct nfs4_svgetit_arg *sargp)
 			sargp->sbp = NULL;	/* to identify error */
 			return (puterrno4(error));
 		}
-		if (pnfsproxy)
+		if (pnfs_enabled(cs->exi))
 			pnfs_correct_statfs(sargp->cs, sargp->sbp);
 	}
 
@@ -4019,7 +4017,7 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			/* Need to clear nnode from cache */
 			nnode_vnode_invalidate(vp);
 
-			if (pnfsproxy) {
+			if (pnfs_enabled(cs->exi)) {
 				mds_layout_t *l;
 
 				l = pnfs_delete_mds_layout(vp);
@@ -4027,9 +4025,9 @@ rfs4_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 					do_ctl_mds_remove(vp, l, cs);
 					mds_layout_put(l);
 				}
-				if (fp)
-					rfs4_close_all_state(fp);
 			}
+			if (fp)
+				rfs4_close_all_state(fp);
 		}
 	}
 
@@ -6391,7 +6389,7 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		status = check_open_access(args->share_access, cs, req);
 		if (status != NFS4_OK)
 		*attrset = NFS4_EMPTY_ATTRMAP(avers);
-	} else if (pnfsproxy) {
+	} else if (pnfs_enabled(cs->exi)) {
 		mds_layout_t *lo;
 
 		status = mds_createfile_get_layout(req, vp, cs, &ct, &lo);
