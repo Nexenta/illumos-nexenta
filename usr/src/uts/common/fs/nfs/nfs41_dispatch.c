@@ -37,8 +37,6 @@
 #include <sys/cmn_err.h>
 #include <sys/modctl.h>
 
-static kmem_cache_t *rfs41_compound_state_cache = NULL;
-
 /*
  * Needs some clean up
  */
@@ -326,70 +324,6 @@ rfs41_slrc_epilogue(mds_session_t *sp, slot_ent_t *slt,
 	cv_signal(&slt->se_wait);
 	mutex_exit(&slt->se_lock);
 	return (saved);
-}
-
-/*ARGSUSED*/
-static int
-rfs41_compound_state_construct(void *vcs, void *foo, int bar)
-{
-	return (0);
-}
-
-/*ARGSUSED*/
-static void
-rfs41_compound_state_destroy(void *vcs, void *foo)
-{
-}
-
-/* module init */
-void
-rfs41_dispatch_init(void)
-{
-	rfs41_compound_state_cache = kmem_cache_create(
-	    "rfs41_compound_state_cache", sizeof (compound_state_t), 0,
-	    rfs41_compound_state_construct, rfs41_compound_state_destroy, NULL,
-	    NULL, NULL, 0);
-}
-
-compound_state_t *
-rfs41_compound_state_alloc(nfs_server_instance_t *instp)
-{
-	compound_state_t *cs;
-
-	cs = kmem_cache_alloc(rfs41_compound_state_cache, KM_SLEEP);
-	bzero(cs, sizeof (*cs));
-	cs->instp = instp;
-	cs->cont = TRUE;
-	cs->fh.nfs_fh4_val = cs->fhbuf;
-	cs->flags = 0;
-	cs->minorversion = NFS4_MINOR_v1;
-
-	return (cs);
-}
-
-void
-rfs41_compound_state_free(compound_state_t *cs)
-{
-	if (cs->vp) {
-		VN_RELE(cs->vp);
-		cs->vp = NULL;
-	}
-	if (cs->cr) {
-		crfree(cs->cr);
-		cs->cr = NULL;
-	}
-	if (cs->saved_fh.nfs_fh4_val) {
-		kmem_free(cs->saved_fh.nfs_fh4_val, NFS4_FHSIZE);
-	}
-	if (cs->basecr) {
-		crfree(cs->basecr);
-	}
-	if (cs->sp) {
-		rfs41_session_rele(cs->sp);
-		if (cs->cp)
-			rfs4_client_rele(cs->cp);
-	}
-	kmem_cache_free(rfs41_compound_state_cache, cs);
 }
 
 static void

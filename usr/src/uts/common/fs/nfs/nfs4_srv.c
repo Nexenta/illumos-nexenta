@@ -464,16 +464,6 @@ rfs4_cbcheck(rfs4_state_t *sp)
 	return (sp->rs_owner->ro_client->rc_cbinfo.cb_state);
 }
 
-void
-rfs4_init_compound_state(struct compound_state *cs)
-{
-	bzero(cs, sizeof (*cs));
-	cs->cont = TRUE;
-	cs->access = CS_ACCESS_DENIED;
-	cs->fh.nfs_fh4_val = cs->fhbuf;
-	cs->minorversion = NFS4_MINOR_v0;
-}
-
 /*
  * NOTE: on success does VN_HOLD on vp
  */

@@ -2888,9 +2888,3 @@ mds_srvrinit(void)
 	mds_recall_lo = mds_lorecall_cmd;
 	mds_notify_device = mds_notify_device_cmd;
 }
-
-void
-rfs41_srvrinit(void)
-{
-	rfs41_dispatch_init();
-}

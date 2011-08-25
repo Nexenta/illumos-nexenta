@@ -1447,16 +1447,12 @@ typedef struct compound_state {
 #define	rfs4_cs_has_savedfh(_cs)	((_cs)->saved_fh.nfs_fh4_len != 0)
 
 void rfs41_compound_free(COMPOUND4res *);
-extern	void		rfs4_init_compound_state(struct compound_state *);
 extern int rfs4_cs_update_fh(compound_state_t *cs, vnode_t *vp);
 extern void rfs4_cs_invalidate_fh(compound_state_t *cs);
 extern void rfs4_cs_invalidate_savedfh(compound_state_t *cs);
 extern	compound_state_t *
     rfs4x_compound_state_alloc(nfs_server_instance_t *, int);
 void rfs4x_compound_state_free(compound_state_t *);
-extern	compound_state_t *
-    rfs41_compound_state_alloc(nfs_server_instance_t *);
-extern	void rfs41_compound_state_free(compound_state_t *);
 extern	rfs4_state_t	*rfs4_findstate_by_owner_file(
     struct compound_state *cs, rfs4_openowner_t *,
     rfs4_file_t *, bool_t *);
@@ -1755,10 +1751,6 @@ extern void		 rfs41_deleg_rs_hold(rfs4_deleg_state_t *);
 extern void		 rfs41_deleg_rs_rele(rfs4_deleg_state_t *);
 extern void		 rfs41_set_client_sessions(rfs4_client_t *, uint32_t);
 extern void		 rfs41_cb_path_down(mds_session_t *, uint32_t);
-
-
-void rfs41_srvrinit(void);
-void rfs41_dispatch_init(void);
 
 /* NFSv4.1: slot support */
 extern void		 sltab_create(stok_t **, int);
