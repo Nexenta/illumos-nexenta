@@ -398,7 +398,7 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	 * Allocate a compound struct, needed by the function
 	 * that gets called via the nnode interface.
 	 */
-	cs = rfs41_compound_state_alloc(mds_server);
+	cs = rfs4x_compound_state_alloc(mds_server, NFS4_MINOR_v1);
 	cs->vp = vp;
 	cs->flags |= NFS_USE_SESSION;
 
@@ -416,7 +416,7 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	if ((stat = check_stateid(argp->mode, cs, vp, &argp->stateid,
 	    FALSE, &deleg, TRUE, NULL, &clientid)) != NFS4_OK) {
 		resp->status = get_ds_status(stat);
-		rfs41_compound_state_free(cs);
+		rfs4x_compound_state_free(cs);
 		return;
 	}
 
@@ -445,7 +445,7 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 		if (layout && pnfs_save_mds_layout(layout, vp)) {
 			mds_layout_put(layout);
 			rfs4_file_rele(fp);
-			rfs41_compound_state_free(cs);
+			rfs4x_compound_state_free(cs);
 			/*
 			 * DSERR_RESOURCE? DSERR_NOSPC?
 			 */
@@ -468,7 +468,7 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	 * Return layout information.
 	 */
 
-	rfs41_compound_state_free(cs);
+	rfs4x_compound_state_free(cs);
 }
 
 /*

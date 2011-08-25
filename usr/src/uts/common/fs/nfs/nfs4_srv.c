@@ -5477,14 +5477,13 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	struct svc_req *req, int *rv)
 {
 	uint_t i;
-	compound_state_t cs;
+	compound_state_t *cs;
 	cred_t *cr;
 
 	if (rv != NULL)
 		*rv = 0;
-	rfs4_init_compound_state(&cs);
 
-	cs.instp = nfs4_server;
+	cs = rfs4x_compound_state_alloc(nfs4_server, NFS4_MINOR_v0);
 
 	/*
 	 * Form a reply tag by copying over the reqeuest tag.
@@ -5495,20 +5494,20 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
 	    resp->tag.utf8string_len);
 
-	cs.statusp = &resp->status;
-	cs.req = req;
+	cs->statusp = &resp->status;
+	cs->req = req;
 
 	ASSERT(exi == NULL);
 
 	cr = crget();
 	ASSERT(cr != NULL);
 
-	if (sec_svc_getcred(req, cr, &cs.principal, &cs.nfsflavor) == 0) {
+	if (sec_svc_getcred(req, cr, &cs->principal, &cs->nfsflavor) == 0) {
 		DTRACE_NFSV4_2(compound__start, struct compound_state *,
-		    &cs, COMPOUND4args *, args);
+		    cs, COMPOUND4args *, args);
 		crfree(cr);
 		DTRACE_NFSV4_2(compound__done, struct compound_state *,
-		    &cs, COMPOUND4res *, resp);
+		    cs, COMPOUND4res *, resp);
 		svcerr_badcred(req->rq_xprt);
 		if (rv != NULL)
 			*rv = 1;
@@ -5516,7 +5515,7 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	}
 
 	if (args->array_len > NFS4_COMPOUND_LIMIT) {
-		*cs.statusp = NFS4ERR_RESOURCE;
+		*cs->statusp = NFS4ERR_RESOURCE;
 		return;
 	}
 
@@ -5524,9 +5523,9 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	resp->array = kmem_zalloc(args->array_len * sizeof (nfs_resop4),
 	    KM_SLEEP);
 
-	cs.basecr = cr;
+	cs->basecr = cr;
 
-	DTRACE_NFSV4_2(compound__start, struct compound_state *, &cs,
+	DTRACE_NFSV4_2(compound__start, struct compound_state *, cs,
 	    COMPOUND4args *, args);
 
 	/*
@@ -5545,17 +5544,17 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	 * If this is the first compound we've seen, we need to start all
 	 * new instances' grace periods.
 	 */
-	if (cs.instp->seen_first_compound == 0) {
-		rfs4_grace_start_new(cs.instp);
+	if (cs->instp->seen_first_compound == 0) {
+		rfs4_grace_start_new(cs->instp);
 		/*
 		 * This must be set after rfs4_grace_start_new(), otherwise
 		 * another thread could proceed past here before the former
 		 * is finished.
 		 */
-		cs.instp->seen_first_compound = 1;
+		cs->instp->seen_first_compound = 1;
 	}
 
-	for (i = 0; i < args->array_len && cs.cont; i++) {
+	for (i = 0; i < args->array_len && cs->cont; i++) {
 		nfs_argop4 *argop;
 		nfs_resop4 *resop;
 		uint_t op;
@@ -5573,10 +5572,10 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			rfsproccnt_v4_ptr[op].value.ui64++;
 
 			(*rfsv4disptab[op].dis_proc)
-			    (argop, resop, req, &cs);
+			    (argop, resop, req, cs);
 
-			if (*cs.statusp != NFS4_OK)
-				cs.cont = FALSE;
+			if (*cs->statusp != NFS4_OK)
+				cs->cont = FALSE;
 		} else {
 			/*
 			 * This is effectively dead code since XDR
@@ -5588,15 +5587,15 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			op = OP_ILLEGAL;
 			rfsproccnt_v4_ptr[OP_ILLEGAL_IDX].value.ui64++;
 
-			rfs4_op_illegal(argop, resop, req, &cs);
-			cs.cont = FALSE;
+			rfs4_op_illegal(argop, resop, req, cs);
+			cs->cont = FALSE;
 		}
 bail:
 		/*
 		 * If not at last op, and if we are to stop, then
 		 * compact the results array.
 		 */
-		if ((i + 1) < args->array_len && !cs.cont) {
+		if ((i + 1) < args->array_len && !cs->cont) {
 			nfs_resop4 *new_res = kmem_alloc(
 			    (i+1) * sizeof (nfs_resop4), KM_SLEEP);
 			bcopy(resp->array,
@@ -5610,20 +5609,11 @@ bail:
 	}
 	rw_exit(&exported_lock);
 
-	DTRACE_NFSV4_2(compound__done, struct compound_state *, &cs,
+	DTRACE_NFSV4_2(compound__done, struct compound_state *, cs,
 	    COMPOUND4res *, resp);
 
-	if (cs.vp)
-		VN_RELE(cs.vp);
-	if (cs.saved_vp)
-		VN_RELE(cs.saved_vp);
-	if (cs.saved_fh.nfs_fh4_val)
-		kmem_free(cs.saved_fh.nfs_fh4_val, NFS4_FHSIZE);
+	rfs4x_compound_state_free(cs);
 
-	if (cs.basecr)
-		crfree(cs.basecr);
-	if (cs.cr)
-		crfree(cs.cr);
 	/*
 	 * done with this compound request, free the label
 	 */

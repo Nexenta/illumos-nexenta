@@ -415,7 +415,7 @@ rfs41_dispatch(struct svc_req *req, SVCXPRT *xprt, char *ap)
 	int			 replay = 0;
 	int saved = 0;
 
-	cs = rfs41_compound_state_alloc(mds_server);
+	cs = rfs4x_compound_state_alloc(mds_server, NFS4_MINOR_v1);
 	bzero(&res_buf, sizeof (COMPOUND4res_srv));
 	rbp = &res_buf;
 	rbp->minorversion = NFS4_MINOR_v1;
@@ -540,6 +540,6 @@ out:
 	if (!saved && slt)
 		slrc_reset_slot_state(slt);
 
-	rfs41_compound_state_free(cs);
+	rfs4x_compound_state_free(cs);
 	return (error);
 }
