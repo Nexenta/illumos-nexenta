@@ -1452,6 +1452,9 @@ extern int rfs4_cs_update_fh(compound_state_t *cs, vnode_t *vp);
 extern void rfs4_cs_invalidate_fh(compound_state_t *cs);
 extern void rfs4_cs_invalidate_savedfh(compound_state_t *cs);
 extern	compound_state_t *
+    rfs4x_compound_state_alloc(nfs_server_instance_t *, int);
+void rfs4x_compound_state_free(compound_state_t *);
+extern	compound_state_t *
     rfs41_compound_state_alloc(nfs_server_instance_t *);
 extern	void rfs41_compound_state_free(compound_state_t *);
 extern	rfs4_state_t	*rfs4_findstate_by_owner_file(
