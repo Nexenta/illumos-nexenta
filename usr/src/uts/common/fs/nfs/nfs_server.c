@@ -2607,6 +2607,7 @@ nfs_srvinit(void)
 	}
 	rfs_srvrinit();
 	rfs3_srvrinit();
+	rfs4x_srvrinit();
 	rfs41_srvrinit();
 	nfsauth_init();
 

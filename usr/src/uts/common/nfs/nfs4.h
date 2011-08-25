@@ -1794,6 +1794,7 @@ extern void	rfs4_compound_free(COMPOUND4res *);
 extern void	rfs4_compound_flagproc(COMPOUND4args *, int *);
 
 extern int	rfs4_srvrinit(void);
+extern void	rfs4x_srvrinit(void);
 extern void	rfs4_srvrfini(nfs_server_instance_t *);
 extern void	rfs4_sstor_init(nfs_server_instance_t *);
 extern void	mds_sstor_init(nfs_server_instance_t *);
