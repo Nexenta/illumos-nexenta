@@ -1174,7 +1174,7 @@ NFSSRV_OBJS +=	nfs_server.o	nfs_srv.o	nfs3_srv.o \
 		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o \
 		nfs41_dispatch.o nfs41_srv.o nfs41_filehandle.o  \
 		nfs41_srv_readdir.o nfs41_state.o nfs_serv_inst.o     \
-		nfs41_layout.o nfs41_ds_addr.o \
+		nfs41_layout.o nfs41_ds_addr.o nfs4x_srv_common.o \
 		ctl_ds_srv.o ctl_mds_clnt.o ctl_xdr.o dserv_mds.o     \
 		dserv_server.o nfs_nnode.o nfs_nnode_ops.o \
 		nfs_nnode_vn.o nfs_nnode_proxy.o
