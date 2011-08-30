@@ -83,7 +83,7 @@ out:
 /* ARGSUSED */
 int
 ctl_mds_clnt_remove_file(nfs_server_instance_t *instp, fsid_t fsid,
-    nfs41_fid_t fid, struct mds_layout *lp)
+    const nfs41_fid_t *fid, struct mds_layout *lp)
 {
 	CTL_MDS_REMOVEargs	args;
 	CTL_MDS_REMOVEres	res;

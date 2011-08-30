@@ -155,7 +155,7 @@ proxy_init_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
 		int e;
 		unsigned int reqsz;
 
-		e = mds_alloc_ds_fh(mnd->mnd_fsid, mnd->mnd_fid,
+		e = mds_alloc_ds_fh(mnd->mnd_fsid, &mnd->mnd_fid,
 		    &lp->mlo_lc.lc_mds_sids[i], &io_array[i].fh);
 		if (e)
 			return (NFS4ERR_LAYOUTTRYLATER);

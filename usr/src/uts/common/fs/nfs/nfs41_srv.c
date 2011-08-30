@@ -3204,7 +3204,7 @@ do_ctl_mds_remove(vnode_t *vp, mds_layout_t *layout, compound_state_t *cs)
 	}
 
 	error = ctl_mds_clnt_remove_file(cs->instp, cs->exi->exi_fsid,
-	    nfs41_fid, layout);
+	    &nfs41_fid, layout);
 
 	return (error);
 }
@@ -8278,7 +8278,7 @@ final:
 }
 
 int
-mds_alloc_ds_fh(fsid_t fsid, nfs41_fid_t fid, mds_sid *sid,
+mds_alloc_ds_fh(fsid_t fsid, const nfs41_fid_t *fid, mds_sid *sid,
     nfs_fh4 *fhp)
 {
 	mds_ds_fh	dsfh;
@@ -8318,9 +8318,8 @@ mds_alloc_ds_fh(fsid_t fsid, nfs41_fid_t fid, mds_sid *sid,
 	 * and avoid the free case in the error cleanup.
 	 */
 	dsfh.fh.v1.mds_sid.val = sid->val;
-
-	dsfh.fh.v1.mds_fid.len = fid.len;
-	bcopy(fid.val, dsfh.fh.v1.mds_fid.val, fid.len);
+	dsfh.fh.v1.mds_fid.len = fid->len;
+	bcopy(fid->val, dsfh.fh.v1.mds_fid.val, fid->len);
 
 	if (!xdr_encode_ds_fh(&dsfh, fhp))
 		return (EINVAL);
@@ -8441,7 +8440,7 @@ mds_fetch_layout(struct compound_state *cs,
 		/*
 		 * Build DS Filehandles.
 		 */
-		err = mds_alloc_ds_fh(cs->exi->exi_fsid, fid,
+		err = mds_alloc_ds_fh(cs->exi->exi_fsid, &fid,
 		    &lp->mlo_lc.lc_mds_sids[i], &(nfl_fh_list[i]));
 		if (err) {
 			mds_free_fh_list(nfl_fh_list,

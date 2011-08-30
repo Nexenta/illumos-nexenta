@@ -82,7 +82,7 @@ typedef struct mds_ds_fh mds_ds_fh;
 
 extern void free_mds_ds_fh(mds_ds_fh *);
 extern mds_ds_fh *get_mds_ds_fh(nfs_fh4 *);
-extern int mds_alloc_ds_fh(fsid_t, nfs41_fid_t, mds_sid *, nfs_fh4 *);
+extern int mds_alloc_ds_fh(fsid_t, const nfs41_fid_t *, mds_sid *, nfs_fh4 *);
 extern bool_t xdr_ds_fh_fmt(XDR *, mds_ds_fh *);
 extern bool_t xdr_mds_sid_content(XDR *, mds_sid_content *);
 extern bool_t xdr_mds_sid(XDR *, mds_sid *);
