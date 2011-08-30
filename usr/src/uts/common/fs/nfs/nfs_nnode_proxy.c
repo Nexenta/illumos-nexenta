@@ -149,8 +149,6 @@ proxy_init_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
 	sp->io_array_size = io_array_size;
 	sp->io_array = io_array;
 
-	mnd->mnd_eof = 0;
-
 	/* XXX - this is good for one big honking buffer. */
 	/* Get our DS filehandles and dev descriptors */
 	for (i = 0; i < lp->mlo_lc.lc_stripe_count; i++) {
@@ -238,7 +236,7 @@ add_read_record(uint64_t offset, int count, int stripewidth, int stripe_unit,
  * multi-valued read request to each of N data servers.
  */
 static int
-proxy_do_read(nnode_proxy_data_t *mnd, uio_t *uiop, mds_strategy_t *sp)
+proxy_do_read(uio_t *uiop, mds_strategy_t *sp, int *eof)
 {
 	int i, j, idx;			/* loop counters */
 	int segs;			/* total segment count */
@@ -360,7 +358,7 @@ proxy_do_read(nnode_proxy_data_t *mnd, uio_t *uiop, mds_strategy_t *sp)
 		}
 
 		if (resp->DS_READres_u.res_ok.eof == 1) {
-			mnd->mnd_eof = 1;
+			*eof = 1;
 			goto out;
 		}
 		for (j = 0; j < resp->DS_READres_u.res_ok.rdv.rdv_len; j++) {
@@ -400,7 +398,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	mds_layout_t *lp;
 	uint64_t off;
 	uint64_t moved;
-	int rc;
+	int rc, eof = 0;
 
 	ASSERT((*flags & (NNODE_IO_FLAG_WRITE | NNODE_IO_FLAG_EOF)) == 0);
 
@@ -417,7 +415,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	if (rc != 0)
 		goto out;
 
-	rc = proxy_do_read(mnd, uiop, &sp);
+	rc = proxy_do_read(uiop, &sp, &eof);
 	if (rc != 0)
 		goto out;
 
@@ -431,7 +429,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	}
 	mnd->mnd_flags |= NNODE_NVD_VATTR_VALID;
 
-	if (off + moved == vap->va_size || mnd->mnd_eof)
+	if (off + moved == vap->va_size || eof)
 		*flags |= NNODE_IO_FLAG_EOF;
 	else
 		*flags &= ~NNODE_IO_FLAG_EOF;
@@ -669,7 +667,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		vattr_to_wcc_data(beforep, afterp, wcc);
 	}
 
-	if (off + moved == vap->va_size || mnd->mnd_eof)
+	if (off + moved == vap->va_size)
 		*flags |= NNODE_IO_FLAG_EOF;
 	else
 		*flags &= ~NNODE_IO_FLAG_EOF;

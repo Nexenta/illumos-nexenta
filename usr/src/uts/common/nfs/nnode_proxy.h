@@ -82,7 +82,6 @@ typedef struct {
 	vattr_t		mnd_vattr;
 	fsid_t		mnd_fsid;
 	nfs41_fid_t	mnd_fid;
-	int		mnd_eof;
 } nnode_proxy_data_t;
 
 #ifdef	__cplusplus
