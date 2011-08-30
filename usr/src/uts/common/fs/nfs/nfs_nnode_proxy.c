@@ -72,32 +72,31 @@ extern nfsstat4 mds_get_file_layout(vnode_t *, mds_layout_t **);
 /* proxy I/O nnode ops */
 
 /*ARGSUSED*/
-int
-proxy_get_layout(nnode_proxy_data_t *mnd)
+static int
+proxy_get_layout(nnode_proxy_data_t *mnd, mds_layout_t **lp)
 {
-	mds_layout_t *lp;
 	nfsstat4 stat;
 
-	stat = mds_get_file_layout(mnd->mnd_vp, &lp);
-	if (lp == NULL || stat != NFS4_OK)
+	stat = mds_get_file_layout(mnd->mnd_vp, lp);
+	if (*lp == NULL || stat != NFS4_OK)
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
-	mnd->mnd_layout = lp;
 	return (0);
 }
 
 /*ARGSUSED*/
 void
-proxy_free_layout(nnode_proxy_data_t *mnd)
+proxy_free_layout(mds_layout_t *lp)
 {
-	rfs4_dbe_rele(mnd->mnd_layout->mlo_dbe);
-	mnd->mnd_layout = NULL;
+	rfs4_dbe_rele(lp->mlo_dbe);
 }
 
+/*
+ * Prepare strategy pointed by @sp
+ */
 static int
 proxy_init_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
-    mds_strategy_t *sp)
+    const mds_layout_t *lp, mds_strategy_t *sp)
 {
-	mds_layout_t *lp = mnd->mnd_layout;
 	int io_array_size;
 	ds_io_t *io_array;
 	uint64_t segstart, segend, relstart, maxsize;
@@ -398,6 +397,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
 	mds_strategy_t sp;
+	mds_layout_t *lp;
 	uint64_t off;
 	uint64_t moved;
 	int rc;
@@ -408,12 +408,12 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	moved = uiop->uio_resid;
 
 	mutex_enter(&mnd->mnd_lock);
-	rc = proxy_get_layout(mnd);
+	rc = proxy_get_layout(mnd, &lp);
 	if (rc != 0) {
 		mutex_exit(&mnd->mnd_lock);
 		return (NFS4ERR_IO);
 	}
-	rc = proxy_init_strategy(mnd, uiop, &sp);
+	rc = proxy_init_strategy(mnd, uiop, lp, &sp);
 	if (rc != 0)
 		goto out;
 
@@ -437,7 +437,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 		*flags &= ~NNODE_IO_FLAG_EOF;
 out:
 	proxy_free_strategy(&sp);
-	proxy_free_layout(mnd);
+	proxy_free_layout(lp);
 	mutex_exit(&mnd->mnd_lock);
 	return (rc);
 }
@@ -614,6 +614,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
 	mds_strategy_t sp;
+	mds_layout_t *lp;
 	vattr_t before, *beforep, *afterp;
 	uint64_t off;
 	uint64_t moved;
@@ -625,13 +626,13 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	moved = uiop->uio_resid;
 
 	mutex_enter(&mnd->mnd_lock);
-	rc = proxy_get_layout(mnd);
+	rc = proxy_get_layout(mnd, &lp);
 	if (rc != 0) {
 		mutex_exit(&mnd->mnd_lock);
 		return (NFS4ERR_IO);
 	}
 
-	rc = proxy_init_strategy(mnd, uiop, &sp);
+	rc = proxy_init_strategy(mnd, uiop, lp, &sp);
 	if (rc != 0)
 		goto out;
 
@@ -675,7 +676,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 
 out:
 	proxy_free_strategy(&sp);
-	proxy_free_layout(mnd);
+	proxy_free_layout(lp);
 	mutex_exit(&mnd->mnd_lock);
 	return (rc);
 }
@@ -753,7 +754,6 @@ nnode_proxy_data_setup(nnode_seed_t *seed, vnode_t *vp, fsid_t fsid,
 	pdata->mnd_fid.len = len;
 	ASSERT(fid);
 	bcopy(fid, pdata->mnd_fid.val, len);
-	pdata->mnd_layout = NULL;
 	/* no need to VN_HOLD; we steal the reference */
 	seed->ns_data = pdata;
 	seed->ns_data_ops = &proxy_data_ops;
