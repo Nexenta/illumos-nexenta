@@ -94,7 +94,7 @@ proxy_free_layout(nnode_proxy_data_t *mnd)
 }
 
 static int
-proxy_get_strategy(nnode_proxy_data_t *mnd)
+proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop)
 {
 	mds_layout_t *lp = mnd->mnd_layout;
 	int io_array_size;
@@ -114,7 +114,7 @@ proxy_get_strategy(nnode_proxy_data_t *mnd)
 	 */
 	segstart = 0;
 	segend = -1;		/* to EOF */
-	offset = mnd->mnd_uiop->uio_loffset;
+	offset = uiop->uio_loffset;
 	ASSERT(offset >= segstart);
 
 	/*
@@ -126,7 +126,7 @@ proxy_get_strategy(nnode_proxy_data_t *mnd)
 	segidx = 0;
 
 	/* Cap the length of the I/O to not spill over layout segment */
-	len = mnd->mnd_uiop->uio_resid;
+	len = uiop->uio_resid;
 	if (segend != -1)
 		len = MIN(offset + len, segend) - offset;
 
@@ -241,7 +241,7 @@ add_read_record(uint64_t offset, int count, int stripewidth, int stripe_unit,
  * multi-valued read request to each of N data servers.
  */
 static int
-proxy_do_read(nnode_proxy_data_t *mnd)
+proxy_do_read(nnode_proxy_data_t *mnd, uio_t *uiop)
 {
 	int i, j, idx;			/* loop counters */
 	int segs;			/* total segment count */
@@ -266,7 +266,7 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 	/*
 	 * Guess how many {offset,count} segments need to be allocated
 	 */
-	segs = (len / sp->stripe_unit) + mnd->mnd_uiop->uio_iovcnt + 1;
+	segs = (len / sp->stripe_unit) + uiop->uio_iovcnt + 1;
 	stripewidth = sp->stripe_unit * sp->stripe_count;
 
 	/*
@@ -291,8 +291,8 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 	 */
 	ask = len;
 	io = 0;
-	base = mnd->mnd_uiop->uio_iov[0].iov_base;
-	remain = mnd->mnd_uiop->uio_iov[0].iov_len;
+	base = uiop->uio_iov[0].iov_base;
+	remain = uiop->uio_iov[0].iov_len;
 	ioffset = offset = sp->offset;
 	idx = sp->startidx;
 	while (ask > 0) {
@@ -328,9 +328,9 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 			 */
 			if (remain == 0) {
 				io++;
-				ASSERT(io < mnd->mnd_uiop->uio_iovcnt);
-				base = mnd->mnd_uiop->uio_iov[io].iov_base;
-				remain = mnd->mnd_uiop->uio_iov[io].iov_len;
+				ASSERT(io < uiop->uio_iovcnt);
+				base = uiop->uio_iov[io].iov_base;
+				remain = uiop->uio_iov[io].iov_len;
 				ioffset = offset;
 			}
 		}
@@ -376,7 +376,7 @@ proxy_do_read(nnode_proxy_data_t *mnd)
 			}
 			got = dfp->data.data_len;
 			ask -= got;
-			mnd->mnd_uiop->uio_resid -= got;
+			uiop->uio_resid -= got;
 			ASSERT(ask >= 0);
 			if (ask == 0)
 				goto out;
@@ -411,18 +411,16 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	moved = uiop->uio_resid;
 
 	mutex_enter(&mnd->mnd_lock);
-	mnd->mnd_uiop = uiop;
-
 	rc = proxy_get_layout(mnd);
 	if (rc != 0) {
 		mutex_exit(&mnd->mnd_lock);
 		return (NFS4ERR_IO);
 	}
-	rc = proxy_get_strategy(mnd);
+	rc = proxy_get_strategy(mnd, uiop);
 	if (rc != 0)
 		goto out;
 
-	rc = proxy_do_read(mnd);
+	rc = proxy_do_read(mnd, uiop);
 	if (rc != 0)
 		goto out;
 
@@ -463,7 +461,7 @@ add_write_record(int count, char *where, ds_write_t *wr) {
 }
 
 static int
-proxy_do_write(nnode_proxy_data_t *mnd)
+proxy_do_write(nnode_proxy_data_t *mnd, uio_t *uiop)
 {
 	int i, idx;			/* loop counters */
 	int segs;			/* total segment count */
@@ -486,7 +484,7 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	 * Guess how many {offset,count} segments need to be
 	 * doled out to sp->stripe_count sets of args.
 	 */
-	segs = (len / sp->stripe_unit) + mnd->mnd_uiop->uio_iovcnt + 1;
+	segs = (len / sp->stripe_unit) + uiop->uio_iovcnt + 1;
 	stripewidth = sp->stripe_unit * sp->stripe_count;
 
 	/*
@@ -521,8 +519,8 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 	 */
 	ask = len;
 	io = 0;
-	base = mnd->mnd_uiop->uio_iov[0].iov_base;
-	remain = mnd->mnd_uiop->uio_iov[0].iov_len;
+	base = uiop->uio_iov[0].iov_base;
+	remain = uiop->uio_iov[0].iov_len;
 	ioffset = offset = sp->offset;
 	idx = sp->startidx;
 	while (ask > 0) {
@@ -556,9 +554,9 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 			 */
 			if (remain == 0) {
 				io++;
-				ASSERT(io < mnd->mnd_uiop->uio_iovcnt);
-				base = mnd->mnd_uiop->uio_iov[io].iov_base;
-				remain = mnd->mnd_uiop->uio_iov[io].iov_len;
+				ASSERT(io < uiop->uio_iovcnt);
+				base = uiop->uio_iov[io].iov_base;
+				remain = uiop->uio_iov[io].iov_len;
 				ioffset = offset;
 			}
 		}
@@ -599,7 +597,7 @@ proxy_do_write(nnode_proxy_data_t *mnd)
 		sent = resp->DS_WRITEres_u.res_ok.written;
 		if (sent > wr->count)
 			sent = wr->count;
-		mnd->mnd_uiop->uio_resid -= sent;
+		uiop->uio_resid -= sent;
 
 		idx = ((idx + 1) % sp->stripe_count);
 	}
@@ -631,18 +629,16 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	moved = uiop->uio_resid;
 
 	mutex_enter(&mnd->mnd_lock);
-	mnd->mnd_uiop = uiop;
-
 	rc = proxy_get_layout(mnd);
 	if (rc != 0) {
 		mutex_exit(&mnd->mnd_lock);
 		return (NFS4ERR_IO);
 	}
-	rc = proxy_get_strategy(mnd);
+	rc = proxy_get_strategy(mnd, uiop);
 	if (rc != 0)
 		goto out;
 
-	rc = proxy_do_write(mnd);
+	rc = proxy_do_write(mnd, uiop);
 	if (rc != 0)
 		goto out;
 

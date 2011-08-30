@@ -82,7 +82,6 @@ typedef struct {
 	vattr_t		mnd_vattr;
 	fsid_t		mnd_fsid;
 	nfs41_fid_t	mnd_fid;
-	uio_t		*mnd_uiop;
 	mds_layout_t	*mnd_layout;
 	mds_strategy_t	*mnd_strategy;
 	int		mnd_eof;
