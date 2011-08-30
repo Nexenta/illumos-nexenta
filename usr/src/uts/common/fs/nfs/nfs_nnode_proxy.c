@@ -94,9 +94,11 @@ proxy_free_layout(nnode_proxy_data_t *mnd)
 }
 
 static int
-proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop)
+proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
+    mds_strategy_t **resp)
 {
 	mds_layout_t *lp = mnd->mnd_layout;
+	mds_strategy_t *sp;
 	int io_array_size;
 	ds_io_t *io_array;
 	uint64_t segstart, segend, relstart, maxsize;
@@ -139,15 +141,16 @@ proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop)
 	io_array_size = lp->mlo_lc.lc_stripe_count * sizeof (ds_io_t);
 	io_array = kmem_zalloc(io_array_size, KM_SLEEP);
 
-	mnd->mnd_strategy = kmem_alloc(sizeof (mds_strategy_t), KM_SLEEP);
-	mnd->mnd_strategy->offset = offset;
-	mnd->mnd_strategy->len = len;
+	sp = kmem_alloc(sizeof (mds_strategy_t), KM_SLEEP);
+	sp->offset = offset;
+	sp->len = len;
+	sp->startidx = startidx;
+	sp->stripe_unit = lp->mlo_lc.lc_stripe_unit;
+	sp->stripe_count = 0;
+	sp->io_array_size = io_array_size;
+	sp->io_array = io_array;
+
 	mnd->mnd_eof = 0;
-	mnd->mnd_strategy->startidx = startidx;
-	mnd->mnd_strategy->stripe_unit = lp->mlo_lc.lc_stripe_unit;
-	mnd->mnd_strategy->stripe_count = 0;
-	mnd->mnd_strategy->io_array_size = io_array_size;
-	mnd->mnd_strategy->io_array = io_array;
 
 	/* XXX - this is good for one big honking buffer. */
 	/* Get our DS filehandles and dev descriptors */
@@ -174,20 +177,20 @@ proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop)
 			minreq = reqsz;
 
 		/* Keep track of how many loaded error-free */
-		mnd->mnd_strategy->stripe_count++;
+		sp->stripe_count++;
 	}
 
-	maxsize = minreq * mnd->mnd_strategy->stripe_count;
-	if (mnd->mnd_strategy->len > maxsize)
-		mnd->mnd_strategy->len = maxsize;
+	maxsize = minreq * sp->stripe_count;
+	if (sp->len > maxsize)
+		sp->len = maxsize;
 
+	*resp = sp;
 	return (0);
 }
 
 void
-proxy_free_strategy(nnode_proxy_data_t *mnd)
+proxy_free_strategy(mds_strategy_t *msp)
 {
-	mds_strategy_t *msp = mnd->mnd_strategy;
 	int i;
 
 	if (msp == NULL)
@@ -201,7 +204,6 @@ proxy_free_strategy(nnode_proxy_data_t *mnd)
 
 	kmem_free(msp->io_array, msp->io_array_size);
 	kmem_free(msp, sizeof (mds_strategy_t));
-	mnd->mnd_strategy = NULL;
 }
 
 int ctl_mds_clnt_call(ds_addrlist_t *, rpcproc_t,
@@ -241,7 +243,7 @@ add_read_record(uint64_t offset, int count, int stripewidth, int stripe_unit,
  * multi-valued read request to each of N data servers.
  */
 static int
-proxy_do_read(nnode_proxy_data_t *mnd, uio_t *uiop)
+proxy_do_read(nnode_proxy_data_t *mnd, uio_t *uiop, mds_strategy_t *sp)
 {
 	int i, j, idx;			/* loop counters */
 	int segs;			/* total segment count */
@@ -251,7 +253,6 @@ proxy_do_read(nnode_proxy_data_t *mnd, uio_t *uiop)
 	int error = 0;
 	uint64_t ioffset, offset;
 	char *base;
-	mds_strategy_t *sp;
 	ds_addrlist_t *dp;
 	DS_READargs *argp;
 	DS_READres *resp;
@@ -260,7 +261,6 @@ proxy_do_read(nnode_proxy_data_t *mnd, uio_t *uiop)
 	/* Hard-coded for dense stripes since layout doesn't tell me */
 	ASSERT(mds_layout_is_dense == 1);
 
-	sp = mnd->mnd_strategy;
 	len = sp->len;
 
 	/*
@@ -401,6 +401,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	nnode_proxy_data_t *mnd = vdata;
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
+	mds_strategy_t *sp = NULL;
 	uint64_t off;
 	uint64_t moved;
 	int rc;
@@ -416,11 +417,11 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 		mutex_exit(&mnd->mnd_lock);
 		return (NFS4ERR_IO);
 	}
-	rc = proxy_get_strategy(mnd, uiop);
+	rc = proxy_get_strategy(mnd, uiop, &sp);
 	if (rc != 0)
 		goto out;
 
-	rc = proxy_do_read(mnd, uiop);
+	rc = proxy_do_read(mnd, uiop, sp);
 	if (rc != 0)
 		goto out;
 
@@ -439,7 +440,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	else
 		*flags &= ~NNODE_IO_FLAG_EOF;
 out:
-	proxy_free_strategy(mnd);
+	proxy_free_strategy(sp);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
 	return (rc);
@@ -461,7 +462,7 @@ add_write_record(int count, char *where, ds_write_t *wr) {
 }
 
 static int
-proxy_do_write(nnode_proxy_data_t *mnd, uio_t *uiop)
+proxy_do_write(uio_t *uiop, mds_strategy_t *sp)
 {
 	int i, idx;			/* loop counters */
 	int segs;			/* total segment count */
@@ -471,13 +472,11 @@ proxy_do_write(nnode_proxy_data_t *mnd, uio_t *uiop)
 	int error = 0;
 	uint64_t ioffset, offset;
 	char *base;
-	mds_strategy_t *sp;
 	ds_addrlist_t *dp;
 
 	/* Hard-coded for dense stripes since layout doesn't tell me */
 	ASSERT(mds_layout_is_dense == 1);
 
-	sp = mnd->mnd_strategy;
 	len = sp->len;
 
 	/*
@@ -618,6 +617,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	nnode_proxy_data_t *mnd = vdata;
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
+	mds_strategy_t *sp = NULL;
 	vattr_t before, *beforep, *afterp;
 	uint64_t off;
 	uint64_t moved;
@@ -634,11 +634,12 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		mutex_exit(&mnd->mnd_lock);
 		return (NFS4ERR_IO);
 	}
-	rc = proxy_get_strategy(mnd, uiop);
+
+	rc = proxy_get_strategy(mnd, uiop, &sp);
 	if (rc != 0)
 		goto out;
 
-	rc = proxy_do_write(mnd, uiop);
+	rc = proxy_do_write(uiop, sp);
 	if (rc != 0)
 		goto out;
 
@@ -677,7 +678,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		*flags &= ~NNODE_IO_FLAG_EOF;
 
 out:
-	proxy_free_strategy(mnd);
+	proxy_free_strategy(sp);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
 	return (rc);
@@ -757,7 +758,6 @@ nnode_proxy_data_setup(nnode_seed_t *seed, vnode_t *vp, fsid_t fsid,
 	ASSERT(fid);
 	bcopy(fid, pdata->mnd_fid.val, len);
 	pdata->mnd_layout = NULL;
-	pdata->mnd_strategy = NULL;
 	/* no need to VN_HOLD; we steal the reference */
 	seed->ns_data = pdata;
 	seed->ns_data_ops = &proxy_data_ops;

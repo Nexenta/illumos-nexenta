@@ -83,7 +83,6 @@ typedef struct {
 	fsid_t		mnd_fsid;
 	nfs41_fid_t	mnd_fid;
 	mds_layout_t	*mnd_layout;
-	mds_strategy_t	*mnd_strategy;
 	int		mnd_eof;
 } nnode_proxy_data_t;
 
