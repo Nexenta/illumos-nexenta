@@ -93,7 +93,7 @@ proxy_free_layout(nnode_proxy_data_t *mnd)
 	mnd->mnd_layout = NULL;
 }
 
-int
+static int
 proxy_get_strategy(nnode_proxy_data_t *mnd)
 {
 	mds_layout_t *lp = mnd->mnd_layout;
@@ -462,8 +462,7 @@ add_write_record(int count, char *where, ds_write_t *wr) {
 	wr->count += count;
 }
 
-
-int
+static int
 proxy_do_write(nnode_proxy_data_t *mnd)
 {
 	int i, idx;			/* loop counters */
