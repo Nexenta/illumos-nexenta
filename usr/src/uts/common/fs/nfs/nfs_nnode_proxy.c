@@ -94,7 +94,7 @@ proxy_free_layout(mds_layout_t *lp)
  * Prepare strategy pointed by @sp
  */
 static int
-proxy_init_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
+proxy_init_strategy(const nnode_proxy_data_t *mnd, const uio_t *uiop,
     const mds_layout_t *lp, mds_strategy_t *sp)
 {
 	int io_array_size;
