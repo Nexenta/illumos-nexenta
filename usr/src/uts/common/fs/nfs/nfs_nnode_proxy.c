@@ -94,11 +94,10 @@ proxy_free_layout(nnode_proxy_data_t *mnd)
 }
 
 static int
-proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
-    mds_strategy_t **resp)
+proxy_init_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
+    mds_strategy_t *sp)
 {
 	mds_layout_t *lp = mnd->mnd_layout;
-	mds_strategy_t *sp;
 	int io_array_size;
 	ds_io_t *io_array;
 	uint64_t segstart, segend, relstart, maxsize;
@@ -106,6 +105,8 @@ proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
 	offset_t offset;
 	ssize_t len;
 	unsigned int minreq = 0;
+
+	bzero(sp, sizeof (mds_strategy_t));
 
 	/*
 	 * XXX
@@ -141,7 +142,6 @@ proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
 	io_array_size = lp->mlo_lc.lc_stripe_count * sizeof (ds_io_t);
 	io_array = kmem_zalloc(io_array_size, KM_SLEEP);
 
-	sp = kmem_alloc(sizeof (mds_strategy_t), KM_SLEEP);
 	sp->offset = offset;
 	sp->len = len;
 	sp->startidx = startidx;
@@ -184,26 +184,22 @@ proxy_get_strategy(nnode_proxy_data_t *mnd, const uio_t *uiop,
 	if (sp->len > maxsize)
 		sp->len = maxsize;
 
-	*resp = sp;
 	return (0);
 }
 
 void
-proxy_free_strategy(mds_strategy_t *msp)
+proxy_free_strategy(mds_strategy_t *sp)
 {
 	int i;
 
-	if (msp == NULL)
-		return;
-
-	for (i = 0; i < msp->stripe_count; i++) {
-		mds_ds_addrlist_rele(msp->io_array[i].ds);
-		kmem_free(msp->io_array[i].fh.nfs_fh4_val,
-		    msp->io_array[i].fh.nfs_fh4_len);
+	for (i = 0; i < sp->stripe_count; i++) {
+		mds_ds_addrlist_rele(sp->io_array[i].ds);
+		kmem_free(sp->io_array[i].fh.nfs_fh4_val,
+		    sp->io_array[i].fh.nfs_fh4_len);
 	}
 
-	kmem_free(msp->io_array, msp->io_array_size);
-	kmem_free(msp, sizeof (mds_strategy_t));
+	if (sp->io_array)
+		kmem_free(sp->io_array, sp->io_array_size);
 }
 
 int ctl_mds_clnt_call(ds_addrlist_t *, rpcproc_t,
@@ -401,7 +397,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	nnode_proxy_data_t *mnd = vdata;
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
-	mds_strategy_t *sp = NULL;
+	mds_strategy_t sp;
 	uint64_t off;
 	uint64_t moved;
 	int rc;
@@ -417,11 +413,11 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 		mutex_exit(&mnd->mnd_lock);
 		return (NFS4ERR_IO);
 	}
-	rc = proxy_get_strategy(mnd, uiop, &sp);
+	rc = proxy_init_strategy(mnd, uiop, &sp);
 	if (rc != 0)
 		goto out;
 
-	rc = proxy_do_read(mnd, uiop, sp);
+	rc = proxy_do_read(mnd, uiop, &sp);
 	if (rc != 0)
 		goto out;
 
@@ -440,7 +436,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	else
 		*flags &= ~NNODE_IO_FLAG_EOF;
 out:
-	proxy_free_strategy(sp);
+	proxy_free_strategy(&sp);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
 	return (rc);
@@ -617,7 +613,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	nnode_proxy_data_t *mnd = vdata;
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
-	mds_strategy_t *sp = NULL;
+	mds_strategy_t sp;
 	vattr_t before, *beforep, *afterp;
 	uint64_t off;
 	uint64_t moved;
@@ -635,11 +631,11 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		return (NFS4ERR_IO);
 	}
 
-	rc = proxy_get_strategy(mnd, uiop, &sp);
+	rc = proxy_init_strategy(mnd, uiop, &sp);
 	if (rc != 0)
 		goto out;
 
-	rc = proxy_do_write(uiop, sp);
+	rc = proxy_do_write(uiop, &sp);
 	if (rc != 0)
 		goto out;
 
@@ -678,7 +674,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 		*flags &= ~NNODE_IO_FLAG_EOF;
 
 out:
-	proxy_free_strategy(sp);
+	proxy_free_strategy(&sp);
 	proxy_free_layout(mnd);
 	mutex_exit(&mnd->mnd_lock);
 	return (rc);
