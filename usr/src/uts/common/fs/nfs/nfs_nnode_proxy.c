@@ -406,10 +406,9 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	moved = uiop->uio_resid;
 
 	rc = proxy_get_layout(mnd, &lp);
-	if (rc != 0) {
-		mutex_exit(&mnd->mnd_lock);
+	if (rc != 0)
 		return (NFS4ERR_IO);
-	}
+
 	rc = proxy_init_strategy(mnd, uiop, lp, &sp);
 	if (rc != 0)
 		goto out;
@@ -626,10 +625,8 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	moved = uiop->uio_resid;
 
 	rc = proxy_get_layout(mnd, &lp);
-	if (rc != 0) {
-		mutex_exit(&mnd->mnd_lock);
+	if (rc != 0)
 		return (NFS4ERR_IO);
-	}
 
 	rc = proxy_init_strategy(mnd, uiop, lp, &sp);
 	if (rc != 0)
