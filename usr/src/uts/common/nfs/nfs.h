@@ -2397,6 +2397,8 @@ mblk_t *uio_to_mblk(uio_t *);
 void rfs_rndup_mblks(mblk_t *, uint_t, int);
 void rfs_free_xuio(void *);
 
+time_t nfs_sys_uptime(void);
+
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus
