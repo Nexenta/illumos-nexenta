@@ -143,7 +143,7 @@ rfs4_dbe_rele(rfs4_dbe_t *entry)
 	mutex_enter(entry->dbe_lock);
 	ASSERT(entry->dbe_refcnt > 1);
 	atomic_add_32(&entry->dbe_refcnt, -1);
-	entry->dbe_time_rele = gethrestime_sec();
+	entry->dbe_time_rele = nfs_sys_uptime();
 	mutex_exit(entry->dbe_lock);
 }
 
@@ -755,7 +755,7 @@ rfs4_cpr_callb(void *arg, int code)
 		bp = &buckets[i];
 		for (l = bp->dbk_head; l; l = l->next) {
 			cp = (rfs4_client_t *)l->entry->dbe_data;
-			cp->rc_last_access = gethrestime_sec();
+			cp->rc_last_access = nfs_sys_uptime();
 		}
 	}
 

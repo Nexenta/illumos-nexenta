@@ -6778,7 +6778,7 @@ rfs4_do_opendelcur(struct compound_state *cs, struct svc_req *req,
 	}
 
 	/* Mark progress for delegation returns */
-	dsp->rds_finfo->rf_dinfo->rd_time_lastwrite = gethrestime_sec();
+	dsp->rds_finfo->rf_dinfo->rd_time_lastwrite = nfs_sys_uptime();
 	rfs4_deleg_state_rele(dsp);
 	rfs4_do_open(cs, req, oo, DELEG_NONE,
 	    args->share_access, args->share_deny, resp, 1);

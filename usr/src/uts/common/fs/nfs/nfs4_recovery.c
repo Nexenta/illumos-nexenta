@@ -1649,7 +1649,7 @@ nfs4_wait_for_grace(mntinfo4_t *mi, nfs4_recov_state_t *rsp, int noblock)
 			if (!(rsp->rs_flags & NFS4_RS_GRACE_MSG))
 				rsp->rs_flags |= NFS4_RS_GRACE_MSG;
 
-			curtime = gethrestime_sec();
+			curtime = nfs_sys_uptime();
 
 			if (curtime < mi->mi_grace_wait) {
 				if (noblock) {
@@ -1659,7 +1659,7 @@ nfs4_wait_for_grace(mntinfo4_t *mi, nfs4_recov_state_t *rsp, int noblock)
 					    mi->mi_grace_wait - curtime;
 					mutex_exit(&mi->mi_lock);
 					delay(SEC_TO_TICK(time_to_wait));
-					curtime = gethrestime_sec();
+					curtime = nfs_sys_uptime();
 					mutex_enter(&mi->mi_lock);
 					if (curtime >= mi->mi_grace_wait)
 						mi->mi_grace_wait = 0;
@@ -1707,7 +1707,7 @@ nfs4_wait_for_delay(vnode_t *vp, nfs4_recov_state_t *rsp, int noblock)
 				nfs4_mi_kstat_inc_delay(VTOMI4(vp));
 			}
 
-			curtime = gethrestime_sec();
+			curtime = nfs_sys_uptime();
 
 			if (curtime < rp->r_delay_wait) {
 				if (noblock) {
@@ -1717,7 +1717,7 @@ nfs4_wait_for_delay(vnode_t *vp, nfs4_recov_state_t *rsp, int noblock)
 					    rp->r_delay_wait - curtime;
 					mutex_exit(&rp->r_statelock);
 					delay(SEC_TO_TICK(time_to_wait));
-					curtime = gethrestime_sec();
+					curtime = nfs_sys_uptime();
 					mutex_enter(&rp->r_statelock);
 					if (curtime >= rp->r_delay_wait)
 						rp->r_delay_wait = 0;
@@ -4339,7 +4339,7 @@ nfs4_set_grace_wait(mntinfo4_t *mi)
 {
 	mutex_enter(&mi->mi_lock);
 	/* Mark the time for the future */
-	mi->mi_grace_wait = gethrestime_sec() + nfs4err_delay_time;
+	mi->mi_grace_wait = nfs_sys_uptime() + nfs4err_delay_time;
 	mutex_exit(&mi->mi_lock);
 }
 
@@ -4363,7 +4363,7 @@ nfs4_set_delay_wait(vnode_t *vp)
 		/* calculate next interval value */
 		rp->r_delay_interval =
 		    MIN(NFS4_MAX_DELAY_INTERVAL, (rp->r_delay_interval << 1));
-	rp->r_delay_wait = gethrestime_sec() + rp->r_delay_interval;
+	rp->r_delay_wait = nfs_sys_uptime() + rp->r_delay_interval;
 	mutex_exit(&rp->r_statelock);
 }
 

@@ -716,7 +716,7 @@ nfs4_trigger_mounted_already(vnode_t *vp, vnode_t **newvpp,
 			mutex_enter(&mi->mi_lock);
 			if (mi->mi_ephemeral)
 				mi->mi_ephemeral->ne_ref_time =
-				    gethrestime_sec();
+				    nfs_sys_uptime();
 			mutex_exit(&mi->mi_lock);
 
 			*was_mounted = TRUE;
@@ -2193,7 +2193,7 @@ nfs4_record_ephemeral_mount(mntinfo4_t *mi, vnode_t *mvp)
 	eph->ne_mount = mi;
 	MI4_HOLD(mi);
 	VFS_HOLD(mi->mi_vfsp);
-	eph->ne_ref_time = gethrestime_sec();
+	eph->ne_ref_time = nfs_sys_uptime();
 
 	/*
 	 * We need to tell the ephemeral mount when
@@ -2841,7 +2841,7 @@ nfs4_ephemeral_harvest_forest(nfs4_trigger_globals_t *ntg,
 	nfs4_ephemeral_tree_t	*next;
 	nfs4_ephemeral_t	*e;
 	nfs4_ephemeral_t	*prior;
-	time_t			now = gethrestime_sec();
+	time_t			now = nfs_sys_uptime();
 
 	nfs4_ephemeral_tree_t	*harvest = NULL;
 

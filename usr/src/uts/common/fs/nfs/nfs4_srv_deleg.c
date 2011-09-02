@@ -284,7 +284,7 @@ retry:
 	if ((ch = rfs4_cb_getch(cbp)) == NULL) {
 		mutex_enter(cbp->cb_lock);
 		cbp->cb_state = CB_BAD;
-		cbp->cb_timefailed = gethrestime_sec(); /* observability */
+		cbp->cb_timefailed = nfs_sys_uptime(); /* observability */
 		goto retry;
 	}
 
@@ -310,7 +310,7 @@ retry:
 
 	cbp->cb_state = newstate;
 	if (cbp->cb_state == CB_BAD)
-		cbp->cb_timefailed = gethrestime_sec(); /* observability */
+		cbp->cb_timefailed = nfs_sys_uptime(); /* observability */
 
 	cv_broadcast(cbp->cb_cv);	/* start up the other threads */
 	cbp->cb_nullcaller = FALSE;
@@ -395,7 +395,7 @@ rfs4_cbinfo_rele(rfs4_cbinfo_t *cbp, rfs4_cbstate_t newstate)
 	if (newstate != CB_NOCHANGE)
 		cbp->cb_state = newstate;
 	if (newstate == CB_FAILED) {
-		cbp->cb_timefailed = gethrestime_sec(); /* observability */
+		cbp->cb_timefailed = nfs_sys_uptime(); /* observability */
 		cbp->cb_notified_of_cb_path_down = FALSE;
 	}
 
@@ -1143,7 +1143,7 @@ rfs4_do_cb_recall(rfs4_deleg_state_t *dsp, bool_t trunc)
 	nfs_fh4_copy(fhp, &rec_argp->fh);
 
 	/* Keep track of when we did this for observability */
-	dsp->rds_time_recalled = gethrestime_sec();
+	dsp->rds_time_recalled = nfs_sys_uptime();
 
 	/*
 	 * Set up the timeout for the callback and make the actual call.
@@ -1360,7 +1360,7 @@ mds_do_cb_recall(rfs4_deleg_state_t *dsp, bool_t trunc)
 	 * Set up the timeout for the callback and make the actual call.
 	 * Timeout will be 80% of the lease period for this server.
 	 */
-	dsp->rds_time_recalled = gethrestime_sec();	/* observability */
+	dsp->rds_time_recalled = nfs_sys_uptime();	/* observability */
 	timeout.tv_sec = (rfs4_lease_time * 80) / 100;
 	timeout.tv_usec = 0;
 
@@ -1608,7 +1608,7 @@ rfs4_recall_file(rfs4_file_t *fp, bool_t trunc, rfs4_client_t *cp)
 	 * timer since this is used for the revocation decision.
 	 */
 	if (fp->rf_dinfo->rd_time_recalled == 0)
-		fp->rf_dinfo->rd_time_recalled = gethrestime_sec();
+		fp->rf_dinfo->rd_time_recalled = nfs_sys_uptime();
 	fp->rf_dinfo->rd_ever_recalled = TRUE; /* used for policy decision */
 	/* Client causing recall not always available */
 	if (cp)
@@ -1634,8 +1634,8 @@ rfs4_recall_deleg(rfs4_file_t *fp, bool_t trunc, rfs4_client_t *cp)
 	lease = dbe_to_instp(fp->rf_dbe)->lease_period;
 
 	if (fp->rf_dinfo->rd_time_recalled != 0) {
-		elapsed1 = gethrestime_sec() - fp->rf_dinfo->rd_time_recalled;
-		elapsed2 = gethrestime_sec() - fp->rf_dinfo->rd_time_lastwrite;
+		elapsed1 = nfs_sys_uptime() - fp->rf_dinfo->rd_time_recalled;
+		elapsed2 = nfs_sys_uptime() - fp->rf_dinfo->rd_time_lastwrite;
 
 		/* First check to see if a revocation should occur */
 		if (elapsed1 > lease && elapsed2 > lease) {
@@ -1781,7 +1781,7 @@ rfs4_delegation_policy(nfs_server_instance_t *instp,
 	 */
 	if (dinfo->rd_ever_recalled == TRUE) {
 		if (dinfo->rd_conflicted_client != cid) {
-			elapsed = gethrestime_sec() - dinfo->rd_time_returned;
+			elapsed = nfs_sys_uptime() - dinfo->rd_time_returned;
 			if (elapsed < instp->lease_period)
 				return (OPEN_DELEGATE_NONE);
 		}
@@ -1880,7 +1880,7 @@ rfs4_grant_delegation(struct compound_state *cs,
 		 * get granted again.
 		 */
 		if (fp->rf_dinfo->rd_time_rm_delayed > 0 &&
-		    gethrestime_sec() >
+		    nfs_sys_uptime() >
 		    fp->rf_dinfo->rd_time_rm_delayed + cs->instp->lease_period)
 			fp->rf_dinfo->rd_time_rm_delayed = 0;
 
@@ -2033,7 +2033,7 @@ rfs4_check_delegated_byfp(nfs_server_instance_t *instp,
 
 		if (!do_delay) {
 			rfs4_dbe_lock(fp->rf_dbe);
-			fp->rf_dinfo->rd_time_rm_delayed = gethrestime_sec();
+			fp->rf_dinfo->rd_time_rm_delayed = nfs_sys_uptime();
 			rfs4_dbe_unlock(fp->rf_dbe);
 			return (TRUE);
 		}
@@ -2042,7 +2042,7 @@ rfs4_check_delegated_byfp(nfs_server_instance_t *instp,
 
 		rfs4_dbe_lock(fp->rf_dbe);
 		if (fp->rf_dinfo->rd_dtype != OPEN_DELEGATE_NONE) {
-			fp->rf_dinfo->rd_time_rm_delayed = gethrestime_sec();
+			fp->rf_dinfo->rd_time_rm_delayed = nfs_sys_uptime();
 			rfs4_dbe_unlock(fp->rf_dbe);
 			return (TRUE);
 		}
@@ -2293,7 +2293,7 @@ rfs4_deleg_state(struct compound_state *cs,
 	dsp->rds_dtype = fp->rf_dinfo->rd_dtype = dtype;
 
 	/* Update delegation stats for this file */
-	fp->rf_dinfo->rd_time_lastgrant = gethrestime_sec();
+	fp->rf_dinfo->rd_time_lastgrant = nfs_sys_uptime();
 
 	/* reset since this is a new delegation */
 	fp->rf_dinfo->rd_conflicted_client = 0;
@@ -2401,7 +2401,7 @@ rfs4_return_deleg(rfs4_deleg_state_t *dsp, bool_t revoked)
 	}
 
 	/* used in the policy decision */
-	fp->rf_dinfo->rd_time_returned = gethrestime_sec();
+	fp->rf_dinfo->rd_time_returned = nfs_sys_uptime();
 
 	/*
 	 * reset the time_recalled field so future delegations are not
@@ -2417,7 +2417,7 @@ rfs4_return_deleg(rfs4_deleg_state_t *dsp, bool_t revoked)
 	dsp->rds_dtype = OPEN_DELEGATE_NONE;
 
 	if (revoked == TRUE)
-		dsp->rds_time_revoked = gethrestime_sec();
+		dsp->rds_time_revoked = nfs_sys_uptime();
 
 	rfs4_dbe_invalidate(dsp->rds_dbe);
 

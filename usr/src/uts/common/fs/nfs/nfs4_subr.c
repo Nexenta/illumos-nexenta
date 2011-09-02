@@ -1091,7 +1091,7 @@ clfree4(CLIENT *cl, struct chtab *cp, struct nfs4_clnt *nfscl)
 	 * Timestamp this cache entry so that we know when it was last
 	 * used.
 	 */
-	cp->ch_freed = gethrestime_sec();
+	cp->ch_freed = nfs_sys_uptime();
 
 	/*
 	 * Add the free client handle to the front of the list.
@@ -1149,7 +1149,7 @@ clreclaim4_zone(struct nfs4_clnt *nfscl, uint_t cl_holdtime)
 		cpl = ch->ch_list;
 		cpp = &ch->ch_list;
 		while (cpl != NULL &&
-		    cpl->ch_freed + cl_holdtime > gethrestime_sec()) {
+		    cpl->ch_freed + cl_holdtime > nfs_sys_uptime()) {
 			cpp = &cpl->ch_list;
 			cpl = cpl->ch_list;
 		}
@@ -1835,7 +1835,7 @@ rfs4call(nfs4_call_t *cp, nfs4_error_t *copy_ep)
 				if (np->lease_valid ==
 				    NFS4_LEASE_VALID && np->state_ref_count)
 					np->last_renewal_time =
-					    gethrestime_sec();
+					    nfs_sys_uptime();
 				mutex_exit(&np->s_lock);
 			}
 		}

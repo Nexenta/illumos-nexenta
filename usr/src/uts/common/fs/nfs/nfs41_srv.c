@@ -684,7 +684,7 @@ mds_validate_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		if (sp->rs_finfo->rf_dinfo->rd_dtype == OPEN_DELEGATE_WRITE &&
 		    mode == FWRITE) {
 			sp->rs_finfo->rf_dinfo->rd_time_lastwrite =
-			    gethrestime_sec();
+			    nfs_sys_uptime();
 		}
 
 		rfs4_dbe_rele(sp->rs_dbe);
@@ -727,7 +727,7 @@ mds_validate_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		if (dsp->rds_finfo->rf_dinfo->rd_dtype == OPEN_DELEGATE_WRITE &&
 		    mode == FWRITE) {
 			dsp->rds_finfo->rf_dinfo->rd_time_lastwrite =
-			    gethrestime_sec();
+			    nfs_sys_uptime();
 		}
 
 		/*
@@ -5454,7 +5454,7 @@ mds_do_opendelcur(struct compound_state *cs, struct svc_req *req,
 	}
 
 	/* Mark progress for delegation returns */
-	dsp->rds_finfo->rf_dinfo->rd_time_lastwrite = gethrestime_sec();
+	dsp->rds_finfo->rf_dinfo->rd_time_lastwrite = nfs_sys_uptime();
 	rfs4_deleg_state_rele(dsp);
 	mds_do_open(cs, req, oo, DELEG_NONE,
 	    (args->share_access & 0xff),
@@ -6625,7 +6625,7 @@ mds_refresh(mds_session_t *sp)
 	ASSERT(sp != NULL && sp->sn_clnt != NULL);
 	rfs4_dbe_lock(sp->sn_dbe);
 	cp = sp->sn_clnt;
-	sp->sn_laccess = gethrestime_sec();
+	sp->sn_laccess = nfs_sys_uptime();
 	rfs4_dbe_unlock(sp->sn_dbe);
 
 	rfs4_dbe_hold(cp->rc_dbe);
@@ -7965,7 +7965,7 @@ mds_op_sequence(nfs_argop4 *argop, nfs_resop4 *resop,
 	 */
 	cs->slotno = slot;
 	cs->seqid = slt->se_seqid;
-	sp->sn_laccess = gethrestime_sec();
+	sp->sn_laccess = nfs_sys_uptime();
 	rfs4_update_lease(cs->cp);
 
 	/*

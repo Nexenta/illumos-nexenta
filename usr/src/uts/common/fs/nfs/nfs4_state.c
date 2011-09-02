@@ -876,7 +876,7 @@ rfs4_client_expiry(rfs4_entry_t u_entry)
 	 * has exceeded its lease period.
 	 */
 	cp_expired = (cp->rc_forced_expire ||
-	    (gethrestime_sec() - cp->rc_last_access
+	    (nfs_sys_uptime() - cp->rc_last_access
 	    > instp->lease_period));
 
 	if (!cp->rc_ss_remove && cp_expired)
@@ -1082,7 +1082,7 @@ rfs4_client_create(rfs4_entry_t u_entry, void *arg)
 	cp->rc_cbinfo.cb_notified_of_cb_path_down = TRUE;
 
 	/* Initialize the access time to now */
-	cp->rc_last_access = gethrestime_sec();
+	cp->rc_last_access = nfs_sys_uptime();
 
 	cp->rc_cr_set = NULL;
 
@@ -1378,7 +1378,7 @@ rfs4_lease_expired(rfs4_client_t *cp)
 		if (cp->rc_clid_scope) {
 			rc = FALSE;
 		} else {
-			rc = (gethrestime_sec() - cp->rc_last_access >
+			rc = (nfs_sys_uptime() - cp->rc_last_access >
 			    dbe_to_instp(cp->rc_dbe)->lease_period);
 		}
 	}
@@ -1401,7 +1401,7 @@ rfs4_update_lease(rfs4_client_t *cp)
 {
 	rfs4_dbe_lock(cp->rc_dbe);
 	if (!cp->rc_forced_expire)
-		cp->rc_last_access = gethrestime_sec();
+		cp->rc_last_access = nfs_sys_uptime();
 	rfs4_dbe_unlock(cp->rc_dbe);
 }
 
@@ -1472,7 +1472,7 @@ rfs4_openowner_expiry(rfs4_entry_t u_entry)
 
 	if (rfs4_dbe_is_invalid(oo->ro_dbe))
 		return (TRUE);
-	return ((gethrestime_sec() - oo->ro_client->rc_last_access
+	return ((nfs_sys_uptime() - oo->ro_client->rc_last_access
 	    > dbe_to_instp(oo->ro_dbe)->lease_period));
 }
 
@@ -2044,7 +2044,7 @@ rfs4_lo_state_expiry(rfs4_entry_t u_entry)
 		return (TRUE);
 	if (lsp->rls_state->rs_closed)
 		return (TRUE);
-	return ((gethrestime_sec() -
+	return ((nfs_sys_uptime() -
 	    lsp->rls_state->rs_owner->ro_client->rc_last_access
 	    > dbe_to_instp(lsp->rls_dbe)->lease_period));
 }
@@ -2409,7 +2409,7 @@ rfs4_deleg_state_expiry(rfs4_entry_t u_entry)
 	if (dsp->rds_dtype == OPEN_DELEGATE_NONE)
 		return (TRUE);
 
-	if ((gethrestime_sec() - dsp->rds_client->rc_last_access
+	if ((nfs_sys_uptime() - dsp->rds_client->rc_last_access
 	    > dbe_to_instp(dsp->rds_dbe)->lease_period)) {
 		rfs4_dbe_invalidate(dsp->rds_dbe);
 		return (TRUE);
@@ -2435,7 +2435,7 @@ rfs4_deleg_state_create(rfs4_entry_t u_entry,
 	dsp->rds_client = cp;
 	dsp->rds_dtype = OPEN_DELEGATE_NONE;
 
-	dsp->rds_time_granted = gethrestime_sec();	/* observability */
+	dsp->rds_time_granted = nfs_sys_uptime();	/* observability */
 	dsp->rds_time_revoked = 0;
 
 	list_link_init(&dsp->rds_node);
@@ -2648,11 +2648,11 @@ rfs4_state_expiry(rfs4_entry_t u_entry)
 	lease = dbe_to_instp(sp->rs_dbe)->lease_period;
 
 	if (sp->rs_closed == TRUE &&
-	    ((gethrestime_sec() - rfs4_dbe_get_timerele(sp->rs_dbe))
+	    ((nfs_sys_uptime() - rfs4_dbe_get_timerele(sp->rs_dbe))
 	    > lease))
 		return (TRUE);
 
-	return ((gethrestime_sec() - sp->rs_owner->ro_client->rc_last_access
+	return ((nfs_sys_uptime() - sp->rs_owner->ro_client->rc_last_access
 	    > lease));
 }
 
@@ -3461,7 +3461,7 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		if (sp->rs_finfo->rf_dinfo->rd_dtype ==
 		    OPEN_DELEGATE_WRITE && mode == FWRITE) {
 			sp->rs_finfo->rf_dinfo->rd_time_lastwrite =
-			    gethrestime_sec();
+			    nfs_sys_uptime();
 		}
 
 		rfs4_state_rele_nounlock(sp);
@@ -3493,7 +3493,7 @@ check_stateid(int mode, struct compound_state *cs, vnode_t *vp,
 		if (dsp->rds_finfo->rf_dinfo->rd_dtype ==
 		    OPEN_DELEGATE_WRITE && mode == FWRITE) {
 			dsp->rds_finfo->rf_dinfo->rd_time_lastwrite =
-			    gethrestime_sec();
+			    nfs_sys_uptime();
 		}
 
 		/*

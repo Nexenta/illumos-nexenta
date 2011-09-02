@@ -731,7 +731,7 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 	 * Initialize some overall sessions values
 	 */
 	sp->sn_bc.progno = ap->cs_aotw.csa_cb_program;
-	sp->sn_laccess = gethrestime_sec();
+	sp->sn_laccess = nfs_sys_uptime();
 	sp->sn_flags = 0;
 
 	/*

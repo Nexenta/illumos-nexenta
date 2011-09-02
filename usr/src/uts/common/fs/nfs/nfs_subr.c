@@ -615,7 +615,7 @@ clfree_impl(CLIENT *cl, struct chtab *cp, struct nfs_clnt *nfscl)
 	 * Timestamp this cache entry so that we know when it was last
 	 * used.
 	 */
-	cp->ch_freed = gethrestime_sec();
+	cp->ch_freed = nfs_sys_uptime();
 
 	/*
 	 * Add the free client handle to the front of the list.
@@ -683,7 +683,7 @@ clreclaim_zone(struct nfs_clnt *nfscl, uint_t cl_holdtime)
 		cpl = ch->ch_list;
 		cpp = &ch->ch_list;
 		while (cpl != NULL &&
-		    cpl->ch_freed + cl_holdtime > gethrestime_sec()) {
+		    cpl->ch_freed + cl_holdtime > nfs_sys_uptime()) {
 			cpp = &cpl->ch_list;
 			cpl = cpl->ch_list;
 		}

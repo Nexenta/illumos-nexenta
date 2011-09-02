@@ -3285,7 +3285,7 @@ nfs4_client_cpr_callb(void *arg, int code)
 	 * When we get to here we are in the process of
 	 * resuming the system from a previous suspend.
 	 */
-	nfs4_client_resumed = gethrestime_sec();
+	nfs4_client_resumed = nfs_sys_uptime();
 	return (B_TRUE);
 }
 
@@ -3481,7 +3481,7 @@ nfs4_renew_lease_thread(nfs4_server_t *sp)
 
 	mutex_enter(&sp->s_lock);
 	/* sp->s_lease_time is set via a GETATTR */
-	sp->last_renewal_time = gethrestime_sec();
+	sp->last_renewal_time = nfs_sys_uptime();
 	sp->lease_valid = NFS4_LEASE_UNINITIALIZED;
 	ASSERT(sp->s_refcnt >= 1);
 
@@ -3523,7 +3523,7 @@ nfs4_renew_lease_thread(nfs4_server_t *sp)
 
 		tmp_last_renewal_time = sp->last_renewal_time;
 
-		tmp_time = gethrestime_sec() - sp->last_renewal_time +
+		tmp_time = nfs_sys_uptime() - sp->last_renewal_time +
 		    (3 * sp->propagation_delay.tv_sec);
 
 		NFS4_DEBUG(nfs4_client_lease_debug, (CE_NOTE,
@@ -3565,7 +3565,7 @@ nfs4_renew_lease_thread(nfs4_server_t *sp)
 			 * Issue RENEW op since we haven't renewed the lease
 			 * since we slept.
 			 */
-			tmp_now_time = gethrestime_sec();
+			tmp_now_time = nfs_sys_uptime();
 			error = nfs4renew(sp);
 			/*
 			 * Need to re-acquire sp's lock, nfs4renew()
@@ -3974,7 +3974,7 @@ nfs4_inc_state_ref_count_nolock(nfs4_server_t *sp, mntinfo4_t *mi)
 	 * on lease renewal.
 	 */
 	if (sp->lease_valid == NFS4_LEASE_VALID && sp->state_ref_count == 1)
-		sp->last_renewal_time = gethrestime_sec();
+		sp->last_renewal_time = nfs_sys_uptime();
 
 	/* update the number of open files for mi */
 	mi->mi_open_files++;
@@ -4033,7 +4033,7 @@ inlease(nfs4_server_t *sp)
 	ASSERT(mutex_owned(&sp->s_lock));
 
 	if (sp->lease_valid == NFS4_LEASE_VALID &&
-	    gethrestime_sec() < sp->last_renewal_time + sp->s_lease_time)
+	    nfs_sys_uptime() < sp->last_renewal_time + sp->s_lease_time)
 		result = TRUE;
 	else
 		result = FALSE;
