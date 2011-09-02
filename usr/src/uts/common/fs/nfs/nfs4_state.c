@@ -2822,7 +2822,7 @@ what_stateid_error(struct compound_state *cs,
 		return (NFS4ERR_BAD_STATEID);
 
 	/* From a previous server instantiation, return STALE */
-	if (id->v4_bits.boottime < cs->instp->start_time)
+	if (id->v4_bits.boottime != cs->instp->start_time)
 		return (NFS4ERR_STALE_STATEID);
 
 	/*
@@ -2837,14 +2837,10 @@ what_stateid_error(struct compound_state *cs,
 	 * that has been revoked, the server should return BAD_STATEID
 	 * instead of the more common EXPIRED error.
 	 */
-	if (id->v4_bits.boottime == cs->instp->start_time) {
-		if (type == DELEGID)
-			return (NFS4ERR_BAD_STATEID);
-		else
-			return (NFS4ERR_EXPIRED);
-	}
+	if (type == DELEGID)
+		return (NFS4ERR_BAD_STATEID);
 
-	return (NFS4ERR_BAD_STATEID);
+	return (NFS4ERR_EXPIRED);
 }
 
 /*
