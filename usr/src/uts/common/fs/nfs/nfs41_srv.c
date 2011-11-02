@@ -2912,7 +2912,8 @@ mds_op_putfh(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 			DTRACE_PROBE(nfss41__e__fail_auth);
 			goto final;
 		}
-	}
+	} else if (fhp->type == FH41_TYPE_DMU_DS)
+		cs->access = CS_ACCESS_OK;
 
 	nfs_fh4_copy(&args->object, &cs->fh);
 	*cs->statusp = resp->status = NFS4_OK;
