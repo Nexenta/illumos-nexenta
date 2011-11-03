@@ -715,7 +715,7 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 	 */
 	if (!nfs41_csa_flags_valid(ap->cs_aotw.csa_flags)) {
 		ap->cs_error = NFS4ERR_INVAL;
-		return (FALSE);
+		goto err;
 	}
 
 	sp->sn_csflags = 0;
@@ -780,7 +780,7 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 	ocp->cn_attrs = ap->cs_aotw.csa_fore_chan_attrs;
 	if (sle = sess_chan_limits(ocp)) {
 		ap->cs_error = sle;
-		return (FALSE);
+		goto err_free_chan;
 	}
 
 	/*
@@ -872,6 +872,12 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 		    SEQ4_STATUS_CB_PATH_DOWN);
 	}
 	return (TRUE);
+
+err_free_chan:
+	rfs41_destroy_session_channel(sp, CDFS4_BOTH);
+err:
+	rfs4_dbe_rele(sp->sn_clnt->rc_dbe);
+	return (FALSE);
 }
 
 /* ARGSUSED */
