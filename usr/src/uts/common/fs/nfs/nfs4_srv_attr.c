@@ -1663,8 +1663,11 @@ rfs4_fattr4_fs_locations(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 
 	switch (cmd) {
 	case NFS4ATTR_SUPPORTED:
-		if (sarg->op == NFS4ATTR_SETIT || sarg->op == NFS4ATTR_VERIT)
+		if (sarg->op == NFS4ATTR_SETIT)
+			error = EINVAL;
+		else if (sarg->op == NFS4ATTR_VERIT)
 			error = ENOTSUP;
+
 		break;  /* this attr is supported */
 
 	case NFS4ATTR_GETIT:
