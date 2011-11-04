@@ -7451,7 +7451,6 @@ mds_op_create_session(nfs_argop4 *argop, nfs_resop4 *resop,
 	session41_create_t	 sca;
 	sequenceid4		 stseq;
 	sequenceid4		 agseq;
-	extern slotid4		 bc_slot_tab;
 
 	DTRACE_NFSV4_2(op__create__session__start,
 	    struct compound_state *, cs,
@@ -7588,9 +7587,6 @@ mds_op_create_session(nfs_argop4 *argop, nfs_resop4 *resop,
 	rok->csr_back_chan_attrs = crp->csr_back_chan_attrs =
 	    args->csa_back_chan_attrs;
 
-	/* callbacks limited to bc_slot_tab for now */
-	rok->csr_back_chan_attrs.ca_maxrequests =
-	    crp->csr_back_chan_attrs.ca_maxrequests = bc_slot_tab;
 	rfs4_update_lease(cp);
 
 	/*

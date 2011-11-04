@@ -63,7 +63,7 @@ extern void mds_do_cb_recall(struct rfs4_deleg_state *, bool_t);
  *	 good for proto.
  */
 slotid4 slrc_slot_size = MAXSLOTS;
-slotid4	bc_slot_tab = 0;	/* backchan slots are set by client */
+slotid4	bc_max_req	= MAXSLOTS_BACK;	/* back channel */
 
 /* The values below are rfs4_lease_time units */
 
@@ -788,6 +788,8 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 	 * since we're barely creating the session.
 	 */
 	if (sp->sn_bdrpc) {
+		slotid4 maxreq;
+
 		/*
 		 * bcsd got built as part of the channel's construction.
 		 */
@@ -795,8 +797,18 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 			cmn_err(CE_PANIC, "Back Chan Spec Data Not Set\t"
 			    "<Internal Inconsistency>");
 		}
-		bc_slot_tab = ap->cs_aotw.csa_back_chan_attrs.ca_maxrequests;
-		slrc_table_create(&bsdp->bsd_stok, bc_slot_tab);
+		maxreq = ap->cs_aotw.csa_back_chan_attrs.ca_maxrequests;
+		if (maxreq > bc_max_req) {
+			/*
+			 * RFC 5661 doesn't specify what error should be return,
+			 * only says that requested ca_maxrequests for back
+			 * channel can not be changed.
+			 */
+			ap->cs_error = NFS4ERR_INVAL;
+			goto err_free_chan;
+		}
+
+		slrc_table_create(&bsdp->bsd_stok, maxreq);
 		sp->sn_csflags |= CREATE_SESSION4_FLAG_CONN_BACK_CHAN;
 		sp->sn_back = ocp;
 

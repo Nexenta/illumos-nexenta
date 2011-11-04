@@ -506,6 +506,7 @@ typedef struct {
  * Maximum number of concurrent COMPOUND requests per session
  */
 #define	MAXSLOTS	256
+#define	MAXSLOTS_BACK	4
 
 typedef struct {
 	state_protect_how4	 sp_type;
