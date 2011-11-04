@@ -2897,7 +2897,8 @@ check_state_seqid2(stateid_t *st, stateid_t *id, int flags)
 	if (st->v4_bits.chgseq < id->v4_bits.chgseq)
 		return (NFS4_CHECK_STATEID_BAD);
 
-	if (st->v4_bits.chgseq == id->v4_bits.chgseq + 1)
+	if (!(flags & NFS_USE_SESSION) &&
+	    st->v4_bits.chgseq == id->v4_bits.chgseq + 1)
 		return (NFS4_CHECK_STATEID_REPLAY);
 
 	/* Stateid is some time in the past - that's old */
