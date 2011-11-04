@@ -1421,10 +1421,7 @@ mds_op_commit(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		goto final;
 	}
 
-	error = VOP_PUTPAGE(vp, args->offset, args->count, 0, cr, &ct);
-	if (!error)
-		error = VOP_FSYNC(vp, FNODSYNC, cr, &ct);
-
+	error = VOP_FSYNC(vp, FNODSYNC, cr, &ct);
 	if (error) {
 		*cs->statusp = resp->status = puterrno4(error);
 		goto final;
