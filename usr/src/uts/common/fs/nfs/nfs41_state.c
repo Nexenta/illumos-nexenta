@@ -798,7 +798,7 @@ mds_session_create(rfs4_entry_t u_entry, void *arg)
 			    "<Internal Inconsistency>");
 		}
 		maxreq = ap->cs_aotw.csa_back_chan_attrs.ca_maxrequests;
-		if (maxreq > bc_max_req) {
+		if (maxreq < 1 || maxreq > bc_max_req) {
 			/*
 			 * RFC 5661 doesn't specify what error should be return,
 			 * only says that requested ca_maxrequests for back
