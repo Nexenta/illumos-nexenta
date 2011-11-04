@@ -1312,7 +1312,7 @@ mds_do_cb_recall(rfs4_deleg_state_t *dsp, bool_t trunc)
 	mutex_enter(&p->se_lock);
 	cbsap->csa_slotid = p->se_sltno;
 	cbsap->csa_sequenceid = p->se_seqid;
-	cbsap->csa_highest_slotid = svc_slot_maxslot(sp);
+	cbsap->csa_highest_slotid = svc_slot_maxslot(sp) - 1;
 	cbsap->csa_cachethis = FALSE;
 
 	/*

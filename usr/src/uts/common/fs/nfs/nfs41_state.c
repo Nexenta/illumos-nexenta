@@ -1453,7 +1453,7 @@ mds_do_lorecall(mds_lorec_t *lorec)
 	mutex_enter(&p->se_lock);
 	cbsap->csa_slotid = p->se_sltno;
 	cbsap->csa_sequenceid = p->se_seqid;
-	cbsap->csa_highest_slotid = svc_slot_maxslot(sp);
+	cbsap->csa_highest_slotid = svc_slot_maxslot(sp) - 1;
 	cbsap->csa_cachethis = FALSE;
 
 	/* no referring calling list for lo recall */
@@ -1996,7 +1996,7 @@ mds_do_notify_device(mds_notify_device_t *ndp)
 	mutex_enter(&p->se_lock);
 	cbsap->csa_slotid = p->se_sltno;
 	cbsap->csa_sequenceid = p->se_seqid;
-	cbsap->csa_highest_slotid = svc_slot_maxslot(sp);
+	cbsap->csa_highest_slotid = svc_slot_maxslot(sp) - 1;
 	cbsap->csa_cachethis = FALSE;
 
 	/* no referring calling list for device notifications */
