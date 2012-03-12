@@ -5295,6 +5295,17 @@ mds_lookupfile(component4 *component, struct svc_req *req,
 
 /*ARGSUSED*/
 static void
+mds_do_openfh(struct compound_state *cs, struct svc_req *req, OPEN4args *args,
+    rfs4_openowner_t *oo, OPEN4res *resp)
+{
+	/* cs->vp and cs->fh have been updated by putfh. */
+	mds_do_open(cs, req, oo, do_41_deleg_hack(args->share_access),
+	    (args->share_access & 0xff), args->share_deny, resp,
+	    0, NULL);
+}
+
+/*ARGSUSED*/
+static void
 mds_do_opennull(struct compound_state *cs,
 		struct svc_req *req,
 		OPEN4args *args,
@@ -5607,7 +5618,8 @@ retry:
 
 	/* Grace only applies to regular-type OPENs */
 	if (rfs4_clnt_in_grace(cp) &&
-	    (claim == CLAIM_NULL || claim == CLAIM_DELEGATE_CUR)) {
+	    (claim == CLAIM_NULL || claim == CLAIM_DELEGATE_CUR ||
+	    claim == CLAIM_FH)) {
 		*cs->statusp = resp->status = NFS4ERR_GRACE;
 		goto out;
 	}
@@ -5677,7 +5689,9 @@ retry:
 	case CLAIM_DELEGATE_PREV:
 		mds_do_opendelprev(cs, req, args, oo, resp);
 		break;
-	/*  OTHER CLAIM TYPES !!! */
+	case CLAIM_FH:
+		mds_do_openfh(cs, req, args, oo, resp);
+		break;
 	default:
 		resp->status = NFS4ERR_INVAL;
 		break;
