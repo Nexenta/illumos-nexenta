@@ -1,3 +1,6 @@
+nfs-41 gate is based on illumos-gate. NFSv41 patchsets are rebased each
+time when updated base.
+
 illumos gate README - Sept 12, 2010.
 
 This is the illumos gate.  This is the illumos source tree.  It contains
