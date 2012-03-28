@@ -33,7 +33,7 @@
  */
 
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -134,7 +134,7 @@ struct smbfs_fctx {
 	int		f_left;		/* entries left */
 	int		f_ecnt;		/* entries left in current response */
 	int		f_eofs;		/* entry offset in data block */
-	uchar_t 	f_skey[SMB_SKEYLEN]; /* server side search context */
+	uchar_t		f_skey[SMB_SKEYLEN]; /* server side search context */
 	uchar_t		f_fname[8 + 1 + 3 + 1]; /* for 8.3 filenames */
 	uint16_t	f_Sid;		/* Search handle (like a FID) */
 	uint16_t	f_infolevel;
@@ -161,6 +161,9 @@ int  smbfs_smb_qfsattr(struct smb_share *ssp, struct smb_fs_attr_info *,
 	struct smb_cred *scrp);
 int  smbfs_smb_statfs(struct smb_share *ssp, statvfs64_t *sbp,
 	struct smb_cred *scrp);
+
+int  smbfs_smb_setdisp(struct smbnode *np, uint16_t fid, uint8_t newdisp,
+	struct smb_cred *scrp);
 int  smbfs_smb_setfsize(struct smbnode *np, uint16_t fid, uint64_t newsize,
 	struct smb_cred *scrp);
 
@@ -186,8 +189,8 @@ int  smbfs_smb_delete(struct smbnode *np, struct smb_cred *scrp,
 	const char *name, int len, int xattr);
 int  smbfs_smb_rename(struct smbnode *src, struct smbnode *tdnp,
 	const char *tname, int tnmlen, struct smb_cred *scrp);
-int  smbfs_smb_t2rename(struct smbnode *np, struct smbnode *tdnp,
-	const char *tname, int tnmlen, struct smb_cred *scrp, int overwrite);
+int  smbfs_smb_t2rename(struct smbnode *np, const char *tname, int tnmlen,
+	struct smb_cred *scrp, uint16_t fid, int replace);
 int  smbfs_smb_move(struct smbnode *src, struct smbnode *tdnp,
 	const char *tname, int tnmlen, uint16_t flags, struct smb_cred *scrp);
 int  smbfs_smb_mkdir(struct smbnode *dnp, const char *name, int len,
@@ -234,6 +237,12 @@ void smbfs_zonelist_remove(smbmntinfo_t *smi);
 int smbfs_check_table(struct vfs *vfsp, struct smbnode *srp);
 void smbfs_destroy_table(struct vfs *vfsp);
 void smbfs_rflush(struct vfs *vfsp, cred_t *cr);
+void smbfs_flushall(cred_t *cr);
+
+int smbfs_directio(vnode_t *vp, int cmd, cred_t *cr);
+
+uint32_t smbfs_newnum(void);
+int smbfs_newname(char *buf, size_t buflen);
 
 /*
  * Function definitions - those having to do with
@@ -248,7 +257,9 @@ void smbfs_attrcache_rm_locked(struct smbnode *np);
 #endif
 void smbfs_attr_touchdir(struct smbnode *dnp);
 void smbfs_attrcache_fa(vnode_t *vp, struct smbfattr *fap);
-void smbfs_cache_check(struct vnode *vp, struct smbfattr *fap);
+
+int smbfs_validate_caches(struct vnode *vp, cred_t *cr);
+void smbfs_purge_caches(struct vnode *vp, cred_t *cr);
 
 void smbfs_addfree(struct smbnode *sp);
 void smbfs_rmhash(struct smbnode *);
@@ -276,6 +287,8 @@ int smbfs_readvnode(vnode_t *, uio_t *, cred_t *, struct vattr *);
 int smbfs_writevnode(vnode_t *vp, uio_t *uiop, cred_t *cr,
 			int ioflag, int timo);
 int smbfsgetattr(vnode_t *vp, struct vattr *vap, cred_t *cr);
+
+void smbfs_invalidate_pages(vnode_t *vp, u_offset_t off, cred_t *cr);
 
 /* smbfs ACL support */
 int smbfs_acl_getids(vnode_t *, cred_t *);
