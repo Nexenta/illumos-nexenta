@@ -182,7 +182,8 @@ typedef struct {
 	ds_verifier	dmi_mds_boot_verifier;
 } dserv_mds_instance_t;
 
-#define	DSERV_MDS_INSTANCE_NET_VALID 0x01
+#define	DSERV_MDS_INSTANCE_NET_VALID	0x01
+#define	DSERV_MDS_INSTANCE_PORT_VALID	0x02
 
 /*
  * Useful macros

@@ -1037,6 +1037,7 @@ dserv_mds_addport(const char *uaddr, const char *proto, const char *aname)
 	mutex_enter(&inst->dmi_content_lock);
 	list_insert_tail(&inst->dmi_uaddrs, keep);
 	inst->dmi_name = dserv_strdup(in);
+	inst->dmi_flags |= DSERV_MDS_INSTANCE_PORT_VALID;
 	mutex_exit(&inst->dmi_content_lock);
 
 	dserv_instance_exit(inst);
@@ -1244,6 +1245,10 @@ dserv_mds_reportavail()
 	if (error) {
 		return (error);
 	}
+
+	if (!(inst->dmi_flags & DSERV_MDS_INSTANCE_NET_VALID &&
+	    inst->dmi_flags & DSERV_MDS_INSTANCE_PORT_VALID))
+		error = EDESTADDRREQ;
 
 	/*
 	 * Start a heartbeat thread from the DS
