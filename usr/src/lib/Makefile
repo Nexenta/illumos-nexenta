@@ -164,6 +164,7 @@ SUBDIRS +=				\
 	libmapid	\
 	libmapmalloc	\
 	libmd5		\
+	libmlrpc	\
 	libmtmalloc	\
 	libmvec		\
 	libndmp		\
@@ -427,6 +428,7 @@ HDRSUBDIRS=				\
 	libmail		\
 	libmapid	\
 	libmd		\
+	libmlrpc	\
 	libmtmalloc	\
 	libndmp		\
 	libnsctl	\
@@ -634,6 +636,7 @@ libkrrp:	libuuid libsysevent libumem libzfs
 libkvm:		../cmd/sgs/libelf
 libldap5:	libsasl
 libmapid:	libresolv2 libscf
+libmlrpc:	libsmbfs libuuid
 libndmp:	libscf
 libnisdb:	libldap5
 libnwam:	libscf libbsm libdladm libipadm
@@ -703,7 +706,7 @@ sasl_plugins:	pkcs11 libgss libsasl
 scsi:		libfru libumem libdevid libdevinfo
 smbsrv:		libxnet libpthread librt libshare libidmap pkcs11 libsqlite \
 		libcryptoutil libreparse libcmdutils libresolv2 libsmbfs \
-		libuuid libfakekernel libads libgss libldap5 krb5
+		libuuid libfakekernel libads libgss libldap5 krb5 libmlrpc
 storage:	libdevice libdevinfo libdevid
 sun_fc:		libdevinfo libsysevent
 sun_sas:	libdevinfo libsysevent libkstat libdevid
