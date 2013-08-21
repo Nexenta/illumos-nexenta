@@ -99,6 +99,7 @@ static clock_t rfs4_lock_delay = RFS4_LOCK_DELAY;
 int mds_strict_seqid = 0;
 
 static void ping_cb_null_thr(mds_session_t *);
+static void pnfsd_roc(nfs_server_instance_t *, rfs4_file_t *, rfs4_client_t *);
 
 /* End of Tunables */
 
@@ -6036,6 +6037,7 @@ mds_op_close(nfs_argop4 *argop, nfs_resop4 *resop,
 
 	rfs4_update_lease(sp->rs_owner->ro_client);
 	rfs4_state_close(sp, FALSE, FALSE, cs->cr);
+	pnfsd_roc(cs->instp, sp->rs_finfo, sp->rs_owner->ro_client);
 
 	*cs->statusp = resp->status = status;
 
@@ -8538,7 +8540,7 @@ mds_fetch_layout(struct compound_state *cs,
 
 	resp->LAYOUTGET4res_u.logr_resok4.logr_layout.logr_layout_len = 1;
 	resp->LAYOUTGET4res_u.logr_resok4.logr_layout.logr_layout_val = logrp;
-	resp->LAYOUTGET4res_u.logr_resok4.logr_return_on_close = FALSE;
+	resp->LAYOUTGET4res_u.logr_resok4.logr_return_on_close = TRUE;
 	resp->LAYOUTGET4res_u.logr_will_signal_layout_avail = FALSE;
 	rfs41_lo_seqid(&lg->lo_stateid);
 	resp->LAYOUTGET4res_u.logr_resok4.logr_stateid =
@@ -8950,6 +8952,20 @@ pnfsd_file_layout_return(rfs4_file_t *fp, mds_layout_grant_t *lg,
 		 */
 #endif
 	}
+}
+
+static void
+pnfsd_roc(nfs_server_instance_t *instp, rfs4_file_t *fp, rfs4_client_t *cp)
+{
+	mds_layout_grant_t *lg;
+	bool_t nocreate = FALSE;
+
+	lg = rfs41_findlogrant(instp, fp, cp, &nocreate);
+	if (lg == NULL)
+		return;
+
+	pnfsd_file_layout_return(fp, lg, 0, -1);
+	rfs41_lo_grant_rele(lg); /* from findlogrant */
 }
 
 nfsstat4
