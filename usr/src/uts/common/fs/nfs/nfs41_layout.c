@@ -448,29 +448,23 @@ mds_add_layout(layout_core_t *lc)
 }
 
 static char *
-mds_read_odl(char *path, int *size)
+mds_read_odl(vnode_t *vp, int *size)
 {
 	struct uio uio;
 	struct iovec iov;
-
 	char *odlp;
-	vnode_t *vp;
 	vattr_t va;
 	int sz, err, bad_file;
 
 	*size = 0;
-	if (path == NULL)
-		return (NULL);
+
+	ASSERT(vp->v_type == VREG);
 
 	/*
 	 * open the layout file.
 	 */
-	if ((err = vn_open(path, UIO_SYSSPACE, FREAD, 0, &vp, 0, 0)) != 0) {
-		return (NULL);
-	}
-
-	if (vp->v_type != VREG) {
-		(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
+	VN_HOLD(vp);
+	if ((err = VOP_OPEN(&vp, FREAD, CRED(), NULL)) != 0) {
 		VN_RELE(vp);
 		return (NULL);
 	}
@@ -510,8 +504,8 @@ mds_read_odl(char *path, int *size)
 	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 		(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
-		VN_RELE(vp);
 		kmem_free(odlp, sz);
+		VN_RELE(vp);
 		return (NULL);
 	}
 
@@ -764,10 +758,7 @@ int
 mds_get_odl(vnode_t *vp, mds_layout_t **plp)
 {
 	char	*odlp;
-	int	len, size;
-	int	i;
-	char	*name;
-
+	int	size, i;
 	mds_layout_t	*lp;
 	layout_core_t	lc;
 	odl	*on_disk;
@@ -776,20 +767,13 @@ mds_get_odl(vnode_t *vp, mds_layout_t **plp)
 
 	ASSERT(plp != NULL);
 
-	name = mds_create_name(vp, &len);
-	if (name == NULL)
+	odlp = mds_read_odl(vp, &size);
+	if (odlp == NULL)
 		return (NFS4ERR_LAYOUTTRYLATER);
-
-	odlp = mds_read_odl(name, &size);
-	if (odlp == NULL) {
-		kmem_free(name, len);
-		return (NFS4ERR_LAYOUTTRYLATER);
-	}
 
 	/* the magic xdr decode routine */
 	on_disk = xdr_convert_odl(odlp, size);
 
-	kmem_free(name, len);
 	kmem_free(odlp, size);
 
 	if (on_disk == NULL)
