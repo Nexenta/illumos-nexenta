@@ -50,14 +50,10 @@ enum odl_pnfs_lo_vers {
 union odl_lo switch (odl_pnfs_lo_vers odl_vers) {
 case VERS_1:
 	odl_t odl_content<>;
-default:
-	void;
 };
 
 union odl switch (odl_layout_type odl_type) {
 case PNFS:
 	odl_lo	odl_pnfs;
-default:
-	void;
 };
 
