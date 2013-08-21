@@ -8541,7 +8541,6 @@ mds_fetch_layout(struct compound_state *cs,
 	resp->LAYOUTGET4res_u.logr_resok4.logr_layout.logr_layout_len = 1;
 	resp->LAYOUTGET4res_u.logr_resok4.logr_layout.logr_layout_val = logrp;
 	resp->LAYOUTGET4res_u.logr_resok4.logr_return_on_close = TRUE;
-	resp->LAYOUTGET4res_u.logr_will_signal_layout_avail = FALSE;
 	rfs41_lo_seqid(&lg->lo_stateid);
 	resp->LAYOUTGET4res_u.logr_resok4.logr_stateid =
 	    lg->lo_stateid.stateid;
