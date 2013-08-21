@@ -65,6 +65,7 @@ void ds_exchange(DS_EXIBIargs *, DS_EXIBIres *, struct svc_req *);
 void ds_sec_info(DS_SECINFOargs *, DS_SECINFOres *, struct svc_req *);
 void ds_fmatpt(DS_FMATPTargs *, DS_FMATPTres *, struct svc_req *);
 void ds_shutdown(DS_SHUTDOWNargs *, DS_SHUTDOWNres *, struct svc_req *);
+void ds_file_update(DS_FILEUPDATEargs *, DS_FILEUPDATEres *, struct svc_req *);
 
 void nfs_ds_cp_dispatch(struct svc_req *, SVCXPRT *);
 
@@ -92,6 +93,7 @@ union nfs_ds_cp_sarg {
 	DS_SECINFOargs			ds_secinfo;
 	DS_FMATPTargs			ds_fmatpt;
 	DS_SHUTDOWNargs			ds_shutdown;
+	DS_FILEUPDATEargs		ds_file_update;
 };
 
 union nfs_ds_cp_sres {
@@ -103,6 +105,7 @@ union nfs_ds_cp_sres {
 	DS_SECINFOres			ds_secinfo;
 	DS_FMATPTres			ds_fmatpt;
 	DS_SHUTDOWNres			ds_shutdown;
+	DS_FILEUPDATEres		ds_file_update;
 };
 
 struct nfs_cp_disp nfs_ds_cp_v1[] = {
@@ -122,7 +125,10 @@ struct nfs_cp_disp nfs_ds_cp_v1[] = {
 	{ds_sec_info, xdr_DS_SECINFOargs, xdr_DS_SECINFOres,
 	    nullfree, "DS_SecInfo"},
 	{ds_shutdown, xdr_DS_SHUTDOWNargs, xdr_DS_SHUTDOWNres,
-	    nullfree, "DS_ShutDown"}
+	 nullfree, "DS_ShutDown"},
+	{ds_file_update, xdr_DS_FILEUPDATEargs, xdr_DS_FILEUPDATEres,
+	 nullfree, "DS_FileUpdate"},
+
 };
 
 static uint_t nfs_ds_cp_cnt =
@@ -581,6 +587,17 @@ ds_shutdown(DS_SHUTDOWNargs *argp, DS_SHUTDOWNres *resp, struct svc_req *rqstp)
 	 * insert server code here
 	 */
 	resp->status = DSERR_NOTSUPP;
+}
+
+/* ARGSUSED */
+void
+ds_file_update(DS_FILEUPDATEargs *argp, DS_FILEUPDATEres *resp,
+    struct svc_req *rqstp)
+{
+	/*
+	 * insert server code here
+	 */
+	resp->status = DS_OK;
 }
 
 int
