@@ -503,7 +503,7 @@ mds_read_odl(vnode_t *vp, int *size)
 }
 
 /*
- * blah
+ * return 0, if success
  */
 static int
 mds_write_odl(vnode_t *vp, char *odlp, int size)
@@ -528,6 +528,9 @@ mds_write_odl(vnode_t *vp, char *odlp, int size)
 	(void) VOP_RWLOCK(vp, V_WRITELOCK_TRUE, NULL);
 	err = VOP_WRITE(vp, &uio, ioflag, CRED(), NULL);
 	VOP_RWUNLOCK(vp, V_WRITELOCK_TRUE, NULL);
+
+	if (err == 0 && uio.uio_resid > 0)
+		err = EFBIG;
 
 	return (err);
 }
