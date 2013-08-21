@@ -171,33 +171,11 @@ mds_gather_mds_sids(rfs4_entry_t entry, void *arg)
 	ds_guid_info_t		*pgi = (ds_guid_info_t *)entry;
 	struct mds_gather_args	*gap = (struct mds_gather_args *)arg;
 
-	int i, j;
-
 	if (rfs4_dbe_skip_or_invalid(pgi->dbe))
 		return;
 
 	if (gap->found < gap->lc.lc_stripe_count) {
-		/*
-		 * Insert in order.
-		 */
-		for (i = 0; i < gap->found; i++) {
-			if ((pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_len <
-			    gap->lc.lc_mds_sids[i].len) ||
-			    (pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_len ==
-			    gap->lc.lc_mds_sids[i].len &&
-			    bcmp(pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_val,
-			    gap->lc.lc_mds_sids[i].val,
-			    gap->lc.lc_mds_sids[i].len) < 0)) {
-				for (j = gap->found; j > i; j--) {
-					gap->lc.lc_mds_sids[j].len =
-					    gap->lc.lc_mds_sids[j - 1].len;
-					gap->lc.lc_mds_sids[j - 1].val =
-					    gap->lc.lc_mds_sids[j].val;
-				}
-
-				break;
-			}
-		}
+		int i = gap->found;
 
 		/*
 		 * Either we found it and i is where it goes or we didn't
