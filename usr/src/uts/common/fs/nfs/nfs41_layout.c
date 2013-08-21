@@ -470,7 +470,8 @@ mds_read_odl(vnode_t *vp, int *size)
 	(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, NULL);
 
 	/*
-	 * get the file size.
+	 * Use VOP_GETATTR, because nfs_vop_getattr
+	 * returns "corrected" size
 	 */
 	va.va_mask = AT_SIZE;
 	err = VOP_GETATTR(vp, &va, 0, CRED(), NULL);

@@ -238,7 +238,7 @@ rfs_setattr(struct nfssaargs *args, struct nfsattrstat *ns,
 
 		bva.va_mask = AT_UID | AT_SIZE;
 
-		error = VOP_GETATTR(vp, &bva, 0, cr, &ct);
+		error = nfs_vop_getattr(vp, &bva, 0, cr, &ct, exi);
 
 		if (error) {
 			if (in_crit)
@@ -287,7 +287,7 @@ rfs_setattr(struct nfssaargs *args, struct nfsattrstat *ns,
 	 * Do the setattr.
 	 */
 	if (!error && va.va_mask) {
-		error = VOP_SETATTR(vp, &va, flag, cr, &ct);
+		error = nfs_vop_setattr(vp, &va, flag, cr, &ct, exi);
 	}
 
 	/*
@@ -508,7 +508,7 @@ rfs_readlink(fhandle_t *fhp, struct nfsrdlnres *rl, struct exportinfo *exi,
 
 	va.va_mask = AT_MODE;
 
-	error = VOP_GETATTR(vp, &va, 0, cr, NULL);
+	error = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi);
 
 	if (error) {
 		VN_RELE(vp);
@@ -697,7 +697,7 @@ rfs_read(struct nfsreadargs *ra, struct nfsrdresult *rr,
 
 	va.va_mask = AT_ALL;
 
-	error = VOP_GETATTR(vp, &va, 0, cr, &ct);
+	error = nfs_vop_getattr(vp, &va, 0, cr, &ct, exi);
 
 	if (error) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, &ct);
@@ -836,7 +836,7 @@ rfs_read(struct nfsreadargs *ra, struct nfsrdresult *rr,
 	 */
 	va.va_mask = AT_ALL;
 
-	error = VOP_GETATTR(vp, &va, 0, cr, &ct);
+	error = nfs_vop_getattr(vp, &va, 0, cr, &ct, exi);
 
 	if (error) {
 		if (mp)
@@ -956,7 +956,7 @@ rfs_write_sync(struct nfswriteargs *wa, struct nfsattrstat *ns,
 
 	va.va_mask = AT_UID|AT_MODE;
 
-	error = VOP_GETATTR(vp, &va, 0, cr, &ct);
+	error = nfs_vop_getattr(vp, &va, 0, cr, &ct, exi);
 
 	if (error) {
 		VN_RELE(vp);
@@ -1108,7 +1108,7 @@ rfs_write_sync(struct nfswriteargs *wa, struct nfsattrstat *ns,
 		 */
 		va.va_mask = AT_ALL;	/* now we want everything */
 
-		error = VOP_GETATTR(vp, &va, 0, cr, &ct);
+		error = nfs_vop_getattr(vp, &va, 0, cr, &ct, exi);
 
 		/* check for overflows */
 		if (!error) {
@@ -1426,7 +1426,7 @@ rfs_write(struct nfswriteargs *wa, struct nfsattrstat *ns,
 
 		va.va_mask = AT_UID|AT_MODE;
 
-		error = VOP_GETATTR(vp, &va, 0, rp->cr, &ct);
+		error = nfs_vop_getattr(vp, &va, 0, rp->cr, &ct, exi);
 
 		if (!error) {
 			if (crgetuid(rp->cr) != va.va_uid) {
@@ -1602,7 +1602,7 @@ rfs_write(struct nfswriteargs *wa, struct nfsattrstat *ns,
 			 */
 			va.va_mask = AT_ALL;	/* now we want everything */
 
-			error = VOP_GETATTR(vp, &va, 0, rp->cr, &ct);
+			error = nfs_vop_getattr(vp, &va, 0, rp->cr, &ct, exi);
 
 			if (!error)
 				acl_perm(vp, exi, &va, rp->cr);
@@ -1780,7 +1780,7 @@ rfs_create(struct nfscreatargs *args, struct nfsdiropres *dr,
 
 			lookup_ok = 1;
 			at.va_mask = AT_MODE;
-			error = VOP_GETATTR(tvp, &at, 0, cr, NULL);
+			error = nfs_vop_getattr(tvp, &at, 0, cr, NULL, exi);
 			if (!error)
 				mode = (at.va_mode & S_IWUSR) ? VWRITE : VREAD;
 			VN_RELE(tvp);
@@ -1831,7 +1831,7 @@ rfs_create(struct nfscreatargs *args, struct nfsdiropres *dr,
 			in_crit = 1;
 
 			bva.va_mask = AT_SIZE;
-			error = VOP_GETATTR(tvp, &bva, 0, cr, NULL);
+			error = nfs_vop_getattr(tvp, &bva, 0, cr, NULL, exi);
 			if (!error) {
 				if (va.va_size < bva.va_size) {
 					offset = va.va_size;
@@ -1884,7 +1884,7 @@ rfs_create(struct nfscreatargs *args, struct nfsdiropres *dr,
 			}
 			va.va_mask = AT_ALL;
 
-			error = VOP_GETATTR(vp, &va, 0, cr, NULL);
+			error = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi);
 
 			/* check for overflows */
 			if (!error) {
@@ -2408,7 +2408,7 @@ rfs_mkdir(struct nfscreatargs *args, struct nfsdiropres *dr,
 		 * be returned to the client.
 		 */
 		va.va_mask = AT_ALL; /* We want everything */
-		error = VOP_GETATTR(dvp, &va, 0, cr, NULL);
+		error = nfs_vop_getattr(dvp, &va, 0, cr, NULL, exi);
 
 		/* check for overflows */
 		if (!error) {

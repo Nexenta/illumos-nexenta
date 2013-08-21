@@ -803,7 +803,7 @@ mds_setattr(attrmap4 *resp, fattr4 *fattrp, struct compound_state *cs,
 		vattr_t va;
 
 		va.va_mask = AT_MODE;
-		error = VOP_GETATTR(vp, &va, 0, cs->cr, &ct);
+		error = nfs_vop_getattr(vp, &va, 0, cs->cr, &ct, cs->exi);
 		if (error) {
 			status = puterrno4(error);
 			goto done;
@@ -866,7 +866,7 @@ mds_setattr(attrmap4 *resp, fattr4 *fattrp, struct compound_state *cs,
 		}
 
 		bva.va_mask = AT_UID|AT_SIZE;
-		if (error = VOP_GETATTR(vp, &bva, 0, cr, &ct)) {
+		if (error = nfs_vop_getattr(vp, &bva, 0, cr, &ct, cs->exi)) {
 			status = puterrno4(error);
 			goto done;
 		}
@@ -887,20 +887,26 @@ mds_setattr(attrmap4 *resp, fattr4 *fattrp, struct compound_state *cs,
 		}
 
 		if (crgetuid(cr) == bva.va_uid) {
+			off64_t offset = sarg.vap->va_size;
+
+			if (pnfs_enabled(cs->exi))
+				offset = pnfs_shadow_size(sarg.vap->va_size);
+
 			sarg.vap->va_mask &= ~AT_SIZE;
 			bf.l_type = F_WRLCK;
 			bf.l_whence = 0;
-			bf.l_start = (off64_t)sarg.vap->va_size;
+			bf.l_start = offset;
 			bf.l_len = 0;
 			bf.l_sysid = 0;
 			bf.l_pid = 0;
 			error = VOP_SPACE(vp, F_FREESP, &bf, FWRITE,
-			    (offset_t)sarg.vap->va_size, cr, &ct);
+			    0, cr, &ct);
 		}
 	}
 
 	if (!error && sarg.vap->va_mask != 0)
-		error = VOP_SETATTR(vp, sarg.vap, sarg.flag, cr, &ct);
+		error = nfs_vop_setattr(vp, sarg.vap, sarg.flag, cr, &ct,
+		    cs->exi);
 
 	/* restore va_mask -- ufs_setattr clears AT_SIZE */
 	if (saved_mask & AT_SIZE)
@@ -1263,7 +1269,7 @@ mds_op_access(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * as well be reflected to the server during the open.
 	 */
 	va.va_mask = AT_MODE;
-	error = VOP_GETATTR(vp, &va, 0, cr, NULL);
+	error = nfs_vop_getattr(vp, &va, 0, cr, NULL, cs->exi);
 	if (error) {
 		*cs->statusp = resp->status = puterrno4(error);
 		goto final;
@@ -1391,7 +1397,7 @@ mds_op_commit(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	ct.cc_flags = CC_DONTBLOCK;
 
 	va.va_mask = AT_UID;
-	error = VOP_GETATTR(vp, &va, 0, cr, &ct);
+	error = nfs_vop_getattr(vp, &va, 0, cr, &ct, cs->exi);
 
 	/*
 	 * If we can't get the attributes, then we can't do the
@@ -1556,7 +1562,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	/* Get "before" change value */
 	bva.va_mask = AT_CTIME|AT_SEQ;
-	error = VOP_GETATTR(dvp, &bva, 0, cr, &ct);
+	error = nfs_vop_getattr(dvp, &bva, 0, cr, &ct, cs->exi);
 	if (error) {
 		*cs->statusp = resp->status = puterrno4(error);
 		kmem_free(nm, len);
@@ -1599,7 +1605,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		 * set to zero
 		 */
 		iva.va_mask = AT_SEQ;
-		if (VOP_GETATTR(dvp, &iva, 0, cs->cr, &ct))
+		if (nfs_vop_getattr(dvp, &iva, 0, cs->cr, &ct, cs->exi))
 			iva.va_seq = 0;
 		break;
 	case NF4LNK:
@@ -1644,7 +1650,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		 * set to zero
 		 */
 		iva.va_mask = AT_SEQ;
-		if (VOP_GETATTR(dvp, &iva, 0, cs->cr, &ct))
+		if (nfs_vop_getattr(dvp, &iva, 0, cs->cr, &ct, cs->exi))
 			iva.va_seq = 0;
 
 		error = VOP_LOOKUP(dvp, nm, &vp, NULL, 0, NULL, cr,
@@ -1657,7 +1663,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		 * if it has changed zero out iva to force atomic = FALSE.
 		 */
 		iva2.va_mask = AT_SEQ;
-		if (VOP_GETATTR(dvp, &iva2, 0, cs->cr, &ct) ||
+		if (nfs_vop_getattr(dvp, &iva2, 0, cs->cr, &ct, cs->exi) ||
 		    iva2.va_seq != iva.va_seq)
 			iva.va_seq = 0;
 		break;
@@ -1687,7 +1693,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		 * set to zero
 		 */
 		iva.va_mask = AT_SEQ;
-		if (VOP_GETATTR(dvp, &iva, 0, cs->cr, &ct))
+		if (nfs_vop_getattr(dvp, &iva, 0, cs->cr, &ct, cs->exi))
 			iva.va_seq = 0;
 
 		break;
@@ -1717,7 +1723,7 @@ mds_op_create(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * before value.
 	 */
 	ava.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(dvp, &ava, 0, cr, &ct)) {
+	if (nfs_vop_getattr(dvp, &ava, 0, cr, &ct, cs->exi)) {
 		ava.va_ctime = bva.va_ctime;
 		ava.va_seq = 0;
 	}
@@ -2027,7 +2033,7 @@ mds_op_link(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	/* Get "before" change value */
 	bdva.va_mask = AT_CTIME|AT_SEQ;
-	error = VOP_GETATTR(dvp, &bdva, 0, cs->cr, &ct);
+	error = nfs_vop_getattr(dvp, &bdva, 0, cs->cr, &ct, cs->exi);
 	if (error) {
 		*cs->statusp = resp->status = puterrno4(error);
 		kmem_free(nm, len);
@@ -2044,7 +2050,7 @@ mds_op_link(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * Get the initial "after" sequence number, if it fails, set to zero
 	 */
 	idva.va_mask = AT_SEQ;
-	if (VOP_GETATTR(dvp, &idva, 0, cs->cr, &ct))
+	if (nfs_vop_getattr(dvp, &idva, 0, cs->cr, &ct, cs->exi))
 		idva.va_seq = 0;
 
 	/*
@@ -2063,7 +2069,7 @@ mds_op_link(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * before value.
 	 */
 	adva.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(dvp, &adva, 0, cs->cr, &ct)) {
+	if (nfs_vop_getattr(dvp, &adva, 0, cs->cr, &ct, cs->exi)) {
 		adva.va_ctime = bdva.va_ctime;
 		adva.va_seq = 0;
 	}
@@ -3043,7 +3049,7 @@ mds_op_readlink(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	ct.cc_flags = CC_DONTBLOCK;
 
 	va.va_mask = AT_MODE;
-	error = VOP_GETATTR(vp, &va, 0, cs->cr, &ct);
+	error = nfs_vop_getattr(vp, &va, 0, cs->cr, &ct, cs->exi);
 	if (error) {
 		*cs->statusp = resp->status = puterrno4(error);
 		goto final;
@@ -3353,7 +3359,7 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	/* Get dir "before" change value */
 	bdva.va_mask = AT_CTIME|AT_SEQ;
-	error = VOP_GETATTR(dvp, &bdva, 0, cs->cr, &ct);
+	error = nfs_vop_getattr(dvp, &bdva, 0, cs->cr, &ct, cs->exi);
 	if (error) {
 		*cs->statusp = resp->status = puterrno4(error);
 		kmem_free(nm, len);
@@ -3397,7 +3403,8 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		 * manipulating dvp.
 		 */
 		va.va_mask = AT_NLINK;
-		if (!VOP_GETATTR(vp, &va, 0, cs->cr, &ct) && va.va_nlink == 0) {
+		if (!nfs_vop_getattr(vp, &va, 0, cs->cr, &ct, cs->exi) &&
+		    va.va_nlink == 0) {
 			if (in_crit) {
 				nbl_end_crit(vp);
 				in_crit = 0;
@@ -3446,7 +3453,7 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * Get the initial "after" sequence number, if it fails, set to zero
 	 */
 	idva.va_mask = AT_SEQ;
-	if (VOP_GETATTR(dvp, &idva, 0, cs->cr, &ct))
+	if (nfs_vop_getattr(dvp, &idva, 0, cs->cr, &ct, cs->exi))
 		idva.va_seq = 0;
 
 	/*
@@ -3459,7 +3466,7 @@ mds_op_remove(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * before value.
 	 */
 	adva.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(dvp, &adva, 0, cs->cr, &ct)) {
+	if (nfs_vop_getattr(dvp, &adva, 0, cs->cr, &ct, cs->exi)) {
 		adva.va_ctime = bdva.va_ctime;
 		adva.va_seq = 0;
 	}
@@ -3677,10 +3684,10 @@ mds_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 	/* Get source "before" change value */
 	obdva.va_mask = AT_CTIME|AT_SEQ;
-	error = VOP_GETATTR(odvp, &obdva, 0, cs->cr, &ct);
+	error = nfs_vop_getattr(odvp, &obdva, 0, cs->cr, &ct, cs->saved_exi);
 	if (!error) {
 		nbdva.va_mask = AT_CTIME|AT_SEQ;
-		error = VOP_GETATTR(ndvp, &nbdva, 0, cs->cr, &ct);
+		error = nfs_vop_getattr(ndvp, &nbdva, 0, cs->cr, &ct, cs->exi);
 	}
 	if (error) {
 		*cs->statusp = resp->status = puterrno4(error);
@@ -3703,7 +3710,8 @@ mds_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 
 		if (tvp) {
 			va.va_mask = AT_NLINK;
-			if (!VOP_GETATTR(tvp, &va, 0, cs->cr, &ct) &&
+			if (!nfs_vop_getattr(tvp, &va, 0, cs->cr, &ct,
+				cs->exi) &&
 			    va.va_nlink == 0) {
 				/* The file is gone and so should the state */
 				if (in_crit_targ) {
@@ -3755,11 +3763,11 @@ mds_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * Get the initial "after" sequence number, if it fails, set to zero
 	 */
 	oidva.va_mask = AT_SEQ;
-	if (VOP_GETATTR(odvp, &oidva, 0, cs->cr, &ct))
+	if (nfs_vop_getattr(odvp, &oidva, 0, cs->cr, &ct, cs->saved_exi))
 		oidva.va_seq = 0;
 
 	nidva.va_mask = AT_SEQ;
-	if (VOP_GETATTR(ndvp, &nidva, 0, cs->cr, &ct))
+	if (nfs_vop_getattr(ndvp, &nidva, 0, cs->cr, &ct, cs->exi))
 		nidva.va_seq = 0;
 
 	/*
@@ -3778,13 +3786,13 @@ mds_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	 * before value.
 	 */
 	oadva.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(odvp, &oadva, 0, cs->cr, &ct)) {
+	if (nfs_vop_getattr(odvp, &oadva, 0, cs->cr, &ct, cs->saved_exi)) {
 		oadva.va_ctime = obdva.va_ctime;
 		oadva.va_seq = 0;
 	}
 
 	nadva.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(ndvp, &nadva, 0, cs->cr, &ct)) {
+	if (nfs_vop_getattr(ndvp, &nadva, 0, cs->cr, &ct, cs->exi)) {
 		nadva.va_ctime = nbdva.va_ctime;
 		nadva.va_seq = 0;
 	}
@@ -4400,8 +4408,9 @@ mds_createfile_get_layout(struct svc_req *req, vnode_t *vp,
 	if (!pnfs_enabled(cs->exi))
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
 
+	/* Be careful if want to know size because real size is hidden */
 	spe_va.va_mask = AT_GID|AT_UID;
-	error = VOP_GETATTR(vp, &spe_va, 0, cs->cr, ct);
+	error = nfs_vop_getattr(vp, &spe_va, 0, cs->cr, ct, cs->exi);
 	if (error)
 		return (puterrno4(error));
 
@@ -4540,7 +4549,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	}
 
 	bva.va_mask = AT_TYPE|AT_CTIME|AT_SEQ;
-	error = VOP_GETATTR(dvp, &bva, 0, cs->cr, NULL);
+	error = nfs_vop_getattr(dvp, &bva, 0, cs->cr, NULL, cs->exi);
 	if (error) {
 		kmem_free(nm, buflen);
 		return (puterrno4(error));
@@ -4681,7 +4690,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	 * set to zero, time to before.
 	 */
 	iva.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(dvp, &iva, 0, cs->cr, NULL)) {
+	if (nfs_vop_getattr(dvp, &iva, 0, cs->cr, NULL, cs->exi)) {
 		iva.va_seq = 0;
 		iva.va_ctime = bva.va_ctime;
 	}
@@ -4712,7 +4721,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 		 * before value.
 		 */
 		ava.va_mask = AT_CTIME|AT_SEQ;
-		if (VOP_GETATTR(dvp, &ava, 0, cs->cr, NULL)) {
+		if (nfs_vop_getattr(dvp, &ava, 0, cs->cr, NULL, cs->exi)) {
 			ava.va_ctime = bva.va_ctime;
 			ava.va_seq = 0;
 		}
@@ -4740,7 +4749,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	/* Assume the worst */
 	cs->mandlock = TRUE;
 
-	if (VOP_GETATTR(vp, &cva, 0, cs->cr, NULL) == 0) {
+	if (nfs_vop_getattr(vp, &cva, 0, cs->cr, NULL, cs->exi) == 0) {
 		cs->mandlock = MANDLOCK(cs->vp, cva.va_mode);
 
 		/*
@@ -4795,7 +4804,8 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 
 			cva.va_mask = AT_SIZE;
 			cva.va_size = reqsize;
-			(void) VOP_SETATTR(vp, &cva, 0, cs->cr, &ct);
+			(void) nfs_vop_setattr(vp, &cva, 0, cs->cr, &ct,
+			    cs->exi);
 			if (in_crit)
 				nbl_end_crit(vp);
 		}
@@ -5232,7 +5242,7 @@ mds_lookupfile(component4 *component, struct svc_req *req,
 
 	/* Get "before" change value */
 	bva.va_mask = AT_CTIME|AT_SEQ;
-	error = VOP_GETATTR(dvp, &bva, 0, cs->cr, NULL);
+	error = nfs_vop_getattr(dvp, &bva, 0, cs->cr, NULL, cs->exi);
 	if (error)
 		return (puterrno4(error));
 
@@ -5253,7 +5263,7 @@ mds_lookupfile(component4 *component, struct svc_req *req,
 	 * before value.
 	 */
 	ava.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(dvp, &ava, 0, cs->cr, NULL)) {
+	if (nfs_vop_getattr(dvp, &ava, 0, cs->cr, NULL, cs->exi)) {
 		ava.va_ctime = bva.va_ctime;
 		ava.va_seq = 0;
 	}
@@ -5263,7 +5273,7 @@ mds_lookupfile(component4 *component, struct svc_req *req,
 	 * Validate the file is a file
 	 */
 	fva.va_mask = AT_TYPE|AT_MODE;
-	error = VOP_GETATTR(cs->vp, &fva, 0, cs->cr, NULL);
+	error = nfs_vop_getattr(cs->vp, &fva, 0, cs->cr, NULL, cs->exi);
 	if (error)
 		return (puterrno4(error));
 
@@ -5382,7 +5392,7 @@ mds_do_openprev(struct compound_state *cs, struct svc_req *req,
 	ct.cc_flags = CC_DONTBLOCK;
 
 	va.va_mask = AT_MODE|AT_UID;
-	error = VOP_GETATTR(cs->vp, &va, 0, cs->cr, &ct);
+	error = nfs_vop_getattr(cs->vp, &va, 0, cs->cr, &ct, cs->exi);
 	if (error) {
 		resp->status = puterrno4(error);
 		return;
@@ -8817,7 +8827,7 @@ mds_op_layout_commit(nfs_argop4 *argop, nfs_resop4 *resop,
 		ct.cc_flags = CC_DONTBLOCK;
 
 		va.va_mask = AT_SIZE;
-		error = VOP_GETATTR(vp, &va, 0, cr, &ct);
+		error = nfs_vop_getattr(vp, &va, 0, cr, &ct, cs->exi);
 		if (error != 0) {
 			*cs->statusp = resp->locr_status = puterrno4(error);
 			goto final;
@@ -8833,7 +8843,8 @@ mds_op_layout_commit(nfs_argop4 *argop, nfs_resop4 *resop,
 
 			vattr.va_size = newsize;
 			vattr.va_mask = AT_SIZE;
-			error = VOP_SETATTR(vp, &vattr, 0, cr, &ct);
+			error = nfs_vop_setattr(vp, &vattr, 0, cr, &ct,
+			    cs->exi);
 
 			if (error != 0) {
 				*cs->statusp = resp->locr_status = \

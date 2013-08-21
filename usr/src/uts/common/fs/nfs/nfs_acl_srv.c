@@ -314,7 +314,7 @@ acl2_access(ACCESS2args *args, ACCESS2res *resp, struct exportinfo *exi,
 	 * as well be reflected to the server during the open.
 	 */
 	va.va_mask = AT_MODE;
-	error = VOP_GETATTR(vp, &va, 0, cr, NULL);
+	error = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi);
 	if (error) {
 		VN_RELE(vp);
 		resp->status = puterrno(error);

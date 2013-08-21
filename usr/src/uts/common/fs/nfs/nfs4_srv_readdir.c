@@ -810,7 +810,8 @@ reencode_attrs:
 			} else {
 				va.va_mask = AT_ALL;
 				rddirattr_error =
-				    VOP_GETATTR(vp, &va, 0, cs->cr, NULL);
+				    nfs_vop_getattr(vp, &va, 0, cs->cr, NULL,
+					cs->exi);
 				if (rddirattr_error) {
 					ae = ar;
 					ATTRMAP_MASK(ae,

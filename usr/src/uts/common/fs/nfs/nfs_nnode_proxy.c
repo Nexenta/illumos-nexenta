@@ -429,6 +429,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	}
 	mutex_enter(&mnd->mnd_lock);
 	mnd->mnd_flags |= NNODE_NVD_VATTR_VALID;
+	vap->va_size = pnfs_real_size(vap->va_size);
 	mutex_exit(&mnd->mnd_lock);
 
 	if (off + moved == vap->va_size || eof)
@@ -649,6 +650,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	}
 	vap->va_mask = AT_ALL;
 	if (VOP_GETATTR(vp, vap, 0, cr, ct) == 0) {
+		vap->va_size = pnfs_real_size(vap->va_size);
 		mnd->mnd_flags |= NNODE_NVD_VATTR_VALID;
 		afterp = &mnd->mnd_vattr;
 	} else {

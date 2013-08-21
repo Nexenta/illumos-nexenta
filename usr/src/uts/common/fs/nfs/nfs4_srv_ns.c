@@ -64,6 +64,7 @@ vop_fid_pseudo(vnode_t *vp, fid_t *fidp)
 	if (error == EREMOTE ||
 	    (error == 0 && fidp->fid_len > NFS_FH4MAXDATA)) {
 
+		/* Don't use nfs_vop_getattr as work with generic layer */
 		va.va_mask = AT_NODEID;
 		error = VOP_GETATTR(vp, &va, 0, CRED(), NULL);
 		if (error)
@@ -682,6 +683,7 @@ treeclimb_export(struct exportinfo *exip)
 		/*
 		 * Do a getattr to obtain the nodeid (inode num)
 		 * for this vnode.
+		 * Use generic function. Don't care about pnfs layer.
 		 */
 		va.va_mask = AT_NODEID;
 		error = VOP_GETATTR(vp, &va, 0, CRED(), NULL);

@@ -315,7 +315,7 @@ rfs3_setattr(SETATTR3args *args, SETATTR3res *resp, struct exportinfo *exi,
 	}
 
 	if (!error && ava.va_mask)
-		error = VOP_SETATTR(vp, &ava, flag, cr, &ct);
+		error = nfs_vop_setattr(vp, &ava, flag, cr, &ct, exi);
 
 	/* check if a monitor detected a delegation conflict */
 	if (error == EAGAIN && (ct.cc_flags & CC_WOULDBLOCK)) {
@@ -425,11 +425,12 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		dva.va_mask = AT_ALL;
-		dvap = VOP_GETATTR(dvp, &dva, 0, cr, NULL) ? NULL : &dva;
+		dvap = nfs_vop_getattr(dvp, &dva, 0, cr, NULL, exi) ?
+		    NULL : &dva;
 	}
 #else
 	dva.va_mask = AT_ALL;
-	dvap = VOP_GETATTR(dvp, &dva, 0, cr, NULL) ? NULL : &dva;
+	dvap = nfs_vop_getattr(dvp, &dva, 0, cr, NULL, exi) ? NULL : &dva;
 #endif
 
 	if (args->what.name == nfs3nametoolong) {
@@ -528,12 +529,13 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		dva.va_mask = AT_ALL;
-		dvap = VOP_GETATTR(dvp, &dva, 0, cr, NULL) ? NULL : &dva;
+		dvap = nfs_vop_getattr(dvp, &dva, 0, cr, NULL, exi) ?
+		    NULL : &dva;
 	} else
 		dvap = NULL;
 #else
 	dva.va_mask = AT_ALL;
-	dvap = VOP_GETATTR(dvp, &dva, 0, cr, NULL) ? NULL : &dva;
+	dvap = nfs_vop_getattr(dvp, &dva, 0, cr, NULL, exi) ? NULL : &dva;
 #endif
 
 	if (error)
@@ -659,7 +661,7 @@ rfs3_access(ACCESS3args *args, ACCESS3res *resp, struct exportinfo *exi,
 	 * as well be reflected to the server during the open.
 	 */
 	va.va_mask = AT_MODE;
-	error = VOP_GETATTR(vp, &va, 0, cr, NULL);
+	error = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi);
 	if (error)
 		goto out;
 
@@ -813,7 +815,7 @@ rfs3_readlink(READLINK3args *args, READLINK3res *resp, struct exportinfo *exi,
 	}
 
 	va.va_mask = AT_ALL;
-	error = VOP_GETATTR(vp, &va, 0, cr, NULL);
+	error = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi);
 	if (error)
 		goto out;
 
@@ -893,12 +895,12 @@ rfs3_readlink(READLINK3args *args, READLINK3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 	/* Lie about object type again just to be consistent */
 	if (is_referral && vap != NULL)
@@ -1459,12 +1461,13 @@ rfs3_create(CREATE3args *args, CREATE3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		dbva.va_mask = AT_ALL;
-		dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+		dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ?
+		    NULL : &dbva;
 	} else
 		dbvap = NULL;
 #else
 	dbva.va_mask = AT_ALL;
-	dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+	dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ? NULL : &dbva;
 #endif
 	davap = dbvap;
 
@@ -1575,8 +1578,8 @@ rfs3_create(CREATE3args *args, CREATE3res *resp, struct exportinfo *exi,
 					in_crit = 1;
 
 					tva.va_mask = AT_SIZE;
-					error = VOP_GETATTR(tvp, &tva, 0, cr,
-					    NULL);
+					error = nfs_vop_getattr(tvp, &tva,
+					    0, cr, NULL, exi);
 					/*
 					 * Can't check for conflicts, so return
 					 * error.
@@ -1632,12 +1635,13 @@ tryagain:
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		dava.va_mask = AT_ALL;
-		davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+		davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ?
+		    NULL : &dava;
 	} else
 		davap = NULL;
 #else
 	dava.va_mask = AT_ALL;
-	davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+	davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ? NULL : &dava;
 #endif
 
 	if (error) {
@@ -1684,7 +1688,7 @@ tryagain:
 		}
 
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 
 		mtime = (nfstime3 *)&args->how.createhow3_u.verf;
 		/* % with INT32_MAX to prevent overflows */
@@ -1714,7 +1718,7 @@ tryagain:
 		}
 
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 
 		/*
 		 * We need to check to make sure that the file got
@@ -1735,9 +1739,10 @@ tryagain:
 		    vap->va_size != reqsize) {
 			va.va_mask = AT_SIZE;
 			va.va_size = reqsize;
-			(void) VOP_SETATTR(vp, &va, 0, cr, NULL);
+			(void) nfs_vop_setattr(vp, &va, 0, cr, NULL, exi);
 			va.va_mask = AT_ALL;
-			vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+			vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ?
+			    NULL : &va;
 		}
 	}
 
@@ -1848,12 +1853,13 @@ rfs3_mkdir(MKDIR3args *args, MKDIR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		dbva.va_mask = AT_ALL;
-		dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+		dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ?
+		    NULL : &dbva;
 	} else
 		dbvap = NULL;
 #else
 	dbva.va_mask = AT_ALL;
-	dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+	dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ? NULL : &dbva;
 #endif
 	davap = dbvap;
 
@@ -1917,12 +1923,13 @@ rfs3_mkdir(MKDIR3args *args, MKDIR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		dava.va_mask = AT_ALL;
-		davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+		davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ?
+		    NULL : &dava;
 	} else
 		davap = NULL;
 #else
 	dava.va_mask = AT_ALL;
-	davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+	davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ? NULL : &dava;
 #endif
 
 	/*
@@ -1950,12 +1957,12 @@ rfs3_mkdir(MKDIR3args *args, MKDIR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	/*
@@ -2029,12 +2036,13 @@ rfs3_symlink(SYMLINK3args *args, SYMLINK3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		dbva.va_mask = AT_ALL;
-		dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+		dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ?
+		    NULL : &dbva;
 	} else
 		dbvap = NULL;
 #else
 	dbva.va_mask = AT_ALL;
-	dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+	dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ? NULL : &dbva;
 #endif
 	davap = dbvap;
 
@@ -2110,12 +2118,13 @@ rfs3_symlink(SYMLINK3args *args, SYMLINK3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		dava.va_mask = AT_ALL;
-		davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+		davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ?
+		    NULL : &dava;
 	} else
 		davap = NULL;
 #else
 	dava.va_mask = AT_ALL;
-	davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+	davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ? NULL : &dava;
 #endif
 
 	if (error)
@@ -2155,12 +2164,12 @@ rfs3_symlink(SYMLINK3args *args, SYMLINK3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	/*
@@ -2237,12 +2246,13 @@ rfs3_mknod(MKNOD3args *args, MKNOD3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		dbva.va_mask = AT_ALL;
-		dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+		dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ?
+		    NULL : &dbva;
 	} else
 		dbvap = NULL;
 #else
 	dbva.va_mask = AT_ALL;
-	dbvap = VOP_GETATTR(dvp, &dbva, 0, cr, NULL) ? NULL : &dbva;
+	dbvap = nfs_vop_getattr(dvp, &dbva, 0, cr, NULL, exi) ? NULL : &dbva;
 #endif
 	davap = dbvap;
 
@@ -2348,12 +2358,13 @@ rfs3_mknod(MKNOD3args *args, MKNOD3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		dava.va_mask = AT_ALL;
-		davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+		davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ?
+		    NULL : &dava;
 	} else
 		davap = NULL;
 #else
 	dava.va_mask = AT_ALL;
-	davap = VOP_GETATTR(dvp, &dava, 0, cr, NULL) ? NULL : &dava;
+	davap = nfs_vop_getattr(dvp, &dava, 0, cr, NULL, exi) ? NULL : &dava;
 #endif
 
 	/*
@@ -2383,12 +2394,12 @@ rfs3_mknod(MKNOD3args *args, MKNOD3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	/*
@@ -2461,12 +2472,13 @@ rfs3_remove(REMOVE3args *args, REMOVE3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		bva.va_mask = AT_ALL;
-		bvap = VOP_GETATTR(vp, &bva, 0, cr, NULL) ? NULL : &bva;
+		bvap = nfs_vop_getattr(vp, &bva, 0, cr, NULL, exi) ?
+		    NULL : &bva;
 	} else
 		bvap = NULL;
 #else
 	bva.va_mask = AT_ALL;
-	bvap = VOP_GETATTR(vp, &bva, 0, cr, NULL) ? NULL : &bva;
+	bvap = nfs_vop_getattr(vp, &bva, 0, cr, NULL, exi) ? NULL : &bva;
 #endif
 	avap = bvap;
 
@@ -2546,12 +2558,13 @@ rfs3_remove(REMOVE3args *args, REMOVE3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		ava.va_mask = AT_ALL;
-		avap = VOP_GETATTR(vp, &ava, 0, cr, NULL) ? NULL : &ava;
+		avap = nfs_vop_getattr(vp, &ava, 0, cr, NULL, exi) ?
+		    NULL : &ava;
 	} else
 		avap = NULL;
 #else
 	ava.va_mask = AT_ALL;
-	avap = VOP_GETATTR(vp, &ava, 0, cr, NULL) ? NULL : &ava;
+	avap = nfs_vop_getattr(vp, &ava, 0, cr, NULL, exi) ? NULL : &ava;
 #endif
 
 	/*
@@ -2621,12 +2634,13 @@ rfs3_rmdir(RMDIR3args *args, RMDIR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		bva.va_mask = AT_ALL;
-		bvap = VOP_GETATTR(vp, &bva, 0, cr, NULL) ? NULL : &bva;
+		bvap = nfs_vop_getattr(vp, &bva, 0, cr, NULL, exi) ?
+		    NULL : &bva;
 	} else
 		bvap = NULL;
 #else
 	bva.va_mask = AT_ALL;
-	bvap = VOP_GETATTR(vp, &bva, 0, cr, NULL) ? NULL : &bva;
+	bvap = nfs_vop_getattr(vp, &bva, 0, cr, NULL, exi) ? NULL : &bva;
 #endif
 	avap = bvap;
 
@@ -2683,12 +2697,13 @@ rfs3_rmdir(RMDIR3args *args, RMDIR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		ava.va_mask = AT_ALL;
-		avap = VOP_GETATTR(vp, &ava, 0, cr, NULL) ? NULL : &ava;
+		avap = nfs_vop_getattr(vp, &ava, 0, cr, NULL, exi) ?
+		    NULL : &ava;
 	} else
 		avap = NULL;
 #else
 	ava.va_mask = AT_ALL;
-	avap = VOP_GETATTR(vp, &ava, 0, cr, NULL) ? NULL : &ava;
+	avap = nfs_vop_getattr(vp, &ava, 0, cr, NULL, exi) ? NULL : &ava;
 #endif
 
 	/*
@@ -2793,12 +2808,13 @@ rfs3_rename(RENAME3args *args, RENAME3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		fbva.va_mask = AT_ALL;
-		fbvap = VOP_GETATTR(fvp, &fbva, 0, cr, NULL) ? NULL : &fbva;
+		fbvap = nfs_vop_getattr(fvp, &fbva, 0, cr, NULL, exi) ?
+		    NULL : &fbva;
 	} else
 		fbvap = NULL;
 #else
 	fbva.va_mask = AT_ALL;
-	fbvap = VOP_GETATTR(fvp, &fbva, 0, cr, NULL) ? NULL : &fbva;
+	fbvap = nfs_vop_getattr(fvp, &fbva, 0, cr, NULL, exi) ? NULL : &fbva;
 #endif
 	favap = fbvap;
 
@@ -2824,12 +2840,13 @@ rfs3_rename(RENAME3args *args, RENAME3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		tbva.va_mask = AT_ALL;
-		tbvap = VOP_GETATTR(tvp, &tbva, 0, cr, NULL) ? NULL : &tbva;
+		tbvap = nfs_vop_getattr(tvp, &tbva, 0, cr, NULL, exi) ?
+		    NULL : &tbva;
 	} else
 		tbvap = NULL;
 #else
 	tbva.va_mask = AT_ALL;
-	tbvap = VOP_GETATTR(tvp, &tbva, 0, cr, NULL) ? NULL : &tbva;
+	tbvap = nfs_vop_getattr(tvp, &tbva, 0, cr, NULL, exi) ? NULL : &tbva;
 #endif
 	tavap = tbvap;
 
@@ -2934,18 +2951,20 @@ rfs3_rename(RENAME3args *args, RENAME3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		fava.va_mask = AT_ALL;
-		favap = VOP_GETATTR(fvp, &fava, 0, cr, NULL) ? NULL : &fava;
+		favap = nfs_vop_getattr(fvp, &fava, 0, cr, NULL, exi) ?
+		    NULL : &fava;
 		tava.va_mask = AT_ALL;
-		tavap = VOP_GETATTR(tvp, &tava, 0, cr, NULL) ? NULL : &tava;
+		tavap = nfs_vop_getattr(tvp, &tava, 0, cr, NULL, exi) ?
+		    NULL : &tava;
 	} else {
 		favap = NULL;
 		tavap = NULL;
 	}
 #else
 	fava.va_mask = AT_ALL;
-	favap = VOP_GETATTR(fvp, &fava, 0, cr, NULL) ? NULL : &fava;
+	favap = nfs_vop_getattr(fvp, &fava, 0, cr, NULL, exi) ? NULL : &fava;
 	tava.va_mask = AT_ALL;
-	tavap = VOP_GETATTR(tvp, &tava, 0, cr, NULL) ? NULL : &tava;
+	tavap = nfs_vop_getattr(tvp, &tava, 0, cr, NULL, exi) ? NULL : &tava;
 #endif
 
 	/*
@@ -3031,12 +3050,12 @@ rfs3_link(LINK3args *args, LINK3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	fh3 = &args->link.dir;
@@ -3077,12 +3096,13 @@ rfs3_link(LINK3args *args, LINK3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		bva.va_mask = AT_ALL;
-		bvap = VOP_GETATTR(dvp, &bva, 0, cr, NULL) ? NULL : &bva;
+		bvap = nfs_vop_getattr(dvp, &bva, 0, cr, NULL, exi) ?
+		    NULL : &bva;
 	} else
 		bvap = NULL;
 #else
 	bva.va_mask = AT_ALL;
-	bvap = VOP_GETATTR(dvp, &bva, 0, cr, NULL) ? NULL : &bva;
+	bvap = nfs_vop_getattr(dvp, &bva, 0, cr, NULL, exi) ? NULL : &bva;
 #endif
 
 	if (dvp->v_type != VDIR) {
@@ -3132,18 +3152,19 @@ rfs3_link(LINK3args *args, LINK3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 		ava.va_mask = AT_ALL;
-		avap = VOP_GETATTR(dvp, &ava, 0, cr, NULL) ? NULL : &ava;
+		avap = nfs_vop_getattr(dvp, &ava, 0, cr, NULL, exi) ?
+		    NULL : &ava;
 	} else {
 		vap = NULL;
 		avap = NULL;
 	}
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	ava.va_mask = AT_ALL;
-	avap = VOP_GETATTR(dvp, &ava, 0, cr, NULL) ? NULL : &ava;
+	avap = nfs_vop_getattr(dvp, &ava, 0, cr, NULL, exi) ? NULL : &ava;
 #endif
 
 	/*
@@ -3276,12 +3297,12 @@ rfs3_readdir(READDIR3args *args, READDIR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	if (vp->v_type != VDIR) {
@@ -3325,12 +3346,12 @@ rfs3_readdir(READDIR3args *args, READDIR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	if (error) {
@@ -3564,12 +3585,12 @@ rfs3_readdirplus(READDIRPLUS3args *args, READDIRPLUS3res *resp,
 #ifdef DEBUG
 	if (rfs3_do_pre_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	if (vp->v_type != VDIR) {
@@ -3735,12 +3756,12 @@ good:
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
@@ -3940,12 +3961,12 @@ rfs3_fsstat(FSSTAT3args *args, FSSTAT3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	if (error)
@@ -4045,12 +4066,12 @@ rfs3_fsinfo(FSINFO3args *args, FSINFO3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	resp->status = NFS3_OK;
@@ -4157,12 +4178,12 @@ rfs3_pathconf(PATHCONF3args *args, PATHCONF3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+		vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+	vap = nfs_vop_getattr(vp, &va, 0, cr, NULL, exi) ? NULL : &va;
 #endif
 
 	error = VOP_PATHCONF(vp, _PC_LINK_MAX, &val, cr, NULL);
@@ -4246,7 +4267,7 @@ rfs3_commit(COMMIT3args *args, COMMIT3res *resp, struct exportinfo *exi,
 	}
 
 	bva.va_mask = AT_ALL;
-	error = VOP_GETATTR(vp, &bva, 0, cr, NULL);
+	error = nfs_vop_getattr(vp, &bva, 0, cr, NULL, exi);
 
 	/*
 	 * If we can't get the attributes, then we can't do the
@@ -4299,12 +4320,13 @@ rfs3_commit(COMMIT3args *args, COMMIT3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		ava.va_mask = AT_ALL;
-		avap = VOP_GETATTR(vp, &ava, 0, cr, NULL) ? NULL : &ava;
+		avap = nfs_vop_getattr(vp, &ava, 0, cr, NULL, exi) ?
+		    NULL : &ava;
 	} else
 		avap = NULL;
 #else
 	ava.va_mask = AT_ALL;
-	avap = VOP_GETATTR(vp, &ava, 0, cr, NULL) ? NULL : &ava;
+	avap = nfs_vop_getattr(vp, &ava, 0, cr, NULL, exi) ? NULL : &ava;
 #endif
 
 	if (error)

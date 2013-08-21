@@ -1082,7 +1082,7 @@ rfs4_vop_getattr(vnode_t *vp, vattr_t *vap, int flag, cred_t *cr,
 
 	int error;
 
-	error = VOP_GETATTR(vp, vap, flag, cr, NULL);
+	error = nfs_vop_getattr(vp, vap, flag, cr, NULL, exi);
 	return (puterrno4(error));
 }
 
