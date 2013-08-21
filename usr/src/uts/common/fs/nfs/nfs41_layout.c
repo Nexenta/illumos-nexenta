@@ -527,21 +527,18 @@ mds_read_odl(char *path, int *size)
  * blah
  */
 static int
-mds_write_odl(char *path, char *odlp, int size)
+mds_write_odl(vnode_t *vp, char *odlp, int size)
 {
 	int ioflag, err;
 	struct uio uio;
 	struct iovec iov;
-	vnode_t *vp;
 
-	if (path == NULL)
-		return (-1);
-
-	if (vn_open(path, UIO_SYSSPACE, FCREAT|FWRITE|FTRUNC, 0644, &vp,
-	    CRCREAT, 0)) {
-		return (-1);
+	VN_HOLD(vp);
+	err = VOP_OPEN(&vp, FWRITE|FTRUNC, CRED(), NULL);
+	if (err) {
+		VN_RELE(vp);
+		return (err);
 	}
-
 	iov.iov_base = (caddr_t)odlp;
 	iov.iov_len = size;
 
@@ -560,8 +557,8 @@ mds_write_odl(char *path, char *odlp, int size)
 	VOP_RWUNLOCK(vp, V_WRITELOCK_TRUE, NULL);
 
 	(void) VOP_CLOSE(vp, FWRITE, 1, (offset_t)0, CRED(), NULL);
-	VN_RELE(vp);
 
+	VN_RELE(vp);
 	return (err);
 }
 
@@ -741,52 +738,23 @@ xdr_convert_odl(char *odlp, int size)
 	return ((odl *)unxdr_buf);
 }
 
-int
-odl_already_written(char *name)
-{
-	vnode_t	*vp;
-
-	ASSERT(name != NULL);
-
-	if (vn_open(name, UIO_SYSSPACE, FREAD, 0, &vp, 0, 0))
-		return (0);	/* does not exist */
-
-	(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
-	VN_RELE(vp);
-	return (1);	/* has already been written */
-}
-
 static int
 mds_save_layout(mds_layout_t *lp, vnode_t *vp)
 {
 	char *odlp;
-	char *name;
-	int len, size, err;
+	int size, err;
 
 	if (lp == NULL) {
 		return (-2);
 	}
 
-	name = mds_create_name(vp, &len);
-	if (name == NULL) {
-		return (-1);
-	}
-
-	if (odl_already_written(name)) {
-		kmem_free(name, len);
-		return (0);
-	}
-
 	/* mythical xdr encode routine */
 	odlp = xdr_convert_layout(lp, &size);
-	if (odlp == NULL) {
-		kmem_free(name, len);
+	if (odlp == NULL)
 		return (-1);
-	}
 
-	err = mds_write_odl(name, odlp, size);
+	err = mds_write_odl(vp, odlp, size);
 
-	kmem_free(name, len);
 	kmem_free(odlp, size);
 
 	return (err);
