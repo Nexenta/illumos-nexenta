@@ -712,6 +712,7 @@ extern void		rfs4_dbe_walk(rfs4_table_t *,
  *	CB_PATH_DOWN, EXPIRED_ALL_STATE_REVOKED, EXPIRED_SOME_STATE_REVOKED,
  *	ADMIN_STATE_REVOKED, RECALLABLE_STATE_REVOKED, LEASE_MOVED,
  *	RESTART_RECLAIM_NEEDED, DEVID_CHANGED, DEVID_DELETED
+ *  delegated - Number of delegated files to this client. 
  */
 typedef struct rfs4_client {
 	rfs4_dbe_t		*rc_dbe;
@@ -740,6 +741,7 @@ typedef struct rfs4_client {
 	int			rc_clid_scope;
 	bit_attr_t		rc_seq4[BITS_PER_WORD];
 	list_t			rc_trunkinfo;
+	uint_t			rc_delegeted;
 } rfs4_client_t;
 
 /*

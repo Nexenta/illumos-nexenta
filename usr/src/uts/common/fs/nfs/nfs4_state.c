@@ -34,6 +34,7 @@
 #include <sys/clconf.h>
 #include <sys/cladm.h>
 #include <sys/flock.h>
+#include <sys/atomic.h>
 #include <nfs/export.h>
 #include <nfs/nfs.h>
 #include <nfs/nfs4.h>
@@ -54,6 +55,7 @@
 
 extern int nfs_doorfd;
 
+unsigned int nfs4_client_max_deleg = 8192; /* per-client restriction */
 
 stateid4 special0 = {
 	0,
@@ -1136,6 +1138,7 @@ rfs4_client_create(rfs4_entry_t u_entry, void *arg)
 
 	list_create(&cp->rc_trunkinfo, sizeof (rfs41_tie_t),
 	    offsetof(rfs41_tie_t, t_link));
+	cp->rc_delegeted = 0;
 	return (TRUE);
 }
 
@@ -2426,6 +2429,13 @@ rfs4_deleg_state_create(rfs4_entry_t u_entry,
 	rfs4_file_t *fp = ((rfs4_deleg_state_t *)argp)->rds_finfo;
 	rfs4_client_t *cp = ((rfs4_deleg_state_t *)argp)->rds_client;
 
+	/* Protection if client forgets to do delegreturn */
+	atomic_add_int(&cp->rc_delegeted, 1);
+	if (cp->rc_delegeted > nfs4_client_max_deleg) {
+		atomic_add_int(&cp->rc_delegeted, -1);
+		return (FALSE);
+	}
+
 	rfs4_dbe_hold(fp->rf_dbe);
 	rfs4_dbe_hold(cp->rc_dbe);
 
@@ -2460,6 +2470,7 @@ rfs4_deleg_state_destroy(rfs4_entry_t u_entry)
 	dsp->rds_finfo = NULL;
 
 	/* And now with the openowner */
+	atomic_add_int(&dsp->rds_client->rc_delegeted, -1);
 	rfs4_client_rele(dsp->rds_client);
 	dsp->rds_client = NULL;
 }
