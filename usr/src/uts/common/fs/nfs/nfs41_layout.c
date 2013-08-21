@@ -458,7 +458,6 @@ mds_read_odl(vnode_t *vp, int *size)
 	ASSERT(vp->v_type == VREG);
 
 	*size = 0;
-	(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, NULL);
 
 	/*
 	 * Use VOP_GETATTR, because nfs_vop_getattr
@@ -469,7 +468,6 @@ mds_read_odl(vnode_t *vp, int *size)
 
 	sz = va.va_size;
 	if (err || (sz == 0 || sz < sizeof (odl_t))) {
-		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 		return (NULL);
 	}
 
@@ -490,6 +488,7 @@ mds_read_odl(vnode_t *vp, int *size)
 	uio.uio_loffset = 0;
 	uio.uio_resid = iov.iov_len;
 
+	(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, NULL);
 	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 		kmem_free(odlp, sz);
