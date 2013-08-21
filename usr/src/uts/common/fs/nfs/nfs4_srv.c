@@ -4405,7 +4405,7 @@ rfs4_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 	}
 
 	nadva.va_mask = AT_CTIME|AT_SEQ;
-	if (VOP_GETATTR(odvp, &nadva, 0, cs->cr, NULL)) {
+	if (VOP_GETATTR(ndvp, &nadva, 0, cs->cr, NULL)) {
 		nadva.va_ctime = nbdva.va_ctime;
 		nadva.va_seq = 0;
 	}
