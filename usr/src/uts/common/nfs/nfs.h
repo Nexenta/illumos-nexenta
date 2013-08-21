@@ -2372,7 +2372,8 @@ extern bool_t rfs4_check_delegated(int mode, vnode_t *, bool_t trunc,
  * AT_SIZE. Invoke VOP_GETATTR to get all other attributes or all attributes
  * if no delegation is present.
  */
-extern int rfs4_delegated_getattr(vnode_t *, vattr_t *, int, cred_t *);
+extern int rfs4_delegated_getattr(vnode_t *, vattr_t *, int, cred_t *,
+	    struct exportinfo *exi);
 
 extern int do_xattr_exists_check(vnode_t *, ulong_t *, cred_t *);
 

@@ -112,7 +112,7 @@ rfs_getattr(fhandle_t *fhp, struct nfsattrstat *ns, struct exportinfo *exi,
 	 */
 	va.va_mask = AT_ALL;	/* we want all the attributes */
 
-	error = rfs4_delegated_getattr(vp, &va, 0, cr);
+	error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 	/* check for overflows */
 	if (!error) {
@@ -305,7 +305,7 @@ rfs_setattr(struct nfssaargs *args, struct nfsattrstat *ns,
 	if (!error) {
 		va.va_mask = AT_ALL;	/* get everything */
 
-		error = rfs4_delegated_getattr(vp, &va, 0, cr);
+		error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 		/* check for overflows */
 		if (!error) {
@@ -432,7 +432,7 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	if (!error) {
 		va.va_mask = AT_ALL;	/* we want everything */
 
-		error = rfs4_delegated_getattr(vp, &va, 0, cr);
+		error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 		/* check for overflows */
 		if (!error) {

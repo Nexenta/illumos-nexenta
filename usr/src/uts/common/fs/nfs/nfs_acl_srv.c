@@ -119,7 +119,7 @@ acl2_getacl(GETACL2args *args, GETACL2res *resp, struct exportinfo *exi,
 	}
 
 	va.va_mask = AT_ALL;
-	error = rfs4_delegated_getattr(vp, &va, 0, cr);
+	error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 	VN_RELE(vp);
 
@@ -217,7 +217,7 @@ acl2_setacl(SETACL2args *args, SETACL2res *resp, struct exportinfo *exi,
 	}
 
 	va.va_mask = AT_ALL;
-	error = rfs4_delegated_getattr(vp, &va, 0, cr);
+	error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 	VOP_RWUNLOCK(vp, V_WRITELOCK_TRUE, NULL);
 	VN_RELE(vp);
@@ -257,7 +257,7 @@ acl2_getattr(GETATTR2args *args, GETATTR2res *resp, struct exportinfo *exi,
 	}
 
 	va.va_mask = AT_ALL;
-	error = rfs4_delegated_getattr(vp, &va, 0, cr);
+	error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 	VN_RELE(vp);
 
@@ -353,7 +353,7 @@ acl2_access(ACCESS2args *args, ACCESS2res *resp, struct exportinfo *exi,
 	}
 
 	va.va_mask = AT_ALL;
-	error = rfs4_delegated_getattr(vp, &va, 0, cr);
+	error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 	VN_RELE(vp);
 
@@ -417,7 +417,7 @@ acl2_getxattrdir(GETXATTRDIR2args *args, GETXATTRDIR2res *resp,
 	if (!error) {
 		struct vattr va;
 		va.va_mask = AT_ALL;
-		error = rfs4_delegated_getattr(avp, &va, 0, cr);
+		error = rfs4_delegated_getattr(avp, &va, 0, cr, exi);
 		if (!error) {
 			error = vattr_to_nattr(&va, &resp->resok.attr);
 			if (!error)
@@ -462,12 +462,12 @@ acl3_getacl(GETACL3args *args, GETACL3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+		vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+	vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 #endif
 
 	bzero((caddr_t)&resp->resok.acl, sizeof (resp->resok.acl));
@@ -501,12 +501,12 @@ acl3_getacl(GETACL3args *args, GETACL3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+		vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+	vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 #endif
 
 	VN_RELE(vp);
@@ -591,12 +591,12 @@ acl3_setacl(SETACL3args *args, SETACL3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+		vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+	vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 #endif
 
 	if (rdonly(exi, req) || vn_is_readonly(vp)) {
@@ -609,12 +609,12 @@ acl3_setacl(SETACL3args *args, SETACL3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+		vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+	vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 #endif
 
 	if (error)
@@ -690,7 +690,7 @@ acl3_getxattrdir(GETXATTRDIR3args *args, GETXATTRDIR3res *resp,
 	if (!error) {
 		struct vattr va;
 		va.va_mask = AT_ALL;
-		error = rfs4_delegated_getattr(avp, &va, 0, cr);
+		error = rfs4_delegated_getattr(avp, &va, 0, cr, exi);
 		if (!error) {
 			vattr_to_post_op_attr(&va, &resp->resok.attr);
 			error = makefh3(&resp->resok.fh, avp, exi);

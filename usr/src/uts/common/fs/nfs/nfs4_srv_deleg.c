@@ -1089,14 +1089,15 @@ rfs4_vop_getattr(vnode_t *vp, vattr_t *vap, int flag, cred_t *cr,
 /*
  * This is used everywhere in the v2/v3 server to allow the
  * integration of all NFS versions and the support of delegation.  For
- * now, just call the VOP_GETATTR().  If the NFSv4 server is enhanced
+ * now, just call the nfs_vop_getattr().  If the NFSv4 server is enhanced
  * in the future to provide space guarantees for write delegations
  * then this call site should be expanded to interact with the client.
  */
 int
-rfs4_delegated_getattr(vnode_t *vp, vattr_t *vap, int flag, cred_t *cr)
+rfs4_delegated_getattr(vnode_t *vp, vattr_t *vap, int flag, cred_t *cr,
+    struct exportinfo *exi)
 {
-	return (VOP_GETATTR(vp, vap, flag, cr, NULL));
+	return (nfs_vop_getattr(vp, vap, flag, cr, NULL, exi));
 }
 
 /*

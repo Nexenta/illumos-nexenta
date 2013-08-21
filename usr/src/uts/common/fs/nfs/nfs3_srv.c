@@ -111,7 +111,7 @@ rfs3_getattr(GETATTR3args *args, GETATTR3res *resp, struct exportinfo *exi,
 	}
 
 	va.va_mask = AT_ALL;
-	error = rfs4_delegated_getattr(vp, &va, 0, cr);
+	error = rfs4_delegated_getattr(vp, &va, 0, cr, exi);
 
 	if (!error) {
 		/* Lie about the object type for a referral */
@@ -219,7 +219,7 @@ rfs3_setattr(SETATTR3args *args, SETATTR3res *resp, struct exportinfo *exi,
 	}
 
 	bva.va_mask = AT_ALL;
-	error = rfs4_delegated_getattr(vp, &bva, 0, cr);
+	error = rfs4_delegated_getattr(vp, &bva, 0, cr, exi);
 
 	/*
 	 * If we can't get the attributes, then we can't do the
@@ -326,12 +326,13 @@ rfs3_setattr(SETATTR3args *args, SETATTR3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		ava.va_mask = AT_ALL;
-		avap = rfs4_delegated_getattr(vp, &ava, 0, cr) ? NULL : &ava;
+		avap = rfs4_delegated_getattr(vp, &ava, 0, cr, exi) ?
+		    NULL : &ava;
 	} else
 		avap = NULL;
 #else
 	ava.va_mask = AT_ALL;
-	avap = rfs4_delegated_getattr(vp, &ava, 0, cr) ? NULL : &ava;
+	avap = rfs4_delegated_getattr(vp, &ava, 0, cr, exi) ? NULL : &ava;
 #endif
 
 	/*
@@ -566,12 +567,12 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+		vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+	vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 #endif
 
 	VN_RELE(vp);
@@ -748,12 +749,12 @@ rfs3_access(ACCESS3args *args, ACCESS3res *resp, struct exportinfo *exi,
 #ifdef DEBUG
 	if (rfs3_do_post_op_attr) {
 		va.va_mask = AT_ALL;
-		vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+		vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 	} else
 		vap = NULL;
 #else
 	va.va_mask = AT_ALL;
-	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
+	vap = rfs4_delegated_getattr(vp, &va, 0, cr, exi) ? NULL : &va;
 #endif
 
 	resp->status = NFS3_OK;
@@ -3793,13 +3794,14 @@ good:
 #ifdef DEBUG
 		if (rfs3_do_post_op_attr) {
 			nva.va_mask = AT_ALL;
-			nvap = rfs4_delegated_getattr(nvp, &nva, 0, cr) ?
+			nvap = rfs4_delegated_getattr(nvp, &nva, 0, cr, exi) ?
 			    NULL : &nva;
 		} else
 			nvap = NULL;
 #else
 		nva.va_mask = AT_ALL;
-		nvap = rfs4_delegated_getattr(nvp, &nva, 0, cr) ? NULL : &nva;
+		nvap = rfs4_delegated_getattr(nvp, &nva, 0, cr, exi) ?
+		    NULL : &nva;
 #endif
 		/* Lie about the object type for a referral */
 		if (vn_is_nfs_reparse(nvp, cr))
