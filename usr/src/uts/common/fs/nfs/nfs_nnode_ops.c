@@ -141,15 +141,20 @@ nnop_write(nnode_t *nn, nnode_io_flags_t *flags, uio_t *uiop, int ioflags,
  * nnode_proxy_update
  */
 
-void
+int
 nnop_update(nnode_t *nn, nnode_io_flags_t flags, cred_t *cr,
     caller_context_t *ct, off64_t off)
 {
+	int err;
+
 	if ((nn->nn_data_ops == NULL) ||
 	    (nn->nn_data_ops->ndo_update == NULL))
-		return;
+		return (0);
 
-	(nn->nn_data_ops->ndo_update)(nn->nn_data_ops_data, flags, cr, ct, off);
+	err = (nn->nn_data_ops->ndo_update)(nn->nn_data_ops_data,
+	    flags, cr, ct, off);
+
+	return (err);
 }
 
 /*

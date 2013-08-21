@@ -5456,7 +5456,9 @@ err:
 
 	resp->writeverf = cs->instp->Write4verf;
 
-	nnop_update(nn, nnioflags, cr, &ct, args->offset + resp->count);
+	error = nnop_update(nn, nnioflags, cr, &ct, args->offset + resp->count);
+	if (error)
+		*cs->statusp = resp->status = nnode_stat4(error, 0);
 out:
 	nnop_io_release(nn, nnioflags, &ct);
 	if (nn != NULL)

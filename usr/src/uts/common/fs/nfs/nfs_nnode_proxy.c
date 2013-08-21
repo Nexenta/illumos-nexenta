@@ -48,7 +48,7 @@ static int nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 static int nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
     int ioflags, cred_t *cr, caller_context_t *ct, wcc_data *wcc);
 static void nnode_proxy_data_free(void *vdata);
-static void nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
+static int nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
     caller_context_t *ct, off64_t off);
 
 extern  bool_t xdr_DS_WRITEargs_send(XDR *, ds_write_t *);
@@ -672,7 +672,7 @@ out:
 }
 
 /*ARGSUSED*/
-static void
+static int
 nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
     caller_context_t *ct, off64_t off)
 {
@@ -680,13 +680,15 @@ nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
 	vattr_t vattr;
+	int err;
 
 	if (off <= vap->va_size)
-		return;
+		return (0);
 
 	vattr.va_size = pnfs_shadow_size(off);
 	vattr.va_mask = AT_SIZE;
-	VOP_SETATTR(vp, &vattr, 0, cr, ct);
+	err = VOP_SETATTR(vp, &vattr, 0, cr, ct);
+	return (err);
 }
 
 static nnode_proxy_data_t *
