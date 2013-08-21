@@ -355,7 +355,7 @@ extern stateid4 special1;
 
 void rfs4_cn_release(compound_state_t *);
 
-mds_layout_grant_t *rfs41_findlogrant(struct compound_state *,
+mds_layout_grant_t *rfs41_findlogrant(nfs_server_instance_t *instp,
     rfs4_file_t *, rfs4_client_t *, bool_t *);
 void rfs41_lo_grant_rele(mds_layout_grant_t *);
 mds_ever_grant_t *rfs41_findevergrant(rfs4_client_t *, vnode_t *, bool_t *);
@@ -8486,7 +8486,7 @@ mds_fetch_layout(struct compound_state *cs,
 	/* what if fp == NULL??? */
 
 	create = TRUE;
-	lg = rfs41_findlogrant(cs, fp, cs->cp, &create);
+	lg = rfs41_findlogrant(cs->instp, fp, cs->cp, &create);
 	if (lg == NULL) {
 		printf("rfs41_findlogrant() returned NULL; create=%d\n ",
 		    create);
@@ -8573,7 +8573,7 @@ mds_get_lo_grant_by_cp(struct compound_state *cs)
 	if (fp == NULL)
 		return (NULL);
 
-	lg = rfs41_findlogrant(cs, fp, cp, &create);
+	lg = rfs41_findlogrant(cs->instp, fp, cp, &create);
 	rfs4_file_rele(fp);
 
 	return (lg);
@@ -8892,7 +8892,7 @@ mds_return_layout_file(layoutreturn_file4 *lorf, struct compound_state *cs,
 		return (NFS4ERR_SERVERFAULT);
 	}
 
-	lg = rfs41_findlogrant(cs, fp, cs->cp, &create);
+	lg = rfs41_findlogrant(cs->instp, fp, cs->cp, &create);
 	if (lg == NULL) {
 		/*
 		 * Is this really so bad?  If the server reboots and then

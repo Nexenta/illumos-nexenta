@@ -1091,8 +1091,8 @@ mds_layout_grant_destroy(rfs4_entry_t entry)
 }
 
 mds_layout_grant_t *
-rfs41_findlogrant(struct compound_state *cs, rfs4_file_t *fp,
-    rfs4_client_t *cp, bool_t *create)
+rfs41_findlogrant(nfs_server_instance_t *instp,
+    rfs4_file_t *fp, rfs4_client_t *cp, bool_t *create)
 {
 	mds_layout_grant_t args, *lg;
 
@@ -1100,7 +1100,7 @@ rfs41_findlogrant(struct compound_state *cs, rfs4_file_t *fp,
 	args.lo_fp = fp;
 
 	lg = (mds_layout_grant_t *)rfs4_dbsearch(
-	    cs->instp->mds_layout_grant_idx, &args, create,
+	    instp->mds_layout_grant_idx, &args, create,
 	    &args, RFS4_DBS_VALID);
 
 	return (lg);
