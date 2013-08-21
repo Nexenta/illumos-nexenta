@@ -5481,6 +5481,24 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 		*rv = 0;
 
 	cs = rfs4x_compound_state_alloc(nfs4_server, NFS4_MINOR_v0);
+	cs->statusp = &resp->status;
+	cs->req = req;
+
+	cr = crget();
+	ASSERT(cr != NULL);
+	ASSERT(exi == NULL);
+
+	if (sec_svc_getcred(req, cr, &cs->principal, &cs->nfsflavor) == 0) {
+		DTRACE_NFSV4_2(compound_badcred, struct compound_state *,
+		    cs, COMPOUND4args *, args);
+		crfree(cr);
+		svcerr_badcred(req->rq_xprt);
+		if (rv != NULL)
+			*rv = 1;
+
+		rfs4x_compound_state_free(cs);
+		return;
+	}
 
 	/*
 	 * Form a reply tag by copying over the reqeuest tag.
@@ -5491,28 +5509,9 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 	bcopy(args->tag.utf8string_val, resp->tag.utf8string_val,
 	    resp->tag.utf8string_len);
 
-	cs->statusp = &resp->status;
-	cs->req = req;
-
-	ASSERT(exi == NULL);
-
-	cr = crget();
-	ASSERT(cr != NULL);
-
-	if (sec_svc_getcred(req, cr, &cs->principal, &cs->nfsflavor) == 0) {
-		DTRACE_NFSV4_2(compound__start, struct compound_state *,
-		    cs, COMPOUND4args *, args);
-		crfree(cr);
-		DTRACE_NFSV4_2(compound__done, struct compound_state *,
-		    cs, COMPOUND4res *, resp);
-		svcerr_badcred(req->rq_xprt);
-		if (rv != NULL)
-			*rv = 1;
-		return;
-	}
-
 	if (args->array_len > NFS4_COMPOUND_LIMIT) {
-		*cs->statusp = NFS4ERR_RESOURCE;
+		rfs4x_compound_state_free(cs);
+		resp->status = NFS4ERR_RESOURCE;
 		return;
 	}
 
