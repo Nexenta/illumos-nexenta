@@ -740,6 +740,7 @@ pnfs_add_mds_layout(vnode_t *vp, layout_core_t *lc)
 {
 	struct layout_vnode *lnode;
 	mds_layout_t *layout = NULL;
+	int res;
 
 	lnode = lookup_layout_vnode(vp, lc);
 	if (lnode) {
@@ -747,19 +748,13 @@ pnfs_add_mds_layout(vnode_t *vp, layout_core_t *lc)
 		rfs4_dbe_rele(lnode->dbe);
 	}
 
-	/* If something fail, will try in checkstate */
-	mds_save_layout(layout, vp);
+	res = mds_save_layout(layout, vp);
+	if (res) {
+		mds_layout_put(layout);
+		layout = NULL;
+	}
 
 	return (layout);
-}
-
-int
-pnfs_save_mds_layout(mds_layout_t *layout, vnode_t *vp)
-{
-	int ret;
-
-	ret = mds_save_layout(layout, vp);
-	return (ret);
 }
 
 mds_layout_t *

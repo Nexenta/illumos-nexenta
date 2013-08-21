@@ -427,27 +427,6 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 	deleg = FALSE;	/* ugly reuse */
 	fp = rfs4_findfile(cs->instp, vp, NULL, &deleg);
 	if (fp != NULL) {
-		mds_layout_t *layout;
-
-		layout = pnfs_get_mds_layout(vp);
-
-		/*
-		 * If layout has not been written to stable storage,
-		 * then do so before issuing the reply.
-		 */
-		if (layout && pnfs_save_mds_layout(layout, vp)) {
-			mds_layout_put(layout);
-			rfs4_file_rele(fp);
-			rfs4x_compound_state_free(cs);
-			/*
-			 * DSERR_RESOURCE? DSERR_NOSPC?
-			 */
-			resp->status = DSERR_SERVERFAULT;
-			return;
-		}
-		if (layout)
-			mds_layout_put(layout);
-
 		rfs4_file_rele(fp);
 		resp->status = DS_OK;
 	} else {
