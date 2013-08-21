@@ -571,6 +571,9 @@ rfs4_server_start(int nfs4_srv_delegation)
 					    "start");
 				mds_sstor_init(mds_server);
 
+				mds_server->caller_id = nfs4_server->caller_id =
+				    fs_new_caller_id();
+
 				nfs4_drc = rfs4_init_drc(nfs4_drc_max,
 				    nfs4_drc_hash);
 			}

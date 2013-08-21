@@ -3942,7 +3942,6 @@ v4prot_sstor_init(nfs_server_instance_t *instp)
 	vsd_create(&instp->vkey, NULL);
 
 	instp->lockt_sysid = lm_alloc_sysidt();
-	instp->caller_id = fs_new_caller_id();
 
 	/*
 	 * The following algorithm attempts to find a unique verifier
