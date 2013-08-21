@@ -43,8 +43,6 @@
  */
 
 static mds_layout_t *mds_add_layout(layout_core_t *);
-static void mds_delete_layout(vnode_t *);
-
 static rfs4_table_t *layout_vnode_tab;
 static rfs4_index_t *layout_vnode_idx;
 
@@ -556,12 +554,6 @@ mds_write_odl(vnode_t *vp, char *odlp, int size)
 	return (err);
 }
 
-static void
-mds_remove_odl(char *path)
-{
-	(void) vn_remove(path, UIO_SYSSPACE, RMFILE);
-}
-
 #define	ODL_DIR	"/var/nfs/v4_state/layouts"
 
 int
@@ -805,22 +797,6 @@ err_free:
 	return (err);
 }
 
-static void
-mds_delete_layout(vnode_t *vp)
-{
-	int len;
-	char *name;
-
-	name = mds_create_name(vp, &len);
-	if (name == NULL) {
-		return;
-	}
-
-	mds_remove_odl(name);
-
-	kmem_free(name, len);
-}
-
 void
 mds_layout_get(mds_layout_t *l)
 {
@@ -928,7 +904,6 @@ pnfs_delete_mds_layout(vnode_t *vp)
 		rfs4_dbe_rele(lnode->dbe);
 	}
 
-	mds_delete_layout(vp);
 	return (layout);
 }
 
