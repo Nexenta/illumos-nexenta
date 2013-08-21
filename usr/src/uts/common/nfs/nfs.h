@@ -2406,6 +2406,9 @@ extern uint64_t nfs_shadow_size(uint64_t, const struct exportinfo *);
 extern uint64_t pnfs_real_size(uint64_t);
 extern uint64_t pnfs_shadow_size(uint64_t);
 
+extern int pnfs_metadata_size_update(vnode_t *, off64_t, cred_t *,
+    caller_context_t *);
+
 extern int nfs_vop_getattr(vnode_t *, vattr_t *, int, cred_t *,
     caller_context_t *, struct exportinfo *exi);
 

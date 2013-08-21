@@ -8743,6 +8743,7 @@ mds_op_layout_get_free(nfs_resop4 *resop)
 	}
 }
 
+
 /*ARGSUSED*/
 static void
 mds_op_layout_commit(nfs_argop4 *argop, nfs_resop4 *resop,
@@ -8820,18 +8821,8 @@ mds_op_layout_commit(nfs_argop4 *argop, nfs_resop4 *resop,
 			goto final;
 		}
 
-		/*
-		 * write a null byte at newsize-1 so that the size
-		 * is correct.  VOP_SETATTR may fail if the mode of
-		 * the file denies the implementation.
-		 */
 		if (newsize > va.va_size) {
-			vattr_t vattr;
-
-			vattr.va_size = newsize;
-			vattr.va_mask = AT_SIZE;
-			error = nfs_vop_setattr(vp, &vattr, 0, cr, &ct,
-			    cs->exi);
+			error = pnfs_metadata_size_update(vp, newsize, cr, &ct);
 
 			if (error != 0) {
 				*cs->statusp = resp->locr_status = \
@@ -9417,4 +9408,26 @@ uint64_t
 pnfs_shadow_size(uint64_t size)
 {
 	return (size + PNFS_LAYOUT_SZ);
+}
+
+/*
+ * newsize are the real size of a file (no shadowed)
+ */
+int pnfs_metadata_size_update(vnode_t *vp, off64_t newsize,
+    cred_t *cr, caller_context_t *ct)
+{
+	vattr_t vattr;
+	int err;
+
+	/*
+	 * TODO:
+	 * write a null byte at newsize-1 so that the size
+	 * is correct.  VOP_SETATTR may fail if the mode of
+	 * the file denies the implementation.
+	 */
+
+	vattr.va_size = pnfs_shadow_size(newsize);
+	vattr.va_mask = AT_SIZE;
+	err = VOP_SETATTR(vp, &vattr, 0, cr, ct);
+	return (err);
 }

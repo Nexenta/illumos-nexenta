@@ -679,15 +679,12 @@ nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
 	nnode_proxy_data_t *mnd = vdata;
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
-	vattr_t vattr;
 	int err;
 
-	if (off <= vap->va_size)
+	if (off < vap->va_size)
 		return (0);
 
-	vattr.va_size = pnfs_shadow_size(off);
-	vattr.va_mask = AT_SIZE;
-	err = VOP_SETATTR(vp, &vattr, 0, cr, ct);
+	err = pnfs_metadata_size_update(vp, off, cr, ct);
 	return (err);
 }
 
