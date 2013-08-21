@@ -5859,7 +5859,8 @@ rfs4_lookupfile(component4 *component, struct svc_req *req,
 
 nfsstat4
 create_vnode(vnode_t *dvp, char *nm,  vattr_t *vap, createmode4 mode,
-    timespec32_t *mtime, cred_t *cr, vnode_t **vpp, bool_t *created)
+    timespec32_t *mtime, cred_t *cr, vnode_t **vpp, bool_t *created,
+    struct exportinfo *exi)
 {
 	int error;
 	nfsstat4 status = NFS4_OK;
@@ -6170,7 +6171,7 @@ rfs4_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	}
 
 	status = create_vnode(dvp, name, vap, args->mode, mtime,
-	    cs->cr, &vp, &created);
+	    cs->cr, &vp, &created, cs->exi);
 	if (nm != name)
 		kmem_free(name, MAXPATHLEN + 1);
 	kmem_free(nm, buflen);

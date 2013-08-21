@@ -335,7 +335,7 @@ extern void mds_clean_grants_by_fsid(rfs4_client_t *, vnode_t *);
 
 nfsstat4
 create_vnode(vnode_t *, char *,  vattr_t *, createmode4, timespec32_t *,
-    cred_t *, vnode_t **, bool_t *);
+    cred_t *, vnode_t **, bool_t *, struct exportinfo *exi);
 
 
 /* HACKERY */
@@ -4627,7 +4627,7 @@ mds_createfile(OPEN4args *args, struct svc_req *req, struct compound_state *cs,
 	}
 
 	status = create_vnode(dvp, nm, vap, mode, mtime,
-	    cs->cr, &vp, &created);
+	    cs->cr, &vp, &created, cs->exi);
 	kmem_free(nm, buflen);
 
 	if (status != NFS4_OK) {
