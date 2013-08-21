@@ -450,6 +450,7 @@ mds_read_odl(vnode_t *vp, int *size)
 {
 	struct uio uio;
 	struct iovec iov;
+	caller_context_t ct;
 	char *odlp;
 	vattr_t va;
 	uint64_t sz;
@@ -488,14 +489,19 @@ mds_read_odl(vnode_t *vp, int *size)
 	uio.uio_loffset = 0;
 	uio.uio_resid = iov.iov_len;
 
-	(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, NULL);
-	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
-		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
+	ct.cc_sysid = 0;
+	ct.cc_pid = 0;
+	ct.cc_caller_id = mds_server->caller_id;
+	ct.cc_flags = 0;
+
+	(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, &ct);
+	if (err = VOP_READ(vp, &uio, FREAD, CRED(), &ct)) {
+		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, &ct);
 		kmem_free(odlp, sz);
 		return (NULL);
 	}
 
-	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
+	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, &ct);
 	*size = sz - uio.uio_resid;
 
 	return (odlp);
@@ -510,6 +516,7 @@ mds_write_odl(vnode_t *vp, char *odlp, int size)
 	int ioflag, err;
 	struct uio uio;
 	struct iovec iov;
+	caller_context_t ct;
 
 	iov.iov_base = (caddr_t)odlp;
 	iov.iov_len = size;
@@ -524,9 +531,14 @@ mds_write_odl(vnode_t *vp, char *odlp, int size)
 	ioflag = uio.uio_fmode = (FWRITE|FSYNC);
 	uio.uio_extflg = UIO_COPY_DEFAULT;
 
-	(void) VOP_RWLOCK(vp, V_WRITELOCK_TRUE, NULL);
-	err = VOP_WRITE(vp, &uio, ioflag, CRED(), NULL);
-	VOP_RWUNLOCK(vp, V_WRITELOCK_TRUE, NULL);
+	ct.cc_sysid = 0;
+	ct.cc_pid = 0;
+	ct.cc_caller_id = mds_server->caller_id;
+	ct.cc_flags = 0;
+
+	(void) VOP_RWLOCK(vp, V_WRITELOCK_TRUE, &ct);
+	err = VOP_WRITE(vp, &uio, ioflag, CRED(), &ct);
+	VOP_RWUNLOCK(vp, V_WRITELOCK_TRUE, &ct);
 
 	if (err == 0 && uio.uio_resid > 0)
 		err = EFBIG;
