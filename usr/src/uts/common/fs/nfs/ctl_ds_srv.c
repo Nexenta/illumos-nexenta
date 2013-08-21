@@ -1125,7 +1125,7 @@ ds_exchange(DS_EXIBIargs *argp, DS_EXIBIres *resp, struct svc_req *rqstp)
 	/*
 	 * XXX: This will go away with the SMF work!
 	 */
-	extern void mds_nuke_layout(nfs_server_instance_t *, uint32_t);
+	extern void mds_nuke_layout(nfs_server_instance_t *);
 
 	int	lo_id;
 
@@ -1194,7 +1194,7 @@ ds_exchange(DS_EXIBIargs *argp, DS_EXIBIres *resp, struct svc_req *rqstp)
 		mds_server->mds_layout_default_idx = 0;
 		rw_exit(&mds_server->mds_layout_lock);
 
-		mds_nuke_layout(mds_server, lo_id);
+		mds_nuke_layout(mds_server);
 	}
 
 	/*

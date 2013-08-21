@@ -118,7 +118,7 @@ extern void mds_layout_get(mds_layout_t *);
 extern void mds_layout_put(mds_layout_t *);
 
 extern int mds_get_odl(vnode_t *, mds_layout_t **);
-extern void mds_nuke_layout(nfs_server_instance_t *, uint32_t);
+extern void mds_nuke_layout(nfs_server_instance_t *);
 
 extern void nfs41_layout_init(nfs_server_instance_t *);
 extern void nfs41_device_init(nfs_server_instance_t *);

@@ -351,21 +351,37 @@ cleanup:
 	return (mp);
 }
 
-void
-mds_nuke_layout(nfs_server_instance_t *instp, uint32_t mlo_id)
+static void
+mds_clean_layout(rfs4_entry_t e, void *arg)
 {
-	bool_t create = FALSE;
-	rfs4_entry_t e;
+	mds_layout_t  *lp = (mds_layout_t *)e;
+	layout_core_t *lc = &lp->mlo_lc;
+	int i, n;
 
-	rw_enter(&instp->mds_layout_lock, RW_WRITER);
-	if ((e = rfs4_dbsearch(instp->mds_layout_ID_idx,
-	    (void *)(uintptr_t)mlo_id,
-	    &create,
-	    NULL,
-	    RFS4_DBS_VALID)) != NULL) {
-		rfs4_dbe_invalidate(e->dbe);
-		rfs4_dbe_rele(e->dbe);
+	if (rfs4_dbe_skip_or_invalid(lp->mlo_dbe))
+		return;
+
+	n = lc->lc_stripe_count;
+	for (i = 0; i < n; i++) {
+		ds_addrlist_t *dp;
+
+		dp = mds_find_ds_addrlist_by_mds_sid(
+		    &lc->lc_mds_sids[i]);
+
+		if (dp == NULL) {
+			/* It means this layout is old */
+			rfs4_dbe_invalidate(lp->mlo_dbe);
+			break;
+		} else
+			rfs4_dbe_rele(dp->dbe);
 	}
+}
+
+void
+mds_nuke_layout(nfs_server_instance_t *instp)
+{
+	rw_enter(&instp->mds_layout_lock, RW_WRITER);
+	rfs4_dbe_walk(instp->mds_layout_tab, mds_clean_layout, NULL);
 	rw_exit(&instp->mds_layout_lock);
 }
 
