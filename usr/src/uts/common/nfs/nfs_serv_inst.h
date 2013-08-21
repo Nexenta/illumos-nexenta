@@ -173,12 +173,6 @@ typedef struct nfs_server_instance {
 	rfs4_index_t	*mds_layout_idx;
 	rfs4_index_t	*mds_layout_ID_idx;
 
-	/*
-	 * XXX: Need to track the default ID
-	 * until the SMF code is added.
-	 */
-	int		mds_layout_default_idx;
-
 	krwlock_t	mds_layout_grant_lock;
 	rfs4_table_t	*mds_layout_grant_tab;
 	rfs4_index_t	*mds_layout_grant_idx;

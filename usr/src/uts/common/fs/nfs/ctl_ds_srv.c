@@ -1122,13 +1122,6 @@ cleanup:
 void
 ds_exchange(DS_EXIBIargs *argp, DS_EXIBIres *resp, struct svc_req *rqstp)
 {
-	/*
-	 * XXX: This will go away with the SMF work!
-	 */
-	extern void mds_nuke_layout(nfs_server_instance_t *);
-
-	int	lo_id;
-
 	ds_owner_t *dop;
 	ds_addrlist_t *dp;
 	ds_guid_info_t	*pgi;
@@ -1186,14 +1179,9 @@ ds_exchange(DS_EXIBIargs *argp, DS_EXIBIres *resp, struct svc_req *rqstp)
 		}
 
 		/*
-		 * XXX: This stuff needs to give way to something
-		 * smarter.
+		 * Need to find out that mean comment below:
+		 * XXX: This will go away with the SMF work!
 		 */
-		rw_enter(&mds_server->mds_layout_lock, RW_WRITER);
-		lo_id = mds_server->mds_layout_default_idx;
-		mds_server->mds_layout_default_idx = 0;
-		rw_exit(&mds_server->mds_layout_lock);
-
 		mds_nuke_layout(mds_server);
 	}
 

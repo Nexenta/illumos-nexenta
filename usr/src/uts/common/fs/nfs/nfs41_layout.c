@@ -122,28 +122,6 @@ mds_layout_mkkey(rfs4_entry_t entry)
 	return ((void *)&lp->mlo_lc);
 }
 
-static uint32_t
-mds_layout_id_hash(void *key)
-{
-	return ((uint32_t)(uintptr_t)key);
-}
-
-static bool_t
-mds_layout_id_compare(rfs4_entry_t entry, void *key)
-{
-	mds_layout_t *lp = (mds_layout_t *)entry;
-
-	return (lp->mlo_id == (int)(uintptr_t)key);
-}
-
-static void *
-mds_layout_id_mkkey(rfs4_entry_t entry)
-{
-	mds_layout_t *lp = (mds_layout_t *)entry;
-
-	return ((void *)(uintptr_t)lp->mlo_id);
-}
-
 typedef struct {
 	uint32_t			id;
 	nfsv4_1_file_layout_ds_addr4	*ds_addr4;
@@ -397,8 +375,6 @@ mds_layout_create(rfs4_entry_t u_entry, void *arg)
 	bool_t rc = TRUE;
 
 	instp = dbe_to_instp(lp->mlo_dbe);
-
-	lp->mlo_id = rfs4_dbe_getid(lp->mlo_dbe);
 
 	lp->mlo_type = LAYOUT4_NFSV4_1_FILES;
 	lp->mlo_lc.lc_stripe_unit = lc->lc_stripe_unit;
@@ -1273,13 +1249,6 @@ nfs41_layout_init(nfs_server_instance_t *instp)
 	instp->mds_layout_idx = rfs4_index_create(instp->mds_layout_tab,
 	    "layout-idx", mds_layout_hash, mds_layout_compare, mds_layout_mkkey,
 	    TRUE);
-
-	instp->mds_layout_ID_idx =
-	    rfs4_index_create(instp->mds_layout_tab,
-	    "layout-ID-idx", mds_layout_id_hash,
-	    mds_layout_id_compare, mds_layout_id_mkkey, FALSE);
-
-	instp->mds_layout_default_idx = 0;
 
 	/*  For global searching layouts by vnode */
 	layout_vnode_tab = rfs4_table_create(instp,
