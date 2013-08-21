@@ -515,7 +515,6 @@ mds_update_guid_info(uint_t len, const ds_dev_info *info)
 	int i;
 
 	for (i = 0; i < len; i++, info++) {
-		char name[16];
 		struct ds_guid guid;
 		uint64_t id[2];
 		rfs4_entry_t entry;
@@ -525,12 +524,7 @@ mds_update_guid_info(uint_t len, const ds_dev_info *info)
 			continue;
 
 		guid.stor_type = ZFS;
-		guid.ds_guid_u.zfsguid.zfsguid_len = sizeof (name);
-		guid.ds_guid_u.zfsguid.zfsguid_val = name;
-
-		id[0] = htonll(info->guid.zpool_guid);
-		id[1] = htonll(info->guid.dataset_guid);
-		bcopy(id, name, sizeof (name));
+		guid.ds_guid_u.zfsguid = info->guid;
 
 		rw_enter(&mds_server->ds_guid_info_lock, RW_READER);
 		entry = rfs4_dbsearch(mds_server->ds_guid_info_idx,
@@ -1055,9 +1049,6 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 		ASSERT(pgi->ds_guid.stor_type == ZFS);
 		guid_map[count].ds_guid = pgi->ds_guid;
 
-		ASSERT(pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_len
-		    == sizeof (mds_sid_content));
-
 		/*
 		 * MDS SIDs: these would come from the mds_mapzap,
 		 * but for now we just reuse the ds_guid
@@ -1066,7 +1057,7 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 		 * can not just be the ZFS id for the root fileset
 		 * as a mds could have multiple root filesets...
 		 */
-		bcopy(pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_val,
+		bcopy(&pgi->ds_guid.ds_guid_u.zfsguid,
 		    &sid_content, sizeof (sid_content));
 
 		/*
@@ -1087,9 +1078,9 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 		 * Note, since we stuff the xdr_buffer into the
 		 * sid_array, we never explicitly free it by name!
 		 */
-		sid_array[0].len = pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_len;
+		sid_array[0].len = sizeof (ds_zfsguid);
 		sid_array[0].val = kmem_alloc(sid_array[0].len, KM_SLEEP);
-		bcopy(pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_val,
+		bcopy(&pgi->ds_guid.ds_guid_u.zfsguid,
 		    sid_array[0].val, sid_array[0].len);
 		count++;
 

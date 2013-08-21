@@ -1293,7 +1293,6 @@ dserv_mds_do_reportavail(dserv_mds_instance_t *inst, ds_status *status)
 	open_root_objset_t *root;
 	ds_zfsguid *zfsguid = NULL;
 	XDR xdr;
-	int xdr_size = 0;
 	char *xdr_buffer;
 	int error = 0;
 	int i, j;
@@ -1393,27 +1392,9 @@ dserv_mds_do_reportavail(dserv_mds_instance_t *inst, ds_status *status)
 		zfsguid[i].zpool_guid = root->oro_ds_guid.dg_zpool_guid;
 		zfsguid[i].dataset_guid = root->oro_ds_guid.dg_objset_guid;
 
-		/*
-		 * We do this here because of a possible
-		 * early termination of the loop.
-		 */
 		pcount_done++;
 
-		xdr_size = xdr_sizeof(xdr_ds_zfsguid, &zfsguid[i]);
-		ASSERT(xdr_size);
-		xdr_buffer = kmem_alloc(xdr_size, KM_SLEEP);
-
-		xdrmem_create(&xdr, xdr_buffer, xdr_size, XDR_ENCODE);
-
-		if (xdr_ds_zfsguid(&xdr, &zfsguid[i]) == FALSE) {
-			mutex_exit(&inst->dmi_content_lock);
-			kmem_free(xdr_buffer, xdr_size);
-			error = EIO;
-			goto out;
-		}
-
-		dz->guid_map.ds_guid.ds_guid_u.zfsguid.zfsguid_len = xdr_size;
-		dz->guid_map.ds_guid.ds_guid_u.zfsguid.zfsguid_val = xdr_buffer;
+		dz->guid_map.ds_guid.ds_guid_u.zfsguid = zfsguid[i];
 
 		/*
 		 * ToDo: This should include the list of MDS SIDs
@@ -1517,11 +1498,6 @@ out:
 	for (i = 0; i < pcount_done; i++) {
 		dz = &args.ds_storinfo.ds_storinfo_val[i].
 		    ds_storinfo_u.zfs_info;
-		if (dz->guid_map.ds_guid.ds_guid_u.zfsguid.zfsguid_len) {
-			kmem_free(dz->guid_map.ds_guid.ds_guid_u.
-			    zfsguid.zfsguid_val,
-			    dz->guid_map.ds_guid.ds_guid_u.zfsguid.zfsguid_len);
-		}
 
 		for (j = 0; j < dz->attrs.attrs_len; j++) {
 			UTF8STRING_FREE(dz->attrs.attrs_val[j].attrname);

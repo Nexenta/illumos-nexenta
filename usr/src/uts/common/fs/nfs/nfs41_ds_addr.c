@@ -42,8 +42,8 @@ mds_find_ds_addrlist_by_mds_sid(struct mds_sid *sid)
 	 * Warning, do not, do not ever, free this guid!
 	 */
 	guid.stor_type = ZFS;
-	guid.ds_guid_u.zfsguid.zfsguid_len = sid->len;
-	guid.ds_guid_u.zfsguid.zfsguid_val = sid->val;
+	bcopy(sid->val, &guid.ds_guid_u.zfsguid,
+	    sizeof (guid.ds_guid_u.zfsguid));
 
 	/*
 	 * First we need to find the ds_guid_info_t which

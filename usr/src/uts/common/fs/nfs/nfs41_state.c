@@ -2261,8 +2261,6 @@ ds_guid_free(ds_guid_t *gp)
 	 */
 	switch (gp->stor_type) {
 	case ZFS:
-		kmem_free(gp->ds_guid_u.zfsguid.zfsguid_val,
-		    gp->ds_guid_u.zfsguid.zfsguid_len);
 		break;
 	}
 }
@@ -2279,11 +2277,7 @@ ds_guid_copy(ds_guid_t *src, ds_guid_t *dst)
 
 	switch (dst->stor_type) {
 	case ZFS:
-		dst->ds_guid_u.zfsguid.zfsguid_val
-		    = kmem_alloc(dst->ds_guid_u.zfsguid.zfsguid_len, KM_SLEEP);
-		bcopy(src->ds_guid_u.zfsguid.zfsguid_val,
-		    dst->ds_guid_u.zfsguid.zfsguid_val,
-		    dst->ds_guid_u.zfsguid.zfsguid_len);
+		dst->ds_guid_u.zfsguid = src->ds_guid_u.zfsguid;
 		break;
 	default:
 		/* if it's unknown zero out the dst */
@@ -2294,32 +2288,38 @@ ds_guid_copy(ds_guid_t *src, ds_guid_t *dst)
 	return (0);
 }
 
+static bool_t
+ds_zfsguid_compare(const ds_zfsguid *g1, const ds_zfsguid *g2)
+{
+	if (g1->zpool_guid != g2->zpool_guid)
+		return (FALSE);
+
+	if (g1->dataset_guid != g2->dataset_guid)
+		return (FALSE);
+
+	return (TRUE);
+}
+
 /*
- * compare ds_guids return 0 for not the same or
- * 1 if they are equal..
+ * compare ds_guids: return TRUE if equal
  */
-int
+bool_t
 ds_guid_compare(ds_guid_t *gp1, ds_guid_t *gp2)
 {
 	if (gp1->stor_type != gp2->stor_type)
-		return (0);
+		return (FALSE);
 
 	switch (gp1->stor_type) {
 	case ZFS:
-		if (gp1->ds_guid_u.zfsguid.zfsguid_len !=
-		    gp2->ds_guid_u.zfsguid.zfsguid_len)
-			return (0);
-		if (bcmp(gp1->ds_guid_u.zfsguid.zfsguid_val,
-		    gp2->ds_guid_u.zfsguid.zfsguid_val,
-		    gp2->ds_guid_u.zfsguid.zfsguid_len) != 0)
-			return (0);
+		if (!ds_zfsguid_compare(&gp1->ds_guid_u.zfsguid,
+		    &gp2->ds_guid_u.zfsguid))
+			return (FALSE);
 		break;
-
 	default:
-		return (0);
+		return (FALSE);
 	}
 
-	return (1);
+	return (TRUE);
 }
 
 void
@@ -2420,19 +2420,7 @@ ds_guid_info_create(rfs4_entry_t u_entry, void *arg)
 
 	src = &(pic->si->ds_storinfo_u.zfs_info.guid_map.ds_guid);
 	dest = &pgi->ds_guid;
-	dest->stor_type = src->stor_type;
-
-	/*
-	 * Copy ds_guid
-	 */
-	dest->ds_guid_u.zfsguid.zfsguid_len =
-	    src->ds_guid_u.zfsguid.zfsguid_len;
-	dest->ds_guid_u.zfsguid.zfsguid_val =
-	    kmem_zalloc(dest->ds_guid_u.zfsguid.zfsguid_len,
-	    KM_SLEEP);
-	bcopy(src->ds_guid_u.zfsguid.zfsguid_val,
-	    dest->ds_guid_u.zfsguid.zfsguid_val,
-	    dest->ds_guid_u.zfsguid.zfsguid_len);
+	ds_guid_copy(src, dest);
 
 	/*
 	 * Copy zfs attrs
@@ -2469,10 +2457,12 @@ ds_guid_info_hash(void *key)
 	ds_guid_t	*pg = (ds_guid_t *)key;
 	int		i;
 	uint32_t	hash = 0;
+	unsigned char	*p = (unsigned char *)&pg->ds_guid_u.zfsguid;
+	int		n = sizeof (pg->ds_guid_u.zfsguid);
 
-	for (i = 0; i < pg->ds_guid_u.zfsguid.zfsguid_len; i++) {
+	for (i = 0; i < n; i++) {
 		hash <<= 1;
-		hash += (uint_t)pg->ds_guid_u.zfsguid.zfsguid_val[i];
+		hash += (uint_t)p[i];
 	}
 
 	return (hash);
@@ -2516,6 +2506,7 @@ ds_guid_info_destroy(rfs4_entry_t u_entry)
 	rw_exit(&instp->ds_guid_info_lock);
 
 	ds_guid_free(&pgi->ds_guid);
+
 	mds_free_zfsattr(pgi);
 
 	UTF8STRING_FREE(pgi->ds_dataset_name);
@@ -2550,10 +2541,9 @@ mds_ds_path_to_mds_sid(utf8string *dataset_name, mds_sid *sid)
 	if (pgi == NULL)
 		return (1);
 
-	sid->len = pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_len;
+	sid->len = sizeof (pgi->ds_guid.ds_guid_u.zfsguid);
 	sid->val = kmem_alloc(sid->len, KM_SLEEP);
-	bcopy(pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_val,
-	    sid->val, sid->len);
+	bcopy(&pgi->ds_guid.ds_guid_u.zfsguid, sid->val, sid->len);
 
 	rfs4_dbe_rele(pgi->dbe);
 

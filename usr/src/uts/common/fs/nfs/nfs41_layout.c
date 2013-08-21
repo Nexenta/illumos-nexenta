@@ -182,10 +182,10 @@ mds_gather_mds_sids(rfs4_entry_t entry, void *arg)
 		 * find it and i is the tail. Either way, same thing happens!
 		 */
 		gap->lc.lc_mds_sids[i].len =
-		    pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_len;
+		    sizeof (pgi->ds_guid.ds_guid_u.zfsguid);
 		gap->lc.lc_mds_sids[i].val =
 		    kmem_alloc(gap->lc.lc_mds_sids[i].len, KM_SLEEP);
-		bcopy(pgi->ds_guid.ds_guid_u.zfsguid.zfsguid_val,
+		bcopy(&pgi->ds_guid.ds_guid_u.zfsguid,
 		    gap->lc.lc_mds_sids[i].val,
 		    gap->lc.lc_mds_sids[i].len);
 

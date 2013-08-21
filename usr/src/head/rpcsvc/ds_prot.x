@@ -240,13 +240,23 @@ struct DS_MAP_MDSSIDargs {
 	mds_sid	mma_sid;
 };
 
+/*
+ * ds_zfsguid -
+ *
+ *	The data server guid made up of the local zpool guid + dataset id
+ */
+struct ds_zfsguid {
+	uint64_t	zpool_guid;
+	uint64_t	dataset_guid;
+};
+
 enum storage_type {
 	ZFS = 1
 };
 
 union ds_guid switch (storage_type stor_type) {
 case ZFS:
-	opaque	zfsguid<>;
+     struct ds_zfsguid zfsguid;
 default:
 	void;
 };
@@ -277,16 +287,6 @@ case DS_OK:
       	DS_MAP_MDSSIDresok res_ok;
 default:
       	void;
-};
-
-/*
- * ds_zfsguid -
- *
- *	The data server guid made up of the local zpool guid + dataset id
- */
-struct ds_zfsguid {
-	uint64_t	zpool_guid;
-	uint64_t	dataset_guid;
 };
 
 /*

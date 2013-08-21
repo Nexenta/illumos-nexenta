@@ -405,7 +405,6 @@ static bool_t
 detail_ds_guid_map(uint_t len, ds_guid_map *dg, char *legend, char *indent)
 {
 	XDR		zxdr;
-	ds_zfsguid	zfsguid;
 	char		*p;
 	int		i;
 	int		j;
@@ -422,20 +421,15 @@ detail_ds_guid_map(uint_t len, ds_guid_map *dg, char *legend, char *indent)
 			p = storage_types_map[dg[i].ds_guid.stor_type];
 
 		sprintf(get_line(0, 0), "%s    storage type = %s", indent, p);
-		xdrmem_create(&zxdr,
-		    dg[i].ds_guid.ds_guid_u.zfsguid.zfsguid_val,
-		    dg[i].ds_guid.ds_guid_u.zfsguid.zfsguid_len,
-		    XDR_DECODE);
-		memset(&zfsguid, '\0', sizeof (zfsguid));
-		if (!xdr_ds_zfsguid(&zxdr, &zfsguid))
-			return (FALSE);
 
-		sprintf(get_line(0, 0), "%s    zpool guid = %llu",
-		    indent, zfsguid.zpool_guid);
-		sprintf(get_line(0, 0), "%s    dataset guid = %llu",
-		    indent, zfsguid.dataset_guid);
+		if (dg[i].ds_guid.stor_type == ZFS) {
+			ds_zfsguid *zfsguid = &dg[i].ds_guid.ds_guid_u.zfsguid;
 
-		xdr_free(xdr_ds_zfsguid, (char *)&zfsguid);
+			sprintf(get_line(0, 0), "%s    zpool guid = %llX",
+			    indent, zfsguid->zpool_guid);
+			sprintf(get_line(0, 0), "%s    dataset guid = %llX",
+			    indent, zfsguid->dataset_guid);
+		}
 
 		for (j = 0; j < dg[i].mds_sid_array.mds_sid_array_len; j++) {
 			detail_mds_sid(&dg[i].mds_sid_array.
