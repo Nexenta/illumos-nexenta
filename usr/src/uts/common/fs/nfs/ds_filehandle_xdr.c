@@ -43,8 +43,13 @@
 bool_t
 xdr_mds_sid(XDR *xdrs, mds_sid *objp)
 {
-	if (!xdr_bytes(xdrs, (char **)&objp->val,
-	    (uint_t *)&objp->len, ~0))
+	if (!xdr_u_int(xdrs, &objp->len))
+		return (FALSE);
+
+	if (objp->len > MDS_MAXSID)
+		return (FALSE);
+
+	if (!xdr_opaque(xdrs, objp->val, objp->len))
 		return (FALSE);
 	return (TRUE);
 }

@@ -181,13 +181,6 @@ ds_reportavail_free(DS_REPORTAVAILres *resp)
 		    res_ok->guid_map.guid_map_val[i].mds_sid_array.
 		    mds_sid_array_len;
 
-		/* Free the contents of the mds_sid_array */
-		for (j = 0; j < sid_array_len; j++) {
-			/* Free the mds_sid_content */
-			kmem_free(sid_array[j].val,
-			    sid_array[j].len);
-		}
-
 		/* Free the mds_sid */
 		kmem_free(sid_array, sid_array_len * sizeof (mds_sid));
 	}
@@ -1065,7 +1058,6 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 		 * sid_array, we never explicitly free it by name!
 		 */
 		sid_array[0].len = sizeof (ds_zfsguid);
-		sid_array[0].val = kmem_alloc(sid_array[0].len, KM_SLEEP);
 		bcopy(&pgi->ds_guid.ds_guid_u.zfsguid,
 		    sid_array[0].val, sid_array[0].len);
 		count++;
@@ -1103,11 +1095,6 @@ cleanup:
 
 		pgi = mds_find_ds_guid_info_by_id(&guid_map[i].ds_guid);
 		if (pgi != NULL) {
-			for (j = 0; j < sid_array_len; j++) {
-				kmem_free(sid_array[j].val,
-				    sid_array[j].len);
-			}
-
 			kmem_free(sid_array,
 			    sid_array_len * sizeof (mds_sid));
 

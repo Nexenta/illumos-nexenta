@@ -544,10 +544,6 @@ dserv_mds_instance_teardown()
 		    sid_map = list_head(&inst->dmi_mds_sids)) {
 			list_remove(&inst->dmi_mds_sids, sid_map);
 
-			if (sid_map->msm_mds_storid.len)
-				kmem_free(sid_map->msm_mds_storid.val,
-				    sid_map->msm_mds_storid.len);
-
 			kmem_cache_free(mds_sid_map_cache, sid_map);
 		}
 	}
@@ -1471,11 +1467,6 @@ dserv_mds_do_reportavail(dserv_mds_instance_t *inst, ds_status *status)
 					    KM_SLEEP);
 					sid_map->msm_mds_storid.len =
 					    sid->len;
-					sid_map->msm_mds_storid.val =
-					    kmem_zalloc(
-					    sid_map->msm_mds_storid.len,
-					    KM_SLEEP);
-
 					bcopy(sid->val,
 					    sid_map->msm_mds_storid.val,
 					    sid_map->msm_mds_storid.len);

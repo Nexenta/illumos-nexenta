@@ -183,8 +183,6 @@ mds_gather_mds_sids(rfs4_entry_t entry, void *arg)
 		 */
 		gap->lc.lc_mds_sids[i].len =
 		    sizeof (pgi->ds_guid.ds_guid_u.zfsguid);
-		gap->lc.lc_mds_sids[i].val =
-		    kmem_alloc(gap->lc.lc_mds_sids[i].len, KM_SLEEP);
 		bcopy(&pgi->ds_guid.ds_guid_u.zfsguid,
 		    gap->lc.lc_mds_sids[i].val,
 		    gap->lc.lc_mds_sids[i].len);
@@ -229,11 +227,6 @@ mds_gen_default_layout(nfs_server_instance_t *instp, vnode_t *vp)
 	gap.lc.lc_stripe_unit = mds_default_stripe * 1024;
 
 	lp = pnfs_add_mds_layout(vp, &gap.lc);
-
-	for (i = 0; i < num; i++) {
-		kmem_free(gap.lc.lc_mds_sids[i].val,
-		    gap.lc.lc_mds_sids[i].len);
-	}
 
 	kmem_free(gap.lc.lc_mds_sids, num * sizeof (mds_sid));
 	return (lp);
@@ -400,8 +393,6 @@ mds_layout_create(rfs4_entry_t u_entry, void *arg)
 
 	for (i = 0; i < lp->mlo_lc.lc_stripe_count; i++) {
 		lp->mlo_lc.lc_mds_sids[i].len = lc->lc_mds_sids[i].len;
-		lp->mlo_lc.lc_mds_sids[i].val =
-		    kmem_alloc(lp->mlo_lc.lc_mds_sids[i].len, KM_SLEEP);
 		bcopy(lc->lc_mds_sids[i].val, lp->mlo_lc.lc_mds_sids[i].val,
 		    lp->mlo_lc.lc_mds_sids[i].len);
 	}
@@ -409,11 +400,6 @@ mds_layout_create(rfs4_entry_t u_entry, void *arg)
 	/* Need to generate a device for this layout */
 	lp->mlo_mpd = mds_gen_mpd(instp, lp);
 	if (lp->mlo_mpd == NULL) {
-		for (i = 0; i < lp->mlo_lc.lc_stripe_count; i++) {
-			kmem_free(lp->mlo_lc.lc_mds_sids[i].val,
-			    lp->mlo_lc.lc_mds_sids[i].len);
-		}
-
 		kmem_free(lp->mlo_lc.lc_mds_sids, lp->mlo_lc.lc_stripe_count *
 		    sizeof (mds_sid));
 		lp->mlo_lc.lc_mds_sids = NULL;
@@ -442,11 +428,6 @@ mds_layout_destroy(rfs4_entry_t u_entry)
 	rw_exit(&instp->mds_mpd_lock);
 
 	if (lp->mlo_lc.lc_mds_sids != NULL) {
-		for (i = 0; i < lp->mlo_lc.lc_stripe_count; i++) {
-			kmem_free(lp->mlo_lc.lc_mds_sids[i].val,
-			    lp->mlo_lc.lc_mds_sids[i].len);
-		}
-
 		kmem_free(lp->mlo_lc.lc_mds_sids, lp->mlo_lc.lc_stripe_count *
 		    sizeof (mds_sid));
 		lp->mlo_lc.lc_mds_sids = NULL;
@@ -861,12 +842,6 @@ mds_get_odl(vnode_t *vp, mds_layout_t **plp)
 	lc.lc_mds_sids = odlt->sid.sid_val;
 
 	lp = mds_add_layout(&lc);
-
-	/* these were allocated by the xdr decode process */
-
-	for (i = 0; i < odlt->sid.sid_len; i++) {
-		kmem_free(odlt->sid.sid_val[i].val, odlt->sid.sid_val[i].len);
-	}
 
 	kmem_free(odlt->sid.sid_val, (odlt->sid.sid_len * sizeof (mds_sid)));
 	kmem_free(odlt, sizeof (odl_t));

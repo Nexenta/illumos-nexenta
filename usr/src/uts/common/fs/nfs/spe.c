@@ -22,6 +22,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -888,15 +890,6 @@ spe_map_npools_to_mds_sids(kspe_state_t *kspe, spe_policy *sp,
 	}
 
 error_out:
-
-	/*
-	 * For whatever reason, we didn't find enough
-	 * entries. So nuke what we have.
-	 */
-	for (i = 0; i < iFound; i++) {
-		kmem_free(mds_sids[i].val, mds_sids[i].len);
-	}
-
 	kmem_free(mds_sids, stripe_count * sizeof (mds_sid));
 
 	return (NULL);

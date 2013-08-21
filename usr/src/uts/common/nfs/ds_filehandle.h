@@ -40,10 +40,11 @@ enum ds_fh_version {
 typedef enum ds_fh_version ds_fh_version;
 
 #define	DS_MAXFIDSZ 64
+#define	MDS_MAXSID  16		/* MUST be bigger than ds_guid_u */
 
 struct mds_sid {
-	uint_t len;
-	char *val;
+	uint_t	len;
+	char	val[MDS_MAXSID];
 };
 typedef struct mds_sid mds_sid;
 

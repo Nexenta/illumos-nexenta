@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <nfs/dserv_impl.h>
@@ -360,8 +362,6 @@ copy_ds_fh(mds_ds_fh *source_fh, mds_ds_fh **dest_fh)
 	switch (source_fh->vers) {
 	case (DS_FH_v1):
 		(*dest_fh)->fh.v1.mds_sid.len = source_fh->fh.v1.mds_sid.len;
-		(*dest_fh)->fh.v1.mds_sid.val =
-		    kmem_alloc(source_fh->fh.v1.mds_sid.len, KM_SLEEP);
 		bcopy(source_fh->fh.v1.mds_sid.val,
 		    (*dest_fh)->fh.v1.mds_sid.val,
 		    source_fh->fh.v1.mds_sid.len);
@@ -398,8 +398,6 @@ dserv_nnode_build(nnode_seed_t *seed, void *vfh)
 	    key->dnk_real_fid.len);
 	key->dnk_sid = kmem_alloc(sizeof (mds_sid), KM_SLEEP);
 	key->dnk_sid->len = fhp->fh.v1.mds_sid.len;
-	key->dnk_sid->val = kmem_alloc(key->dnk_sid->len,
-	    KM_SLEEP);
 
 	bcopy(fhp->fh.v1.mds_sid.val, key->dnk_sid->val,
 	    key->dnk_sid->len);
@@ -456,8 +454,6 @@ dserv_nnode_from_fh_ds(nnode_t **npp, mds_ds_fh *fhp)
 
 	dskey.dnk_sid = kmem_alloc(sizeof (mds_sid), KM_SLEEP);
 	dskey.dnk_sid->len = fhp->fh.v1.mds_sid.len;
-	dskey.dnk_sid->val = kmem_alloc(dskey.dnk_sid->len,
-	    KM_SLEEP);
 
 	bcopy(fhp->fh.v1.mds_sid.val, dskey.dnk_sid->val,
 	    dskey.dnk_sid->len);
@@ -471,7 +467,6 @@ dserv_nnode_from_fh_ds(nnode_t **npp, mds_ds_fh *fhp)
 
 	ne = nnode_find_or_create(npp, &key, hash, fhp, dserv_nnode_build);
 
-	kmem_free(dskey.dnk_sid->val, dskey.dnk_sid->len);
 	kmem_free(dskey.dnk_sid, sizeof (mds_sid));
 
 	return (ne);
@@ -1051,7 +1046,6 @@ dserv_nnode_key_free(void *dnk)
 	dserv_nnode_key_t *key = dnk;
 
 	if (key->dnk_sid) {
-		kmem_free(key->dnk_sid->val, key->dnk_sid->len);
 		kmem_free(key->dnk_sid, sizeof (mds_sid));
 	}
 

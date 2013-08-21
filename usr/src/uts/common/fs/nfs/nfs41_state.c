@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/flock.h>
@@ -2542,7 +2544,6 @@ mds_ds_path_to_mds_sid(utf8string *dataset_name, mds_sid *sid)
 		return (1);
 
 	sid->len = sizeof (pgi->ds_guid.ds_guid_u.zfsguid);
-	sid->val = kmem_alloc(sid->len, KM_SLEEP);
 	bcopy(&pgi->ds_guid.ds_guid_u.zfsguid, sid->val, sid->len);
 
 	rfs4_dbe_rele(pgi->dbe);

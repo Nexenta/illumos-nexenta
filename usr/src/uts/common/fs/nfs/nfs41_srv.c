@@ -8317,15 +8317,8 @@ mds_alloc_ds_fh(fsid_t fsid, const nfs41_fid_t *fid, mds_sid *sid,
 	 * on the DS to use...
 	 */
 	dsfh.fh.v1.mds_sid.len = sid->len;
+	bcopy(sid->val, dsfh.fh.v1.mds_sid.val, sid->len);
 
-	/*
-	 * The mds_dataset_id already has storage allocated
-	 * for the value. The mds_sid does not. We could
-	 * allocate it here, but why? We are abotu to just
-	 * throw it away. So instead, we copy the pointer
-	 * and avoid the free case in the error cleanup.
-	 */
-	dsfh.fh.v1.mds_sid.val = sid->val;
 	dsfh.fh.v1.mds_fid.len = fid->len;
 	bcopy(fid->val, dsfh.fh.v1.mds_fid.val, fid->len);
 

@@ -22,6 +22,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/vfs.h>
@@ -135,10 +137,6 @@ extern bool_t xdr_ds_fh(XDR *, mds_ds_fh *);
 void
 free_mds_ds_fh(mds_ds_fh *fp)
 {
-	if (fp->fh.v1.mds_sid.val) {
-		kmem_free(fp->fh.v1.mds_sid.val, fp->fh.v1.mds_sid.len);
-	}
-
 	kmem_free(fp, sizeof (mds_ds_fh));
 }
 
