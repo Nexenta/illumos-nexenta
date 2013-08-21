@@ -1084,8 +1084,8 @@ mds_layout_grant_destroy(rfs4_entry_t entry)
 	 */
 	ASSERT(lg->lo_fp == NULL);
 
+	mds_layout_put(lg->lo_lop);
 	mutex_destroy(&lg->lo_lock);
-
 	nfs_range_destroy(lg->lo_range);
 	lg->lo_range = NULL;
 }

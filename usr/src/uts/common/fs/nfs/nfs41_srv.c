@@ -8554,7 +8554,6 @@ mds_fetch_layout(struct compound_state *cs,
 	logrp->lo_content.loc_body.loc_body_val = xdr_buffer;
 
 	mds_free_fh_list(nfl_fh_list, lp->mlo_lc.lc_stripe_count);
-	rfs4_dbe_rele(lp->mlo_dbe);
 	return (NFS4_OK);
 }
 
