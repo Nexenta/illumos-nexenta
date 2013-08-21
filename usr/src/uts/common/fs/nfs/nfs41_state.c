@@ -2268,14 +2268,14 @@ ds_guid_free(ds_guid_t *gp)
 }
 
 /*
- * Duplicate the src guid to dst.
+ * Copy the src guid to dst.
  *
  * return 0 on success or 1 for failure.
  */
 int
-ds_guid_dup(ds_guid_t *src, ds_guid_t *dst)
+ds_guid_copy(ds_guid_t *src, ds_guid_t *dst)
 {
-	dst = src;
+	dst->stor_type = src->stor_type;
 
 	switch (dst->stor_type) {
 	case ZFS:
