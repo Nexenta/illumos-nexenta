@@ -44,6 +44,8 @@ extern "C" {
 
 #define	ADDRHASH(key) ((unsigned long)(key) >> 3)
 
+#define	PNFS_LAYOUT_SZ	1024
+
 #ifdef __cplusplus
 }
 #endif

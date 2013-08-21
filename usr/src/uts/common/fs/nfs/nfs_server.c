@@ -3441,3 +3441,21 @@ rfs_rndup_mblks(mblk_t *mp, uint_t len, int buf_loaned)
 	rmp->b_datap->db_type = M_DATA;
 	mp->b_cont = rmp;
 }
+
+uint64_t
+nfs_real_size(uint64_t size, const struct exportinfo *exi)
+{
+	if (pnfs_enabled(exi))
+		size = pnfs_real_size(size);
+
+	return (size);
+}
+
+uint64_t
+nfs_shadow_size(uint64_t size, const struct exportinfo *exi)
+{
+	if (pnfs_enabled(exi))
+		size = pnfs_shadow_size(size);
+
+	return (size);
+}

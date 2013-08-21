@@ -9383,3 +9383,20 @@ pnfs_correct_statfs(struct compound_state *cs, struct statvfs64 *sbp)
 	rfs4_dbe_walk(mds_server->ds_guid_info_tab, pnfs_ds_statfs_walk, sbp);
 	rw_exit(&mds_server->ds_guid_info_lock);
 }
+
+uint64_t
+pnfs_real_size(uint64_t size)
+{
+	if (size < PNFS_LAYOUT_SZ)
+		size = 0;
+	else
+		size -= PNFS_LAYOUT_SZ;
+
+	return (size);
+}
+
+uint64_t
+pnfs_shadow_size(uint64_t size)
+{
+	return (size + PNFS_LAYOUT_SZ);
+}

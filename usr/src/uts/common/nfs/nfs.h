@@ -2399,6 +2399,13 @@ void rfs_free_xuio(void *);
 
 time_t nfs_sys_uptime(void);
 
+extern uint64_t nfs_real_size(uint64_t, const struct exportinfo *);
+extern uint64_t nfs_shadow_size(uint64_t, const struct exportinfo *);
+
+extern uint64_t pnfs_real_size(uint64_t);
+extern uint64_t pnfs_shadow_size(uint64_t);
+
+
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus
