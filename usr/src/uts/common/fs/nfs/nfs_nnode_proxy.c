@@ -693,7 +693,7 @@ nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
 	if (off <= vap->va_size)
 		return;
 
-	vattr.va_size = off;
+	vattr.va_size = pnfs_shadow_size(off);
 	vattr.va_mask = AT_SIZE;
 	VOP_SETATTR(vp, &vattr, 0, cr, ct);
 }
