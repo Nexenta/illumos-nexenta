@@ -65,6 +65,7 @@ static nnode_data_ops_t proxy_data_ops = {
 	.ndo_free = nnode_proxy_data_free
 };
 
+static ksema_t proxy_sema;
 static kmem_cache_t *nnode_proxy_data_cache;
 
 int pnfs_proxy_disabled;	/* Is used for testing purpose */
@@ -396,7 +397,9 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	if (rc != 0)
 		goto out;
 
+	sema_p(&proxy_sema);
 	rc = proxy_do_read(uiop, &sp, &eof);
+	sema_v(&proxy_sema);
 	if (rc != 0)
 		goto out;
 
@@ -619,7 +622,9 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	if (rc != 0)
 		goto out;
 
+	sema_p(&proxy_sema);
 	rc = proxy_do_write(uiop, &sp);
+	sema_v(&proxy_sema);
 	if (rc != 0)
 		goto out;
 
@@ -747,6 +752,7 @@ nnode_proxy_data_destroy(void *vdata, void *foo)
 void
 nnode_proxy_init(void)
 {
+	sema_init(&proxy_sema, 4, NULL, SEMA_DEFAULT, NULL);
 	nnode_proxy_data_cache = kmem_cache_create("nnode_proxy_data_cache",
 	    sizeof (nnode_proxy_data_t), 0,
 	    nnode_proxy_data_construct, nnode_proxy_data_destroy, NULL,
@@ -757,4 +763,5 @@ void
 nnode_proxy_fini(void)
 {
 	kmem_cache_destroy(nnode_proxy_data_cache);
+	sema_destroy(&proxy_sema);
 }
