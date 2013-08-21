@@ -455,19 +455,9 @@ mds_read_odl(vnode_t *vp, int *size)
 	uint64_t sz;
 	int err;
 
-	*size = 0;
-
 	ASSERT(vp->v_type == VREG);
 
-	/*
-	 * open the layout file.
-	 */
-	VN_HOLD(vp);
-	if ((err = VOP_OPEN(&vp, FREAD, CRED(), NULL)) != 0) {
-		VN_RELE(vp);
-		return (NULL);
-	}
-
+	*size = 0;
 	(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, NULL);
 
 	/*
@@ -480,8 +470,6 @@ mds_read_odl(vnode_t *vp, int *size)
 	sz = va.va_size;
 	if (err || (sz == 0 || sz < sizeof (odl_t))) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
-		(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
-		VN_RELE(vp);
 		return (NULL);
 	}
 
@@ -504,15 +492,11 @@ mds_read_odl(vnode_t *vp, int *size)
 
 	if (err = VOP_READ(vp, &uio, FREAD, CRED(), NULL)) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
-		(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
 		kmem_free(odlp, sz);
-		VN_RELE(vp);
 		return (NULL);
 	}
 
 	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
-	(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
-	VN_RELE(vp);
 	*size = sz;
 
 	return (odlp);
@@ -528,12 +512,6 @@ mds_write_odl(vnode_t *vp, char *odlp, int size)
 	struct uio uio;
 	struct iovec iov;
 
-	VN_HOLD(vp);
-	err = VOP_OPEN(&vp, FWRITE|FTRUNC, CRED(), NULL);
-	if (err) {
-		VN_RELE(vp);
-		return (err);
-	}
 	iov.iov_base = (caddr_t)odlp;
 	iov.iov_len = size;
 
@@ -551,9 +529,6 @@ mds_write_odl(vnode_t *vp, char *odlp, int size)
 	err = VOP_WRITE(vp, &uio, ioflag, CRED(), NULL);
 	VOP_RWUNLOCK(vp, V_WRITELOCK_TRUE, NULL);
 
-	(void) VOP_CLOSE(vp, FWRITE, 1, (offset_t)0, CRED(), NULL);
-
-	VN_RELE(vp);
 	return (err);
 }
 
