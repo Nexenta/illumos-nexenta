@@ -497,7 +497,7 @@ mds_read_odl(vnode_t *vp, int *size)
 	}
 
 	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
-	*size = sz;
+	*size = sz - uio.uio_resid;
 
 	return (odlp);
 }
