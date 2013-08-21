@@ -8760,9 +8760,6 @@ mds_op_layout_commit(nfs_argop4 *argop, nfs_resop4 *resop,
 	offset4 newsize;
 	caller_context_t ct;
 	vattr_t va;
-	uio_t uio;
-	iovec_t iov;
-	char null_byte;
 	int error;
 
 	DTRACE_NFSV4_2(op__layoutcommit__start,
@@ -8832,25 +8829,12 @@ mds_op_layout_commit(nfs_argop4 *argop, nfs_resop4 *resop,
 		 * the file denies the implementation.
 		 */
 		if (newsize > va.va_size) {
+			vattr_t vattr;
 
-			null_byte = '\0';
+			vattr.va_size = newsize;
+			vattr.va_mask = AT_SIZE;
+			error = VOP_SETATTR(vp, &vattr, 0, cr, &ct);
 
-			iov.iov_base = &null_byte;
-			iov.iov_len = 1;
-
-			bzero(&uio, sizeof (uio));
-			uio.uio_iov = &iov;
-			uio.uio_iovcnt = 1;
-			uio.uio_offset = newsize - 1;
-			uio.uio_segflg = UIO_SYSSPACE;
-			uio.uio_fmode = FWRITE;
-			uio.uio_extflg = 0;
-			uio.uio_limit = newsize;
-			uio.uio_resid = 1;
-
-			(void) VOP_RWLOCK(vp, V_WRITELOCK_TRUE, &ct);
-			error = VOP_WRITE(vp, &uio, FWRITE, cr, &ct);
-			VOP_RWUNLOCK(vp, V_WRITELOCK_TRUE, &ct);
 			if (error != 0) {
 				*cs->statusp = resp->locr_status = \
 				    puterrno4(error);

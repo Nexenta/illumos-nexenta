@@ -686,34 +686,14 @@ nnode_proxy_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
 	nnode_proxy_data_t *mnd = vdata;
 	vnode_t *vp = mnd->mnd_vp;
 	vattr_t *vap = &mnd->mnd_vattr;
-	uio_t uio;
-	iovec_t iov;
-	char null_byte;
+	vattr_t vattr;
 
 	if (off <= vap->va_size)
 		return;
 
-	/*
-	 * Modelled from mds_op_layout_commit()
-	 *
-	 * write a null byte at off-1 so that the size is correct.
-	 * VOP_SETATTR may fail if the mode of the file is restrictive.
-	 */
-	null_byte = '\0';
-	iov.iov_base = &null_byte;
-	iov.iov_len = 1;
-
-	bzero(&uio, sizeof (uio));
-	uio.uio_iov = &iov;
-	uio.uio_iovcnt = 1;
-	uio.uio_offset = off - 1;
-	uio.uio_segflg = UIO_SYSSPACE;
-	uio.uio_fmode = FWRITE;
-	uio.uio_extflg = 0;
-	uio.uio_limit = off;
-	uio.uio_resid = 1;
-
-	(void) VOP_WRITE(vp, &uio, FWRITE, cr, ct);
+	vattr.va_size = off;
+	vattr.va_mask = AT_SIZE;
+	VOP_SETATTR(vp, &vattr, 0, cr, ct);
 }
 
 static nnode_proxy_data_t *
