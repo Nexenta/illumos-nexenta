@@ -356,7 +356,7 @@ mds_clean_layout(rfs4_entry_t e, void *arg)
 }
 
 void
-mds_nuke_layout(nfs_server_instance_t *instp)
+mds_clean_layouts(nfs_server_instance_t *instp)
 {
 	rw_enter(&instp->mds_layout_lock, RW_WRITER);
 	rfs4_dbe_walk(instp->mds_layout_tab, mds_clean_layout, NULL);

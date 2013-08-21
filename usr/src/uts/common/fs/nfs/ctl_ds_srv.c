@@ -1182,7 +1182,7 @@ ds_exchange(DS_EXIBIargs *argp, DS_EXIBIres *resp, struct svc_req *rqstp)
 		 * Need to find out that mean comment below:
 		 * XXX: This will go away with the SMF work!
 		 */
-		mds_nuke_layout(mds_server);
+		mds_clean_layouts(mds_server);
 	}
 
 	/*
