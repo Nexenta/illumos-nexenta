@@ -67,6 +67,8 @@ static nnode_data_ops_t proxy_data_ops = {
 
 static kmem_cache_t *nnode_proxy_data_cache;
 
+int pnfs_proxy_disabled;	/* Is used for testing purpose */
+
 /* proxy I/O nnode ops */
 /*
  * Prepare strategy pointed by @sp
@@ -380,6 +382,9 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 
 	ASSERT((*flags & (NNODE_IO_FLAG_WRITE | NNODE_IO_FLAG_EOF)) == 0);
 
+	if (pnfs_proxy_disabled)
+		return (NFS4ERR_IO);
+
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
 
@@ -599,6 +604,9 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	int rc;
 
 	ASSERT(*flags & NNODE_IO_FLAG_WRITE);
+
+	if (pnfs_proxy_disabled)
+		return (NFS4ERR_IO);
 
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
