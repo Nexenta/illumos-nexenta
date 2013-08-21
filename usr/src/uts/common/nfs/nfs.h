@@ -2405,6 +2405,11 @@ extern uint64_t nfs_shadow_size(uint64_t, const struct exportinfo *);
 extern uint64_t pnfs_real_size(uint64_t);
 extern uint64_t pnfs_shadow_size(uint64_t);
 
+extern int nfs_vop_getattr(vnode_t *, vattr_t *, int, cred_t *,
+    caller_context_t *, struct exportinfo *exi);
+
+extern int nfs_vop_setattr(vnode_t *, vattr_t *, int, cred_t *,
+    caller_context_t *, struct exportinfo *exi);
 
 #endif	/* _KERNEL */
 

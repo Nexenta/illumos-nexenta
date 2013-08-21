@@ -3459,3 +3459,39 @@ nfs_shadow_size(uint64_t size, const struct exportinfo *exi)
 
 	return (size);
 }
+
+int
+nfs_vop_getattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
+    caller_context_t *ct, struct exportinfo *exi)
+{
+	int err;
+
+	err = VOP_GETATTR(vp, vap, flags, cr, ct);
+
+	if (!err) {
+		if (vp->v_type == VREG && pnfs_enabled(exi) &&
+		    vap->va_mask & AT_SIZE)
+			vap->va_size = pnfs_real_size(vap->va_size);
+	}
+	return (err);
+}
+
+int
+nfs_vop_setattr(vnode_t *vp, vattr_t *vap, int flags, cred_t *cr,
+    caller_context_t *ct, struct exportinfo *exi)
+{
+	int err, shadow;
+
+	shadow = (vp->v_type == VREG && pnfs_enabled(exi) &&
+	    vap->va_mask & AT_SIZE);
+
+	if (shadow)
+		vap->va_size = pnfs_shadow_size(vap->va_size);
+
+	err = VOP_SETATTR(vp, vap, flags, cr, ct);
+
+	if (shadow)
+		vap->va_size = pnfs_real_size(vap->va_size);
+
+	return (err);
+}
