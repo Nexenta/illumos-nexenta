@@ -8340,25 +8340,6 @@ mds_alloc_ds_fh(fsid_t fsid, const nfs41_fid_t *fid, mds_sid *sid,
 
 int mds_layout_is_dense = 1;
 
-/*
- * get file layout
- * XXX? should the rfs4_file_t be cached in compound state?
- */
-nfsstat4
-mds_get_file_layout(vnode_t *vp, mds_layout_t **plp)
-{
-	mds_layout_t *layout;
-
-	ASSERT(vp);
-
-	layout = pnfs_get_mds_layout(vp);
-	if (layout == NULL)
-		return (NFS4ERR_LAYOUTUNAVAILABLE);
-
-	*plp = layout;
-	return (NFS4_OK);
-}
-
 static void
 mds_free_fh_list(nfs_fh4 *nfl_fh_list, int count)
 {
@@ -8396,7 +8377,7 @@ mds_fetch_layout(struct compound_state *cs,
 	char *xdr_buffer;
 
 	if (!pnfs_enabled(cs->exi) ||
-	    mds_get_file_layout(cs->vp, &lp) != NFS4_OK)
+	    ((lp = pnfs_get_mds_layout(cs->vp)) == NULL))
 		return (NFS4ERR_LAYOUTUNAVAILABLE);
 
 	/*

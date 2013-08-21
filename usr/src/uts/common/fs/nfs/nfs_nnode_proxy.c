@@ -67,29 +67,7 @@ static nnode_data_ops_t proxy_data_ops = {
 
 static kmem_cache_t *nnode_proxy_data_cache;
 
-extern nfsstat4 mds_get_file_layout(vnode_t *, mds_layout_t **);
-
 /* proxy I/O nnode ops */
-
-/*ARGSUSED*/
-static int
-proxy_get_layout(nnode_proxy_data_t *mnd, mds_layout_t **lp)
-{
-	nfsstat4 stat;
-
-	stat = mds_get_file_layout(mnd->mnd_vp, lp);
-	if (*lp == NULL || stat != NFS4_OK)
-		return (NFS4ERR_LAYOUTUNAVAILABLE);
-	return (0);
-}
-
-/*ARGSUSED*/
-void
-proxy_free_layout(mds_layout_t *lp)
-{
-	rfs4_dbe_rele(lp->mlo_dbe);
-}
-
 /*
  * Prepare strategy pointed by @sp
  */
@@ -405,8 +383,8 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
 
-	rc = proxy_get_layout(mnd, &lp);
-	if (rc != 0)
+	lp = pnfs_get_mds_layout(mnd->mnd_vp);
+	if (lp == NULL)
 		return (NFS4ERR_IO);
 
 	rc = proxy_init_strategy(mnd, uiop, lp, &sp);
@@ -438,7 +416,7 @@ nnode_proxy_read(void *vdata, nnode_io_flags_t *flags, cred_t *cr,
 		*flags &= ~NNODE_IO_FLAG_EOF;
 out:
 	proxy_free_strategy(&sp);
-	proxy_free_layout(lp);
+	mds_layout_put(lp);
 	return (rc);
 }
 
@@ -625,8 +603,8 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 	off = uiop->uio_loffset;
 	moved = uiop->uio_resid;
 
-	rc = proxy_get_layout(mnd, &lp);
-	if (rc != 0)
+	lp = pnfs_get_mds_layout(mnd->mnd_vp);
+	if (lp == NULL)
 		return (NFS4ERR_IO);
 
 	rc = proxy_init_strategy(mnd, uiop, lp, &sp);
@@ -676,7 +654,7 @@ nnode_proxy_write(void *vdata, nnode_io_flags_t *flags, uio_t *uiop,
 
 out:
 	proxy_free_strategy(&sp);
-	proxy_free_layout(lp);
+	mds_layout_put(lp);
 	return (rc);
 }
 
