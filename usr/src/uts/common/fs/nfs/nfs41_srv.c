@@ -8871,54 +8871,19 @@ layout_match(stateid_t lo_stateid, stateid4 lrf_id, nfsstat4 *status)
 	}
 }
 
-nfsstat4
-mds_return_layout_file(layoutreturn_file4 *lorf, struct compound_state *cs,
-    LAYOUTRETURN4res *resp)
+static void
+pnfsd_file_layout_return(rfs4_file_t *fp, mds_layout_grant_t *lg,
+    uint64_t offset, uint64_t length)
 {
-	rfs4_file_t *fp;
-	mds_layout_grant_t *lg;
-	nfsstat4 status;
-	bool_t create = FALSE;
 	nfs_range_query_t remain;
-
-	if (!rfs4_cs_has_fh(cs)) {
-		cmn_err(CE_WARN, "lo_return(): putfh first");
-		return (NFS4ERR_NOFILEHANDLE);
-	}
-
-	fp = rfs4_findfile(cs->instp, cs->vp, NULL, &create);
-	if (fp == NULL) {
-		cmn_err(CE_WARN, "lo_return(): findfile returned NULL");
-		return (NFS4ERR_SERVERFAULT);
-	}
-
-	lg = rfs41_findlogrant(cs->instp, fp, cs->cp, &create);
-	if (lg == NULL) {
-		/*
-		 * Is this really so bad?  If the server reboots and then
-		 * the client returns a layout, we won't have a grant
-		 * structure for it.
-		 */
-		cmn_err(CE_WARN, "lo_return(): findlogrant returned NULL");
-		rfs4_file_rele(fp);
-		return (NFS4ERR_SERVERFAULT);
-	}
-
-	if (!layout_match(lg->lo_stateid, lorf->lrf_stateid, &status)) {
-		rfs41_lo_grant_rele(lg);
-		rfs4_file_rele(fp);
-		return (status);
-	}
 
 	/*
 	 * Refer to Section 18.44.3 of draft-25 for the right
 	 * lrs_present mojo and corresponding stateid setting.
 	 */
 	rfs41_lo_seqid(&lg->lo_stateid);
-	resp->lorr_stid_u.lrs_stateid = lg->lo_stateid.stateid;
 
-	remain = nfs_range_clear(lg->lo_range, lorf->lrf_offset,
-	    lorf->lrf_length);
+	remain = nfs_range_clear(lg->lo_range, offset, length);
 
 #ifdef NOT_DONE
 	/* XXX - could (should?) be async operation */
@@ -8985,7 +8950,48 @@ mds_return_layout_file(layoutreturn_file4 *lorf, struct compound_state *cs,
 		 */
 #endif
 	}
+}
 
+nfsstat4
+mds_return_layout_file(layoutreturn_file4 *lorf, struct compound_state *cs,
+    LAYOUTRETURN4res *resp)
+{
+	rfs4_file_t *fp;
+	mds_layout_grant_t *lg;
+	nfsstat4 status;
+	bool_t create = FALSE;
+
+	if (!rfs4_cs_has_fh(cs)) {
+		cmn_err(CE_WARN, "lo_return(): putfh first");
+		return (NFS4ERR_NOFILEHANDLE);
+	}
+
+	fp = rfs4_findfile(cs->instp, cs->vp, NULL, &create);
+	if (fp == NULL) {
+		cmn_err(CE_WARN, "lo_return(): findfile returned NULL");
+		return (NFS4ERR_SERVERFAULT);
+	}
+
+	lg = rfs41_findlogrant(cs->instp, fp, cs->cp, &create);
+	if (lg == NULL) {
+		/*
+		 * Is this really so bad?  If the server reboots and then
+		 * the client returns a layout, we won't have a grant
+		 * structure for it.
+		 */
+		cmn_err(CE_WARN, "lo_return(): findlogrant returned NULL");
+		rfs4_file_rele(fp);
+		return (NFS4ERR_SERVERFAULT);
+	}
+
+	if (!layout_match(lg->lo_stateid, lorf->lrf_stateid, &status)) {
+		rfs41_lo_grant_rele(lg);
+		rfs4_file_rele(fp);
+		return (status);
+	}
+
+	pnfsd_file_layout_return(fp, lg, lorf->lrf_offset, lorf->lrf_length);
+	resp->lorr_stid_u.lrs_stateid = lg->lo_stateid.stateid;
 	rfs4_file_rele(fp);
 	rfs41_lo_grant_rele(lg);
 
