@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -38,16 +39,6 @@
 #include <nfs/ds_filehandle.h>
 
 #include <sys/sdt.h>
-
-bool_t
-xdr_mds_sid_content(XDR *xdrs, mds_sid_content *objp)
-{
-	if (!xdr_uint64_t(xdrs, &objp->id))
-		return (FALSE);
-	if (!xdr_uint64_t(xdrs, &objp->aun))
-		return (FALSE);
-	return (TRUE);
-}
 
 bool_t
 xdr_mds_sid(XDR *xdrs, mds_sid *objp)

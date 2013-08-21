@@ -970,9 +970,6 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 	DS_REPORTAVAILresok	*res_ok;
 
 	ds_addr	*dap;
-
-	mds_sid_content	sid_content;
-
 	mds_sid		*sid_array;
 	uint32_t	sid_array_len;
 
@@ -1048,17 +1045,6 @@ ds_reportavail(DS_REPORTAVAILargs *argp, DS_REPORTAVAILres *resp,
 		/* Only supported type is ZFS */
 		ASSERT(pgi->ds_guid.stor_type == ZFS);
 		guid_map[count].ds_guid = pgi->ds_guid;
-
-		/*
-		 * MDS SIDs: these would come from the mds_mapzap,
-		 * but for now we just reuse the ds_guid
-		 *
-		 * Note that whatever is used as the MDS SID
-		 * can not just be the ZFS id for the root fileset
-		 * as a mds could have multiple root filesets...
-		 */
-		bcopy(&pgi->ds_guid.ds_guid_u.zfsguid,
-		    &sid_content, sizeof (sid_content));
 
 		/*
 		 * There is only one MDS SID associated with this

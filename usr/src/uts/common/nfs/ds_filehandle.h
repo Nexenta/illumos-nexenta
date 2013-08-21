@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _DS_FILEHANDLE_H
@@ -38,12 +40,6 @@ enum ds_fh_version {
 typedef enum ds_fh_version ds_fh_version;
 
 #define	DS_MAXFIDSZ 64
-
-struct mds_sid_content {
-	uint64_t id;
-	uint64_t aun;
-};
-typedef struct mds_sid_content mds_sid_content;
 
 struct mds_sid {
 	uint_t len;
@@ -84,7 +80,6 @@ extern void free_mds_ds_fh(mds_ds_fh *);
 extern mds_ds_fh *get_mds_ds_fh(nfs_fh4 *);
 extern int mds_alloc_ds_fh(fsid_t, const nfs41_fid_t *, mds_sid *, nfs_fh4 *);
 extern bool_t xdr_ds_fh_fmt(XDR *, mds_ds_fh *);
-extern bool_t xdr_mds_sid_content(XDR *, mds_sid_content *);
 extern bool_t xdr_mds_sid(XDR *, mds_sid *);
 extern bool_t xdr_mds_dataset_id(XDR *, mds_dataset_id *);
 extern bool_t xdr_ds_fh_v1(XDR *, ds_fh_v1 *);
