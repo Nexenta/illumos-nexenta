@@ -343,13 +343,54 @@ get_access_mode(compound_state_t *cs, DS_CHECKSTATEres *resp)
 	rfs4_file_rele(fp);
 }
 
+static vnode_t *
+ds_extract_vp(nfs_fh4 *fh, ds_status *status)
+{
+	mds_ds_fh *dfhp;
+	vnode_t *vp;
+
+	/*
+	 * Decode the OTW DS file handle.
+	 */
+	if ((dfhp = get_mds_ds_fh(fh)) == NULL) {
+		*status = DSERR_BADHANDLE;
+		return (NULL);
+	}
+
+	/*
+	 * Sanity check. Ensure that we are dealing with a DS file handle.
+	 */
+	if (dfhp->type != FH41_TYPE_DMU_DS || dfhp->vers != DS_FH_v1) {
+		free_mds_ds_fh(dfhp);
+		*status = DSERR_BADHANDLE;
+		return (NULL);
+	}
+
+	/*
+	 * Convert the ds file handle to a vnode. vnode is required by
+	 * check_stateid.
+	 */
+	vp = ds_fhtovp(dfhp, status);
+	free_mds_ds_fh(dfhp);
+
+	/*
+	 * We steal the reference from VFS_VGET in ds_fhtovp, so do not need to
+	 * do VN_HOLD explicity. VN_RELE happens when the compound_state_t gets
+	 * back to the kmem_cache via rfs41_compound_state_free.
+	 */
+	if (vp == NULL)
+		*status = DSERR_BADHANDLE;
+
+	return (vp);
+}
+
+
 /* ARGSUSED */
 void
 ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 		struct svc_req *req)
 {
 	compound_state_t *cs;
-	mds_ds_fh *dfhp = NULL;
 	nfsstat4 stat;
 	nnode_error_t error;
 	bool_t deleg;
@@ -359,40 +400,9 @@ ds_checkstate(DS_CHECKSTATEargs *argp, DS_CHECKSTATEres *resp,
 
 	bzero(resp, sizeof (*resp));
 
-	/*
-	 * Decode the OTW DS file handle.
-	 */
-	if ((dfhp = get_mds_ds_fh(&argp->fh)) == NULL) {
-		resp->status = DSERR_BADHANDLE;
+	vp = ds_extract_vp(&argp->fh, &resp->status);
+	if (vp == NULL)
 		return;
-	}
-
-	/*
-	 * Sanity check. Ensure that we are dealing with a DS file handle.
-	 */
-	if (dfhp->type != FH41_TYPE_DMU_DS || dfhp->vers != DS_FH_v1) {
-		free_mds_ds_fh(dfhp);
-		resp->status = DSERR_BADHANDLE;
-		return;
-	}
-
-	/*
-	 * Convert the ds file handle to a vnode. vnode is required by
-	 * check_stateid.
-	 */
-	vp = ds_fhtovp(dfhp, &resp->status);
-	free_mds_ds_fh(dfhp);
-
-	/*
-	 * We steal the reference from VFS_VGET in ds_fhtovp, so do not need to
-	 * do VN_HOLD explicity. VN_RELE happens when the compound_state_t gets
-	 * back to the kmem_cache via rfs41_compound_state_free.
-	 */
-	if (vp == NULL) {
-		resp->status = DSERR_BADHANDLE;
-		return;
-	}
-
 	/*
 	 * Allocate a compound struct, needed by the function
 	 * that gets called via the nnode interface.
@@ -594,10 +604,42 @@ void
 ds_file_update(DS_FILEUPDATEargs *argp, DS_FILEUPDATEres *resp,
     struct svc_req *rqstp)
 {
-	/*
-	 * insert server code here
-	 */
-	resp->status = DS_OK;
+	vattr_t va;
+	vnode_t *vp;
+	mds_ds_fh *dfhp;
+	caller_context_t ct;
+	int error;
+
+
+	bzero(resp, sizeof (*resp));
+
+	vp = ds_extract_vp(&argp->fh, &resp->status);
+	if (vp == NULL)
+		return;
+
+	ct.cc_sysid = 0;
+	ct.cc_pid = 0;
+	ct.cc_caller_id = mds_server->caller_id;
+	ct.cc_flags = CC_DONTBLOCK;
+
+	/* Here we know that file is "pnfs"-type */
+	va.va_mask = AT_SIZE;
+	error = VOP_GETATTR(vp, &va, 0, kcred, &ct);
+	if (error != 0) {
+		resp->status = DSERR_IO;
+		/* *cs->statusp = resp->locr_status = puterrno4(error); */
+		goto out;
+	}
+
+	if (argp->size > pnfs_real_size(va.va_size))
+		error = pnfs_metadata_size_update(vp, argp->size, kcred, &ct);
+
+	if (error)
+		resp->status = DSERR_IO;
+	else
+		resp->status = DS_OK;
+out:
+	VN_RELE(vp);
 }
 
 int
