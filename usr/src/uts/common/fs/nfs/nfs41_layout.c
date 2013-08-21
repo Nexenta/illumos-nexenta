@@ -802,9 +802,9 @@ mds_get_odl(vnode_t *vp, mds_layout_t **plp)
 
 	mds_layout_t	*lp;
 	layout_core_t	lc;
-
 	odl	*on_disk;
 	odl_t	*odlt;
+	int	err = NFS4_OK;
 
 	ASSERT(plp != NULL);
 
@@ -828,23 +828,29 @@ mds_get_odl(vnode_t *vp, mds_layout_t **plp)
 		return (NFS4ERR_LAYOUTTRYLATER);
 
 	odlt = on_disk->odl_u.odl_pnfs.odl_lo_u.odl_content.odl_content_val;
+	if (odlt == NULL) {
+		err = NFS4ERR_LAYOUTTRYLATER;
+		goto err_free;
+	}
 
 	lc.lc_stripe_unit = odlt->unit_size;
 	lc.lc_stripe_count = odlt->sid.sid_len;
 	lc.lc_mds_sids = odlt->sid.sid_val;
 
 	lp = mds_add_layout(&lc);
+	if (lp == NULL)
+		err = NFS4ERR_LAYOUTTRYLATER;
 
 	kmem_free(odlt->sid.sid_val, (odlt->sid.sid_len * sizeof (mds_sid)));
 	kmem_free(odlt, sizeof (odl_t));
+
+err_free:
 	kmem_free(on_disk, sizeof (odl));
 
-	if (lp == NULL)
-		return (NFS4ERR_LAYOUTTRYLATER);
+	if (err == NFS4_OK)
+		*plp = lp;
 
-	*plp = lp;
-
-	return (NFS4_OK);
+	return (err);
 }
 
 static void
