@@ -1076,7 +1076,8 @@ retry:
  * updated in the future to handle write delegation space guarantees.
  */
 nfsstat4
-rfs4_vop_getattr(vnode_t *vp, vattr_t *vap, int flag, cred_t *cr)
+rfs4_vop_getattr(vnode_t *vp, vattr_t *vap, int flag, cred_t *cr,
+    struct exportinfo *exi)
 {
 
 	int error;

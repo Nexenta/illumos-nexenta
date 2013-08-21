@@ -1890,7 +1890,7 @@ mds_lorecall_cmd(struct mds_reclo_args *args, cred_t *cr)
 			vattr_t va;
 
 			va.va_mask = AT_FSID | AT_TYPE;
-			error = rfs4_vop_getattr(vp, &va, 0, cr);
+			error = rfs4_vop_getattr(vp, &va, 0, cr, exi);
 
 			if (error == 0 && va.va_type != VREG)
 				error = EINVAL;

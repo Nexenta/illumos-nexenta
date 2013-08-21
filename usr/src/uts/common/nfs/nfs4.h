@@ -1207,7 +1207,8 @@ extern	void		rfs4_cbinfo_free(rfs4_cbinfo_t *);
 extern	void		rfs4_client_setcb(rfs4_client_t *, cb_client4 *,
 					uint32_t);
 extern	void		rfs4_deleg_cb_check(rfs4_client_t *);
-extern	nfsstat4	rfs4_vop_getattr(vnode_t *, vattr_t *, int, cred_t *);
+extern	nfsstat4	rfs4_vop_getattr(vnode_t *, vattr_t *, int, cred_t *,
+    struct exportinfo *);
 
 /* rfs4_deleg_state_t handling and other delegation interfaces */
 extern	bool_t		rfs4_check_recall(rfs4_state_t *, uint32_t);

@@ -364,7 +364,7 @@ fattr4_get_change(struct nfs4_svgetit_arg *sarg, fattr4_change *changep)
 		ASSERT(vp != NULL);
 		vap = vap2;
 		vap->va_mask = AT_CTIME;
-		status = rfs4_vop_getattr(vp, vap, 0, cs->cr);
+		status = rfs4_vop_getattr(vp, vap, 0, cs->cr, cs->exi);
 		if (status != NFS4_OK)
 			return (geterrno4(status));
 	}
@@ -1055,7 +1055,7 @@ rfs4_fattr4_acl(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg,
 			vap = &va;
 			vap->va_mask = AT_UID | AT_GID;
 			status = rfs4_vop_getattr(vp,
-			    vap, 0, sarg->cs->cr);
+			    vap, 0, sarg->cs->cr, sarg->cs->exi);
 			if (status != NFS4_OK)
 				return (geterrno4(status));
 		}
@@ -1394,7 +1394,8 @@ rfs4_get_mntdfileid(nfs4_attr_cmd_t cmd, struct nfs4_svgetit_arg *sarg)
 		} else {
 			va.va_mask = AT_NODEID;
 			vap = &va;
-			error = rfs4_vop_getattr(stubvp, vap, 0, sarg->cs->cr);
+			error = rfs4_vop_getattr(stubvp, vap, 0, sarg->cs->cr,
+			    sarg->cs->exi);
 		}
 
 		/*
