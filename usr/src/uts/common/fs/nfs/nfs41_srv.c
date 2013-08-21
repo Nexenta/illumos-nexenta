@@ -5013,6 +5013,7 @@ mds_do_open(struct compound_state *cs, struct svc_req *req,
 			rfs4_dbe_rele(fp->rf_mlo->mlo_dbe);
 		}
 
+		mds_layout_get(plo);
 		fp->rf_mlo = plo;
 	}
 
@@ -5349,6 +5350,9 @@ mds_do_opennull(struct compound_state *cs,
 		mds_do_open(cs, req, oo, do_41_deleg_hack(args->share_access),
 		    (args->share_access & 0xff), args->share_deny, resp,
 		    0, plo);
+
+		if (plo)
+			mds_layout_put(plo);
 
 		/*
 		 * If rfs4_createfile set attrset, we must
