@@ -452,7 +452,8 @@ mds_read_odl(vnode_t *vp, int *size)
 	struct iovec iov;
 	char *odlp;
 	vattr_t va;
-	int sz, err, bad_file;
+	uint64_t sz;
+	int err;
 
 	*size = 0;
 
@@ -477,14 +478,15 @@ mds_read_odl(vnode_t *vp, int *size)
 	err = VOP_GETATTR(vp, &va, 0, CRED(), NULL);
 
 	sz = va.va_size;
-	bad_file = (sz == 0 || sz < sizeof (odl_t));
-
-	if (err || bad_file) {
+	if (err || (sz == 0 || sz < sizeof (odl_t))) {
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 		(void) VOP_CLOSE(vp, FREAD, 1, (offset_t)0, CRED(), NULL);
 		VN_RELE(vp);
 		return (NULL);
 	}
+
+	if (sz > PNFS_LAYOUT_SZ)
+		sz = PNFS_LAYOUT_SZ;
 
 	odlp = kmem_alloc(sz, KM_SLEEP);
 
