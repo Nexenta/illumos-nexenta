@@ -208,6 +208,8 @@ int dserv_mds_addport(const char *, const char *, const char *);
 int dserv_mds_reportavail(void);
 nfsstat4 dserv_mds_checkstate(void *, compound_state_t *, int mode,
     stateid4 *, bool_t, bool_t *, bool_t, caller_context_t *, clientid4 *);
+int dserv_nnode_update(void *, nnode_io_flags_t, cred_t *,
+    caller_context_t *, off64_t);
 dserv_mds_instance_t *dserv_mds_get_my_instance(void);
 int dserv_instance_enter(krw_t, boolean_t, dserv_mds_instance_t **, pid_t *);
 void dserv_instance_exit(dserv_mds_instance_t *);

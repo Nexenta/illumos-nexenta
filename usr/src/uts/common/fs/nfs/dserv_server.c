@@ -218,6 +218,7 @@ static uint_t ctl_mds_srv_cnt =
 static nnode_data_ops_t dserv_nnode_data_ops = {
 	.ndo_read = dserv_nnode_read,
 	.ndo_write = dserv_nnode_write,
+	.ndo_update = dserv_nnode_update,
 	.ndo_io_prep = dserv_nnode_io_prep,
 	.ndo_remove_obj = dserv_nnode_remove_obj,
 	.ndo_free = dserv_nnode_data_free

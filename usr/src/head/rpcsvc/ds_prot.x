@@ -549,6 +549,15 @@ struct DS_SHUTDOWNres {
       	ds_status status;
 };
 
+struct DS_FILEUPDATEargs {
+	nfs_fh4		fh;
+	uint64_t	size;
+};
+
+struct DS_FILEUPDATEres {
+	ds_status status;
+};
+
 program PNFSCTLDS {
 	version PNFSCTLDS_V1 {
 		void
@@ -580,6 +589,10 @@ program PNFSCTLDS {
 
 		DS_SHUTDOWNres
 		    DS_SHUTDOWN(DS_SHUTDOWNargs) = 9;
+
+		DS_FILEUPDATEres
+		    DS_FILEUPDATE(DS_FILEUPDATEargs) = 10;
+
 	} = 1;
 } = 104001;
 

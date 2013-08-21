@@ -1230,6 +1230,61 @@ dserv_mds_checkstate(void *dnstate, compound_state_t *cs, int mode,
 	return (status);
 }
 
+/* ARGSUSED */
+int
+dserv_nnode_update(void *vdata, nnode_io_flags_t flags, cred_t *cr,
+    caller_context_t *ct, off64_t off)
+{
+	dserv_nnode_data_t *data = vdata;
+	dserv_mds_instance_t *inst;
+	DS_FILEUPDATEargs args;
+	DS_FILEUPDATEres res;
+	client_owner4 *co4;
+	mds_ds_fh *fh = data->dnd_fh;
+	nfsstat4 status;
+	int error;
+
+	if (fh == NULL)
+		return (NFS4ERR_SERVERFAULT);
+
+	error = dserv_instance_enter(RW_READER, B_FALSE, &inst, NULL);
+	if (error) {
+		status = NFS4ERR_SERVERFAULT;
+		return (status);
+	}
+	if (inst->dmi_recov_in_progress) {
+		status = NFS4ERR_DELAY;
+		goto out;
+	}
+
+	bzero(&args, sizeof (args));
+	bzero(&res, sizeof (res));
+
+	if (!xdr_encode_ds_fh(fh, &args.fh)) {
+		status = NFS4ERR_SERVERFAULT;
+		goto out;
+	}
+
+	args.size = off;
+
+	error = dserv_mds_call(inst, DS_FILEUPDATE,
+	    (caddr_t)&args, xdr_DS_FILEUPDATEargs,
+	    (caddr_t)&res, xdr_DS_FILEUPDATEres);
+
+	if (error == 0) {
+		DTRACE_PROBE1(dserv__i__update_status, int, res.status);
+		status = get_nfs_status(res.status);
+		xdr_free(xdr_DS_FILEUPDATEres, (caddr_t)&res);
+	} else {
+		status = NFS4ERR_SERVERFAULT;
+		DTRACE_PROBE(dserv__i__update_status_fail);
+	}
+	xdr_free_ds_fh(&args.fh);
+out:
+	dserv_instance_exit(inst);
+	return (status);
+}
+
 int
 dserv_mds_reportavail()
 {
