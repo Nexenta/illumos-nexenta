@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -242,6 +242,15 @@ smb2_create(smb_request_t *sr)
 				goto errout;
 			op->sd = kmem_alloc(sizeof (sd), KM_SLEEP);
 			*op->sd = sd;
+		}
+
+		if (cctx.cc_in_flags & CCTX_ALLOCATION_SIZE) {
+			cce = &cctx.cc_in_alloc_size;
+			rc = smb_mbc_decodef(&cce->cce_mbc, "q", &op->dsize);
+			if (rc) {
+				status = NT_STATUS_INVALID_PARAMETER;
+				goto errout;
+			}
 		}
 
 		/*

@@ -1463,7 +1463,11 @@ typedef struct open_param {
 	timestruc_t	crtime;
 	timestruc_t	mtime;
 	timestruc_t	timewarp;
-	uint64_t	dsize;
+	/*
+	 * Careful: dsize is the desired (allocation) size before the
+	 * common open function, and the actual size afterwards.
+	 */
+	uint64_t	dsize;	/* alloc size, actual size */
 	uint32_t	desired_access;
 	uint32_t	share_access;
 	uint32_t	create_options;
