@@ -25,6 +25,10 @@
  */
 
 /*
+ * Copyright (c) 2014 by Delphix. All rights reserved.
+ */
+
+/*
  * Xen virtual device driver interfaces
  */
 
@@ -146,6 +150,11 @@ typedef struct xd_cfg {
 #define	XD_DOM_ALL	(XD_DOM_ZERO | XD_DOM_GUEST)
 
 static i_xd_cfg_t xdci[] = {
+#ifndef XPV_HVM_DRIVER
+	{ XEN_CONSOLE, NULL, NULL, NULL, "xencons", NULL,
+	    "console", IPL_CONS, XD_DOM_ALL, },
+#endif
+
 	{ XEN_VNET, "vif", "device/vif", "backend/vif", "xnf", "xnb",
 	    "network", IPL_VIF, XD_DOM_ALL, },
 
@@ -154,10 +163,8 @@ static i_xd_cfg_t xdci[] = {
 
 	{ XEN_BLKTAP, "tap", NULL, "backend/tap", NULL, "xpvtap",
 	    "block", IPL_VBD, XD_DOM_ALL, },
-#ifndef XPV_HVM_DRIVER
-	{ XEN_CONSOLE, NULL, NULL, NULL, "xencons", NULL,
-	    "console", IPL_CONS, XD_DOM_ALL, },
 
+#ifndef XPV_HVM_DRIVER
 	{ XEN_XENBUS, NULL, NULL, NULL, "xenbus", NULL,
 	    NULL, 0, XD_DOM_ALL, },
 
@@ -166,13 +173,13 @@ static i_xd_cfg_t xdci[] = {
 
 	{ XEN_BALLOON, NULL, NULL, NULL, "balloon", NULL,
 	    NULL, 0, XD_DOM_ALL, },
+#endif
 
 	{ XEN_EVTCHN, NULL, NULL, NULL, "evtchn", NULL,
 	    NULL, 0, XD_DOM_ZERO, },
 
 	{ XEN_PRIVCMD, NULL, NULL, NULL, "privcmd", NULL,
 	    NULL, 0, XD_DOM_ZERO, },
-#endif
 };
 #define	NXDC	(sizeof (xdci) / sizeof (xdci[0]))
 
