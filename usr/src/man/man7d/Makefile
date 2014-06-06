@@ -32,6 +32,7 @@ _MANFILES=	aac.7d		\
 		audiots.7d	\
 		av1394.7d	\
 		bge.7d		\
+		bnxe.7d		\
 		bscv.7d		\
 		chxge.7d	\
 		console.7d	\
