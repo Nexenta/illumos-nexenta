@@ -30,6 +30,8 @@
 #include <stdio_ext.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <string.h>
+#include <errno.h>
 #include <sys/zfs_context.h>
 #include <sys/spa.h>
 #include <sys/spa_impl.h>
@@ -984,8 +986,8 @@ static void
 dump_history(spa_t *spa)
 {
 	nvlist_t **events = NULL;
-	char buf[SPA_MAXBLOCKSIZE];
 	uint64_t resid, len, off = 0;
+	uint64_t buflen;
 	uint_t num = 0;
 	int error;
 	time_t tsec;
@@ -993,20 +995,38 @@ dump_history(spa_t *spa)
 	char tbuf[30];
 	char internalstr[MAXPATHLEN];
 
+	buflen = SPA_MAXBLOCKSIZE;
+	char *buf = umem_alloc(buflen, UMEM_NOFAIL);
 	do {
-		len = sizeof (buf);
+		len = buflen;
 
 		if ((error = spa_history_get(spa, &off, &len, buf)) != 0) {
-			(void) fprintf(stderr, "Unable to read history: "
-			    "error %d\n", error);
-			return;
+			break;
 		}
 
-		if (zpool_history_unpack(buf, len, &resid, &events, &num) != 0)
+		error = zpool_history_unpack(buf, len, &resid, &events, &num);
+		if (error != 0) {
 			break;
+		}
 
 		off -= resid;
+		if (resid == len) {
+			 buflen *= 2;
+			 buf = realloc(buf, buflen);
+			 if (buf == NULL) {
+				(void) fprintf(stderr, "Unable to read history: %s\n",
+				    strerror(error));
+				goto err;
+			 }
+		}
 	} while (len != 0);
+	umem_free(buf, buflen);
+
+	if (error != 0) {
+		(void) fprintf(stderr, "Unable to read history: %s\n",
+		    strerror(error));
+		goto err;
+	}
 
 	(void) printf("\nHistory:\n");
 	for (int i = 0; i < num; i++) {
@@ -1049,6 +1069,11 @@ next:
 			dump_nvlist(events[i], 2);
 		}
 	}
+err:
+	for (int i = 0; i < num; i++) {
+		nvlist_free(events[i]);
+	}
+	free(events);
 }
 
 /*ARGSUSED*/
