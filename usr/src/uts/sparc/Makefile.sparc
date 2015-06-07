@@ -20,6 +20,7 @@
 #
 
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
 
 
@@ -301,6 +302,7 @@ DRV_KMODS	+= qlge
 DRV_KMODS	+= stmf
 DRV_KMODS	+= stmf_sbd
 DRV_KMODS	+= fct
+DRV_KMODS	+= aoe aoeblk
 DRV_KMODS	+= fcoe
 DRV_KMODS	+= fcoet
 DRV_KMODS	+= fcoei

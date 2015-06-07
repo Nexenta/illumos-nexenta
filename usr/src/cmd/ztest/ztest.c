@@ -20,8 +20,8 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  */
 
@@ -110,6 +110,7 @@
 #include <sys/refcount.h>
 #include <sys/zfeature.h>
 #include <sys/dsl_userhold.h>
+#include <libzfs.h>
 #include <stdio.h>
 #include <stdio_ext.h>
 #include <stdlib.h>
@@ -121,6 +122,8 @@
 #include <math.h>
 #include <sys/fs/zfs.h>
 #include <libnvpair.h>
+
+#include <sys/special.h>
 
 static int ztest_fd_data = -1;
 static int ztest_fd_rand = -1;
@@ -321,6 +324,8 @@ ztest_func_t ztest_fzap;
 ztest_func_t ztest_dmu_snapshot_create_destroy;
 ztest_func_t ztest_dsl_prop_get_set;
 ztest_func_t ztest_spa_prop_get_set;
+ztest_func_t ztest_vdev_prop_get_set;
+ztest_func_t ztest_cos_prop_get_set;
 ztest_func_t ztest_spa_create_destroy;
 ztest_func_t ztest_fault_inject;
 ztest_func_t ztest_ddt_repair;
@@ -356,6 +361,8 @@ ztest_info_t ztest_info[] = {
 	{ ztest_dmu_objset_create_destroy,	1,	&zopt_often	},
 	{ ztest_dsl_prop_get_set,		1,	&zopt_often	},
 	{ ztest_spa_prop_get_set,		1,	&zopt_sometimes	},
+	{ ztest_vdev_prop_get_set,		1,	&zopt_often	},
+	{ ztest_cos_prop_get_set,		1,	&zopt_often	},
 #if 0
 	{ ztest_dmu_prealloc,			1,	&zopt_sometimes	},
 #endif
@@ -421,6 +428,12 @@ static spa_t *ztest_spa = NULL;
 static ztest_ds_t *ztest_ds;
 
 static mutex_t ztest_vdev_lock;
+
+/*
+ * Make sure the "set/get/test" test does not interfere with other
+ * concurrent tests on the same vdev/cos property
+ */
+static mutex_t ztest_props_lock;
 
 /*
  * The ztest_name_lock protects the pool and dataset namespace used by
@@ -813,7 +826,8 @@ ztest_get_ashift(void)
 }
 
 static nvlist_t *
-make_vdev_file(char *path, char *aux, char *pool, size_t size, uint64_t ashift)
+make_vdev_file(char *path, char *aux, char *pool, size_t size,
+    uint64_t ashift, boolean_t is_special)
 {
 	char pathbuf[MAXPATHLEN];
 	uint64_t vdev;
@@ -844,7 +858,7 @@ make_vdev_file(char *path, char *aux, char *pool, size_t size, uint64_t ashift)
 		if (fd == -1)
 			fatal(1, "can't open %s", path);
 		if (ftruncate(fd, size) != 0)
-			fatal(1, "can't ftruncate %s", path);
+			fatal(1, "can't ftruncate %s to %lld", path, size);
 		(void) close(fd);
 	}
 
@@ -852,23 +866,26 @@ make_vdev_file(char *path, char *aux, char *pool, size_t size, uint64_t ashift)
 	VERIFY(nvlist_add_string(file, ZPOOL_CONFIG_TYPE, VDEV_TYPE_FILE) == 0);
 	VERIFY(nvlist_add_string(file, ZPOOL_CONFIG_PATH, path) == 0);
 	VERIFY(nvlist_add_uint64(file, ZPOOL_CONFIG_ASHIFT, ashift) == 0);
-
+	VERIFY(nvlist_add_uint64(file, ZPOOL_CONFIG_IS_SPECIAL, is_special)
+	    == 0);
 	return (file);
 }
 
 static nvlist_t *
 make_vdev_raidz(char *path, char *aux, char *pool, size_t size,
-    uint64_t ashift, int r)
+    uint64_t ashift, int r, boolean_t is_special)
 {
 	nvlist_t *raidz, **child;
 	int c;
 
 	if (r < 2)
-		return (make_vdev_file(path, aux, pool, size, ashift));
+		return (make_vdev_file(path, aux, pool, size, ashift,
+		    is_special));
 	child = umem_alloc(r * sizeof (nvlist_t *), UMEM_NOFAIL);
 
 	for (c = 0; c < r; c++)
-		child[c] = make_vdev_file(path, aux, pool, size, ashift);
+		child[c] = make_vdev_file(path, aux, pool, size, ashift,
+		    B_FALSE);
 
 	VERIFY(nvlist_alloc(&raidz, NV_UNIQUE_NAME, 0) == 0);
 	VERIFY(nvlist_add_string(raidz, ZPOOL_CONFIG_TYPE,
@@ -888,24 +905,28 @@ make_vdev_raidz(char *path, char *aux, char *pool, size_t size,
 
 static nvlist_t *
 make_vdev_mirror(char *path, char *aux, char *pool, size_t size,
-    uint64_t ashift, int r, int m)
+    uint64_t ashift, int r, int m, boolean_t is_special)
 {
 	nvlist_t *mirror, **child;
 	int c;
 
 	if (m < 1)
-		return (make_vdev_raidz(path, aux, pool, size, ashift, r));
+		return (make_vdev_raidz(path, aux, pool, size, ashift, r,
+		    is_special));
 
 	child = umem_alloc(m * sizeof (nvlist_t *), UMEM_NOFAIL);
 
 	for (c = 0; c < m; c++)
-		child[c] = make_vdev_raidz(path, aux, pool, size, ashift, r);
+		child[c] = make_vdev_raidz(path, aux, pool, size, ashift,
+		    r, B_FALSE);
 
 	VERIFY(nvlist_alloc(&mirror, NV_UNIQUE_NAME, 0) == 0);
 	VERIFY(nvlist_add_string(mirror, ZPOOL_CONFIG_TYPE,
 	    VDEV_TYPE_MIRROR) == 0);
 	VERIFY(nvlist_add_nvlist_array(mirror, ZPOOL_CONFIG_CHILDREN,
 	    child, m) == 0);
+	VERIFY(nvlist_add_uint64(mirror, ZPOOL_CONFIG_IS_SPECIAL, is_special)
+	    == 0);
 
 	for (c = 0; c < m; c++)
 		nvlist_free(child[c]);
@@ -917,7 +938,7 @@ make_vdev_mirror(char *path, char *aux, char *pool, size_t size,
 
 static nvlist_t *
 make_vdev_root(char *path, char *aux, char *pool, size_t size, uint64_t ashift,
-    int log, int r, int m, int t)
+    int log, int r, int m, int t, boolean_t special)
 {
 	nvlist_t *root, **child;
 	int c;
@@ -928,7 +949,7 @@ make_vdev_root(char *path, char *aux, char *pool, size_t size, uint64_t ashift,
 
 	for (c = 0; c < t; c++) {
 		child[c] = make_vdev_mirror(path, aux, pool, size, ashift,
-		    r, m);
+		    r, m, special);
 		VERIFY(nvlist_add_uint64(child[c], ZPOOL_CONFIG_IS_LOG,
 		    log) == 0);
 	}
@@ -944,6 +965,62 @@ make_vdev_root(char *path, char *aux, char *pool, size_t size, uint64_t ashift,
 	umem_free(child, t * sizeof (nvlist_t *));
 
 	return (root);
+}
+
+/*
+ * Add special top-level vdev(s) to the vdev tree
+ */
+static void
+add_special_vdevs(nvlist_t *root, size_t size, int r, int m, int t)
+{
+	nvlist_t **child = NULL, **prev_child = NULL, **new_child = NULL;
+	int c = 0, new = 0;
+	unsigned int prev = 0;
+
+	if ((m == 0) || (t == 0))
+		return;
+
+	child = umem_alloc(t * sizeof (nvlist_t *), UMEM_NOFAIL);
+
+	/*
+	 * special flag that is added to the top-level vdevs
+	 */
+	for (c = 0; c < t; c++) {
+		child[c] = make_vdev_mirror(NULL, NULL, NULL, size, 0, r, m,
+		    B_TRUE);
+	}
+
+	/*
+	 * Extend the children's array in the root"
+	 *  - get previously added children
+	 *  - allocate new array
+	 *  - and copy the previous and new children there
+	 *  - replace the children nvlist adday with the new one
+	 */
+	VERIFY(nvlist_lookup_nvlist_array(root, ZPOOL_CONFIG_CHILDREN,
+	    &prev_child, &prev) == 0);
+
+	new = prev + t;
+
+	new_child = umem_alloc(new * sizeof (nvlist_t *),
+	    UMEM_NOFAIL);
+	for (c = 0; c < prev; c++) {
+		VERIFY(nvlist_dup(prev_child[c], &new_child[c], 0) == 0);
+	}
+	for (; c < new; c++) {
+		new_child[c] = child[c-prev];
+	}
+
+	VERIFY(nvlist_add_nvlist_array(root, ZPOOL_CONFIG_CHILDREN,
+	    new_child, new) == 0);
+
+	/* free children */
+	for (c = 0; c < new; c++) {
+		nvlist_free(new_child[c]);
+	}
+	umem_free(child, t * sizeof (nvlist_t *));
+
+	umem_free(new_child, new * sizeof (nvlist_t *));
 }
 
 /*
@@ -2349,7 +2426,8 @@ ztest_spa_create_destroy(ztest_ds_t *zd, uint64_t id)
 	/*
 	 * Attempt to create using a bad file.
 	 */
-	nvroot = make_vdev_root("/dev/bogus", NULL, NULL, 0, 0, 0, 0, 0, 1);
+	nvroot = make_vdev_root("/dev/bogus", NULL, NULL, 0, 0, 0, 0, 0, 1,
+	    B_FALSE);
 	VERIFY3U(ENOENT, ==,
 	    spa_create("ztest_bad_file", nvroot, NULL, NULL));
 	nvlist_free(nvroot);
@@ -2357,7 +2435,8 @@ ztest_spa_create_destroy(ztest_ds_t *zd, uint64_t id)
 	/*
 	 * Attempt to create using a bad mirror.
 	 */
-	nvroot = make_vdev_root("/dev/bogus", NULL, NULL, 0, 0, 0, 0, 2, 1);
+	nvroot = make_vdev_root("/dev/bogus", NULL, NULL, 0, 0, 0, 0, 2, 1,
+	    B_FALSE);
 	VERIFY3U(ENOENT, ==,
 	    spa_create("ztest_bad_mirror", nvroot, NULL, NULL));
 	nvlist_free(nvroot);
@@ -2367,7 +2446,8 @@ ztest_spa_create_destroy(ztest_ds_t *zd, uint64_t id)
 	 * what's in the nvroot; we should fail with EEXIST.
 	 */
 	(void) rw_rdlock(&ztest_name_lock);
-	nvroot = make_vdev_root("/dev/bogus", NULL, NULL, 0, 0, 0, 0, 0, 1);
+	nvroot = make_vdev_root("/dev/bogus", NULL, NULL, 0, 0, 0, 0, 0, 1,
+	    B_FALSE);
 	VERIFY3U(EEXIST, ==, spa_create(zo->zo_pool, nvroot, NULL, NULL));
 	nvlist_free(nvroot);
 	VERIFY3U(0, ==, spa_open(zo->zo_pool, &spa, FTAG));
@@ -2396,7 +2476,7 @@ ztest_spa_upgrade(ztest_ds_t *zd, uint64_t id)
 	(void) spa_destroy(name);
 
 	nvroot = make_vdev_root(NULL, NULL, name, ztest_opts.zo_vdev_size, 0,
-	    0, ztest_opts.zo_raidz, ztest_opts.zo_mirrors, 1);
+	    0, ztest_opts.zo_raidz, ztest_opts.zo_mirrors, 1, B_FALSE);
 
 	/*
 	 * If we're configuring a RAIDZ device then make sure that the
@@ -2540,7 +2620,7 @@ ztest_vdev_add_remove(ztest_ds_t *zd, uint64_t id)
 		nvroot = make_vdev_root(NULL, NULL, NULL,
 		    ztest_opts.zo_vdev_size, 0,
 		    ztest_random(4) == 0, ztest_opts.zo_raidz,
-		    zs->zs_mirrors, 1);
+		    zs->zs_mirrors, 1, B_FALSE);
 
 		error = spa_vdev_add(spa, nvroot);
 		nvlist_free(nvroot);
@@ -2615,7 +2695,7 @@ ztest_vdev_aux_add_remove(ztest_ds_t *zd, uint64_t id)
 		 * Add a new device.
 		 */
 		nvlist_t *nvroot = make_vdev_root(NULL, aux, NULL,
-		    (ztest_opts.zo_vdev_size * 5) / 4, 0, 0, 0, 0, 1);
+		    (ztest_opts.zo_vdev_size * 5) / 4, 0, 0, 0, 0, 1, B_FALSE);
 		error = spa_vdev_add(spa, nvroot);
 		if (error != 0)
 			fatal(0, "spa_vdev_add(%p) = %d", nvroot, error);
@@ -2884,7 +2964,7 @@ ztest_vdev_attach_detach(ztest_ds_t *zd, uint64_t id)
 	 * Build the nvlist describing newpath.
 	 */
 	root = make_vdev_root(newpath, NULL, NULL, newvd == NULL ? newsize : 0,
-	    ashift, 0, 0, 0, 1);
+	    ashift, 0, 0, 0, 1, replacing ? oldvd->vdev_isspecial : B_FALSE);
 
 	error = spa_vdev_attach(spa, oldguid, root, replacing);
 
@@ -4622,6 +4702,337 @@ ztest_spa_prop_get_set(ztest_ds_t *zd, uint64_t id)
 	(void) rw_unlock(&ztest_name_lock);
 }
 
+/* vdev and cos property tests */
+typedef enum {
+	VDEV_PROP_UINT64,
+	VDEV_PROP_STRING,
+	COS_PROP_UINT64
+} ztest_prop_t;
+
+/* common functions */
+static vdev_t *
+ztest_get_random_vdev_leaf(spa_t *spa)
+{
+	vdev_t *lvd = NULL, *tvd = NULL;
+	uint64_t top = 0;
+
+	spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
+	/* Pick first leaf of a random top-level vdev */
+	top = ztest_random_vdev_top(spa, B_TRUE);
+	tvd = spa->spa_root_vdev->vdev_child[top];
+	lvd = vdev_walk_tree(tvd, NULL, NULL);
+	ASSERT3P(lvd, !=, NULL);
+	ASSERT(lvd->vdev_ops->vdev_op_leaf);
+	spa_config_exit(spa, SCL_ALL, FTAG);
+
+	return (lvd);
+}
+
+#define	ZTEST_COS_NAME		"ztest_cos"
+
+/*ARGSUSED*/
+static nvlist_t *
+ztest_props_set(const vdev_t *lvd, const char *name, const ztest_prop_t t,
+    const void *props, const size_t size)
+{
+	spa_t *spa = ztest_spa;
+	nvlist_t *sprops;
+	int error = 0;
+
+	VERIFY(0 == nvlist_alloc(&sprops, NV_UNIQUE_NAME, 0));
+
+	for (int p = 0; p < size; p++) {
+		uint64_t ival;
+		char sval[16];
+		const char *pname =
+		    (t == VDEV_PROP_UINT64 || t == VDEV_PROP_STRING) ?
+		    vdev_prop_to_name(((vdev_prop_t *)props)[p]) :
+		    cos_prop_to_name(((cos_prop_t *)props)[p]);
+
+		switch (t) {
+		case VDEV_PROP_UINT64:
+		case COS_PROP_UINT64:
+			/* range 0...10 is valid for all properties */
+			ival = ztest_random(10) + 1;
+			VERIFY(0 == nvlist_add_uint64(sprops, pname, ival));
+			break;
+		case VDEV_PROP_STRING:
+			/* use a well known name for cos property */
+			if (((vdev_prop_t *)props)[p] == VDEV_PROP_COS) {
+				(void) snprintf(sval, 15, "%s", ZTEST_COS_NAME);
+			} else {
+				/* any short string will do */
+				(void) snprintf(sval, 15, "prop_value%d", p);
+			}
+			VERIFY(0 == nvlist_add_string(sprops, pname, sval));
+			break;
+		default:
+			/* unknown property */
+			error = EINVAL;
+			break;
+		}
+	}
+	VERIFY3U(0, ==, error);
+
+	/* set the props */
+	switch (t) {
+	case VDEV_PROP_UINT64:
+	case VDEV_PROP_STRING:
+		error = spa_vdev_prop_set(spa, lvd->vdev_guid, sprops);
+		break;
+	case COS_PROP_UINT64:
+		error = spa_cos_prop_set(spa, name, sprops);
+		break;
+	default:
+		error = EINVAL;
+		break;
+	}
+	if (error == ENOSPC) {
+		ztest_record_enospc(FTAG);
+		nvlist_free(sprops);
+		return (NULL);
+	}
+	ASSERT0(error);
+	return (sprops);
+}
+
+static nvlist_t *
+ztest_props_get(const vdev_t *lvd, const char *name)
+{
+	spa_t *spa = ztest_spa;
+	nvlist_t *gprops = NULL;
+	int error = 0;
+
+	if (lvd)
+		error = spa_vdev_prop_get(spa, lvd->vdev_guid, &gprops);
+	else
+		error = spa_cos_prop_get(spa, name, &gprops);
+	if (error == ENOSPC) {
+		ztest_record_enospc(FTAG);
+		return (NULL);
+	}
+	ASSERT0(error);
+	return (gprops);
+}
+
+static void
+ztest_props_test(const ztest_prop_t t, const void *props, const size_t size,
+    nvlist_t *sprops, nvlist_t *gprops)
+{
+	for (int p = 0; p < size; p++) {
+		const char *pname =
+		    (t == VDEV_PROP_UINT64 || t == VDEV_PROP_STRING) ?
+		    vdev_prop_to_name(((vdev_prop_t *)props)[p]) :
+		    cos_prop_to_name(((cos_prop_t *)props)[p]);
+
+		switch (t) {
+		case VDEV_PROP_UINT64:
+		case COS_PROP_UINT64:
+		{
+			uint64_t sival, gival;
+			VERIFY3U(0, ==, nvlist_lookup_uint64(sprops, pname,
+			    &sival));
+			VERIFY3U(0, ==, nvlist_lookup_uint64(gprops, pname,
+			    &gival));
+			VERIFY3U(gival, ==, sival);
+		}
+		break;
+		case VDEV_PROP_STRING:
+		{
+			char *ssval, *gsval;
+			VERIFY3U(0, ==, nvlist_lookup_string(sprops, pname,
+			    &ssval));
+			VERIFY3U(0, ==, nvlist_lookup_string(gprops, pname,
+			    &gsval));
+			VERIFY3U(0, ==, strcmp(ssval, gsval));
+		}
+		break;
+		default:
+			/* unknown property */
+			VERIFY(0);
+			break;
+		}
+	}
+
+	nvlist_free(sprops);
+	nvlist_free(gprops);
+}
+
+static const cos_prop_t cprops_uint64[] = {
+	COS_PROP_READ_MINACTIVE,
+	COS_PROP_AREAD_MINACTIVE,
+	COS_PROP_WRITE_MINACTIVE,
+	COS_PROP_AWRITE_MINACTIVE,
+	COS_PROP_SCRUB_MINACTIVE,
+	COS_PROP_READ_MAXACTIVE,
+	COS_PROP_AREAD_MAXACTIVE,
+	COS_PROP_WRITE_MAXACTIVE,
+	COS_PROP_AWRITE_MAXACTIVE,
+	COS_PROP_SCRUB_MAXACTIVE,
+	COS_PROP_PREFERRED_READ
+};
+
+/* ARGSUSED */
+void
+ztest_cos_prop_get_set(ztest_ds_t *zd, uint64_t id)
+{
+	spa_t *spa = ztest_spa;
+	nvlist_t *sprops = NULL, *gprops = NULL, *cos_list = NULL;
+	char cos_name[MAXCOSNAMELEN];
+	const char *pname = NULL;
+	char *sval = NULL;
+	uint64_t cos_id = ztest_random(~0ULL), val = 0;
+	vdev_t *lvd = NULL;
+
+	(void) snprintf(cos_name, MAXCOSNAMELEN-1, "cos_%llu", cos_id);
+
+	VERIFY3U(0, ==, mutex_lock(&ztest_props_lock));
+
+	VERIFY3U(0, ==, spa_alloc_cos(spa, cos_name, cos_id));
+
+	sprops = ztest_props_set(NULL, cos_name,
+	    COS_PROP_UINT64, (void *)&cprops_uint64[0],
+	    sizeof (cprops_uint64) / sizeof (cprops_uint64[0]));
+	gprops = ztest_props_get(NULL, cos_name);
+	ztest_props_test(COS_PROP_UINT64, (void *)&cprops_uint64[0],
+	    sizeof (cprops_uint64) / sizeof (cprops_uint64[0]),
+	    sprops, gprops);
+
+	VERIFY3U(0, ==, nvlist_alloc(&cos_list, NV_UNIQUE_NAME, 0));
+	VERIFY3U(0, ==, spa_list_cos(spa, cos_list));
+	VERIFY3U(0, ==, nvlist_lookup_uint64(cos_list, cos_name, &val));
+	VERIFY3U(cos_id, ==, val);
+	nvlist_free(cos_list);
+
+	VERIFY3U(0, ==, spa_free_cos(spa, cos_name, B_FALSE));
+	VERIFY3U(0, ==, nvlist_alloc(&cos_list, NV_UNIQUE_NAME, 0));
+	VERIFY3U(0, ==, spa_list_cos(spa, cos_list));
+	VERIFY3U(ENOENT, ==, nvlist_lookup_uint64(cos_list, cos_name, &val));
+	nvlist_free(cos_list);
+
+	/*
+	 * force spa_free_cos() test
+	 * - allocate cos property, set vdev's cos, then free cos forcefuly
+	 * - verify everything succeeds
+	 * - verify no cos property on vdev
+	 * - verify no cos descriptor remains
+	 */
+	VERIFY3U(0, ==, spa_alloc_cos(spa, cos_name, cos_id));
+
+	/* Make sure vdevs will stay in place */
+	VERIFY(0 == mutex_lock(&ztest_vdev_lock));
+
+	lvd = ztest_get_random_vdev_leaf(spa);
+
+	VERIFY(0 == nvlist_alloc(&sprops, NV_UNIQUE_NAME, 0));
+
+	pname = vdev_prop_to_name(VDEV_PROP_COS);
+	VERIFY3U(0, ==, nvlist_add_string(sprops, pname, cos_name));
+	VERIFY3U(0, ==, spa_vdev_prop_set(spa, lvd->vdev_guid, sprops));
+
+	VERIFY3U(0, ==, spa_free_cos(spa, cos_name, B_TRUE));
+
+	VERIFY3U(0, ==, spa_vdev_prop_get(spa, lvd->vdev_guid, &gprops));
+
+	VERIFY(0 == mutex_unlock(&ztest_vdev_lock));
+
+	/* verify the vdev cos prop gone */
+	VERIFY3U(ENOENT, ==, nvlist_lookup_string(gprops, cos_name, &sval));
+
+	/* verify the cos descriptor gone */
+	VERIFY3U(0, ==, nvlist_alloc(&cos_list, NV_UNIQUE_NAME, 0));
+	VERIFY3U(0, ==, spa_list_cos(spa, cos_list));
+	VERIFY3U(ENOENT, ==, nvlist_lookup_uint64(cos_list, cos_name, &val));
+
+	VERIFY3U(0, ==, mutex_unlock(&ztest_props_lock));
+
+	nvlist_free(cos_list);
+}
+
+/* vdev tests */
+static const vdev_prop_t vprops_uint64[] = {
+	VDEV_PROP_READ_MINACTIVE,
+	VDEV_PROP_AREAD_MINACTIVE,
+	VDEV_PROP_WRITE_MINACTIVE,
+	VDEV_PROP_AWRITE_MINACTIVE,
+	VDEV_PROP_SCRUB_MINACTIVE,
+	VDEV_PROP_READ_MAXACTIVE,
+	VDEV_PROP_AREAD_MAXACTIVE,
+	VDEV_PROP_WRITE_MAXACTIVE,
+	VDEV_PROP_AWRITE_MAXACTIVE,
+	VDEV_PROP_SCRUB_MAXACTIVE,
+	VDEV_PROP_PREFERRED_READ
+};
+static const vdev_prop_t vprops_string[] = {
+	VDEV_PROP_COS,
+	VDEV_PROP_SPAREGROUP
+};
+
+static void
+ztest_cos_free(spa_t *spa, vdev_t *lvd, const char *name)
+{
+	nvlist_t *sprops = NULL;
+	int error = 0;
+	VERIFY(0 == nvlist_alloc(&sprops, NV_UNIQUE_NAME, 0));
+	VERIFY(0 == nvlist_add_string(sprops,
+	    vdev_prop_to_name(VDEV_PROP_COS), ""));
+	VERIFY3U(0, ==, spa_vdev_prop_set(spa, lvd->vdev_guid, sprops));
+	/*
+	 * this can be called in cleanup code paths when we do not know
+	 * if CoS was allocated
+	 */
+	error = spa_free_cos(spa, name, B_TRUE);
+	if (error)
+		VERIFY3U(error, ==, ENOENT);
+	nvlist_free(sprops);
+}
+
+/* ARGSUSED */
+void
+ztest_vdev_prop_get_set(ztest_ds_t *zd, uint64_t id)
+{
+	spa_t *spa = ztest_spa;
+	nvlist_t *sprops = NULL, *gprops = NULL;
+	vdev_t *lvd = NULL;
+	int error = 0;
+	/* Make sure vdevs will stay in place */
+	VERIFY3U(0, ==, mutex_lock(&ztest_props_lock));
+
+	VERIFY(0 == mutex_lock(&ztest_vdev_lock));
+
+	lvd = ztest_get_random_vdev_leaf(spa);
+
+	/* Test uint64 properties */
+	sprops = ztest_props_set(lvd, NULL, VDEV_PROP_UINT64,
+	    (void *)&vprops_uint64[0],
+	    sizeof (vprops_uint64) / sizeof (vprops_uint64[0]));
+	gprops = ztest_props_get(lvd, NULL);
+	ztest_props_test(VDEV_PROP_UINT64, (void *)&vprops_uint64[0],
+	    sizeof (vprops_uint64) / sizeof (vprops_uint64[0]), sprops, gprops);
+
+	/* Test string properties */
+	/* Allocate CoS descriptor to have vdev-set of cos succeed */
+	error = spa_alloc_cos(spa, ZTEST_COS_NAME, 0);
+	if (error)
+		VERIFY3U(error, ==, EEXIST);
+
+	sprops = ztest_props_set(lvd, NULL, VDEV_PROP_STRING,
+	    (void *)&vprops_string[0],
+	    sizeof (vprops_string) / sizeof (vprops_string[0]));
+	gprops = ztest_props_get(lvd, NULL);
+	ztest_props_test(VDEV_PROP_STRING, (void *)&vprops_string[0],
+	    sizeof (vprops_string) / sizeof (vprops_string[0]), sprops, gprops);
+
+	/* Done, free cos to avoid collisions with other tests */
+	ztest_cos_free(spa, lvd, ZTEST_COS_NAME);
+
+	VERIFY(0 == mutex_unlock(&ztest_vdev_lock));
+
+	VERIFY3U(0, ==, mutex_unlock(&ztest_props_lock));
+}
+
+/* end vdev and cos property tests */
+
 static int
 user_release_one(const char *snapname, const char *holdname)
 {
@@ -5273,7 +5684,8 @@ ztest_spa_import_export(char *oldname, char *newname)
 	/*
 	 * Export it.
 	 */
-	VERIFY3U(0, ==, spa_export(oldname, &config, B_FALSE, B_FALSE));
+	VERIFY3U(0, ==, spa_export(oldname, &config, B_FALSE, B_FALSE,
+	    B_FALSE));
 
 	ztest_walk_pool_directory("pools after export");
 
@@ -5580,6 +5992,7 @@ ztest_run(ztest_shared_t *zs)
 	 * Initialize parent/child shared state.
 	 */
 	VERIFY(_mutex_init(&ztest_vdev_lock, USYNC_THREAD, NULL) == 0);
+	VERIFY(_mutex_init(&ztest_props_lock, USYNC_THREAD, NULL) == 0);
 	VERIFY(rwlock_init(&ztest_name_lock, USYNC_THREAD, NULL) == 0);
 
 	zs->zs_thread_start = gethrtime();
@@ -5863,11 +6276,37 @@ make_random_props()
 	nvlist_t *props;
 
 	VERIFY(nvlist_alloc(&props, NV_UNIQUE_NAME, 0) == 0);
-	if (ztest_random(2) == 0)
-		return (props);
-	VERIFY(nvlist_add_uint64(props, "autoreplace", 1) == 0);
+	switch (ztest_random(4)) {
+	case 0:
+		break;
+	case 1:
+		VERIFY(nvlist_add_uint64(props, "autoreplace", 1) == 0);
+		break;
+	case 2:
+		VERIFY(nvlist_add_uint64(props, "enablespecial", 1) == 0);
+		break;
+	case 3:
+		VERIFY(nvlist_add_uint64(props, "enablespecial", 1) == 0);
+		VERIFY(nvlist_add_uint64(props, "autoreplace", 1) == 0);
+		break;
+	}
 
 	return (props);
+}
+
+static void
+set_random_ds_props(char *dsname)
+{
+	/*
+	 * Set special class randomly
+	 */
+	spa_specialclass_id_t special_class = SPA_SPECIALCLASS_META;
+
+	if (ztest_random(100) < 50)
+		special_class = SPA_SPECIALCLASS_ZIL;
+
+	VERIFY(ztest_dsl_prop_set_uint64(dsname, ZFS_PROP_SPECIALCLASS,
+		special_class, B_TRUE) == 0);
 }
 
 /*
@@ -5893,7 +6332,13 @@ ztest_init(ztest_shared_t *zs)
 	zs->zs_splits = 0;
 	zs->zs_mirrors = ztest_opts.zo_mirrors;
 	nvroot = make_vdev_root(NULL, NULL, NULL, ztest_opts.zo_vdev_size, 0,
-	    0, ztest_opts.zo_raidz, zs->zs_mirrors, 1);
+	    0, ztest_opts.zo_raidz, zs->zs_mirrors, 1, B_FALSE);
+	/*
+	 * Add special vdevs
+	 */
+	add_special_vdevs(nvroot, ztest_opts.zo_vdev_size, ztest_opts.zo_raidz,
+	    zs->zs_mirrors, 1);
+
 	props = make_random_props();
 	for (int i = 0; i < SPA_FEATURES; i++) {
 		char buf[1024];
@@ -5903,10 +6348,14 @@ ztest_init(ztest_shared_t *zs)
 	}
 	VERIFY3U(0, ==, spa_create(ztest_opts.zo_pool, nvroot, props, NULL));
 	nvlist_free(nvroot);
+	nvlist_free(props);
 
 	VERIFY3U(0, ==, spa_open(ztest_opts.zo_pool, &spa, FTAG));
 	zs->zs_metaslab_sz =
 	    1ULL << spa->spa_root_vdev->vdev_child[0]->vdev_ms_shift;
+
+	/* set props on the root dataset */
+	set_random_ds_props(ztest_opts.zo_pool);
 
 	spa_close(spa, FTAG);
 
@@ -5919,6 +6368,7 @@ ztest_init(ztest_shared_t *zs)
 	ztest_run_zdb(ztest_opts.zo_pool);
 
 	(void) rwlock_destroy(&ztest_name_lock);
+	(void) _mutex_destroy(&ztest_props_lock);
 	(void) _mutex_destroy(&ztest_vdev_lock);
 }
 

@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef _SYS_VDEV_IMPL_H
@@ -34,6 +35,8 @@
 #include <sys/vdev.h>
 #include <sys/dkio.h>
 #include <sys/uberblock_impl.h>
+#include <sys/fs/zfs.h>
+#include <sys/cos.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -65,6 +68,7 @@ typedef void	vdev_io_done_func_t(zio_t *zio);
 typedef void	vdev_state_change_func_t(vdev_t *vd, int, int);
 typedef void	vdev_hold_func_t(vdev_t *vd);
 typedef void	vdev_rele_func_t(vdev_t *vd);
+typedef void	vdev_trim_func_t(vdev_t *vd, zio_t *pio, void *trim_exts);
 
 typedef struct vdev_ops {
 	vdev_open_func_t		*vdev_op_open;
@@ -75,6 +79,7 @@ typedef struct vdev_ops {
 	vdev_state_change_func_t	*vdev_op_state_change;
 	vdev_hold_func_t		*vdev_op_hold;
 	vdev_rele_func_t		*vdev_op_rele;
+	vdev_trim_func_t		*vdev_op_trim;
 	char				vdev_op_type[16];
 	boolean_t			vdev_op_leaf;
 } vdev_ops_t;
@@ -99,8 +104,32 @@ struct vdev_cache {
 	kmutex_t	vc_lock;
 };
 
+/*
+ * Macros for conversion between zio priorities and vdev properties.
+ * These rely on the specific corresponding order of the zio_priority_t
+ * and vdev_prop_t enum definitions to simplify the conversion.
+ */
+#define	VDEV_PROP_TO_ZIO_PRIO_MIN(prp)	((prp) - VDEV_PROP_READ_MINACTIVE)
+#define	VDEV_ZIO_PRIO_TO_PROP_MIN(pri)	((pri) + VDEV_PROP_READ_MINACTIVE)
+#define	VDEV_PROP_MIN_VALID(prp)		\
+	(((prp) >= VDEV_PROP_READ_MINACTIVE) &&	\
+	((prp) <= VDEV_PROP_SCRUB_MINACTIVE))
+#define	VDEV_PROP_TO_ZIO_PRIO_MAX(prp)	((prp) - VDEV_PROP_READ_MAXACTIVE)
+#define	VDEV_ZIO_PRIO_TO_PROP_MAX(pri)	((pri) + VDEV_PROP_READ_MAXACTIVE)
+#define	VDEV_PROP_MAX_VALID(prp)		\
+	(((prp) >= VDEV_PROP_READ_MAXACTIVE) &&	\
+	((prp) <= VDEV_PROP_SCRUB_MAXACTIVE))
+
 typedef struct vdev_queue_class {
 	uint32_t	vqc_active;
+
+	/*
+	 * If min/max active values are zero, we fall back on the global
+	 * corresponding tunables defined in vdev_queue.c; non-zero values
+	 * override the global tunables
+	 */
+	uint32_t	vqc_min_active; /* min concurently active IOs */
+	uint32_t	vqc_max_active; /* max concurently active IOs */
 
 	/*
 	 * Sorted by offset or timestamp, depending on if the queue is
@@ -111,12 +140,16 @@ typedef struct vdev_queue_class {
 
 struct vdev_queue {
 	vdev_t		*vq_vdev;
+
 	vdev_queue_class_t vq_class[ZIO_PRIORITY_NUM_QUEUEABLE];
+	cos_t		*vq_cos;		/* assigned class of storage */
+	uint64_t	vq_preferred_read;	/* property setting */
+
 	avl_tree_t	vq_active_tree;
 	avl_tree_t	vq_read_offset_tree;
 	avl_tree_t	vq_write_offset_tree;
 	uint64_t	vq_last_offset;
-	hrtime_t	vq_io_complete_ts; /* time last i/o completed */
+	hrtime_t	vq_io_complete_ts;	/* time last i/o completed */
 	kmutex_t	vq_lock;
 };
 
@@ -171,7 +204,8 @@ struct vdev {
 	uint64_t	vdev_deflate_ratio; /* deflation ratio (x512)	*/
 	uint64_t	vdev_islog;	/* is an intent log device	*/
 	uint64_t	vdev_removing;	/* device is being removed?	*/
-	boolean_t	vdev_ishole;	/* is a hole in the namespace 	*/
+	boolean_t	vdev_ishole;	/* is a hole in the namespace	*/
+	uint64_t	vdev_isspecial;	/* is a special device	*/
 
 	/*
 	 * Leaf vdev state.
@@ -188,13 +222,16 @@ struct vdev {
 	uint64_t	vdev_removed;	/* persistent removed state	*/
 	uint64_t	vdev_resilver_txg; /* persistent resilvering state */
 	uint64_t	vdev_nparity;	/* number of parity devices for raidz */
+	uint64_t	vdev_l2ad_ddt;	/* L2ARC vdev is used to cache DDT */
 	char		*vdev_path;	/* vdev path (if any)		*/
 	char		*vdev_devid;	/* vdev devid (if any)		*/
 	char		*vdev_physpath;	/* vdev device path (if any)	*/
 	char		*vdev_fru;	/* physical FRU location	*/
+	uint64_t	vdev_weight;	/* dynamic weight */
 	uint64_t	vdev_not_present; /* not present during import	*/
 	uint64_t	vdev_unspare;	/* unspare when resilvering done */
 	boolean_t	vdev_nowritecache; /* true if flushwritecache failed */
+	boolean_t	vdev_notrim;	/* true if Unmap/TRIM is unsupported */
 	boolean_t	vdev_checkremove; /* temporary online test	*/
 	boolean_t	vdev_forcefault; /* force online fault		*/
 	boolean_t	vdev_splitting;	/* split or repair in progress  */
@@ -211,6 +248,7 @@ struct vdev {
 	zio_t		*vdev_probe_zio; /* root of current probe	*/
 	vdev_aux_t	vdev_label_aux;	/* on-disk aux state		*/
 
+	char		*vdev_spare_group; /* spare group name */
 	/*
 	 * For DTrace to work in userland (libzpool) context, these fields must
 	 * remain at the end of the structure.  DTrace will use the kernel's
@@ -221,6 +259,7 @@ struct vdev {
 	kmutex_t	vdev_dtl_lock;	/* vdev_dtl_{map,resilver}	*/
 	kmutex_t	vdev_stat_lock;	/* vdev_stat			*/
 	kmutex_t	vdev_probe_lock; /* protects vdev_probe_zio	*/
+	krwlock_t	vdev_tsd_lock;	/* protects vdev_tsd */
 };
 
 #define	VDEV_RAIDZ_MAXPARITY	3
@@ -327,12 +366,23 @@ extern vdev_ops_t vdev_missing_ops;
 extern vdev_ops_t vdev_hole_ops;
 extern vdev_ops_t vdev_spare_ops;
 
+extern uint_t vdev_count_leaf_vdevs(vdev_t *root);
+
 /*
  * Common size functions
  */
 extern uint64_t vdev_default_asize(vdev_t *vd, uint64_t psize);
 extern uint64_t vdev_get_min_asize(vdev_t *vd);
 extern void vdev_set_min_asize(vdev_t *vd);
+
+
+/*
+ * Wrapper for getting vdev-specific properties that enforces proper
+ * overriding: vdev-specific properties override CoS properties
+ *
+ * The value of 0 indicates that the property is not set (default).
+ */
+extern uint64_t vdev_queue_get_prop_uint64(vdev_queue_t *vq, vdev_prop_t prop);
 
 /*
  * Global variables

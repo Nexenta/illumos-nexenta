@@ -227,6 +227,15 @@ shift
 [[ -d "${CODEMGR_WS}" ]] || fatal_error "Error: ${CODEMGR_WS} is not a directory."
 [[ -f "${CODEMGR_WS}/usr/src/Makefile" ]] || fatal_error "Error: ${CODEMGR_WS}/usr/src/Makefile not found."
 
+# Make sure NZA build is okay.
+if [[ ! -v NZA_MAKEDEFS ]]; then
+	if [[ -f "${CODEMGR_WS}/usr/nza-closed/Makefile.nza" ]]; then
+		export NZA_MAKEDEFS=$CODEMGR_WS/usr/nza-closed/Makefile.nza
+	else
+		export NZA_MAKEDEFS=$CODEMGR_WS/usr/src/Makefile.nza
+	fi
+fi
+
 # must match the getopts in nightly.sh
 OPTIND=1
 NIGHTLY_OPTIONS="-${NIGHTLY_OPTIONS#-}"

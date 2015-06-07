@@ -22,14 +22,17 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2011 Joyent, Inc.  All rights reserved.
+ * Copyright 2012 Joyent, Inc. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
+
 /*
  * Copyright (c) 2009-2010, Intel Corporation.
  * All rights reserved.
  */
+
 /*
- * ACPI CA OSL for Solaris x86
+ * x86 ACPI CA OSL
  */
 
 #include <sys/types.h>
@@ -315,6 +318,17 @@ AcpiOsTableOverride(ACPI_TABLE_HEADER *ExistingTable,
 	return (AE_OK);
 }
 
+ACPI_STATUS
+AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER *ExistingTable,
+    ACPI_PHYSICAL_ADDRESS *NewAddress, UINT32 *NewTableLength)
+{
+	return (AE_SUPPORT);
+}
+
+void
+AcpiOsWaitEventsComplete(void)
+{
+}
 
 /*
  * ACPI semaphore implementation
@@ -883,7 +897,7 @@ AcpiOsWritePort(ACPI_IO_ADDRESS Address, UINT32 Value, UINT32 Width)
 
 
 static void
-osl_rw_memory(ACPI_PHYSICAL_ADDRESS Address, UINT32 *Value,
+osl_rw_memory(ACPI_PHYSICAL_ADDRESS Address, UINT64 *Value,
     UINT32 Width, int write)
 {
 	size_t	maplen = Width / 8;
@@ -902,6 +916,9 @@ osl_rw_memory(ACPI_PHYSICAL_ADDRESS Address, UINT32 *Value,
 	case 4:
 		OSL_RW(ptr, Value, uint32_t, write);
 		break;
+	case 8:
+		OSL_RW(ptr, Value, uint64_t, write);
+		break;
 	default:
 		cmn_err(CE_WARN, "!osl_rw_memory: invalid size %d",
 		    Width);
@@ -913,7 +930,7 @@ osl_rw_memory(ACPI_PHYSICAL_ADDRESS Address, UINT32 *Value,
 
 ACPI_STATUS
 AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS Address,
-		UINT32 *Value, UINT32 Width)
+		UINT64 *Value, UINT32 Width)
 {
 	osl_rw_memory(Address, Value, Width, 0);
 	return (AE_OK);
@@ -921,7 +938,7 @@ AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS Address,
 
 ACPI_STATUS
 AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS Address,
-		UINT32 Value, UINT32 Width)
+		UINT64 Value, UINT32 Width)
 {
 	osl_rw_memory(Address, &Value, Width, 1);
 	return (AE_OK);

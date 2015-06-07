@@ -79,6 +79,7 @@ struct libzfs_handle {
 	libzfs_fru_t **libzfs_fru_hash;
 	libzfs_fru_t *libzfs_fru_list;
 	char libzfs_chassis_id[256];
+	char *libzfs_log_str;
 };
 
 #define	ZFSSHARE_MISS	0x01	/* Didn't find entry in cache */
@@ -145,6 +146,8 @@ int zfs_standard_error(libzfs_handle_t *, int, const char *);
 int zfs_standard_error_fmt(libzfs_handle_t *, int, const char *, ...);
 int zpool_standard_error(libzfs_handle_t *, int, const char *);
 int zpool_standard_error_fmt(libzfs_handle_t *, int, const char *, ...);
+int zpool_vprop_standard_error(libzfs_handle_t *, int, const char *);
+int zpool_vprop_standard_error_fmt(libzfs_handle_t *, int, const char *, ...);
 
 int get_dependents(libzfs_handle_t *, boolean_t, const char *, char ***,
     size_t *);
@@ -183,6 +186,8 @@ int changelist_haszonedchild(prop_changelist_t *);
 
 void remove_mountpoint(zfs_handle_t *);
 int create_parents(libzfs_handle_t *, char *, int);
+int check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
+    boolean_t accept_ancestor, int *prefixlen);
 boolean_t isa_child_of(const char *dataset, const char *parent);
 
 zfs_handle_t *make_dataset_handle(libzfs_handle_t *, const char *);
@@ -210,6 +215,7 @@ extern int zfs_unshare_proto(zfs_handle_t *,
     const char *, zfs_share_proto_t *);
 
 extern void libzfs_fru_clear(libzfs_handle_t *, boolean_t);
+extern void libzfs_log_event(libzfs_handle_t *, const char *name);
 
 #ifdef	__cplusplus
 }

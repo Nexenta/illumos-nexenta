@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
@@ -388,7 +389,7 @@ is_whole_disk(const char *arg)
  * 	xxx		Shorthand for /dev/dsk/xxx
  */
 static nvlist_t *
-make_leaf_vdev(const char *arg, uint64_t is_log)
+make_leaf_vdev(const char *arg, uint64_t is_log, uint64_t is_special)
 {
 	char path[MAXPATHLEN];
 	struct stat64 statbuf;
@@ -472,6 +473,8 @@ make_leaf_vdev(const char *arg, uint64_t is_log)
 	verify(nvlist_add_string(vdev, ZPOOL_CONFIG_PATH, path) == 0);
 	verify(nvlist_add_string(vdev, ZPOOL_CONFIG_TYPE, type) == 0);
 	verify(nvlist_add_uint64(vdev, ZPOOL_CONFIG_IS_LOG, is_log) == 0);
+	verify(nvlist_add_uint64(vdev, ZPOOL_CONFIG_IS_SPECIAL,
+	    is_special) == 0);
 	if (strcmp(type, VDEV_TYPE_DISK) == 0)
 		verify(nvlist_add_uint64(vdev, ZPOOL_CONFIG_WHOLE_DISK,
 		    (uint64_t)wholedisk) == 0);
@@ -560,6 +563,7 @@ get_replication(nvlist_t *nvroot, boolean_t fatal)
 	lastrep.zprl_type = NULL;
 	for (t = 0; t < toplevels; t++) {
 		uint64_t is_log = B_FALSE;
+		uint64_t is_special = B_FALSE;
 
 		nv = top[t];
 
@@ -569,6 +573,11 @@ get_replication(nvlist_t *nvroot, boolean_t fatal)
 		 */
 		(void) nvlist_lookup_uint64(nv, ZPOOL_CONFIG_IS_LOG, &is_log);
 		if (is_log)
+			continue;
+
+		(void) nvlist_lookup_uint64(nv, ZPOOL_CONFIG_IS_SPECIAL,
+		    &is_special);
+		if (is_special)
 			continue;
 
 		verify(nvlist_lookup_string(nv, ZPOOL_CONFIG_TYPE,
@@ -1148,6 +1157,12 @@ is_grouping(const char *type, int *mindev, int *maxdev)
 		return (VDEV_TYPE_L2CACHE);
 	}
 
+	if (strcmp(type, "special") == 0) {
+		if (mindev != NULL)
+			*mindev = 1;
+		return (VDEV_TYPE_SPECIAL);
+	}
+
 	return (NULL);
 }
 
@@ -1162,9 +1177,10 @@ construct_spec(int argc, char **argv)
 {
 	nvlist_t *nvroot, *nv, **top, **spares, **l2cache;
 	int t, toplevels, mindev, maxdev, nspares, nlogs, nl2cache;
+	int nspecial = 0;
 	const char *type;
-	uint64_t is_log;
-	boolean_t seen_logs;
+	boolean_t is_log, seen_logs;
+	boolean_t is_special, seen_special;
 
 	top = NULL;
 	toplevels = 0;
@@ -1175,6 +1191,8 @@ construct_spec(int argc, char **argv)
 	nl2cache = 0;
 	is_log = B_FALSE;
 	seen_logs = B_FALSE;
+	is_special = B_FALSE;
+	seen_special = B_FALSE;
 
 	while (argc > 0) {
 		nv = NULL;
@@ -1196,6 +1214,7 @@ construct_spec(int argc, char **argv)
 					return (NULL);
 				}
 				is_log = B_FALSE;
+				is_special = B_FALSE;
 			}
 
 			if (strcmp(type, VDEV_TYPE_LOG) == 0) {
@@ -1208,6 +1227,7 @@ construct_spec(int argc, char **argv)
 				}
 				seen_logs = B_TRUE;
 				is_log = B_TRUE;
+				is_special = B_FALSE;
 				argc--;
 				argv++;
 				/*
@@ -1226,6 +1246,27 @@ construct_spec(int argc, char **argv)
 					return (NULL);
 				}
 				is_log = B_FALSE;
+				is_special = B_FALSE;
+			}
+
+			if (strcmp(type, VDEV_TYPE_SPECIAL) == 0) {
+				if (seen_special) {
+					(void) fprintf(stderr,
+					    gettext("invalid vdev "
+					    "specification: 'special' can be "
+					    "specified only once\n"));
+					return (NULL);
+				}
+				seen_special = B_TRUE;
+				is_log = B_FALSE;
+				is_special = B_TRUE;
+				argc--;
+				argv++;
+				/*
+				 * A special is not a real grouping device.
+				 * We just set is_special and continue.
+				 */
+				continue;
 			}
 
 			if (is_log) {
@@ -1239,6 +1280,17 @@ construct_spec(int argc, char **argv)
 				nlogs++;
 			}
 
+			if (is_special) {
+				if (strcmp(type, VDEV_TYPE_MIRROR) != 0) {
+					(void) fprintf(stderr,
+					    gettext("invalid vdev "
+					    "specification: unsupported "
+					    "'special' device: %s\n"), type);
+					return (NULL);
+				}
+				nspecial++;
+			}
+
 			for (c = 1; c < argc; c++) {
 				if (is_grouping(argv[c], NULL, NULL) != NULL)
 					break;
@@ -1247,8 +1299,9 @@ construct_spec(int argc, char **argv)
 				    children * sizeof (nvlist_t *));
 				if (child == NULL)
 					zpool_no_memory();
-				if ((nv = make_leaf_vdev(argv[c], B_FALSE))
-				    == NULL)
+				if ((nv = make_leaf_vdev(argv[c],
+				    (uint64_t)B_FALSE,
+				    (uint64_t)B_FALSE)) == NULL)
 					return (NULL);
 				child[children - 1] = nv;
 			}
@@ -1284,7 +1337,11 @@ construct_spec(int argc, char **argv)
 				verify(nvlist_add_string(nv, ZPOOL_CONFIG_TYPE,
 				    type) == 0);
 				verify(nvlist_add_uint64(nv,
-				    ZPOOL_CONFIG_IS_LOG, is_log) == 0);
+				    ZPOOL_CONFIG_IS_LOG,
+				    (uint64_t)is_log) == 0);
+				verify(nvlist_add_uint64(nv,
+				    ZPOOL_CONFIG_IS_SPECIAL,
+				    (uint64_t)is_special) == 0);
 				if (strcmp(type, VDEV_TYPE_RAIDZ) == 0) {
 					verify(nvlist_add_uint64(nv,
 					    ZPOOL_CONFIG_NPARITY,
@@ -1303,10 +1360,13 @@ construct_spec(int argc, char **argv)
 			 * We have a device.  Pass off to make_leaf_vdev() to
 			 * construct the appropriate nvlist describing the vdev.
 			 */
-			if ((nv = make_leaf_vdev(argv[0], is_log)) == NULL)
+			if ((nv = make_leaf_vdev(argv[0], (uint64_t)is_log,
+			    (uint64_t)is_special)) == NULL)
 				return (NULL);
 			if (is_log)
 				nlogs++;
+			if (is_special)
+				nspecial++;
 			argc--;
 			argv++;
 		}
@@ -1322,6 +1382,12 @@ construct_spec(int argc, char **argv)
 		(void) fprintf(stderr, gettext("invalid vdev "
 		    "specification: at least one toplevel vdev must be "
 		    "specified\n"));
+		return (NULL);
+	}
+
+	if (seen_special && nspecial == 0) {
+		(void) fprintf(stderr, gettext("invalid vdev specification: "
+		    "special requires at least 1 device\n"));
 		return (NULL);
 	}
 

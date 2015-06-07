@@ -21,14 +21,14 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, Joyent, Inc. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 /*
  * Copyright (c) 2009, Intel Corporation.
  * All rights reserved.
  */
 /*
- * Solaris x86 ACPI CA services
+ * x86 ACPI CA services
  */
 
 #include <sys/file.h>
@@ -402,8 +402,10 @@ acpica_process_user_options()
 	 * modify default ACPI CA debug output level for non-DEBUG builds
 	 * (to avoid BIOS debug chatter in /var/adm/messages)
 	 */
-	if (acpica_muzzle_debug_output)
+	if (acpica_muzzle_debug_output) {
+		AcpiDbgLayer = 0;
 		AcpiDbgLevel = 0;
+	}
 }
 
 /*

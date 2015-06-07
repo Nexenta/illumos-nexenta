@@ -1,0 +1,62 @@
+'\" te
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+.\"
+.TH VMXNET3S 7D "Jun 9, 2012"
+.SH NAME
+vmxnet3s \- Driver for VMware Vmxnet Generation 3 adapters
+.SH SYNOPSIS
+.sp
+.in +2
+.nf
+/dev/net/vmxnet3s
+.fi
+.in -2
+
+.SH DESCRIPTION
+.sp
+.LP
+The \fBvmxnet3s\fR driver supports VMware Vmxnet Generation 3 adapters.
+
+.SH FILES
+.sp
+.ne 2
+.na
+\fB\fB/dev/net/vmxnet3s\fR\fR
+.ad
+.RS 27n
+Special network device
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB/kernel/drv/vmxnet3s\fR\fR
+.ad
+.RS 27n
+32-bit driver binary (x86)
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB/kernel/drv/amd64/vmxnet3s\fR\fR
+.ad
+.RS 27n
+64-bit driver binary (x86)
+.RE
+
+.SH SEE ALSO
+.sp
+.LP
+\fBdladm\fR(1M), \fBdlpi\fR(7P)

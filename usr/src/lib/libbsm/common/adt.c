@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2001, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <bsm/adt.h>
@@ -190,7 +191,10 @@ adt_get_mask_from_user(uid_t uid, au_mask_t *mask)
 		/* c2audit excluded */
 		mask->am_success = 0;
 		mask->am_failure = 0;
-	} else if (uid <= MAXUID) {
+		return (0);
+	}
+
+	if (uid <= MAXUID) {
 		if ((buff_sz = sysconf(_SC_GETPW_R_SIZE_MAX)) == -1) {
 			adt_write_syslog("couldn't determine maximum size of "
 			    "password buffer", errno);
@@ -199,18 +203,24 @@ adt_get_mask_from_user(uid_t uid, au_mask_t *mask)
 		if ((pwd_buff = calloc(1, (size_t)++buff_sz)) == NULL) {
 			return (-1);
 		}
-		if (getpwuid_r(uid, &pwd, pwd_buff, (int)buff_sz) == NULL) {
-			errno = EINVAL;	/* user doesn't exist */
+		/*
+		 * Ephemeral id's and id's that exist in a name service we
+		 * don't have configured (LDAP, NIS) can't be looked up,
+		 * but either way it's not an error.
+		 */
+		if (getpwuid_r(uid, &pwd, pwd_buff, (int)buff_sz) != NULL) {
+			if (au_user_mask(pwd.pw_name, mask)) {
+				free(pwd_buff);
+				errno = EFAULT; /* undetermined failure */
+				return (-1);
+			}
 			free(pwd_buff);
-			return (-1);
-		}
-		if (au_user_mask(pwd.pw_name, mask)) {
-			free(pwd_buff);
-			errno = EFAULT; /* undetermined failure */
-			return (-1);
+			return (0);
 		}
 		free(pwd_buff);
-	} else if (auditon(A_GETKMASK, (caddr_t)mask, sizeof (*mask)) == -1) {
+	}
+
+	if (auditon(A_GETKMASK, (caddr_t)mask, sizeof (*mask)) == -1) {
 			return (-1);
 	}
 

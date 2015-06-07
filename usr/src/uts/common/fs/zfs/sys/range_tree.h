@@ -78,6 +78,7 @@ void range_tree_fini(void);
 range_tree_t *range_tree_create(range_tree_ops_t *ops, void *arg, kmutex_t *lp);
 void range_tree_destroy(range_tree_t *rt);
 boolean_t range_tree_contains(range_tree_t *rt, uint64_t start, uint64_t size);
+uint64_t range_tree_find_gap(range_tree_t *rt, uint64_t start, uint64_t size);
 uint64_t range_tree_space(range_tree_t *rt);
 void range_tree_verify(range_tree_t *rt, uint64_t start, uint64_t size);
 void range_tree_swap(range_tree_t **rtsrc, range_tree_t **rtdst);
@@ -85,6 +86,7 @@ void range_tree_stat_verify(range_tree_t *rt);
 
 void range_tree_add(void *arg, uint64_t start, uint64_t size);
 void range_tree_remove(void *arg, uint64_t start, uint64_t size);
+void range_tree_remove_overlap(void *arg, uint64_t start, uint64_t size);
 void range_tree_clear(range_tree_t *rt, uint64_t start, uint64_t size);
 
 void range_tree_vacate(range_tree_t *rt, range_tree_func_t *func, void *arg);

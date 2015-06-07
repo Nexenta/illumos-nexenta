@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Driver Utility  function prototypes
@@ -42,10 +47,10 @@ extern "C" {
 #define	MOD_ISR		0x0008
 
 #define	OCE_DEFAULT_LOG_SETTINGS	(CE_WARN	|	\
-					((MOD_CONFIG | MOD_TX | MOD_RX) << 16))
+	((MOD_CONFIG | MOD_TX | MOD_RX) << 16UL))
 
 #define	OCE_MAX_LOG_SETTINGS		(CE_IGNORE | ((MOD_CONFIG | MOD_TX | \
-					MOD_RX | MOD_ISR) << 16))
+	MOD_RX | MOD_ISR) << 16UL))
 
 #define	oce_log(dev_p, level, module, fmt, arg...) {	\
 	if (dev_p) {					\
@@ -78,14 +83,6 @@ extern "C" {
 #define	OFFSET_IN_4K_PAGE(addr) ((off_t)((uint64_t)addr & (PAGE_4K - 1)))
 #define	OCE_NUM_PAGES(size) howmany(size, PAGE_4K)
 
-#ifdef OCE_DEBUG
-#define	OCE_DUMP(buf, len) { \
-	int i = 0; \
-	uint32_t *p = u32ptr(buf); \
-	for (i = 0; i < len/4; i++) \
-		cmn_err(CE_CONT, "[%d] 0x%x", i, p[i]); \
-}
-#endif
 
 /* Utility Functions */
 
@@ -106,42 +103,13 @@ extern "C" {
 #define	DW_SWAP(_PTR, _LEN)
 #endif
 
-typedef struct oce_list_entry {
-	struct oce_list_entry *next;
-	struct oce_list_entry *prev;
-}OCE_LIST_NODE_T;
-
-typedef struct {
-	kmutex_t list_lock;
-	OCE_LIST_NODE_T head;
-	int32_t nitems;
-}OCE_LIST_T;
-
 /* externs for  list manipulation functions */
 
-
-void oce_list_link_init(OCE_LIST_NODE_T  *list_node);
-void oce_list_create(OCE_LIST_T  *list_hdr, void *arg);
-void oce_list_destroy(OCE_LIST_T *list_hdr);
-void oce_list_insert_tail(OCE_LIST_T *list_hdr, OCE_LIST_NODE_T *list_node);
-void *oce_list_remove_head(OCE_LIST_T  *list_hdr);
-void oce_list_remove_node(OCE_LIST_T  *list_hdr, OCE_LIST_NODE_T *list_node);
-boolean_t oce_list_is_empty(OCE_LIST_T *list_hdr);
-int32_t oce_list_items_avail(OCE_LIST_T *list_hdr);
 int oce_atomic_reserve(uint32_t *count_p, uint32_t n);
 
-#define	OCE_LIST_CREATE(_LH, _LCK_PRI)	oce_list_create((_LH), (_LCK_PRI))
-#define	OCE_LIST_DESTROY(_LH)		oce_list_destroy((_LH))
-#define	OCE_LIST_INSERT_TAIL(_LH, _N)				\
-			oce_list_insert_tail((_LH), (void *)(_N))
-#define	OCE_LIST_REM_HEAD(_LH)		oce_list_remove_head((_LH))
-#define	OCE_LIST_EMPTY(_LH)		oce_list_is_empty((_LH))
-#define	OCE_LIST_REMOVE(_LH, _N)				\
-			oce_list_remove_node((_LH), (void *)(_N))
-#define	OCE_LIST_SIZE(_LH)		oce_list_items_avail((_LH))
-#define	OCE_LIST_LINK_INIT(_N)		oce_list_link_init(_N)
-
 void oce_gen_hkey(char *hkey, int key_size);
+void oce_insert_vtag(mblk_t *mp, uint16_t vlan_tag);
+void oce_remove_vtag(mblk_t *mp);
 
 #ifdef __cplusplus
 }

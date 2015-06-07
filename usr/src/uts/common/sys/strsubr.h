@@ -21,10 +21,12 @@
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
 
-
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SYS_STRSUBR_H
@@ -1261,9 +1263,9 @@ extern mblk_t *mcopyinuio(struct stdata *, uio_t *, ssize_t, ssize_t, int *);
 /*
  * shared or externally configured data structures
  */
-extern ssize_t strmsgsz;		/* maximum stream message size */
-extern ssize_t strctlsz;		/* maximum size of ctl message */
-extern int nstrpush;			/* maximum number of pushes allowed */
+extern volatile ssize_t strmsgsz;	/* maximum stream message size */
+extern volatile ssize_t strctlsz;	/* maximum size of ctl message */
+extern volatile int nstrpush;		/* maximum number of pushes allowed */
 
 /*
  * Bufcalls related variables.

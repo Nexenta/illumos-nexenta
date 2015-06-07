@@ -21,10 +21,11 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2012 by Frederik Wessels. All rights reserved.
+ * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Prasad Joshi (sTec). All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <assert.h>
@@ -90,6 +91,17 @@ static int zpool_do_history(int, char **);
 static int zpool_do_get(int, char **);
 static int zpool_do_set(int, char **);
 
+static int zpool_do_vdev_get(int, char **);
+static int zpool_do_vdev_set(int, char **);
+
+static int zpool_do_cos_alloc(int, char **);
+static int zpool_do_cos_free(int, char **);
+static int zpool_do_cos_list(int, char **);
+static int zpool_do_cos_get(int, char **);
+static int zpool_do_cos_set(int, char **);
+
+static boolean_t nexenta_meta_enable();
+
 /*
  * These libumem hooks provide a reasonable set of defaults for the allocator's
  * debugging facilities.
@@ -132,7 +144,14 @@ typedef enum {
 	HELP_SET,
 	HELP_SPLIT,
 	HELP_REGUID,
-	HELP_REOPEN
+	HELP_REOPEN,
+	HELP_VDEV_GET,
+	HELP_VDEV_SET,
+	HELP_COS_ALLOC,
+	HELP_COS_FREE,
+	HELP_COS_LIST,
+	HELP_COS_GET,
+	HELP_COS_SET
 } zpool_help_t;
 
 
@@ -182,6 +201,13 @@ static zpool_command_t command_table[] = {
 	{ "history",	zpool_do_history,	HELP_HISTORY		},
 	{ "get",	zpool_do_get,		HELP_GET		},
 	{ "set",	zpool_do_set,		HELP_SET		},
+	{ "vdev-get",	zpool_do_vdev_get,	HELP_VDEV_GET		},
+	{ "vdev-set",   zpool_do_vdev_set,	HELP_VDEV_SET		},
+	{ "cos-alloc",  zpool_do_cos_alloc,	HELP_COS_ALLOC		},
+	{ "cos-free",   zpool_do_cos_free,	HELP_COS_FREE		},
+	{ "cos-list",   zpool_do_cos_list,	HELP_COS_LIST		},
+	{ "cos-get",    zpool_do_cos_get,	HELP_COS_GET		},
+	{ "cos-set",    zpool_do_cos_set,	HELP_COS_SET		}
 };
 
 #define	NCOMMAND	(sizeof (command_table) / sizeof (command_table[0]))
@@ -214,11 +240,11 @@ get_usage(zpool_help_t idx) {
 	case HELP_HISTORY:
 		return (gettext("\thistory [-il] [<pool>] ...\n"));
 	case HELP_IMPORT:
-		return (gettext("\timport [-d dir] [-D]\n"
+		return (gettext("\timport [-d dir] [-D] [-t num]\n"
 		    "\timport [-d dir | -c cachefile] [-F [-n]] <pool | id>\n"
 		    "\timport [-o mntopts] [-o property=value] ... \n"
 		    "\t    [-d dir | -c cachefile] [-D] [-f] [-m] [-N] "
-		    "[-R root] [-F [-n]] -a\n"
+		    "[-R root] [-F [-n]] [-t num] -a\n"
 		    "\timport [-o mntopts] [-o property=value] ... \n"
 		    "\t    [-d dir | -c cachefile] [-D] [-f] [-m] [-N] "
 		    "[-R root] [-F [-n]]\n"
@@ -241,7 +267,7 @@ get_usage(zpool_help_t idx) {
 	case HELP_REOPEN:
 		return (gettext("\treopen <pool>\n"));
 	case HELP_SCRUB:
-		return (gettext("\tscrub [-s] <pool> ...\n"));
+		return (gettext("\tscrub [-s|-M|-m] <pool> ...\n"));
 	case HELP_STATUS:
 		return (gettext("\tstatus [-vx] [-T d|u] [pool] ... [interval "
 		    "[count]]\n"));
@@ -260,12 +286,43 @@ get_usage(zpool_help_t idx) {
 		    "[<device> ...]\n"));
 	case HELP_REGUID:
 		return (gettext("\treguid <pool>\n"));
+	case HELP_VDEV_GET:
+		return (gettext("\tvdev-get <property | all> <pool>"
+		    "<vdev name | GUID>\n"));
+	case HELP_VDEV_SET:
+		return (gettext("\tvdev-set <property=value> <pool>"
+		    "<vdev name | GUID>\n"));
+	case HELP_COS_ALLOC:
+		return (gettext("\tcos-alloc <pool> <cos name | GUID>\n"));
+	case HELP_COS_FREE:
+		return (gettext("\tcos-free [-f] <pool> <cos name | GUID>\n"));
+	case HELP_COS_LIST:
+		return (gettext("\tcos-list <pool>\n"));
+	case HELP_COS_GET:
+		return (gettext("\tcos-get <property | all> <pool>"
+		    "<cos name | GUID>\n"));
+	case HELP_COS_SET:
+		return (gettext("\tcos-set <property=value> <pool>"
+		    "<cos name | GUID>\n"));
 	}
 
 	abort();
 	/* NOTREACHED */
 }
-
+/*
+ * Check if additional ZFS meta features are enabled.
+ */
+static boolean_t
+nexenta_meta_enable()
+{
+	if (getenv("nexenta_meta_enable") == NULL) {
+		(void) fprintf(stderr, gettext("feature not enabled\n"));
+		(void) fprintf(stderr,
+		    gettext("set nexenta_meta_enable to access\n"));
+		return (B_FALSE);
+	}
+	return (B_TRUE);
+}
 
 /*
  * Callback routine that will print out a pool property value.
@@ -459,6 +516,72 @@ add_prop_list(const char *propname, char *propval, nvlist_t **props,
 		    "specified multiple times\n"), propname);
 		return (2);
 	}
+
+	if (nvlist_add_string(proplist, normnm, propval) != 0) {
+		(void) fprintf(stderr, gettext("internal "
+		    "error: out of memory\n"));
+		return (1);
+	}
+
+	return (0);
+}
+
+/*
+ * Add a property pair (name, string-value) into a vdev property nvlist.
+ */
+static int
+add_vdev_prop_list(const char *propname, char *propval, nvlist_t **props)
+{
+	vdev_prop_t prop = ZPROP_INVAL;
+	nvlist_t *proplist;
+	const char *normnm;
+
+	if (*props == NULL && nvlist_alloc(props, NV_UNIQUE_NAME, 0) != 0) {
+		(void) fprintf(stderr,
+		    gettext("internal error: out of memory\n"));
+		return (1);
+	}
+
+	proplist = *props;
+	if ((prop = vdev_name_to_prop(propname)) == ZPROP_INVAL) {
+		(void) fprintf(stderr, gettext("property '%s' is "
+		    "not a valid vdev property\n"), propname);
+		return (2);
+	}
+	normnm = vdev_prop_to_name(prop);
+
+	if (nvlist_add_string(proplist, normnm, propval) != 0) {
+		(void) fprintf(stderr, gettext("internal "
+		    "error: out of memory\n"));
+		return (1);
+	}
+
+	return (0);
+}
+
+/*
+ * Add a property pair (name, string-value) into a cos property nvlist.
+ */
+static int
+add_cos_prop_list(const char *propname, char *propval, nvlist_t **props)
+{
+	cos_prop_t prop = ZPROP_INVAL;
+	nvlist_t *proplist;
+	const char *normnm;
+
+	if (*props == NULL && nvlist_alloc(props, NV_UNIQUE_NAME, 0) != 0) {
+		(void) fprintf(stderr,
+		    gettext("internal error: out of memory\n"));
+		return (1);
+	}
+
+	proplist = *props;
+	if ((prop = cos_name_to_prop(propname)) == ZPROP_INVAL) {
+		(void) fprintf(stderr, gettext("property '%s' is "
+		    "not a valid cos property\n"), propname);
+		return (2);
+	}
+	normnm = cos_prop_to_name(prop);
 
 	if (nvlist_add_string(proplist, normnm, propval) != 0) {
 		(void) fprintf(stderr, gettext("internal "
@@ -1013,13 +1136,15 @@ zpool_do_export(int argc, char **argv)
 {
 	boolean_t force = B_FALSE;
 	boolean_t hardforce = B_FALSE;
+	boolean_t saveconfig = B_FALSE;
 	int c;
+	int n_threads = sysconf(_SC_NPROCESSORS_ONLN) * 2;
 	zpool_handle_t *zhp;
 	int ret;
 	int i;
 
 	/* check options */
-	while ((c = getopt(argc, argv, "fF")) != -1) {
+	while ((c = getopt(argc, argv, ":fFct:")) != -1) {
 		switch (c) {
 		case 'f':
 			force = B_TRUE;
@@ -1027,10 +1152,22 @@ zpool_do_export(int argc, char **argv)
 		case 'F':
 			hardforce = B_TRUE;
 			break;
+		case 'c':
+			saveconfig = B_TRUE;
+			break;
+		case 't':
+			n_threads = atoi(optarg);
+			break;
 		case '?':
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
 			    optopt);
 			usage(B_FALSE);
+			break;
+		case ':':
+			(void) fprintf(stderr, gettext("missing argument "
+			    "for option '%c'\n"), optopt);
+			usage(B_FALSE);
+			break;
 		}
 	}
 
@@ -1050,7 +1187,7 @@ zpool_do_export(int argc, char **argv)
 			continue;
 		}
 
-		if (zpool_disable_datasets(zhp, force) != 0) {
+		if (zpool_disable_datasets_ex(zhp, force, n_threads) != 0) {
 			ret = 1;
 			zpool_close(zhp);
 			continue;
@@ -1060,9 +1197,11 @@ zpool_do_export(int argc, char **argv)
 		log_history = B_FALSE;
 
 		if (hardforce) {
-			if (zpool_export_force(zhp, history_str) != 0)
+			if (zpool_export_force(zhp, saveconfig, history_str)
+			    != 0)
 				ret = 1;
-		} else if (zpool_export(zhp, force, history_str) != 0) {
+		} else if (zpool_export(zhp, force, saveconfig, history_str)
+		    != 0) {
 			ret = 1;
 		}
 
@@ -1294,14 +1433,16 @@ print_status_config(zpool_handle_t *zhp, const char *name, nvlist_t *nv,
 	(void) printf("\n");
 
 	for (c = 0; c < children; c++) {
-		uint64_t islog = B_FALSE, ishole = B_FALSE;
+		uint64_t islog = B_FALSE, ishole = B_FALSE, isspecial = B_FALSE;
 
 		/* Don't print logs or holes here */
 		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_LOG,
 		    &islog);
 		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_HOLE,
 		    &ishole);
-		if (islog || ishole)
+		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_SPECIAL,
+		    &isspecial);
+		if (islog || ishole || isspecial)
 			continue;
 		vname = zpool_vdev_name(g_zfs, zhp, child[c], B_TRUE);
 		print_status_config(zhp, vname, child[c],
@@ -1374,11 +1515,13 @@ print_import_config(const char *name, nvlist_t *nv, int namewidth, int depth)
 		return;
 
 	for (c = 0; c < children; c++) {
-		uint64_t is_log = B_FALSE;
+		uint64_t is_log = B_FALSE, is_special = B_FALSE;
 
 		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_LOG,
 		    &is_log);
-		if (is_log)
+		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_SPECIAL,
+		    &is_special);
+		if (is_log || is_special)
 			continue;
 
 		vname = zpool_vdev_name(g_zfs, NULL, child[c], B_TRUE);
@@ -1434,6 +1577,45 @@ print_logs(zpool_handle_t *zhp, nvlist_t *nv, int namewidth, boolean_t verbose)
 		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_LOG,
 		    &is_log);
 		if (!is_log)
+			continue;
+		name = zpool_vdev_name(g_zfs, zhp, child[c], B_TRUE);
+		if (verbose)
+			print_status_config(zhp, name, child[c], namewidth,
+			    2, B_FALSE);
+		else
+			print_import_config(name, child[c], namewidth, 2);
+		free(name);
+	}
+}
+
+/*
+ * Print special vdevs.
+ * Special vdevs are recorded as top level vdevs in the main pool child array
+ * but with "is_special" set to 1. We use either print_status_config() or
+ * print_import_config() to print the top level logs then any log
+ * children (eg mirrored slogs) are printed recursively - which
+ * works because only the top level vdev is marked "is_special"
+ */
+static void
+print_special(zpool_handle_t *zhp, nvlist_t *nv, int namewidth,
+    boolean_t verbose)
+{
+	uint_t c, children;
+	nvlist_t **child;
+
+	if (nvlist_lookup_nvlist_array(nv, ZPOOL_CONFIG_CHILDREN, &child,
+	    &children) != 0)
+		return;
+
+	(void) printf(gettext("\tspecial\n"));
+
+	for (c = 0; c < children; c++) {
+		uint64_t is_special = B_FALSE;
+		char *name;
+
+		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_SPECIAL,
+		    &is_special);
+		if (!is_special)
 			continue;
 		name = zpool_vdev_name(g_zfs, zhp, child[c], B_TRUE);
 		if (verbose)
@@ -1660,6 +1842,9 @@ show_import(nvlist_t *config)
 		namewidth = 10;
 
 	print_import_config(name, nvroot, namewidth, 0);
+	if (num_special(nvroot) > 0)
+		print_special(NULL, nvroot, namewidth, B_FALSE);
+
 	if (num_logs(nvroot) > 0)
 		print_logs(NULL, nvroot, namewidth, B_FALSE);
 
@@ -1677,7 +1862,7 @@ show_import(nvlist_t *config)
  */
 static int
 do_import(nvlist_t *config, const char *newname, const char *mntopts,
-    nvlist_t *props, int flags)
+    nvlist_t *props, int flags, int n_threads)
 {
 	zpool_handle_t *zhp;
 	char *name;
@@ -1741,7 +1926,7 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 
 	if (zpool_get_state(zhp) != POOL_STATE_UNAVAIL &&
 	    !(flags & ZFS_IMPORT_ONLY) &&
-	    zpool_enable_datasets(zhp, mntopts, 0) != 0) {
+	    zpool_enable_datasets_ex(zhp, mntopts, 0, n_threads) != 0) {
 		zpool_close(zhp);
 		return (1);
 	}
@@ -1752,9 +1937,9 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
 
 /*
  * zpool import [-d dir] [-D]
- *       import [-o mntopts] [-o prop=value] ... [-R root] [-D]
+ *       import [-o mntopts] [-o prop=value] ... [-R root] [-D] [-t num]
  *              [-d dir | -c cachefile] [-f] -a
- *       import [-o mntopts] [-o prop=value] ... [-R root] [-D]
+ *       import [-o mntopts] [-o prop=value] ... [-R root] [-D] [-t num]
  *              [-d dir | -c cachefile] [-f] [-n] [-F] <pool | id> [newpool]
  *
  *	 -c	Read pool information from a cachefile instead of searching
@@ -1783,6 +1968,8 @@ do_import(nvlist_t *config, const char *newname, const char *mntopts,
  *       -n     See if rewind would work, but don't actually rewind.
  *
  *       -N     Import the pool but don't mount datasets.
+ *
+ *       -t     Use up to num threads to mount datasets in parallel.
  *
  *       -T     Specify a starting txg to use for import. This option is
  *       	intentionally undocumented option for testing purposes.
@@ -1822,10 +2009,11 @@ zpool_do_import(int argc, char **argv)
 	uint64_t pool_state, txg = -1ULL;
 	char *cachefile = NULL;
 	importargs_t idata = { 0 };
+	unsigned long n_threads = 1;
 	char *endptr;
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":aCc:d:DEfFmnNo:rR:T:VX")) != -1) {
+	while ((c = getopt(argc, argv, ":aCc:d:DEfFmnNo:rR:t:T:VX")) != -1) {
 		switch (c) {
 		case 'a':
 			do_all = B_TRUE;
@@ -1886,6 +2074,14 @@ zpool_do_import(int argc, char **argv)
 			if (add_prop_list(zpool_prop_to_name(
 			    ZPOOL_PROP_CACHEFILE), "none", &props, B_TRUE))
 				goto error;
+			break;
+		case 't':
+			n_threads = strtol(optarg, &endptr, 10);
+			if (errno != 0 || *endptr != '\0') {
+				(void) fprintf(stderr,
+				    gettext("invalid num value\n"));
+				usage(B_FALSE);
+			}
 			break;
 		case 'T':
 			errno = 0;
@@ -2073,7 +2269,7 @@ zpool_do_import(int argc, char **argv)
 
 			if (do_all) {
 				err |= do_import(config, NULL, mntopts,
-				    props, flags);
+				    props, flags, n_threads);
 			} else {
 				show_import(config);
 			}
@@ -2122,7 +2318,7 @@ zpool_do_import(int argc, char **argv)
 			err = B_TRUE;
 		} else {
 			err |= do_import(found_config, argc == 1 ? NULL :
-			    argv[1], mntopts, props, flags);
+			    argv[1], mntopts, props, flags, n_threads);
 		}
 	}
 
@@ -2157,16 +2353,17 @@ print_iostat_separator(iostat_cbdata_t *cb)
 
 	for (i = 0; i < cb->cb_namewidth; i++)
 		(void) printf("-");
-	(void) printf("  -----  -----  -----  -----  -----  -----\n");
+	(void) printf("  -----  -----  -----  -----  -----  -----  -----  "
+	    "-----\n");
 }
 
 static void
 print_iostat_header(iostat_cbdata_t *cb)
 {
-	(void) printf("%*s     capacity     operations    bandwidth\n",
-	    cb->cb_namewidth, "");
-	(void) printf("%-*s  alloc   free   read  write   read  write\n",
-	    cb->cb_namewidth, "pool");
+	(void) printf("%*s     capacity     operations    bandwidth      "
+	    "latency\n", cb->cb_namewidth, "");
+	(void) printf("%-*s  alloc   free   read  write   read  write   read  "
+	    "write\n", cb->cb_namewidth, "pool");
 	print_iostat_separator(cb);
 }
 
@@ -2179,6 +2376,25 @@ print_one_stat(uint64_t value)
 	char buf[64];
 
 	zfs_nicenum(value, buf, sizeof (buf));
+	(void) printf("  %5s", buf);
+}
+
+/*
+ * Display latency statistic (extra care needed)
+ */
+static void
+print_one_latency_stat(uint64_t iotime, uint64_t ops)
+{
+	char buf[64];
+	double value = 0.0; /* latency in milliseconds */
+
+	if (ops != 0) {
+		value = (double)iotime;
+		value /= (double)ops;
+		value /= (double)(MICROSEC / MILLISEC);
+	}
+
+	(void) sprintf(buf, "%.2f", value);
 	(void) printf("  %5s", buf);
 }
 
@@ -2242,6 +2458,19 @@ print_vdev_stats(zpool_handle_t *zhp, const char *name, nvlist_t *oldnv,
 	print_one_stat((uint64_t)(scale * (newvs->vs_bytes[ZIO_TYPE_WRITE] -
 	    oldvs->vs_bytes[ZIO_TYPE_WRITE])));
 
+	/*
+	 * No scale needed here since we are dividing in
+	 * print_one_latency_stat()
+	 */
+
+	print_one_latency_stat(
+	    newvs->vs_iotime[ZIO_TYPE_READ] - oldvs->vs_iotime[ZIO_TYPE_READ],
+	    newvs->vs_ops[ZIO_TYPE_READ] - oldvs->vs_ops[ZIO_TYPE_READ]);
+
+	print_one_latency_stat(
+	    newvs->vs_iotime[ZIO_TYPE_WRITE] - oldvs->vs_iotime[ZIO_TYPE_WRITE],
+	    newvs->vs_ops[ZIO_TYPE_WRITE] - oldvs->vs_ops[ZIO_TYPE_WRITE]);
+
 	(void) printf("\n");
 
 	if (!cb->cb_verbose)
@@ -2256,7 +2485,7 @@ print_vdev_stats(zpool_handle_t *zhp, const char *name, nvlist_t *oldnv,
 		return;
 
 	for (c = 0; c < children; c++) {
-		uint64_t ishole = B_FALSE, islog = B_FALSE;
+		uint64_t ishole = B_FALSE, islog = B_FALSE, isspec = B_FALSE;
 
 		(void) nvlist_lookup_uint64(newchild[c], ZPOOL_CONFIG_IS_HOLE,
 		    &ishole);
@@ -2264,7 +2493,10 @@ print_vdev_stats(zpool_handle_t *zhp, const char *name, nvlist_t *oldnv,
 		(void) nvlist_lookup_uint64(newchild[c], ZPOOL_CONFIG_IS_LOG,
 		    &islog);
 
-		if (ishole || islog)
+		(void) nvlist_lookup_uint64(newchild[c],
+		    ZPOOL_CONFIG_IS_SPECIAL, &isspec);
+
+		if (ishole || islog || isspec)
 			continue;
 
 		vname = zpool_vdev_name(g_zfs, zhp, newchild[c], B_FALSE);
@@ -2295,7 +2527,30 @@ print_vdev_stats(zpool_handle_t *zhp, const char *name, nvlist_t *oldnv,
 				free(vname);
 			}
 		}
+	}
 
+	/*
+	 * Special device section
+	 */
+
+	if (num_special(newnv) > 0) {
+		(void) printf("%-*s      -      -      -      -      -      "
+		    "-\n", cb->cb_namewidth, "special");
+
+		for (c = 0; c < children; c++) {
+			uint64_t isspec = B_FALSE;
+			(void) nvlist_lookup_uint64(newchild[c],
+			    ZPOOL_CONFIG_IS_SPECIAL, &isspec);
+
+			if (isspec) {
+				vname = zpool_vdev_name(g_zfs, zhp, newchild[c],
+				    B_FALSE);
+				print_vdev_stats(zhp, vname, oldnv ?
+				    oldchild[c] : NULL, newchild[c],
+				    cb, depth + 2);
+				free(vname);
+			}
+		}
 	}
 
 	/*
@@ -2936,7 +3191,7 @@ int
 zpool_do_list(int argc, char **argv)
 {
 	int c;
-	int ret;
+	int ret = 0;
 	list_cbdata_t cb = { 0 };
 	static char default_props[] =
 	    "name,size,allocated,free,expandsize,fragmentation,capacity,"
@@ -3714,10 +3969,31 @@ zpool_do_scrub(int argc, char **argv)
 	cb.cb_type = POOL_SCAN_SCRUB;
 
 	/* check options */
-	while ((c = getopt(argc, argv, "s")) != -1) {
+	while ((c = getopt(argc, argv, "sMm")) != -1) {
 		switch (c) {
 		case 's':
-			cb.cb_type = POOL_SCAN_NONE;
+			if (cb.cb_type != POOL_SCAN_SCRUB) {
+				(void) fprintf(stderr,
+				    gettext("incompatible options\n"));
+				usage(B_FALSE);
+			} else
+				cb.cb_type = POOL_SCAN_NONE;
+			break;
+		case 'M':
+			if (cb.cb_type != POOL_SCAN_SCRUB) {
+				(void) fprintf(stderr,
+				    gettext("incompatible options\n"));
+				usage(B_FALSE);
+			} else
+				cb.cb_type = POOL_SCAN_MOS;
+			break;
+		case 'm':
+			if (cb.cb_type != POOL_SCAN_SCRUB) {
+				(void) fprintf(stderr,
+				    gettext("incompatible options\n"));
+				usage(B_FALSE);
+			} else
+				cb.cb_type = POOL_SCAN_META;
 			break;
 		case '?':
 			(void) fprintf(stderr, gettext("invalid option '%c'\n"),
@@ -3775,7 +4051,9 @@ print_scan_status(pool_scan_stat_t *ps)
 	zfs_nicenum(ps->pss_processed, processed_buf, sizeof (processed_buf));
 
 	assert(ps->pss_func == POOL_SCAN_SCRUB ||
-	    ps->pss_func == POOL_SCAN_RESILVER);
+	    ps->pss_func == POOL_SCAN_RESILVER ||
+	    ps->pss_func == POOL_SCAN_MOS ||
+	    ps->pss_func == POOL_SCAN_META);
 	/*
 	 * Scan is finished or canceled.
 	 */
@@ -3785,6 +4063,12 @@ print_scan_status(pool_scan_stat_t *ps)
 
 		if (ps->pss_func == POOL_SCAN_SCRUB) {
 			fmt = gettext("scrub repaired %s in %lluh%um with "
+			    "%llu errors on %s");
+		} else if (ps->pss_func == POOL_SCAN_MOS) {
+			fmt = gettext("MOS scrub repaired %s in %lluh%um with "
+			    "%llu errors on %s");
+		} else if (ps->pss_func == POOL_SCAN_META) {
+			fmt = gettext("meta scrub repaired %s in %lluh%um with "
 			    "%llu errors on %s");
 		} else if (ps->pss_func == POOL_SCAN_RESILVER) {
 			fmt = gettext("resilvered %s in %lluh%um with "
@@ -3801,6 +4085,12 @@ print_scan_status(pool_scan_stat_t *ps)
 		if (ps->pss_func == POOL_SCAN_SCRUB) {
 			(void) printf(gettext("scrub canceled on %s"),
 			    ctime(&end));
+		} else if (ps->pss_func == POOL_SCAN_MOS) {
+			(void) printf(gettext("MOS scrub canceled on %s"),
+			    ctime(&end));
+		} else if (ps->pss_func == POOL_SCAN_META) {
+			(void) printf(gettext("meta scrub canceled on %s"),
+			    ctime(&end));
 		} else if (ps->pss_func == POOL_SCAN_RESILVER) {
 			(void) printf(gettext("resilver canceled on %s"),
 			    ctime(&end));
@@ -3815,6 +4105,12 @@ print_scan_status(pool_scan_stat_t *ps)
 	 */
 	if (ps->pss_func == POOL_SCAN_SCRUB) {
 		(void) printf(gettext("scrub in progress since %s"),
+		    ctime(&start));
+	} else if (ps->pss_func == POOL_SCAN_MOS) {
+		(void) printf(gettext("MOS scrub in progress since %s"),
+		    ctime(&start));
+	} else if (ps->pss_func == POOL_SCAN_META) {
+		(void) printf(gettext("meta scrub in progress since %s"),
 		    ctime(&start));
 	} else if (ps->pss_func == POOL_SCAN_RESILVER) {
 		(void) printf(gettext("resilver in progress since %s"),
@@ -3854,7 +4150,9 @@ print_scan_status(pool_scan_stat_t *ps)
 	if (ps->pss_func == POOL_SCAN_RESILVER) {
 		(void) printf(gettext("    %s resilvered, %.2f%% done\n"),
 		    processed_buf, 100 * fraction_done);
-	} else if (ps->pss_func == POOL_SCAN_SCRUB) {
+	} else if (ps->pss_func == POOL_SCAN_SCRUB ||
+	    ps->pss_func == POOL_SCAN_MOS ||
+	    ps->pss_func == POOL_SCAN_META) {
 		(void) printf(gettext("    %s repaired, %.2f%% done\n"),
 		    processed_buf, 100 * fraction_done);
 	}
@@ -4248,6 +4546,8 @@ status_callback(zpool_handle_t *zhp, void *data)
 		print_status_config(zhp, zpool_get_name(zhp), nvroot,
 		    namewidth, 0, B_FALSE);
 
+		if (num_special(nvroot) > 0)
+			print_special(zhp, nvroot, namewidth, B_TRUE);
 		if (num_logs(nvroot) > 0)
 			print_logs(zhp, nvroot, namewidth, B_TRUE);
 		if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_L2CACHE,
@@ -5182,8 +5482,7 @@ zpool_do_get(int argc, char **argv)
 }
 
 typedef struct set_cbdata {
-	char *cb_propname;
-	char *cb_value;
+	nvlist_t *cb_nvl;
 	boolean_t cb_any_successful;
 } set_cbdata_t;
 
@@ -5193,12 +5492,53 @@ set_callback(zpool_handle_t *zhp, void *data)
 	int error;
 	set_cbdata_t *cb = (set_cbdata_t *)data;
 
-	error = zpool_set_prop(zhp, cb->cb_propname, cb->cb_value);
-
+	error = zpool_set_proplist(zhp, cb->cb_nvl);
 	if (!error)
 		cb->cb_any_successful = B_TRUE;
 
 	return (error);
+}
+
+static void
+parse_props(char *propname, nvlist_t **nvl, zfs_type_t prop_type)
+{
+	char *propval;
+	char *delim;
+	int err;
+
+	do {
+		delim = strchr(propname, ',');
+		if (delim != NULL)
+			*delim++ = '\0';
+
+		propval = strchr(propname, '=');
+		if (propval == NULL) {
+			(void) fprintf(stderr, gettext("missing value "
+			    "in property=value argument\n"));
+			if (*nvl != NULL)
+				nvlist_free(*nvl);
+			usage(B_FALSE);
+		}
+		*propval++ = '\0';
+		switch (prop_type) {
+		case ZFS_TYPE_VDEV:
+			err = add_vdev_prop_list(propname, propval, nvl);
+			break;
+		case ZFS_TYPE_COS:
+			err = add_cos_prop_list(propname, propval, nvl);
+			break;
+		default:
+			err = add_prop_list(propname, propval, nvl, B_TRUE);
+		}
+
+		if (err) {
+			if (*nvl != NULL)
+				nvlist_free(*nvl);
+			usage(B_FALSE);
+		}
+
+		propname = delim;
+	} while (delim != NULL);
 }
 
 int
@@ -5229,19 +5569,462 @@ zpool_do_set(int argc, char **argv)
 		usage(B_FALSE);
 	}
 
-	cb.cb_propname = argv[1];
-	cb.cb_value = strchr(cb.cb_propname, '=');
-	if (cb.cb_value == NULL) {
-		(void) fprintf(stderr, gettext("missing value in "
-		    "property=value argument\n"));
-		usage(B_FALSE);
-	}
-
-	*(cb.cb_value) = '\0';
-	cb.cb_value++;
+	parse_props(argv[1], &cb.cb_nvl, ZFS_TYPE_POOL);
 
 	error = for_each_pool(argc - 2, argv + 2, B_TRUE, NULL,
 	    set_callback, &cb);
+
+	return (error);
+}
+
+typedef struct vdev_cbdata {
+	char *vcb_vdev;
+	nvlist_t *vcb_nvl; /* values */
+	boolean_t vcb_any_successful;
+} vdev_cbdata_t;
+
+typedef struct vdev_get_cbdata {
+	zprop_get_cbdata_t vcb_zprop_get_cbdata;
+	char *vcb_vdev;
+	nvlist_t *vcb_nvl; /* values */
+	boolean_t vcb_any_successful;
+} vdev_get_cbdata_t;
+
+static int
+vdev_get_callback(zpool_handle_t *zhp, void *data)
+{
+	int err;
+	boolean_t l2cache, avail_space;
+	vdev_get_cbdata_t *vcb = (vdev_get_cbdata_t *)data;
+	zprop_get_cbdata_t *cb = &vcb->vcb_zprop_get_cbdata;
+	char value[MAXNAMELEN];
+	zprop_list_t *pl;
+	nvlist_t *nvl = NULL;
+
+	(void) zpool_find_vdev(zhp, vcb->vcb_vdev, &avail_space,
+	    &l2cache, NULL);
+	for (pl = cb->cb_proplist; pl != NULL; pl = pl->pl_next) {
+		if ((err = vdev_get_prop(zhp, vcb->vcb_vdev,
+		    pl->pl_prop, value, sizeof (value), &nvl)) != 0)
+			return (err);
+
+		/* don't show L2ARC prop for non L2ARC dev, can't set anyway */
+		if (!l2cache && pl->pl_prop == VDEV_PROP_L2ADDDT)
+			continue;
+		vdev_print_one_property(zpool_get_name(zhp), vcb->vcb_vdev, cb,
+		    vdev_prop_to_name(pl->pl_prop), value);
+	}
+
+	return (0);
+}
+
+
+int
+zpool_do_vdev_get(int argc, char **argv)
+{
+	vdev_get_cbdata_t vcb = { 0 };
+	zprop_get_cbdata_t *cb = &vcb.vcb_zprop_get_cbdata;
+	int error;
+
+	if (argc > 1 && argv[1][0] == '-') {
+		(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+		    argv[1][1]);
+		usage(B_FALSE);
+	}
+
+	if (argc < 2) {
+		(void) fprintf(stderr, gettext("missing property name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 3) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 4) {
+		(void) fprintf(stderr,
+		    gettext("at least one vdev name or guid is required\n"));
+		usage(B_FALSE);
+	}
+
+	cb->cb_first = B_TRUE;
+	cb->cb_sources = ZPROP_SRC_ALL;
+	cb->cb_columns[0] = GET_COL_NAME;
+	cb->cb_columns[1] = GET_COL_SOURCE;
+	cb->cb_columns[2] = GET_COL_PROPERTY;
+	cb->cb_columns[3] = GET_COL_VALUE;
+	cb->cb_type = ZFS_TYPE_VDEV;
+
+	if (vdev_get_proplist(g_zfs, argv[1],  &cb->cb_proplist) != 0)
+		usage(B_FALSE);
+
+	vcb.vcb_vdev = argv[3];
+	error = for_each_pool(1, argv + 2, B_TRUE, NULL,
+	    vdev_get_callback, &vcb);
+
+	zprop_free_list(cb->cb_proplist);
+
+	return (error);
+}
+
+int
+vdev_set_callback(zpool_handle_t *zhp, void *data)
+{
+	int error;
+	vdev_cbdata_t *cb = (vdev_cbdata_t *)data;
+
+	error = vdev_set_proplist(zhp, cb->vcb_vdev, cb->vcb_nvl);
+	if (!error)
+		cb->vcb_any_successful = B_TRUE;
+
+	return (error);
+}
+
+int
+zpool_do_vdev_set(int argc, char **argv)
+{
+	vdev_cbdata_t cb = { 0 };
+	int error;
+
+	if (argc > 1 && argv[1][0] == '-') {
+		(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+		    argv[1][1]);
+		usage(B_FALSE);
+	}
+
+	if (argc < 2) {
+		(void) fprintf(stderr, gettext("missing property=value "
+		    "argument\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 3) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 4) {
+		(void) fprintf(stderr,
+		    gettext("at least one vdev name or guid is required\n"));
+		usage(B_FALSE);
+	}
+
+	parse_props(argv[1], &cb.vcb_nvl, ZFS_TYPE_VDEV);
+
+	cb.vcb_vdev = argv[3];
+	error = for_each_pool(1, argv + 2, B_TRUE, NULL,
+	    vdev_set_callback, &cb);
+
+	return (error);
+}
+
+typedef struct cos_af_cbdata {
+	char *cb_cos;
+	uint64_t cb_guid;
+	boolean_t cb_alloc;
+	boolean_t cb_any_successful;
+	boolean_t cb_force;
+	nvlist_t *cb_nvl;
+} cos_af_cbdata_t;
+
+int
+cos_alloc_callback(zpool_handle_t *zhp, void *data)
+{
+	int error;
+	cos_af_cbdata_t *cb = (cos_af_cbdata_t *)data;
+
+	if (cb->cb_alloc)
+		error = cos_alloc(zhp, cb->cb_cos, cb->cb_nvl);
+	else
+		error = cos_free(zhp, cb->cb_cos, cb->cb_guid, cb->cb_force);
+	if (!error)
+		cb->cb_any_successful = B_TRUE;
+
+	if (error == ENOTSUP) {
+		(void) fprintf(stderr, gettext("operation failed: "
+		    "CoS feature is disabled.\n"));
+	}
+
+	return (error);
+}
+
+int
+zpool_do_cos_alloc(int argc, char **argv)
+{
+	nvlist_t *nvl;
+	cos_af_cbdata_t cb = { 0 };
+	int error;
+
+	if (!nexenta_meta_enable())
+		return (-1);
+
+	if (argc < 2) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 3) {
+		(void) fprintf(stderr,
+		    gettext("at least one cos name or id is required\n"));
+		usage(B_FALSE);
+	}
+
+	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0) {
+		(void) fprintf(stderr,
+		    gettext("internal error: out of memory\n"));
+		return (1);
+	}
+
+	cb.cb_cos = argv[2];
+	cb.cb_alloc = B_TRUE;
+	cb.cb_nvl = nvl;
+	error = for_each_pool(1, argv + 1, B_TRUE, NULL,
+	    cos_alloc_callback, &cb);
+
+	nvlist_free(nvl);
+
+	return (error);
+}
+
+int
+zpool_do_cos_free(int argc, char **argv)
+{
+	cos_af_cbdata_t cb = { 0 };
+	char *endp;
+	int error;
+
+	if (!nexenta_meta_enable())
+		return (-1);
+
+	if (argc > 1 && strncmp(argv[1], "-f", sizeof ("-f")) == 0) {
+		/* -f - force option */
+		cb.cb_force = B_TRUE;
+		argc--;
+		argv++;
+	}
+
+	if (argc < 2) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 3) {
+		(void) fprintf(stderr,
+		    gettext("at least one cos name or id is required\n"));
+		usage(B_FALSE);
+	}
+
+	cb.cb_guid = strtoll(argv[2], &endp, 10);
+	if (endp <  argv[2] + strlen(argv[2])) {
+		cb.cb_guid = 0;
+	}
+
+	if (cb.cb_guid == 0)
+		cb.cb_cos = argv[2];
+	else
+		cb.cb_cos = "";
+
+	error = for_each_pool(1, argv + 1, B_TRUE, NULL,
+	    cos_alloc_callback, &cb);
+
+	return (error);
+}
+
+
+static int
+cos_list_callback(zpool_handle_t *zhp, void *data)
+{
+	int err, i;
+	nvlist_t *nvl = (nvlist_t *)data;
+	nvpair_t *nvp;
+
+	if ((err = cos_list(zhp, &nvl)) == 0) {
+		(void) printf("%-*s %s\n", MAXCOSNAMELEN, gettext("COSNAME"),
+		    gettext("COSID"));
+		for (i = 0, nvp = nvlist_next_nvpair(nvl, NULL); nvp != NULL;
+		    nvp = nvlist_next_nvpair(nvl, nvp), i++) {
+			uint64_t cosid;
+			char *cosname = nvpair_name(nvp);
+			if (nvpair_value_uint64(nvp, &cosid) == 0)
+				(void) printf("%-*s %llu\n", MAXCOSNAMELEN,
+				    cosname, cosid);
+		}
+
+		if (!i)
+			(void) printf("%s\n", gettext("<no classes found>"));
+	}
+	return (err);
+}
+
+int
+zpool_do_cos_list(int argc, char **argv)
+{
+	nvlist_t *nvl;
+	int error;
+
+	if (!nexenta_meta_enable())
+		return (-1);
+
+	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0) {
+		(void) fprintf(stderr,
+		    gettext("internal error: out of memory\n"));
+		return (1);
+	}
+
+	if (argc < 2) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	error = for_each_pool(1, argv+1, B_TRUE, NULL,
+	    cos_list_callback, nvl);
+
+	nvlist_free(nvl);
+
+	return (error);
+
+}
+
+typedef struct cos_cbdata {
+	char *vcb_cos;
+	nvlist_t *vcb_nvl; /* values */
+	boolean_t vcb_any_successful;
+} cos_cbdata_t;
+
+typedef struct cos_get_cbdata {
+	zprop_get_cbdata_t vcb_zprop_get_cbdata;
+	char *vcb_cos;
+	nvlist_t *vcb_nvl; /* values */
+	boolean_t vcb_any_successful;
+} cos_get_cbdata_t;
+
+static int
+cos_get_callback(zpool_handle_t *zhp, void *data)
+{
+	int err;
+	cos_get_cbdata_t *vcb = (cos_get_cbdata_t *)data;
+	zprop_get_cbdata_t *cb = &vcb->vcb_zprop_get_cbdata;
+	char value[MAXNAMELEN];
+	zprop_list_t *pl;
+	nvlist_t *nvl = NULL;
+
+	for (pl = cb->cb_proplist; pl != NULL; pl = pl->pl_next) {
+		if ((err = cos_get_prop(zhp, vcb->vcb_cos,
+		    pl->pl_prop, value, sizeof (value), &nvl)) != 0)
+			return (err);
+
+		cos_print_one_property(zpool_get_name(zhp), vcb->vcb_cos, cb,
+		    cos_prop_to_name(pl->pl_prop), value);
+	}
+
+	return (0);
+}
+
+
+int
+zpool_do_cos_get(int argc, char **argv)
+{
+	cos_get_cbdata_t vcb = { 0 };
+	zprop_get_cbdata_t *cb = &vcb.vcb_zprop_get_cbdata;
+	int error;
+
+	if (!nexenta_meta_enable())
+		return (-1);
+
+	if (argc > 1 && argv[1][0] == '-') {
+		(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+		    argv[1][1]);
+		usage(B_FALSE);
+	}
+
+	if (argc < 2) {
+		(void) fprintf(stderr, gettext("missing property name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 3) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 4) {
+		(void) fprintf(stderr,
+		    gettext("at least one cos name or guid is required\n"));
+		usage(B_FALSE);
+	}
+
+	cb->cb_first = B_TRUE;
+	cb->cb_sources = ZPROP_SRC_ALL;
+	cb->cb_columns[0] = GET_COL_NAME;
+	cb->cb_columns[1] = GET_COL_SOURCE;
+	cb->cb_columns[2] = GET_COL_PROPERTY;
+	cb->cb_columns[3] = GET_COL_VALUE;
+	cb->cb_type = ZFS_TYPE_COS;
+
+	if (cos_get_proplist(g_zfs, argv[1],  &cb->cb_proplist) != 0)
+		usage(B_FALSE);
+
+	vcb.vcb_cos = argv[3];
+	error = for_each_pool(1, argv + 2, B_TRUE, NULL,
+	    cos_get_callback, &vcb);
+
+	zprop_free_list(cb->cb_proplist);
+
+	return (error);
+
+}
+
+int
+cos_set_callback(zpool_handle_t *zhp, void *data)
+{
+	int error;
+	cos_cbdata_t *cb = (cos_cbdata_t *)data;
+
+	error = cos_set_proplist(zhp, cb->vcb_cos, cb->vcb_nvl);
+	if (!error)
+		cb->vcb_any_successful = B_TRUE;
+
+	return (error);
+}
+
+int
+zpool_do_cos_set(int argc, char **argv)
+{
+	cos_cbdata_t cb = { 0 };
+	int error;
+
+	if (!nexenta_meta_enable())
+		return (-1);
+
+	if (argc > 1 && argv[1][0] == '-') {
+		(void) fprintf(stderr, gettext("invalid option '%c'\n"),
+		    argv[1][1]);
+		usage(B_FALSE);
+	}
+
+	if (argc < 2) {
+		(void) fprintf(stderr, gettext("missing property=value "
+		    "argument\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 3) {
+		(void) fprintf(stderr, gettext("missing pool name\n"));
+		usage(B_FALSE);
+	}
+
+	if (argc < 4) {
+		(void) fprintf(stderr,
+		    gettext("at least one cos name or id is required\n"));
+		usage(B_FALSE);
+	}
+
+	parse_props(argv[1], &cb.vcb_nvl, ZFS_TYPE_COS);
+
+	cb.vcb_cos = argv[3];
+	error = for_each_pool(1, argv + 2, B_TRUE, NULL,
+	    cos_set_callback, &cb);
 
 	return (error);
 }
@@ -5300,6 +6083,7 @@ main(int argc, char **argv)
 		usage(B_TRUE);
 
 	zfs_save_arguments(argc, argv, history_str, sizeof (history_str));
+	verify(zpool_stage_history(g_zfs, history_str) == 0);
 
 	/*
 	 * Run the appropriate command.

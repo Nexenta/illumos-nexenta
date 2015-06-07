@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -203,8 +203,11 @@ static const smb_xlate_t smb_dialect[] = {
 	{ DOS_LANMAN2_1,		"DOS LANMAN2.1" },
 	{ LANMAN2_1,			"LANMAN2.1" },
 	{ Windows_for_Workgroups_3_1a,	"Windows for Workgroups 3.1a" },
-	{ NT_LM_0_12,			"NT LM 0.12" }
+	{ NT_LM_0_12,			"NT LM 0.12" },
+	{ DIALECT_SMB2002,		"SMB 2.002" },
+	{ DIALECT_SMB2XXX,		"SMB 2.???" },
 };
+static int smb_ndialects = sizeof (smb_dialect) / sizeof (smb_dialect[0]);
 
 /*
  * Maximum buffer size for DOS: chosen to be the same as NT.
@@ -230,15 +233,96 @@ static uint32_t	smb_nt_tcp_rcvbuf = 1048560;	/* scale factor of 4 */
 static int smb_xlate_dialect(const char *);
 
 int smb_cap_passthru = 1;
+int smb_cap_ext_sec = 1;
+
+/*
+ * SMB Negotiate gets special handling.  This is called directly by
+ * the reader thread (see smbsr_newrq_initial) with what _should_ be
+ * an SMB1 Negotiate.  Only the "\ffSMB" header has been checked
+ * when this is called, so this needs to check the SMB command,
+ * if it's Negotiate execute it, then send the reply, etc.
+ *
+ * Since this is called directly from the reader thread, we
+ * know this is the only thread currently using this session.
+ * This has to duplicate some of what smb1sr_work does as a
+ * result of bypassing the normal dispatch mechanism.
+ *
+ * The caller always frees this request.
+ */
+int
+smb1_newrq_negotiate(smb_request_t *sr)
+{
+	smb_sdrc_t	sdrc;
+	uint16_t	pid_hi, pid_lo;
+
+	/*
+	 * Decode the header
+	 */
+	if (smb_mbc_decodef(&sr->command, SMB_HEADER_ED_FMT,
+	    &sr->smb_com,
+	    &sr->smb_rcls,
+	    &sr->smb_reh,
+	    &sr->smb_err,
+	    &sr->smb_flg,
+	    &sr->smb_flg2,
+	    &pid_hi,
+	    sr->smb_sig,
+	    &sr->smb_tid,
+	    &pid_lo,
+	    &sr->smb_uid,
+	    &sr->smb_mid) != 0)
+		return (-1);
+	if (sr->smb_com != SMB_COM_NEGOTIATE)
+		return (-1);
+
+	sr->smb_pid = (pid_hi << 16) | pid_lo;
+
+	/*
+	 * Reserve space for the reply header.
+	 */
+	(void) smb_mbc_encodef(&sr->reply, "#.", SMB_HEADER_LEN);
+	sr->first_smb_com = sr->smb_com;
+
+	if (smb_mbc_decodef(&sr->command, "b", &sr->smb_wct) != 0)
+		return (-1);
+	(void) MBC_SHADOW_CHAIN(&sr->smb_vwv, &sr->command,
+	    sr->command.chain_offset, sr->smb_wct * 2);
+
+	if (smb_mbc_decodef(&sr->command, "#.w", sr->smb_wct*2, &sr->smb_bcc))
+		return (-1);
+	(void) MBC_SHADOW_CHAIN(&sr->smb_data, &sr->command,
+	    sr->command.chain_offset, sr->smb_bcc);
+
+	sr->command.chain_offset += sr->smb_bcc;
+	if (sr->command.chain_offset > sr->command.max_bytes)
+		return (-1);
+
+	/* Store pointers for later */
+	sr->cur_reply_offset = sr->reply.chain_offset;
+
+	sdrc = smb_pre_negotiate(sr);
+	if (sdrc == SDRC_SUCCESS)
+		sdrc = smb_com_negotiate(sr);
+	smb_post_negotiate(sr);
+
+	if (sdrc != SDRC_NO_REPLY)
+		smbsr_send_reply(sr);
+	if (sdrc == SDRC_DROP_VC)
+		return (-1);
+
+	return (0);
+}
 
 smb_sdrc_t
 smb_pre_negotiate(smb_request_t *sr)
 {
+	smb_kmod_cfg_t		*skc;
 	smb_arg_negotiate_t	*negprot;
 	int			dialect;
 	int			pos;
 	int			rc = 0;
 
+	skc = &sr->session->s_cfg;
 	negprot = smb_srm_zalloc(sr, sizeof (smb_arg_negotiate_t));
 	negprot->ni_index = -1;
 	sr->sr_negprot = negprot;
@@ -253,6 +337,13 @@ smb_pre_negotiate(smb_request_t *sr)
 		if ((dialect = smb_xlate_dialect(negprot->ni_name)) < 0)
 			continue;
 
+		/*
+		 * Conditionally recognize the SMB2 dialects.
+		 */
+		if (dialect >= DIALECT_SMB2002 &&
+		    skc->skc_max_protocol < SMB_VERS_2_BASE)
+			continue;
+
 		if (negprot->ni_dialect < dialect) {
 			negprot->ni_dialect = dialect;
 			negprot->ni_index = pos;
@@ -261,7 +352,7 @@ smb_pre_negotiate(smb_request_t *sr)
 
 	DTRACE_SMB_2(op__Negotiate__start, smb_request_t *, sr,
 	    smb_arg_negotiate_t, negprot);
-	smb_rwx_rwenter(&sr->session->s_lock, RW_WRITER);
+
 	return ((rc == 0) ? SDRC_SUCCESS : SDRC_ERROR);
 }
 
@@ -272,7 +363,6 @@ smb_post_negotiate(smb_request_t *sr)
 
 	DTRACE_SMB_2(op__Negotiate__done, smb_request_t *, sr,
 	    smb_arg_negotiate_t, negprot);
-	smb_rwx_rwexit(&sr->session->s_lock);
 
 	bzero(negprot, sizeof (smb_arg_negotiate_t));
 }
@@ -280,33 +370,51 @@ smb_post_negotiate(smb_request_t *sr)
 smb_sdrc_t
 smb_com_negotiate(smb_request_t *sr)
 {
+	smb_session_t 		*session = sr->session;
 	smb_arg_negotiate_t	*negprot = sr->sr_negprot;
 	uint16_t		secmode;
-	uint16_t		rawmode = 0;
 	uint32_t		sesskey;
-	char			ipaddr_buf[INET6_ADDRSTRLEN];
 	char			*nbdomain;
 	uint8_t			*wcbuf;
 	int			wclen;
 	smb_msgbuf_t		mb;
 	int			rc;
 
-	if (sr->session->s_state != SMB_SESSION_STATE_ESTABLISHED) {
+	if (session->s_state != SMB_SESSION_STATE_ESTABLISHED) {
 		/* The protocol has already been negotiated. */
 		smbsr_error(sr, 0, ERRSRV, ERRerror);
 		return (SDRC_ERROR);
 	}
 
-	sr->session->secmode = NEGOTIATE_SECURITY_CHALLENGE_RESPONSE |
-	    NEGOTIATE_SECURITY_USER_LEVEL;
-	secmode = sr->session->secmode;
-	sesskey = sr->session->sesskey;
+	/*
+	 * Special case for negotiating SMB2 from SMB1.  The client
+	 * includes the  "SMB 2..." dialects in the SMB1 negotiate,
+	 * and if SMB2 is enabled, we choose one of those and then
+	 * send an SMB2 reply to that SMB1 request.  Yes, it's very
+	 * strange, but this SMB1 request can have an SMB2 reply!
+	 * To accomplish this, we let the SMB2 code send the reply
+	 * and return the special code SDRC_NO_REPLY to the SMB1
+	 * dispatch logic so it will NOT send an SMB1 reply.
+	 * (Or possibly send an SMB1 error reply.)
+	 */
+	if (negprot->ni_dialect >= DIALECT_SMB2002) {
+		rc = smb1_negotiate_smb2(sr);
+		ASSERT(rc == SDRC_NO_REPLY ||
+		    rc == SDRC_DROP_VC || rc == SDRC_ERROR);
+		return (rc);
+	}
 
-	(void) microtime(&negprot->ni_servertime);
+	session->secmode = NEGOTIATE_ENCRYPT_PASSWORDS |
+	    NEGOTIATE_USER_SECURITY;
+	secmode = session->secmode;
+	sesskey = session->sesskey;
+
+	negprot->ni_servertime.tv_sec = gethrestime_sec();
+	negprot->ni_servertime.tv_nsec = 0;
 	negprot->ni_tzcorrection = sr->sr_gmtoff / 60;
 	negprot->ni_maxmpxcount = sr->sr_cfg->skc_maxworkers;
 	negprot->ni_keylen = SMB_CHALLENGE_SZ;
-	bcopy(&sr->session->challenge_key, negprot->ni_key, SMB_CHALLENGE_SZ);
+	bcopy(&session->challenge_key, negprot->ni_key, SMB_CHALLENGE_SZ);
 	nbdomain = sr->sr_cfg->skc_nbdomain;
 
 	/*
@@ -334,12 +442,9 @@ smb_com_negotiate(smb_request_t *sr)
 		    (negprot->ni_capabilities & CAP_INFOLEVEL_PASSTHRU) ?
 		    "enabled" : "disabled");
 
-	(void) smb_inet_ntop(&sr->session->ipaddr, ipaddr_buf,
-	    SMB_IPSTRLEN(sr->session->ipaddr.a_family));
-
 	switch (negprot->ni_dialect) {
 	case PC_NETWORK_PROGRAM_1_0:	/* core */
-		(void) ksocket_setsockopt(sr->session->sock, SOL_SOCKET,
+		(void) ksocket_setsockopt(session->sock, SOL_SOCKET,
 		    SO_RCVBUF, (const void *)&smb_dos_tcp_rcvbuf,
 		    sizeof (smb_dos_tcp_rcvbuf), CRED());
 		rc = smbsr_encode_result(sr, 1, 0, "bww", 1,
@@ -353,7 +458,7 @@ smb_com_negotiate(smb_request_t *sr)
 	case LANMAN1_0:
 	case LM1_2X002:
 	case DOS_LM1_2X002:
-		(void) ksocket_setsockopt(sr->session->sock, SOL_SOCKET,
+		(void) ksocket_setsockopt(session->sock, SOL_SOCKET,
 		    SO_RCVBUF, (const void *)&smb_dos_tcp_rcvbuf,
 		    sizeof (smb_dos_tcp_rcvbuf), CRED());
 		sr->smb_flg |= SMB_FLAGS_LOCK_AND_READ_OK;
@@ -365,7 +470,7 @@ smb_com_negotiate(smb_request_t *sr)
 		    SMB_DOS_MAXBUF,		/* max buffer size */
 		    1,				/* max MPX */
 		    1,				/* max VCs */
-		    rawmode,			/* read/write raw (s/b 3) */
+		    0,				/* read/write raw */
 		    sesskey,			/* session key */
 		    negprot->ni_servertime.tv_sec, /* server date/time */
 		    negprot->ni_tzcorrection,
@@ -378,7 +483,7 @@ smb_com_negotiate(smb_request_t *sr)
 
 	case DOS_LANMAN2_1:
 	case LANMAN2_1:
-		(void) ksocket_setsockopt(sr->session->sock, SOL_SOCKET,
+		(void) ksocket_setsockopt(session->sock, SOL_SOCKET,
 		    SO_RCVBUF, (const void *)&smb_dos_tcp_rcvbuf,
 		    sizeof (smb_dos_tcp_rcvbuf), CRED());
 		sr->smb_flg |= SMB_FLAGS_LOCK_AND_READ_OK;
@@ -390,7 +495,7 @@ smb_com_negotiate(smb_request_t *sr)
 		    SMB_DOS_MAXBUF,		/* max buffer size */
 		    1,				/* max MPX */
 		    1,				/* max VCs */
-		    rawmode,			/* read/write raw (s/b 3) */
+		    0,				/* read/write raw */
 		    sesskey,			/* session key */
 		    negprot->ni_servertime.tv_sec, /* server date/time */
 		    negprot->ni_tzcorrection,
@@ -403,27 +508,31 @@ smb_com_negotiate(smb_request_t *sr)
 		break;
 
 	case NT_LM_0_12:
-		(void) ksocket_setsockopt(sr->session->sock, SOL_SOCKET,
+		(void) ksocket_setsockopt(session->sock, SOL_SOCKET,
 		    SO_RCVBUF, (const void *)&smb_nt_tcp_rcvbuf,
 		    sizeof (smb_nt_tcp_rcvbuf), CRED());
 
 		/*
-		 * Turn off Extended Security Negotiation
+		 * Allow SMB signatures if using encrypted passwords
 		 */
-		sr->smb_flg2 &= ~SMB_FLAGS2_EXT_SEC;
-
-		/*
-		 * Allow SMB signatures if security challenge response enabled
-		 */
-		if ((secmode & NEGOTIATE_SECURITY_CHALLENGE_RESPONSE) &&
+		if ((secmode & NEGOTIATE_ENCRYPT_PASSWORDS) &&
 		    sr->sr_cfg->skc_signing_enable) {
 			secmode |= NEGOTIATE_SECURITY_SIGNATURES_ENABLED;
 			if (sr->sr_cfg->skc_signing_required)
 				secmode |=
 				    NEGOTIATE_SECURITY_SIGNATURES_REQUIRED;
 
-			sr->session->secmode = secmode;
+			session->secmode = secmode;
 		}
+
+		/*
+		 * Does the client want Extended Security?
+		 * (and if we have it enabled)
+		 * If so, handle as if a different dialect.
+		 */
+		if ((sr->smb_flg2 & SMB_FLAGS2_EXT_SEC) && smb_cap_ext_sec)
+			goto NT_LM_0_12_ext_sec;
+		sr->smb_flg2 &= ~SMB_FLAGS2_EXT_SEC;
 
 		/*
 		 * nbdomain is not expected to be aligned.
@@ -461,20 +570,53 @@ smb_com_negotiate(smb_request_t *sr)
 		smb_msgbuf_term(&mb);
 		break;
 
+NT_LM_0_12_ext_sec:
+		/*
+		 * This is the "Extended Security" variant of
+		 * dialect NT_LM_0_12.
+		 */
+		negprot->ni_capabilities |= CAP_EXTENDED_SECURITY;
+
+		rc = smbsr_encode_result(sr, 17, VAR_BCC,
+		    "bwbwwllllTwbw#c#c",
+		    17,				/* wct */
+		    negprot->ni_index,		/* dialect index */
+		    secmode,			/* security mode */
+		    negprot->ni_maxmpxcount,	/* max MPX */
+		    1,				/* max VCs */
+		    (DWORD)smb_maxbufsize,	/* max buffer size */
+		    0xFFFF,			/* max raw size */
+		    sesskey,			/* session key */
+		    negprot->ni_capabilities,
+		    &negprot->ni_servertime,	/* system time */
+		    negprot->ni_tzcorrection,
+		    0,		/* encryption key length (MBZ) */
+		    VAR_BCC,
+		    UUID_LEN,
+		    sr->sr_cfg->skc_machine_uuid,
+		    sr->sr_cfg->skc_negtok_len,
+		    sr->sr_cfg->skc_negtok);
+		break;
+
+
 	default:
 		rc = smbsr_encode_result(sr, 1, 0, "bww", 1, -1, 0);
-		return ((rc == 0) ? SDRC_SUCCESS : SDRC_ERROR);
+		break;
 	}
 
 	if (rc != 0)
 		return (SDRC_ERROR);
 
 	/*
-	 * Save the agreed dialect. Note that this value is also
+	 * Save the agreed dialect. Note that the state is also
 	 * used to detect and reject attempts to re-negotiate.
 	 */
-	sr->session->dialect = negprot->ni_dialect;
-	sr->session->s_state = SMB_SESSION_STATE_NEGOTIATED;
+	session->dialect = negprot->ni_dialect;
+	session->s_state = SMB_SESSION_STATE_NEGOTIATED;
+
+	/* Allow normal SMB1 requests now. */
+	session->newrq_func = smb1sr_newrq;
+
 	return (SDRC_SUCCESS);
 }
 
@@ -484,7 +626,7 @@ smb_xlate_dialect(const char *dialect)
 	const smb_xlate_t *dp;
 	int		i;
 
-	for (i = 0; i < sizeof (smb_dialect) / sizeof (smb_dialect[0]); ++i) {
+	for (i = 0; i < smb_ndialects; ++i) {
 		dp = &smb_dialect[i];
 
 		if (strcmp(dp->str, dialect) == 0)

@@ -24,6 +24,7 @@
  */
 
 /*
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
@@ -219,15 +220,51 @@ vdev_mirror_child_select(zio_t *zio)
 	mirror_child_t *mc;
 	uint64_t txg = zio->io_txg;
 	int i, c;
+	/*
+	 * Look at the weights of the vdevs in the mirror; the weights help
+	 * decide which vdev to read from; the highest-weight suitable child
+	 * index is returned, and its weight is decremented in order to avoid
+	 * creating "hot" devices; once all the vdevs' weights are zero, the
+	 * weights are set back to the ones configured in vdev props
+	 */
+	uint64_t max_weight = 0;
 
 	ASSERT(zio->io_bp == NULL || BP_PHYSICAL_BIRTH(zio->io_bp) == txg);
 
+	for (c = 0; c < mm->mm_children; c++) {
+		mc = &mm->mm_child[c];
+		if (mc->mc_vd == NULL)
+			continue;
+		if (max_weight < mc->mc_vd->vdev_weight)
+			max_weight = mc->mc_vd->vdev_weight;
+	}
+
+	/*
+	 * Recalculate weights
+	 */
+	if (!max_weight) {
+		for (c = 0; c < mm->mm_children; c++) {
+			mc = &mm->mm_child[c];
+			if (mc->mc_vd == NULL)
+				continue;
+			mc->mc_vd->vdev_weight =
+			    vdev_queue_get_prop_uint64(&mc->mc_vd->vdev_queue,
+				VDEV_PROP_PREFERRED_READ) + 1;
+			if (max_weight < mc->mc_vd->vdev_weight)
+				max_weight = mc->mc_vd->vdev_weight;
+		}
+	}
+
+	if (max_weight == 1)
+		c = mm->mm_preferred;
+	else
+		c = 0;
 	/*
 	 * Try to find a child whose DTL doesn't contain the block to read.
 	 * If a child is known to be completely inaccessible (indicated by
 	 * vdev_readable() returning B_FALSE), don't even try.
 	 */
-	for (i = 0, c = mm->mm_preferred; i < mm->mm_children; i++, c++) {
+	for (i = 0; i < mm->mm_children; i++, c++) {
 		if (c >= mm->mm_children)
 			c = 0;
 		mc = &mm->mm_child[c];
@@ -239,8 +276,12 @@ vdev_mirror_child_select(zio_t *zio)
 			mc->mc_skipped = 1;
 			continue;
 		}
-		if (!vdev_dtl_contains(mc->mc_vd, DTL_MISSING, txg, 1))
-			return (c);
+		if (!vdev_dtl_contains(mc->mc_vd, DTL_MISSING, txg, 1)) {
+			if (mc->mc_vd->vdev_weight == max_weight) {
+				mc->mc_vd->vdev_weight--;
+				return (c);
+			}
+		}
 		mc->mc_error = SET_ERROR(ESTALE);
 		mc->mc_skipped = 1;
 		mc->mc_speculative = 1;
@@ -251,7 +292,7 @@ vdev_mirror_child_select(zio_t *zio)
 	 * Look for any child we haven't already tried before giving up.
 	 */
 	for (c = 0; c < mm->mm_children; c++)
-		if (!mm->mm_child[c].mc_tried)
+		if (!mm->mm_child[c].mc_tried && mm->mm_child[c].mc_vd != NULL)
 			return (c);
 
 	/*
@@ -279,6 +320,14 @@ vdev_mirror_io_start(zio_t *zio)
 			 */
 			for (c = 0; c < mm->mm_children; c++) {
 				mc = &mm->mm_child[c];
+				if (mc->mc_vd == NULL) {
+					/*
+					 * Invalid vdev id in blkptr caused
+					 * mc_vd to be NULL here.
+					 * Just skip this vdev.
+					 */
+					continue;
+				}
 				zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
 				    mc->mc_vd, mc->mc_offset,
 				    zio_buf_alloc(zio->io_size), zio->io_size,
@@ -303,13 +352,18 @@ vdev_mirror_io_start(zio_t *zio)
 		children = mm->mm_children;
 	}
 
-	while (children--) {
+	for (;children--; ++c) {
 		mc = &mm->mm_child[c];
-		zio_nowait(zio_vdev_child_io(zio, zio->io_bp,
-		    mc->mc_vd, mc->mc_offset, zio->io_data, zio->io_size,
-		    zio->io_type, zio->io_priority, 0,
-		    vdev_mirror_child_done, mc));
-		c++;
+		if (mc->mc_vd == NULL) {
+			/*
+			 * Invalid vdev in blkptr caused mc_vd to be NULL here.
+			 * Just skip this vdev.
+			 */
+			continue;
+		}
+		zio_nowait(zio_vdev_child_io(zio, zio->io_bp, mc->mc_vd,
+		    mc->mc_offset, zio->io_data, zio->io_size, zio->io_type,
+		    zio->io_priority, 0, vdev_mirror_child_done, mc));
 	}
 
 	zio_execute(zio);
@@ -461,6 +515,7 @@ vdev_ops_t vdev_mirror_ops = {
 	vdev_mirror_state_change,
 	NULL,
 	NULL,
+	NULL,
 	VDEV_TYPE_MIRROR,	/* name of this vdev type */
 	B_FALSE			/* not a leaf vdev */
 };
@@ -474,6 +529,7 @@ vdev_ops_t vdev_replacing_ops = {
 	vdev_mirror_state_change,
 	NULL,
 	NULL,
+	NULL,
 	VDEV_TYPE_REPLACING,	/* name of this vdev type */
 	B_FALSE			/* not a leaf vdev */
 };
@@ -485,6 +541,7 @@ vdev_ops_t vdev_spare_ops = {
 	vdev_mirror_io_start,
 	vdev_mirror_io_done,
 	vdev_mirror_state_change,
+	NULL,
 	NULL,
 	NULL,
 	VDEV_TYPE_SPARE,	/* name of this vdev type */

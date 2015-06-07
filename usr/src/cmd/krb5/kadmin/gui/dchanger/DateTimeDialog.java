@@ -22,6 +22,8 @@
 /*
  * Copyright (c) 1999-2000 by Sun Microsystems, Inc.
  * All rights reserved.
+ *
+ * Copyright 2014 PALO, Richard. All rights reserved.
  */
 
 import java.awt.*;

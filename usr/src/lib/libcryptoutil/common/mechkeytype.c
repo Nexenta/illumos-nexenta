@@ -23,8 +23,6 @@
  * Use is subject to license terms.
  */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <cryptoutil.h>
 
 /*
@@ -317,6 +315,8 @@ pkcs11_mech2keytype(CK_MECHANISM_TYPE mech_type, CK_KEY_TYPE *ktype)
 	case CKM_AES_MAC:
 	case CKM_AES_MAC_GENERAL:
 	case CKM_AES_CBC_PAD:
+	case CKM_AES_CMAC:
+	case CKM_AES_CMAC_GENERAL:
 	case CKM_AES_CTR:
 	case CKM_AES_ECB_ENCRYPT_DATA:
 	case CKM_AES_CBC_ENCRYPT_DATA:

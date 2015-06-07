@@ -22,6 +22,9 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * The sole purpose of this file is to document our violations of the DDI
@@ -155,7 +158,7 @@ int ddi_name_to_major() { }
 
 typedef	u_longlong_t	rlim64_t;
 int ulimit() { }
-int maxphys;
+volatile int maxphys;
 
 #define	AT_SIZE	0
 #define	VBLK	0

@@ -26,6 +26,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_QLT_H
@@ -477,6 +478,7 @@ char *value2string(string_table_t *entry, int value, int delimiter);
 
 #define	PROP_STATUS_DELIMITER	((uint32_t)0xFFFF)
 
+/* BEGIN CSTYLED */
 #define	DDI_PROP_STATUS()					\
 {								\
 	{DDI_PROP_SUCCESS, "DDI_PROP_SUCCESS"},			\
@@ -490,6 +492,7 @@ char *value2string(string_table_t *entry, int value, int delimiter);
 	{DDI_PROP_END_OF_DATA, "DDI_PROP_END_OF_DATA"},		\
 	{PROP_STATUS_DELIMITER, "DDI_PROP_UNKNOWN"}		\
 }
+/* END CSTYLED */
 
 #ifndef TRUE
 #define	TRUE	B_TRUE

@@ -18,6 +18,7 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2013, Nexenta Systems, Inc. All rights reserved.
@@ -1248,7 +1249,7 @@ pppt_task_start(pppt_task_t *ptask)
 	mutex_enter(&ptask->pt_mutex);
 	if (avl_find(&ptask->pt_sess->ps_task_list, ptask, &where) == NULL) {
 		pppt_task_update_state(ptask, PTS_ACTIVE);
-		/* Manually increment refcnt, sincd we hold the mutex... */
+		/* Manually increment refcnt, since we hold the mutex... */
 		ptask->pt_refcnt++;
 		avl_insert(&ptask->pt_sess->ps_task_list, ptask, where);
 		mutex_exit(&ptask->pt_mutex);

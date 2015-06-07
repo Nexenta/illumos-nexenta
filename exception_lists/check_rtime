@@ -97,6 +97,10 @@ UNDEF_REF	^usr/snadm/lib/libsvm\.so\.1$
 UNUSED_DEPS	^usr/lib/picl/plugins/		# require devtree dependencies
 UNUSED_DEPS	^usr/lib/libp	# profile libc makes libm an unused dep of libc
 
+# libnetsnmphelpers.so is empty in some net-snmp versions
+UNUSED_OBJ	unused object=.*/libnetsnmphelpers\.so\..*
+UNREF_OBJ	unreferenced object=.*/libnetsnmphelpers\.so\..*
+
 # libm.so.2 dependency
 UNUSED_OBJ	unused object=.*MACH(libm)/libm_hwcap1\.so\.2
 

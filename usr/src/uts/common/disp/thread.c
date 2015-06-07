@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013, Joyent, Inc.  All rights reserved.
  */
 
@@ -120,8 +121,8 @@ int default_binding_mode = TB_ALLHARD;
 /*
  * default_stksize overrides lwp_default_stksize if it is set.
  */
-int	default_stksize;
-int	lwp_default_stksize;
+volatile int	default_stksize;
+volatile int	lwp_default_stksize;
 
 static zone_key_t zone_thread_key;
 

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -49,10 +50,10 @@ void *list_remove_head(list_t *);
 void *list_remove_tail(list_t *);
 void list_move_tail(list_t *, list_t *);
 
-void *list_head(list_t *);
-void *list_tail(list_t *);
-void *list_next(list_t *, void *);
-void *list_prev(list_t *, void *);
+extern void *list_head(list_t *);
+extern void *list_tail(list_t *);
+extern void *list_next(list_t *, void *);
+extern void *list_prev(list_t *, void *);
 int list_is_empty(list_t *);
 
 void list_link_init(list_node_t *);

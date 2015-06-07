@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
 #
 #	This makefile drives the production of the stmf_sbd driver for 
 #	COMSTAR.
@@ -59,6 +60,7 @@ MODSTUBS_DIR	 = $(OBJS_DIR)
 LDFLAGS		+= -dy -Ndrv/stmf -Nfs/zfs
 
 INC_PATH	+= -I$(UTSBASE)/common/fs/zfs
+INC_PATH	+= -I$(UTSBASE)/common/io/comstar/lu/stmf_sbd
 
 C99MODE=	-xc99=%all
 C99LMODE=	-Xc99=%all

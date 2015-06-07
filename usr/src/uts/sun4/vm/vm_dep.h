@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1995, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -574,7 +575,7 @@ extern int ecache_alignsize;
 #define	L2CACHE_ALIGN_MAX	512
 
 extern int update_proc_pgcolorbase_after_fork;
-extern int consistent_coloring;
+extern volatile int consistent_coloring;
 extern uint_t vac_colors_mask;
 extern int vac_size;
 extern int vac_shift;

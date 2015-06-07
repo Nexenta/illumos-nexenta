@@ -547,7 +547,7 @@ fmd_stat(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 	switch (s.fmds_type) {
 	case FMD_TYPE_BOOL:
 		mdb_printf("%-11p %-4s %-32s %s\n", addr, "bool",
-		    s.fmds_name, s.fmds_value.bool ? "true" : "false");
+		    s.fmds_name, s.fmds_value.b ? "true" : "false");
 		break;
 	case FMD_TYPE_INT32:
 		mdb_printf("%-11p %-4s %-32s %d\n", addr, "i32",

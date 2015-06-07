@@ -12,6 +12,7 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright (c) 2015, Nexenta Systems, Inc. All rights reserved.
 #
 
 #
@@ -91,11 +92,21 @@ done
 
 log_note "verify multiple snapshot with -r option"
 log_must $ZFS create $TESTPOOL/TESTFS4
-log_must $ZFS create -p $TESTPOOL/$TESTFS3/TESTFSA$($PYTHON -c 'print "x" * 210')/TESTFSB
-log_mustnot $ZFS snapshot -r $TESTPOOL/$TESTFS1@snap1 $TESTPOOL/$TESTFS2@snap1 \
-        $TESTPOOL/$TESTFS3@snap1 $TESTPOOL/TESTFS4@snap1
-log_must $ZFS rename  $TESTPOOL/$TESTFS3/TESTFSA$($PYTHON -c 'print "x" * 210') \
-    $TESTPOOL/$TESTFS3/TESTFSA
+# If the pid is 100000 or greater then it has a length of 6 digits so we need to
+# adjust the length of the dataset path so it doesn't run over MAXPATHLENGTH. 
+if [[ $$ -ge 100000 ]] ; then 
+	log_must $ZFS create -p $TESTPOOL/$TESTFS3/TESTFSA$($PYTHON -c 'print "x" * 209')/TESTFSB
+	log_mustnot $ZFS snapshot -r $TESTPOOL/$TESTFS1@snap1 $TESTPOOL/$TESTFS2@snap1 \
+        	$TESTPOOL/$TESTFS3@snap1 $TESTPOOL/TESTFS4@snap1
+	log_must $ZFS rename  $TESTPOOL/$TESTFS3/TESTFSA$($PYTHON -c 'print "x" * 209') \
+	    	$TESTPOOL/$TESTFS3/TESTFSA
+else
+	log_must $ZFS create -p $TESTPOOL/$TESTFS3/TESTFSA$($PYTHON -c 'print "x" * 211')/TESTFSB
+	log_mustnot $ZFS snapshot -r $TESTPOOL/$TESTFS1@snap1 $TESTPOOL/$TESTFS2@snap1 \
+        	$TESTPOOL/$TESTFS3@snap1 $TESTPOOL/TESTFS4@snap1
+	log_must $ZFS rename  $TESTPOOL/$TESTFS3/TESTFSA$($PYTHON -c 'print "x" * 211') \
+	    	$TESTPOOL/$TESTFS3/TESTFSA
+fi
 log_must $ZFS snapshot -r $TESTPOOL/$TESTFS1@snap1 $TESTPOOL/$TESTFS2@snap1 \
         $TESTPOOL/$TESTFS3@snap1 $TESTPOOL/TESTFS4@snap1
 

@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -361,7 +362,7 @@ zap_leaf_array_match(zap_leaf_t *l, zap_name_t *zn,
 	}
 
 	ASSERT(zn->zn_key_intlen == 1);
-	if (zn->zn_matchtype == MT_FIRST) {
+	if (zn->zn_matchtype & MT_FIRST) {
 		char *thisname = kmem_alloc(array_numints, KM_SLEEP);
 		boolean_t match;
 
@@ -403,7 +404,6 @@ zap_leaf_lookup(zap_leaf_t *l, zap_name_t *zn, zap_entry_handle_t *zeh)
 
 	ASSERT3U(zap_leaf_phys(l)->l_hdr.lh_magic, ==, ZAP_LEAF_MAGIC);
 
-again:
 	for (chunkp = LEAF_HASH_ENTPTR(l, zn->zn_hash);
 	    *chunkp != CHAIN_END; chunkp = &le->le_next) {
 		uint16_t chunk = *chunkp;
@@ -420,7 +420,7 @@ again:
 		 * normalized zap objects, so this will find the
 		 * lowest-cd match for MT_FIRST.
 		 */
-		ASSERT(zn->zn_matchtype == MT_EXACT ||
+		ASSERT((zn->zn_matchtype & MT_EXACT) ||
 		    (zap_leaf_phys(l)->l_hdr.lh_flags & ZLF_ENTRIES_CDSORTED));
 		if (zap_leaf_array_match(l, zn, le->le_name_chunk,
 		    le->le_name_numints)) {
@@ -432,15 +432,6 @@ again:
 			zeh->zeh_leaf = l;
 			return (0);
 		}
-	}
-
-	/*
-	 * NB: we could of course do this in one pass, but that would be
-	 * a pain.  We'll see if MT_BEST is even used much.
-	 */
-	if (zn->zn_matchtype == MT_BEST) {
-		zn->zn_matchtype = MT_FIRST;
-		goto again;
 	}
 
 	return (SET_ERROR(ENOENT));
@@ -594,7 +585,7 @@ zap_entry_create(zap_leaf_t *l, zap_name_t *zn, uint32_t cd,
 	numchunks = 1 + ZAP_LEAF_ARRAY_NCHUNKS(zn->zn_key_orig_numints *
 	    zn->zn_key_intlen) + ZAP_LEAF_ARRAY_NCHUNKS(valuelen);
 	if (numchunks > ZAP_LEAF_NUMCHUNKS(l))
-		return (E2BIG);
+		return (SET_ERROR(E2BIG));
 
 	if (cd == ZAP_NEED_CD) {
 		/* find the lowest unused cd */

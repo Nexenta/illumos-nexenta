@@ -738,3 +738,14 @@ use of
 does not work as it does with NFS Version 2 and Version 3 and the client
 receives an error when attempting to mount
 .Pa /export/foo .
+.Pp
+The
+.Sy nohide
+option violates RFC 1094,
+.%T "Network File System Protocol Specification"
+and RFC 1813,
+.%T "NFS: Network File System Version 3 Protocol Specification"
+.Pp
+The
+.Sy nohide
+option is provided for compatibility with Linux NFS.

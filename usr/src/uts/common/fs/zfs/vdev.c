@@ -65,6 +65,11 @@ static vdev_ops_t *vdev_ops_table[] = {
 int zfs_scrub_limit = 10;
 
 /*
+ * alpha for exponential moving average of I/O latency (in 1/10th of a percent)
+ */
+int zfs_vs_latency_alpha = 100;
+
+/*
  * When a vdev is added, it will be divided into approximately (but no
  * more than) this number of metaslabs.
  */
@@ -346,6 +351,7 @@ vdev_alloc_common(spa_t *spa, uint_t id, uint64_t guid, vdev_ops_t *ops)
 	mutex_init(&vd->vdev_dtl_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&vd->vdev_stat_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&vd->vdev_probe_lock, NULL, MUTEX_DEFAULT, NULL);
+	rw_init(&vd->vdev_tsd_lock, NULL, RW_DEFAULT, NULL);
 	for (int t = 0; t < DTL_TYPES; t++) {
 		vd->vdev_dtl[t] = range_tree_create(NULL, NULL,
 		    &vd->vdev_dtl_lock);
@@ -372,7 +378,8 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 {
 	vdev_ops_t *ops;
 	char *type;
-	uint64_t guid = 0, islog, nparity;
+	uint64_t guid = 0, nparity;
+	uint64_t isspecial = 0, islog = 0;
 	vdev_t *vd;
 
 	ASSERT(spa_config_held(spa, SCL_ALL, RW_WRITER) == SCL_ALL);
@@ -416,10 +423,14 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 	/*
 	 * Determine whether we're a log vdev.
 	 */
-	islog = 0;
 	(void) nvlist_lookup_uint64(nv, ZPOOL_CONFIG_IS_LOG, &islog);
 	if (islog && spa_version(spa) < SPA_VERSION_SLOGS)
 		return (SET_ERROR(ENOTSUP));
+
+	/*
+	 * Determine whether we're a special vdev.
+	 */
+	(void) nvlist_lookup_uint64(nv, ZPOOL_CONFIG_IS_SPECIAL, &isspecial);
 
 	if (ops == &vdev_hole_ops && spa_version(spa) < SPA_VERSION_HOLES)
 		return (SET_ERROR(ENOTSUP));
@@ -463,6 +474,7 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 	vd = vdev_alloc_common(spa, id, guid, ops);
 
 	vd->vdev_islog = islog;
+	vd->vdev_isspecial = isspecial;
 	vd->vdev_nparity = nparity;
 
 	if (nvlist_lookup_string(nv, ZPOOL_CONFIG_PATH, &vd->vdev_path) == 0)
@@ -517,12 +529,15 @@ vdev_alloc(spa_t *spa, vdev_t **vdp, nvlist_t *nv, vdev_t *parent, uint_t id,
 	}
 
 	if (parent && !parent->vdev_parent && alloctype != VDEV_ALLOC_ATTACH) {
+		metaslab_class_t *mc = isspecial ? spa_special_class(spa) :
+		    (islog ? spa_log_class(spa) : spa_normal_class(spa));
+
 		ASSERT(alloctype == VDEV_ALLOC_LOAD ||
 		    alloctype == VDEV_ALLOC_ADD ||
 		    alloctype == VDEV_ALLOC_SPLIT ||
 		    alloctype == VDEV_ALLOC_ROOTPOOL);
-		vd->vdev_mg = metaslab_group_create(islog ?
-		    spa_log_class(spa) : spa_normal_class(spa), vd);
+
+		vd->vdev_mg = metaslab_group_create(mc, vd);
 	}
 
 	/*
@@ -665,6 +680,7 @@ vdev_free(vdev_t *vd)
 	mutex_destroy(&vd->vdev_dtl_lock);
 	mutex_destroy(&vd->vdev_stat_lock);
 	mutex_destroy(&vd->vdev_probe_lock);
+	rw_destroy(&vd->vdev_tsd_lock);
 
 	if (vd == spa->spa_root_vdev)
 		spa->spa_root_vdev = NULL;
@@ -736,6 +752,9 @@ vdev_top_transfer(vdev_t *svd, vdev_t *tvd)
 
 	tvd->vdev_islog = svd->vdev_islog;
 	svd->vdev_islog = 0;
+
+	tvd->vdev_isspecial = svd->vdev_isspecial;
+	svd->vdev_isspecial = 0;
 }
 
 static void
@@ -1547,8 +1566,14 @@ vdev_reopen(vdev_t *vd)
 		(void) vdev_validate_aux(vd);
 		if (vdev_readable(vd) && vdev_writeable(vd) &&
 		    vd->vdev_aux == &spa->spa_l2cache &&
-		    !l2arc_vdev_present(vd))
-			l2arc_add_vdev(spa, vd);
+		    !l2arc_vdev_present(vd)) {
+			/*
+			 * When reopening we can assume persistent L2ARC is
+			 * supported, since we've already opened the device
+			 * in the past and prepended an L2ARC uberblock.
+			 */
+			l2arc_add_vdev(spa, vd, B_TRUE);
+		}
 	} else {
 		(void) vdev_validate(vd, B_TRUE);
 	}
@@ -2357,6 +2382,7 @@ int
 vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 {
 	vdev_t *vd, *tvd, *pvd, *rvd = spa->spa_root_vdev;
+	boolean_t postevent = B_FALSE;
 
 	spa_vdev_state_enter(spa, SCL_NONE);
 
@@ -2365,6 +2391,10 @@ vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 
 	if (!vd->vdev_ops->vdev_op_leaf)
 		return (spa_vdev_state_exit(spa, NULL, ENOTSUP));
+
+	postevent =
+	    (vd->vdev_offline == B_TRUE || vd->vdev_tmpoffline == B_TRUE) ?
+	    B_TRUE : B_FALSE;
 
 	tvd = vd->vdev_top;
 	vd->vdev_offline = B_FALSE;
@@ -2401,6 +2431,10 @@ vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 			return (spa_vdev_state_exit(spa, vd, ENOTSUP));
 		spa_async_request(spa, SPA_ASYNC_CONFIG_UPDATE);
 	}
+
+	if (postevent)
+		spa_event_notify(spa, vd, ESC_ZFS_VDEV_ONLINE);
+
 	return (spa_vdev_state_exit(spa, vd, 0));
 }
 
@@ -2593,13 +2627,13 @@ vdev_is_dead(vdev_t *vd)
 boolean_t
 vdev_readable(vdev_t *vd)
 {
-	return (!vdev_is_dead(vd) && !vd->vdev_cant_read);
+	return (vd != NULL && !vdev_is_dead(vd) && !vd->vdev_cant_read);
 }
 
 boolean_t
 vdev_writeable(vdev_t *vd)
 {
-	return (!vdev_is_dead(vd) && !vd->vdev_cant_write);
+	return (vd != NULL && !vdev_is_dead(vd) && !vd->vdev_cant_write);
 }
 
 boolean_t
@@ -2671,6 +2705,8 @@ vdev_get_stats(vdev_t *vd, vdev_stat_t *vs)
 			for (int t = 0; t < ZIO_TYPES; t++) {
 				vs->vs_ops[t] += cvs->vs_ops[t];
 				vs->vs_bytes[t] += cvs->vs_bytes[t];
+				vs->vs_iotime[t] += cvs->vs_iotime[t];
+				vs->vs_latency[t] += cvs->vs_latency[t];
 			}
 			cvs->vs_scan_removing = cvd->vdev_removing;
 		}
@@ -2762,6 +2798,20 @@ vdev_stat_update(zio_t *zio, uint64_t psize)
 
 		vs->vs_ops[type]++;
 		vs->vs_bytes[type] += psize;
+
+		/*
+		 * While measuring each delta in nanoseconds, we should keep
+		 * cumulative iotime in microseconds so it doesn't overflow on
+		 * a busy system.
+		 */
+		vs->vs_iotime[type] += (zio->io_vd_timestamp) / 1000;
+
+		/*
+		 * Latency is an exponential moving average of iotime deltas
+		 * with tuneable alpha measured in 1/10th of percent.
+		 */
+		vs->vs_latency[type] += ((int64_t)zio->io_vd_timestamp -
+		    vs->vs_latency[type]) * zfs_vs_latency_alpha / 1000;
 
 		mutex_exit(&vd->vdev_stat_lock);
 		return;
@@ -2874,7 +2924,7 @@ vdev_space_update(vdev_t *vd, int64_t alloc_delta, int64_t defer_delta,
 	vd->vdev_stat.vs_dspace += dspace_delta;
 	mutex_exit(&vd->vdev_stat_lock);
 
-	if (mc == spa_normal_class(spa)) {
+	if (mc == spa_normal_class(spa) || mc == spa_special_class(spa)) {
 		mutex_enter(&rvd->vdev_stat_lock);
 		rvd->vdev_stat.vs_alloc += alloc_delta;
 		rvd->vdev_stat.vs_space += space_delta;
@@ -3363,4 +3413,33 @@ vdev_deadman(vdev_t *vd)
 		}
 		mutex_exit(&vq->vq_lock);
 	}
+}
+
+boolean_t
+vdev_type_is_ddt(vdev_t *vd)
+{
+	uint64_t pool;
+
+	if (vd->vdev_l2ad_ddt == 1 && DDT_LIMIT_TO_L2ARC) {
+		ASSERT(spa_l2cache_exists(vd->vdev_guid, &pool));
+		ASSERT(vd->vdev_isl2cache);
+		return (B_TRUE);
+	}
+	return (B_FALSE);
+}
+
+/* count leaf vdev(s) under the given vdev */
+uint_t
+vdev_count_leaf_vdevs(vdev_t *vd)
+{
+	uint_t cnt = 0;
+
+	if (vd->vdev_ops->vdev_op_leaf)
+		return (1);
+
+	/* if this is not a leaf vdev - visit children */
+	for (int c = 0; c < vd->vdev_children; c++)
+		cnt += vdev_count_leaf_vdevs(vd->vdev_child[c]);
+
+	return (cnt);
 }

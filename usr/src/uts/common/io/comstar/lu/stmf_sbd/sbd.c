@@ -21,12 +21,13 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
 #include <sys/sysmacros.h>
 #include <sys/conf.h>
+#include <sys/list.h>
 #include <sys/file.h>
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
@@ -111,7 +112,7 @@ static dev_info_t	*sbd_dip;
 static uint32_t		sbd_lu_count = 0;
 
 /* Global property settings for the logical unit */
-char sbd_vendor_id[]	= "SUN     ";
+char sbd_vendor_id[]	= "NEXENTA ";
 char sbd_product_id[]	= "COMSTAR         ";
 char sbd_revision[]	= "1.0 ";
 char *sbd_mgmt_url = NULL;
@@ -119,6 +120,7 @@ uint16_t sbd_mgmt_url_alloc_size = 0;
 krwlock_t sbd_global_prop_lock;
 
 static char sbd_name[] = "sbd";
+int sbd_dump_state_log = 0;
 
 static struct cb_ops sbd_cb_ops = {
 	sbd_open,			/* open */
@@ -155,7 +157,7 @@ static struct dev_ops sbd_ops = {
 	NULL			/* power */
 };
 
-#define	SBD_NAME	"COMSTAR SBD"
+#define	SBD_NAME	"COMSTAR SBD+ "
 
 static struct modldrv modldrv = {
 	&mod_driverops,
@@ -272,6 +274,8 @@ sbd_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg, void **result)
 static int
 sbd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 {
+	char	*prop;
+
 	switch (cmd) {
 	case DDI_ATTACH:
 		sbd_dip = dip;
@@ -281,6 +285,17 @@ sbd_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 			break;
 		}
 		ddi_report_dev(dip);
+
+		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "vendor-id", &prop) == DDI_SUCCESS)
+			(void) snprintf(sbd_vendor_id, 9, "%s%8s", prop, "");
+		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "product-id", &prop) == DDI_SUCCESS)
+			(void) snprintf(sbd_product_id, 17, "%s%16s", prop, "");
+		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, dip,
+		    DDI_PROP_DONTPASS, "revision", &prop) == DDI_SUCCESS)
+			(void) snprintf(sbd_revision, 5, "%s%4s", prop, "");
+
 		return (DDI_SUCCESS);
 	}
 
@@ -1441,9 +1456,11 @@ sbd_populate_and_register_lu(sbd_lu_t *sl, uint32_t *err_ret)
 	lu->lu_send_status_done = sbd_send_status_done;
 	lu->lu_task_free = sbd_task_free;
 	lu->lu_abort = sbd_abort;
+	lu->lu_task_poll = sbd_task_poll;
 	lu->lu_dbuf_free = sbd_dbuf_free;
 	lu->lu_ctl = sbd_ctl;
 	lu->lu_info = sbd_info;
+	lu->lu_task_done = sbd_task_done;
 	sl->sl_state = STMF_STATE_OFFLINE;
 
 	if ((ret = stmf_register_lu(lu)) != STMF_SUCCESS) {
@@ -1455,6 +1472,12 @@ sbd_populate_and_register_lu(sbd_lu_t *sl, uint32_t *err_ret)
 		return (EIO);
 	}
 
+	/*
+	 * setup the ATS (compare and write) lists to handle multiple
+	 * ATS commands simultaneously
+	 */
+	list_create(&sl->sl_ats_io_list, sizeof (ats_state_t),
+	    offsetof(ats_state_t, as_next));
 	*err_ret = 0;
 	return (0);
 }
@@ -2999,6 +3022,7 @@ sbd_data_read(sbd_lu_t *sl, struct scsi_task *task,
 {
 	int ret;
 	long resid;
+	hrtime_t xfer_start;
 
 	if ((offset + size) > sl->sl_lu_size) {
 		return (SBD_IO_PAST_EOF);
@@ -3017,6 +3041,7 @@ sbd_data_read(sbd_lu_t *sl, struct scsi_task *task,
 		size = store_end;
 	}
 
+	xfer_start = gethrtime();
 	DTRACE_PROBE5(backing__store__read__start, sbd_lu_t *, sl,
 	    uint8_t *, buf, uint64_t, size, uint64_t, offset,
 	    scsi_task_t *, task);
@@ -3032,11 +3057,14 @@ sbd_data_read(sbd_lu_t *sl, struct scsi_task *task,
 		rw_exit(&sl->sl_access_state_lock);
 		return (SBD_FAILURE);
 	}
+
 	ret = vn_rdwr(UIO_READ, sl->sl_data_vp, (caddr_t)buf, (ssize_t)size,
 	    (offset_t)offset, UIO_SYSSPACE, 0, RLIM64_INFINITY, CRED(),
 	    &resid);
 	rw_exit(&sl->sl_access_state_lock);
 
+	stmf_lu_xfer_done(task, B_TRUE /* read */,
+	    (gethrtime() - xfer_start));
 	DTRACE_PROBE6(backing__store__read__end, sbd_lu_t *, sl,
 	    uint8_t *, buf, uint64_t, size, uint64_t, offset,
 	    int, ret, scsi_task_t *, task);
@@ -3059,6 +3087,7 @@ sbd_data_write(sbd_lu_t *sl, struct scsi_task *task,
 	long resid;
 	sbd_status_t sret = SBD_SUCCESS;
 	int ioflag;
+	hrtime_t xfer_start;
 
 	if ((offset + size) > sl->sl_lu_size) {
 		return (SBD_IO_PAST_EOF);
@@ -3073,6 +3102,7 @@ sbd_data_write(sbd_lu_t *sl, struct scsi_task *task,
 		ioflag = 0;
 	}
 
+	xfer_start = gethrtime();
 	DTRACE_PROBE5(backing__store__write__start, sbd_lu_t *, sl,
 	    uint8_t *, buf, uint64_t, size, uint64_t, offset,
 	    scsi_task_t *, task);
@@ -3093,6 +3123,8 @@ sbd_data_write(sbd_lu_t *sl, struct scsi_task *task,
 	    &resid);
 	rw_exit(&sl->sl_access_state_lock);
 
+	stmf_lu_xfer_done(task, B_FALSE /* write */,
+	    (gethrtime() - xfer_start));
 	DTRACE_PROBE6(backing__store__write__end, sbd_lu_t *, sl,
 	    uint8_t *, buf, uint64_t, size, uint64_t, offset,
 	    int, ret, scsi_task_t *, task);
@@ -3690,22 +3722,26 @@ out:
 
 /*
  * Unmap a region in a volume.  Currently only supported for zvols.
+ * The list of extents to be freed is passed in a dkioc_free_list_t
+ * which the caller is responsible for destroying.
  */
 int
-sbd_unmap(sbd_lu_t *sl, uint64_t offset, uint64_t length)
+sbd_unmap(sbd_lu_t *sl, dkioc_free_list_t *dfl)
 {
 	vnode_t *vp;
-	int unused;
-	dkioc_free_t df;
+	int unused, ret;
 
-	/* Right now, we only support UNMAP on zvols. */
-	if (!(sl->sl_flags & SL_ZFS_META))
-		return (EIO);
+	/* Nothing to do */
+	if (dfl->dfl_num_exts == 0)
+		return (0);
 
-	df.df_flags = (sl->sl_flags & SL_WRITEBACK_CACHE_DISABLE) ?
+	/*
+	 * TODO: unmap performance may be improved by not doing the synchronous
+	 * removal of the blocks and writing of the metadata.  The
+	 * transaction is in the zil so the state should be stable.
+	 */
+	dfl->dfl_flags = (sl->sl_flags & SL_WRITEBACK_CACHE_DISABLE) ?
 	    DF_WAIT_SYNC : 0;
-	df.df_start = offset;
-	df.df_length = length;
 
 	/* Use the data vnode we have to send a fop_ioctl(). */
 	vp = sl->sl_data_vp;
@@ -3714,6 +3750,142 @@ sbd_unmap(sbd_lu_t *sl, uint64_t offset, uint64_t length)
 		return (EIO);
 	}
 
-	return (VOP_IOCTL(vp, DKIOCFREE, (intptr_t)(&df), FKIOCTL, kcred,
-	    &unused, NULL));
+	ret = VOP_IOCTL(vp, DKIOCFREE, (intptr_t)dfl, FKIOCTL, kcred,
+	    &unused, NULL);
+
+	return (ret);
+}
+
+/*
+ * Check if this lu belongs to sbd or some other lu
+ * provider. A simple check for one of the module
+ * entry points is sufficient.
+ */
+int
+sbd_is_valid_lu(stmf_lu_t *lu)
+{
+	if (lu->lu_new_task == sbd_new_task)
+		return (1);
+	return (0);
+}
+
+uint8_t
+sbd_get_lbasize_shift(stmf_lu_t *lu)
+{
+	sbd_lu_t *sl = (sbd_lu_t *)lu->lu_provider_private;
+
+	return (sl->sl_data_blocksize_shift);
+}
+
+void
+sbd_dump_state(scsi_task_t *task)
+{
+	sbd_cmd_t *scmd;
+
+	if (sbd_dump_state_log == 0)
+		return;
+
+	cmn_err(CE_NOTE, "Comstar State at last warning\n"
+	    "task_stmf_private = %p\n"
+	    "task_port_private = %p\n"
+	    "task_lu_private = %p\n"
+	    "task_session %p\n"
+	    "task_lport %p\n"
+	    "task_lu %p\n"
+	    "task_lu_itl_handle %p\n"
+	    "task_lun_no[8] %u %u %u %u %u %d %u %u\n"
+	    "task_flags 0x%x\n"
+	    "task_priority %u\n"
+	    "task_mgmt_function %u\n"
+	    "task_max_nbufs %u\n"
+	    "task_cur_nbufs %u\n"
+	    "task_csn_size 0x%x\n"
+	    "task_additional_flags %u\n"
+	    "task_cmd_seq_no 0x%x\n"
+	    "task_expected_xfer_length %u\n"
+	    "task_timeout %u\n"
+	    "task_ext_id %u\n"
+	    "task_cdb_length %u\n"
+	    "*task_cdb %p\n"
+	    "task_cmd_xfer_length %u\n"
+	    "task_nbytes_transferred %u\n"
+	    "task_max_xfer_len %u\n"
+	    "task_1st_xfer_len %u\n"
+	    "task_copy_threshold %u\n"
+	    "task_completion_status %d\n"
+	    "task_resid %u\n"
+	    "task_status_ctrl %u\n"
+	    "task_scsi_status %u\n"
+	    "task_sense_length %u\n"
+	    "*task_sense_data %p\n"
+	    "*task_extended_cmd %p\n"
+	    "\n",
+	    (void *) task->task_stmf_private,
+	    (void *) task->task_port_private,
+	    (void *) task->task_lu_private,
+	    (void *) task->task_session,
+	    (void *) task->task_lport,
+	    (void *) task->task_lu,
+	    (void *) task->task_lu_itl_handle,
+	    task->task_lun_no[0],
+	    task->task_lun_no[1],
+	    task->task_lun_no[2],
+	    task->task_lun_no[3],
+	    task->task_lun_no[4],
+	    task->task_lun_no[5],
+	    task->task_lun_no[6],
+	    task->task_lun_no[7],
+	    task->task_flags,
+	    task->task_priority,
+	    task->task_mgmt_function,
+	    task->task_max_nbufs,
+	    task->task_cur_nbufs,
+	    task->task_csn_size,
+	    task->task_additional_flags,
+	    task->task_cmd_seq_no,
+	    task->task_expected_xfer_length,
+	    task->task_timeout,
+	    task->task_ext_id,
+	    task->task_cdb_length,
+	    (void *) task->task_cdb,
+	    task->task_cmd_xfer_length,
+	    task->task_nbytes_transferred,
+	    task->task_max_xfer_len,
+	    task->task_1st_xfer_len,
+	    task->task_copy_threshold,
+	    (int)task->task_completion_status,
+	    task->task_resid,
+	    task->task_status_ctrl,
+	    task->task_scsi_status,
+	    task->task_sense_length,
+	    (void *) task->task_sense_data,
+	    task->task_extended_cmd);
+
+	scmd = (sbd_cmd_t *)task->task_lu_private;
+	if (scmd == NULL)
+		cmn_err(CE_NOTE,
+		    "task->task_lu_private is null no sbd_cmd");
+	else
+		cmn_err(CE_NOTE,
+		    "sbd_cmd [task->task_lu_private]\n"
+		    "tflags = 0x%x\n"
+		    "nbufs = %u\n"
+		    "cmd_type = %d\n"
+		    "trans_data_len = %u\n"
+		    "addr = %llu\n"
+		    "len = %u\n"
+		    "current_ro = %u\n"
+		    "trans_data = %p\n"
+		    "ats_state = %p\n"
+		    "rsvd = 0x%x\n",
+		    scmd->flags,
+		    scmd->nbufs,
+		    scmd->cmd_type,
+		    scmd->trans_data_len,
+		    (long long unsigned int)scmd->addr,
+		    scmd->len,
+		    scmd->current_ro,
+		    (void *)scmd->trans_data,
+		    (void *)scmd->ats_state,
+		    scmd->rsvd);
 }

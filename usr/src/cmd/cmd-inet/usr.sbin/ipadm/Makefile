@@ -22,12 +22,14 @@
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+#
 #
 
 PROG =		ipadm
 ROOTFS_PROG =	$(PROG)
 LOCALOBJS=	ipadm.o
-COMMONOBJS=	
+COMMONOBJS=
 OBJS=		$(LOCALOBJS) $(COMMONOBJS)
 
 include ../../../Makefile.cmd
@@ -41,7 +43,7 @@ SRCS=		$(LOCALSRCS) $(COMMONSRCS)
 CPPFLAGS +=	-I$(CMDINETCOMMONDIR)
 CERRWARN +=	-_gcc=-Wno-unused-label
 CERRWARN +=	-_gcc=-Wno-uninitialized
-LDLIBS +=       -linetutil -lipadm -lnvpair
+LDLIBS +=       -linetutil -lipadm -lnvpair -lipmp -lcmdutils
 LINTFLAGS +=	-m
 
 ROOTUSRSBINLINKS = $(PROG:%=$(ROOTUSRSBIN)/%)

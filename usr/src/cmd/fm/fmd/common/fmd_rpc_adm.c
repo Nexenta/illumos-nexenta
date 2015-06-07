@@ -1063,7 +1063,7 @@ xdr_fmd_stat(XDR *xp, fmd_stat_t *sp)
 
 	switch (sp->fmds_type) {
 	case FMD_TYPE_BOOL:
-		rv &= xdr_int(xp, &sp->fmds_value.bool);
+		rv &= xdr_int(xp, &sp->fmds_value.b);
 		break;
 	case FMD_TYPE_INT32:
 		rv &= xdr_int32_t(xp, &sp->fmds_value.i32);

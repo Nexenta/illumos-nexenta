@@ -22,30 +22,31 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB_TOKEN_H
 #define	_SMB_TOKEN_H
 
-#include <smbsrv/netrauth.h>
+#include <smbsrv/smb_inet.h>
 #include <smbsrv/smb_privilege.h>
 #include <smbsrv/smb_sid.h>
+
+/*
+ * Don't want <smbsrv/netrauth.h> in here, but
+ * uts/common/fs/smbsrv/smb_authenticate.c
+ * wants this.  Todo: cleanup
+ */
+#define	NETR_NETWORK_LOGON			0x02
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /*
- * User Session Key
- *
- * This is part of the MAC key which is required for signing SMB messages.
+ * 32-bit opaque buffer (non-null terminated strings)
+ * See also: smb_buf32_xdr()
  */
-typedef struct smb_session_key {
-	uint8_t data[16];
-} smb_session_key_t;
-
-/* 32-bit opaque buffer (non-null terminated strings) */
 typedef struct smb_buf32 {
 	uint32_t	len;
 	uint8_t		*val;
@@ -70,8 +71,8 @@ typedef struct smb_buf32 {
  * SMB_ATF_BACKUPOP	Token belongs to a Power User member
  * SMB_ATF_ADMIN	Token belongs to a Domain Admins member
  */
-#define	SMB_ATF_GUEST		0x00000001
-#define	SMB_ATF_ANON		0x00000002
+#define	SMB_ATF_ANON		0x00000001
+#define	SMB_ATF_GUEST		0x00000002
 #define	SMB_ATF_POWERUSER	0x00000004
 #define	SMB_ATF_BACKUPOP	0x00000008
 #define	SMB_ATF_ADMIN		0x00000010
@@ -80,12 +81,17 @@ typedef struct smb_buf32 {
 	(sizeof (smb_posix_grps_t) + (n - 1) * sizeof (gid_t))
 /*
  * It consists of the primary and supplementary POSIX groups.
+ * See also: smb_posix_grps_xdr()
  */
 typedef struct smb_posix_grps {
 	uint32_t	pg_ngrps;
 	gid_t		pg_grps[ANY_SIZE_ARRAY];
 } smb_posix_grps_t;
 
+/*
+ * An NT-style logon "token" (NT terminology)
+ * See also: smb_token_xdr()
+ */
 typedef struct smb_token {
 	smb_id_t	tkn_user;
 	smb_id_t	tkn_owner;
@@ -96,12 +102,13 @@ typedef struct smb_token {
 	char		*tkn_domain_name;
 	uint32_t	tkn_flags;
 	uint32_t	tkn_audit_sid;
-	smb_session_key_t *tkn_session_key;
+	smb_buf32_t	tkn_ssnkey;
 	smb_posix_grps_t *tkn_posix_grps;
 } smb_token_t;
 
 /*
  * Details required to authenticate a user.
+ * See also: smb_logon_xdr()
  */
 typedef struct smb_logon {
 	uint16_t	lg_level;
@@ -116,6 +123,7 @@ typedef struct smb_logon {
 	smb_buf32_t	lg_challenge_key;
 	smb_buf32_t	lg_nt_password;
 	smb_buf32_t	lg_lm_password;
+	uint32_t	lg_ntlm_flags;
 	int		lg_native_os;
 	int		lg_native_lm;
 	uint32_t	lg_flags;
@@ -125,8 +133,70 @@ typedef struct smb_logon {
 	uint32_t	lg_status;	/* filled in user space */
 } smb_logon_t;
 
-int smb_logon_xdr();
-int smb_token_xdr();
+/*
+ * This is the name of the local (AF_UNIX) socket
+ * where the SMB auth. service listens.
+ */
+#define	SMB_AUTHSVC_SOCKNAME	"/var/smb/lipc/smbauth"
+
+/*
+ * Maximum number of authentcation conversations at one time.
+ * Note this is _NOT_ the max. number of logged on users,
+ * which can be much larger.
+ */
+#define	SMB_AUTHSVC_MAXTHREAD	256
+
+/*
+ * Messages to and from the local security authority
+ * Type codes:
+ */
+typedef enum smb_lsa_mtype {
+	/* reply types */
+	LSA_MTYPE_OK	= 0,
+	LSA_MTYPE_ERROR,
+	LSA_MTYPE_ES_DONE,	/* ext. sec: authenticated */
+	LSA_MTYPE_ES_CONT,	/* more processing required */
+	LSA_MTYPE_TOKEN,	/* smb_token_t */
+
+	/* request types */
+	LSA_MTYPE_OLDREQ,	/* non-ext. sec. session setup */
+	LSA_MTYPE_CLINFO,	/* client info sent at start of ES */
+	LSA_MTYPE_ESFIRST,	/* spnego initial message */
+	LSA_MTYPE_ESNEXT,	/* spnego continuation */
+	LSA_MTYPE_GETTOK	/* after ES auth, get token */
+} smb_lsa_mtype_t;
+
+/*
+ * msg: header common to all message types
+ */
+typedef struct smb_lsa_msg_hdr {
+	uint32_t	lmh_msgtype;	/* smb_lsa_mtype_t */
+	uint32_t	lmh_msglen;	/* size of what follows */
+} smb_lsa_msg_hdr_t;
+
+/*
+ * eresp: error response
+ * msgtype: LSA_MTYPE_ERESP
+ */
+typedef struct smb_lsa_eresp {
+	uint32_t	ler_ntstatus;
+	uint16_t	ler_errclass;
+	uint16_t	ler_errcode;
+} smb_lsa_eresp_t;
+
+/*
+ * Message for LSA_MTYPE_CLINFO
+ */
+typedef struct smb_lsa_clinfo {
+	smb_inaddr_t	lci_clnt_ipaddr;
+	unsigned char	lci_challenge_key[8];
+	int		lci_native_os;
+	int		lci_native_lm;
+} smb_lsa_clinfo_t;
+
+struct XDR;
+int smb_logon_xdr(struct XDR *, smb_logon_t *);
+int smb_token_xdr(struct XDR *, smb_token_t *);
 
 #if defined(_KERNEL) || defined(_FAKE_KERNEL)
 void smb_token_free(smb_token_t *);

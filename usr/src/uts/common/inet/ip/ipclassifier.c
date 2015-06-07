@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -276,7 +277,7 @@
 uint_t tcp_conn_hash_size = 0;
 
 /* New value. Zero means choose automatically.  Setable in /etc/system */
-uint_t ipcl_conn_hash_size = 0;
+volatile uint_t ipcl_conn_hash_size = 0;
 uint_t ipcl_conn_hash_memfactor = 8192;
 uint_t ipcl_conn_hash_maxsize = 82500;
 

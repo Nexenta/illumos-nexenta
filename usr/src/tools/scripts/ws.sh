@@ -217,6 +217,14 @@ CODEMGR_WS=$wsname ; export CODEMGR_WS
 SRC=$wsname/usr/src; export SRC
 TSRC=$wsname/usr/ontest; export TSRC
 
+# NZA:  Now that we have CODEMGR_WS, make sure that NZA_MAKEDEFS is defined.
+# Do so by checking the existence of ../usr/nza-closed/Makefile.nza.
+if [[ -f $CODEMGR_WS/usr/nza-closed/Makefile.nza ]]; then
+	export NZA_MAKEDEFS=$CODEMGR_WS/usr/nza-closed/Makefile.nza
+else
+	export NZA_MAKEDEFS=$CODEMGR_WS/usr/src/Makefile.nza
+fi
+
 if [[ "$SCM_MODE" = "teamware" && -d ${wsname}/Codemgr_wsdata ]]; then
 	CM_DATA="Codemgr_wsdata"
 	wsosdir=$CODEMGR_WS/$CM_DATA/sunos

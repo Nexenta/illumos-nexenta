@@ -21,6 +21,7 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KERNEL
@@ -34,6 +35,10 @@
 #include <modes/modes.h>
 #include <sys/crypto/common.h>
 #include <sys/crypto/impl.h>
+#include <aes/aes_impl.h>
+
+/* This is the CMAC Rb constant for 128-bit keys */
+#define	const_Rb	0x87
 
 /*
  * Algorithm independent CBC functions.
@@ -50,13 +55,8 @@ cbc_encrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 	uint8_t *datap = (uint8_t *)data;
 	uint8_t *blockp;
 	uint8_t *lastp;
-	void *iov_or_mp;
-	offset_t offset;
-	uint8_t *out_data_1;
-	uint8_t *out_data_2;
-	size_t out_data_1_len;
 
-	if (length + ctx->cbc_remainder_len < block_size) {
+	if (length + ctx->cbc_remainder_len < ctx->max_remain) {
 		/* accumulate bytes here and return */
 		bcopy(datap,
 		    (uint8_t *)ctx->cbc_remainder + ctx->cbc_remainder_len,
@@ -67,8 +67,6 @@ cbc_encrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 	}
 
 	lastp = (uint8_t *)ctx->cbc_iv;
-	if (out != NULL)
-		crypto_init_ptrs(out, &iov_or_mp, &offset);
 
 	do {
 		/* Unprocessed data from last call. */
@@ -97,7 +95,8 @@ cbc_encrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 			ctx->cbc_lastp = blockp;
 			lastp = blockp;
 
-			if (ctx->cbc_remainder_len > 0) {
+			if ((ctx->cbc_flags & CMAC_MODE) == 0 &&
+			    ctx->cbc_remainder_len > 0) {
 				bcopy(blockp, ctx->cbc_copy_to,
 				    ctx->cbc_remainder_len);
 				bcopy(blockp + ctx->cbc_remainder_len, datap,
@@ -110,22 +109,16 @@ cbc_encrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 			 */
 			xor_block(blockp, lastp);
 			encrypt(ctx->cbc_keysched, lastp, lastp);
-			crypto_get_ptrs(out, &iov_or_mp, &offset, &out_data_1,
-			    &out_data_1_len, &out_data_2, block_size);
 
-			/* copy block to where it belongs */
-			if (out_data_1_len == block_size) {
-				copy_block(lastp, out_data_1);
-			} else {
-				bcopy(lastp, out_data_1, out_data_1_len);
-				if (out_data_2 != NULL) {
-					bcopy(lastp + out_data_1_len,
-					    out_data_2,
-					    block_size - out_data_1_len);
-				}
+			/*
+			 * CMAC doesn't output until encrypt_final
+			 */
+			if ((ctx->cbc_flags & CMAC_MODE) == 0) {
+				(void) crypto_put_output_data(lastp, out,
+				    block_size);
+				/* update offset */
+				out->cd_offset += block_size;
 			}
-			/* update offset */
-			out->cd_offset += block_size;
 		}
 
 		/* Update pointer to next block of data to be processed. */
@@ -139,7 +132,7 @@ cbc_encrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 		remainder = (size_t)&data[length] - (size_t)datap;
 
 		/* Incomplete last block. */
-		if (remainder > 0 && remainder < block_size) {
+		if (remainder > 0 && remainder < ctx->max_remain) {
 			bcopy(datap, ctx->cbc_remainder, remainder);
 			ctx->cbc_remainder_len = remainder;
 			ctx->cbc_copy_to = datap;
@@ -177,11 +170,6 @@ cbc_decrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 	uint8_t *datap = (uint8_t *)data;
 	uint8_t *blockp;
 	uint8_t *lastp;
-	void *iov_or_mp;
-	offset_t offset;
-	uint8_t *out_data_1;
-	uint8_t *out_data_2;
-	size_t out_data_1_len;
 
 	if (length + ctx->cbc_remainder_len < block_size) {
 		/* accumulate bytes here and return */
@@ -194,8 +182,6 @@ cbc_decrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 	}
 
 	lastp = ctx->cbc_lastp;
-	if (out != NULL)
-		crypto_init_ptrs(out, &iov_or_mp, &offset);
 
 	do {
 		/* Unprocessed data from last call. */
@@ -234,15 +220,7 @@ cbc_decrypt_contiguous_blocks(cbc_ctx_t *ctx, char *data, size_t length,
 		lastp = (uint8_t *)OTHER((uint64_t *)lastp, ctx);
 
 		if (out != NULL) {
-			crypto_get_ptrs(out, &iov_or_mp, &offset, &out_data_1,
-			    &out_data_1_len, &out_data_2, block_size);
-
-			bcopy(blockp, out_data_1, out_data_1_len);
-			if (out_data_2 != NULL) {
-				bcopy(blockp + out_data_1_len, out_data_2,
-				    block_size - out_data_1_len);
-			}
-
+			(void) crypto_put_output_data(blockp, out, block_size);
 			/* update offset */
 			out->cd_offset += block_size;
 
@@ -299,6 +277,7 @@ cbc_init_ctx(cbc_ctx_t *cbc_ctx, char *param, size_t param_len,
 
 	cbc_ctx->cbc_lastp = (uint8_t *)&cbc_ctx->cbc_iv[0];
 	cbc_ctx->cbc_flags |= CBC_MODE;
+	cbc_ctx->max_remain = block_size;
 	return (CRYPTO_SUCCESS);
 }
 
@@ -317,4 +296,89 @@ cbc_alloc_ctx(int kmflag)
 
 	cbc_ctx->cbc_flags = CBC_MODE;
 	return (cbc_ctx);
+}
+
+/*
+ * Algorithms for supporting AES-CMAC
+ * NOTE: CMAC is generally just a wrapper for CBC
+ */
+
+/*
+ * max_remain is different for CMAC, and we never want to initialize
+ * IV to anything other than zero.
+ */
+int
+cmac_init_ctx(cbc_ctx_t *cbc_ctx, size_t block_size)
+{
+	/*
+	 * allocated by kmem_zalloc/calloc, so cbc_iv is 0.
+	 */
+
+	cbc_ctx->cbc_lastp = (uint8_t *)&cbc_ctx->cbc_iv[0];
+	cbc_ctx->cbc_flags |= CMAC_MODE;
+
+	cbc_ctx->max_remain = block_size + 1;
+	return (CRYPTO_SUCCESS);
+}
+
+/*
+ * Left shifts 16-byte blocks by one and returns the leftmost bit
+ */
+static uint8_t
+aes_left_shift_block_by1(uint8_t *block)
+{
+	uint8_t carry = 0, old;
+	int i;
+	for (i = AES_BLOCK_LEN-1; i >= 0; i--) {
+		old = carry;
+		carry = (block[i] & 0x80) ? 1 : 0;
+		block[i] = (block[i] << 1) | old;
+	}
+	return (carry);
+}
+
+/*
+ * Generate subkeys to preprocess the last block according to the spec.
+ * Store the final 16-byte MAC generated in 'out'.
+ */
+int
+cmac_mode_final(aes_ctx_t *aes_ctx, crypto_data_t *out,
+    int (*encrypt_block)(const void *, const uint8_t *, uint8_t *),
+    void (*xor_block)(uint8_t *, uint8_t *))
+{
+	uint8_t buf[AES_BLOCK_LEN] = {0};
+	uint8_t *M_last = (uint8_t *)aes_ctx->ac_remainder;
+	size_t length = aes_ctx->ac_remainder_len;
+
+	if (length > AES_BLOCK_LEN)
+		return (CRYPTO_INVALID_CONTEXT);
+
+	/* k_0 = E_k(0) */
+	encrypt_block(aes_ctx->ac_keysched, buf, buf);
+
+	if (aes_left_shift_block_by1(buf))
+		buf[AES_BLOCK_LEN-1] ^= const_Rb;
+
+	if (length == AES_BLOCK_LEN) {
+		/* Last block complete, so m_n = k_1 + m_n' */
+		xor_block(buf, M_last);
+		xor_block(aes_ctx->ac_lastp, M_last);
+		encrypt_block(aes_ctx->ac_keysched, M_last, M_last);
+	} else {
+		/* Last block incomplete, so m_n = k_2 + (m_n' | 100...0_bin) */
+		if (aes_left_shift_block_by1(buf))
+			buf[AES_BLOCK_LEN-1] ^= const_Rb;
+
+		M_last[length] = 0x80;
+		bzero(M_last+length+1, AES_BLOCK_LEN - length - 1);
+		xor_block(buf, M_last);
+		xor_block(aes_ctx->ac_lastp, M_last);
+		encrypt_block(aes_ctx->ac_keysched, M_last, M_last);
+	}
+
+	/*
+	 * zero out the sub-key.
+	 */
+	bzero(&buf, sizeof (buf));
+	return (crypto_put_output_data(M_last, out, AES_BLOCK_LEN));
 }

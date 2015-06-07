@@ -50,7 +50,7 @@ extern "C" {
  */
 #define	ZFS_MAXNAMELEN		MAXNAMELEN
 #define	ZPOOL_MAXNAMELEN	MAXNAMELEN
-#define	ZFS_MAXPROPLEN		MAXPATHLEN
+#define	ZFS_MAXPROPLEN		(2 * MAXPATHLEN)
 #define	ZPOOL_MAXPROPLEN	MAXPATHLEN
 
 /*
@@ -128,6 +128,10 @@ typedef enum zfs_error {
 	EZFS_DIFF,		/* general failure of zfs diff */
 	EZFS_DIFFDATA,		/* bad zfs diff data */
 	EZFS_POOLREADONLY,	/* pool is in read-only mode */
+	EZFS_PROPNOTSUP,	/* property not supported */
+	EZFS_COSNOTFOUND,	/* no matching CoS descriptor found */
+	EZFS_COSEXIST,		/* CoS descriptor already exists */
+	EZFS_COSREF,		/* CoS descriptor still referenced */
 	EZFS_UNKNOWN
 } zfs_error_t;
 
@@ -265,6 +269,7 @@ extern int zpool_label_disk(libzfs_handle_t *, zpool_handle_t *, char *);
 /*
  * Functions to manage pool properties
  */
+extern int zpool_set_proplist(zpool_handle_t *, nvlist_t *);
 extern int zpool_set_prop(zpool_handle_t *, const char *, const char *);
 extern int zpool_get_prop(zpool_handle_t *, zpool_prop_t, char *,
     size_t proplen, zprop_source_t *, boolean_t);
@@ -346,8 +351,8 @@ extern int zpool_get_errlog(zpool_handle_t *, nvlist_t **);
 /*
  * Import and export functions
  */
-extern int zpool_export(zpool_handle_t *, boolean_t, const char *);
-extern int zpool_export_force(zpool_handle_t *, const char *);
+extern int zpool_export(zpool_handle_t *, boolean_t, boolean_t, const char *);
+extern int zpool_export_force(zpool_handle_t *, boolean_t, const char *);
 extern int zpool_import(libzfs_handle_t *, nvlist_t *, const char *,
     char *altroot);
 extern int zpool_import_props(libzfs_handle_t *, nvlist_t *, const char *,
@@ -389,6 +394,7 @@ extern int zpool_upgrade(zpool_handle_t *, uint64_t);
 extern int zpool_get_history(zpool_handle_t *, nvlist_t **);
 extern int zpool_history_unpack(char *, uint64_t, uint64_t *,
     nvlist_t ***, uint_t *);
+extern int zpool_stage_history(libzfs_handle_t *, const char *);
 extern void zpool_obj_to_path(zpool_handle_t *, uint64_t, uint64_t, char *,
     size_t len);
 extern int zfs_ioctl(libzfs_handle_t *, int, struct zfs_cmd *);
@@ -487,6 +493,25 @@ extern const char *zpool_prop_column_name(zpool_prop_t);
 extern boolean_t zpool_prop_align_right(zpool_prop_t);
 
 /*
+ * Functions to manage vdev properties
+ */
+extern int vdev_set_proplist(zpool_handle_t *, const char *, nvlist_t *);
+extern int vdev_get_proplist(libzfs_handle_t *, char *, zprop_list_t **);
+extern int vdev_get_prop(zpool_handle_t *,  const char *, vdev_prop_t,
+    char *, size_t len, nvlist_t **);
+
+/*
+ * Functions to manage cos properties
+ */
+extern int cos_alloc(zpool_handle_t *, char *, nvlist_t *);
+extern int cos_free(zpool_handle_t *, char *, uint64_t, boolean_t);
+extern int cos_list(zpool_handle_t *, nvlist_t **);
+extern int cos_set_proplist(zpool_handle_t *, const char *, nvlist_t *);
+extern int cos_get_proplist(libzfs_handle_t *, char *, zprop_list_t **);
+extern int cos_get_prop(zpool_handle_t *,  const char *, cos_prop_t, char *,
+    size_t, nvlist_t **);
+
+/*
  * Functions shared by zfs and zpool property management.
  */
 extern int zprop_iter(zprop_func func, void *cb, boolean_t show_all,
@@ -523,6 +548,10 @@ typedef struct zprop_get_cbdata {
 void zprop_print_one_property(const char *, zprop_get_cbdata_t *,
     const char *, const char *, zprop_source_t, const char *,
     const char *);
+void vdev_print_one_property(const char *, const char *,
+    zprop_get_cbdata_t *, const char *, const char *);
+void cos_print_one_property(const char *, const char *,
+    zprop_get_cbdata_t *, const char *, const char *);
 
 /*
  * Iterator functions.
@@ -585,6 +614,9 @@ typedef struct sendflags {
 
 	/* do not send (no-op, ie. -n) */
 	boolean_t dryrun;
+
+	/* do not send (just calculate exact send stream size, ie. -s */
+	boolean_t sendsize;
 
 	/* parsable verbose output (ie. -P) */
 	boolean_t parsable;
@@ -652,7 +684,7 @@ typedef struct recvflags {
 } recvflags_t;
 
 extern int zfs_receive(libzfs_handle_t *, const char *, recvflags_t *,
-    int, avl_tree_t *);
+    int, nvlist_t *, nvlist_t *, avl_tree_t *);
 
 typedef enum diff_flags {
 	ZFS_DIFF_PARSEABLE = 0x1,
@@ -752,7 +784,9 @@ int zfs_smb_acl_rename(libzfs_handle_t *, char *, char *, char *, char *);
  * sharing/unsharing them.
  */
 extern int zpool_enable_datasets(zpool_handle_t *, const char *, int);
+extern int zpool_enable_datasets_ex(zpool_handle_t *, const char *, int, int);
 extern int zpool_disable_datasets(zpool_handle_t *, boolean_t);
+extern int zpool_disable_datasets_ex(zpool_handle_t *, boolean_t, int);
 
 /*
  * Mappings between vdev and FRU.

@@ -25,7 +25,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include "ixgbe_sw.h"
@@ -375,6 +375,10 @@ ixgbe_m_setprop(void *arg, const char *pr_name, mac_prop_id_t pr_num,
 		}
 setup_link:
 		if (err == 0) {
+			/* Don't autoneg if forcing a value */
+			ixgbe->hw.fc.disable_fc_autoneg = TRUE;
+			(void) ixgbe_fc_enable(hw);
+
 			if (ixgbe_driver_setup_link(ixgbe, B_TRUE) !=
 			    IXGBE_SUCCESS)
 				err = EINVAL;

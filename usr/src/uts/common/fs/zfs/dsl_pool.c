@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
@@ -30,10 +31,12 @@
 #include <sys/dsl_prop.h>
 #include <sys/dsl_dir.h>
 #include <sys/dsl_synctask.h>
+#include <sys/dsl_dataset.h>
 #include <sys/dsl_scan.h>
 #include <sys/dnode.h>
 #include <sys/dmu_tx.h>
 #include <sys/dmu_objset.h>
+#include <sys/dmu_traverse.h>
 #include <sys/arc.h>
 #include <sys/zap.h>
 #include <sys/zio.h>
@@ -46,6 +49,9 @@
 #include <sys/zfeature.h>
 #include <sys/zil_impl.h>
 #include <sys/dsl_userhold.h>
+
+#include <sys/wrcache.h>
+#include <sys/time.h>
 
 /*
  * ZFS Write Throttle
@@ -129,6 +135,12 @@ uint64_t zfs_delay_scale = 1000 * 1000 * 1000 / 2000;
 hrtime_t zfs_throttle_delay = MSEC2NSEC(10);
 hrtime_t zfs_throttle_resolution = MSEC2NSEC(10);
 
+/*
+ * Tunable to control max number of tasks available for processing of
+ * deferred deletes.
+ */
+int zfs_vn_rele_max_tasks = 256;
+
 int
 dsl_pool_open_special_dir(dsl_pool_t *dp, const char *name, dsl_dir_t **ddp)
 {
@@ -154,6 +166,9 @@ dsl_pool_open_impl(spa_t *spa, uint64_t txg)
 	dp->dp_spa = spa;
 	dp->dp_meta_rootbp = *bp;
 	rrw_init(&dp->dp_config_rwlock, B_TRUE);
+
+	dp->dp_sync_history[0] = dp->dp_sync_history[1] = 0;
+
 	txg_init(dp, txg);
 
 	txg_list_create(&dp->dp_dirty_datasets,
@@ -169,7 +184,7 @@ dsl_pool_open_impl(spa_t *spa, uint64_t txg)
 	cv_init(&dp->dp_spaceavail_cv, NULL, CV_DEFAULT, NULL);
 
 	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq", 1, minclsyspri,
-	    1, 4, 0);
+	    1, zfs_vn_rele_max_tasks, TASKQ_DYNAMIC);
 
 	return (dp);
 }
@@ -321,8 +336,7 @@ dsl_pool_close(dsl_pool_t *dp)
 	 * this spa won't cause trouble, and they'll eventually fall
 	 * out of the ARC just like any other unused buffer.
 	 */
-	arc_flush(dp->dp_spa, FALSE);
-
+	arc_flush(dp->dp_spa, B_FALSE);
 	txg_fini(dp);
 	dsl_scan_fini(dp);
 	dmu_buf_user_evict_wait();

@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -120,7 +123,7 @@ static void setkpdq(kthread_t *tp, int borf);
  * cold cache effects.  The interval is in hertz.
  */
 #define	RECHOOSE_INTERVAL 3
-int	rechoose_interval = RECHOOSE_INTERVAL;
+volatile int	rechoose_interval = RECHOOSE_INTERVAL;
 
 /*
  * Parameter that determines how long (in nanoseconds) a thread must

@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/machsystm.h>
@@ -117,10 +118,10 @@ void *romp;		/* veritas driver won't load without romp 4154976 */
 /*
  * Declare these as initialized data so we can patch them.
  */
-pgcnt_t physmem = 0;	/* memory size in pages, patch if you want less */
-pgcnt_t segkpsize =
+volatile pgcnt_t physmem = 0; /* memory size in pages, patch if you want less */
+volatile pgcnt_t segkpsize =
     btop(SEGKPDEFSIZE);	/* size of segkp segment in pages */
-uint_t segmap_percent = 6; /* Size of segmap segment */
+volatile uint_t segmap_percent = 6; /* Size of segmap segment */
 
 int use_cache = 1;		/* cache not reliable (605 bugs) with MP */
 int vac_copyback = 1;

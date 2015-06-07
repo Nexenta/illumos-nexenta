@@ -28,6 +28,7 @@
 
 /*
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -2010,97 +2011,29 @@ xdr_READDIR3args(XDR *xdrs, READDIR3args *objp)
 	return (xdr_u_int(xdrs, &objp->count));
 }
 
-#ifdef	nextdp
-#undef	nextdp
-#endif
-#define	nextdp(dp)	((struct dirent64 *)((char *)(dp) + (dp)->d_reclen))
-#ifdef	roundup
-#undef	roundup
-#endif
-#define	roundup(x, y)	((((x) + ((y) - 1)) / (y)) * (y))
-
 /*
  * ENCODE ONLY
  */
 static bool_t
 xdr_putdirlist(XDR *xdrs, READDIR3resok *objp)
 {
-	struct dirent64 *dp;
-	char *name;
-	int size;
-	int bufsize;
-	uint_t namlen;
 	bool_t true = TRUE;
 	bool_t false = FALSE;
-	int entrysz;
-	int tofit;
-	fileid3 fileid;
-	cookie3 cookie;
+	entry3 *entry;
 
 	if (xdrs->x_op != XDR_ENCODE)
 		return (FALSE);
 
-	/*
-	 * bufsize is used to keep track of the size of the response.
-	 * It is primed with:
-	 *	1 for the status +
-	 *	1 for the dir_attributes.attributes boolean +
-	 *	2 for the cookie verifier
-	 * all times BYTES_PER_XDR_UNIT to convert from XDR units
-	 * to bytes.  If there are directory attributes to be
-	 * returned, then:
-	 *	NFS3_SIZEOF_FATTR3 for the dir_attributes.attr fattr3
-	 * time BYTES_PER_XDR_UNIT is added to account for them.
-	 */
-	bufsize = (1 + 1 + 2) * BYTES_PER_XDR_UNIT;
-	if (objp->dir_attributes.attributes)
-		bufsize += NFS3_SIZEOF_FATTR3 * BYTES_PER_XDR_UNIT;
-	for (size = objp->size, dp = (struct dirent64 *)objp->reply.entries;
-	    size > 0;
-	    size -= dp->d_reclen, dp = nextdp(dp)) {
-		if (dp->d_reclen == 0)
-			return (FALSE);
-		if (dp->d_ino == 0)
-			continue;
-		name = dp->d_name;
-		namlen = (uint_t)strlen(dp->d_name);
-		/*
-		 * An entry is composed of:
-		 *	1 for the true/false list indicator +
-		 *	2 for the fileid +
-		 *	1 for the length of the name +
-		 *	2 for the cookie +
-		 * all times BYTES_PER_XDR_UNIT to convert from
-		 * XDR units to bytes, plus the length of the name
-		 * rounded up to the nearest BYTES_PER_XDR_UNIT.
-		 */
-		entrysz = (1 + 2 + 1 + 2) * BYTES_PER_XDR_UNIT +
-		    roundup(namlen, BYTES_PER_XDR_UNIT);
-		/*
-		 * We need to check to see if the number of bytes left
-		 * to go into the buffer will actually fit into the
-		 * buffer.  This is calculated as the size of this
-		 * entry plus:
-		 *	1 for the true/false list indicator +
-		 *	1 for the eof indicator
-		 * times BYTES_PER_XDR_UNIT to convert from from
-		 * XDR units to bytes.
-		 */
-		tofit = entrysz + (1 + 1) * BYTES_PER_XDR_UNIT;
-		if (bufsize + tofit > objp->count) {
-			objp->reply.eof = FALSE;
-			break;
-		}
-		fileid = (fileid3)(dp->d_ino);
-		cookie = (cookie3)(dp->d_off);
+	for (entry = objp->reply.entries; entry != NULL;
+	    entry = entry->nextentry) {
 		if (!xdr_bool(xdrs, &true) ||
-		    !xdr_u_longlong_t(xdrs, &fileid) ||
-		    !xdr_bytes(xdrs, &name, &namlen, ~0) ||
-		    !xdr_u_longlong_t(xdrs, &cookie)) {
+		    !xdr_u_longlong_t(xdrs, &entry->fileid) ||
+		    !xdr_string(xdrs, &entry->name, MAXPATHLEN) ||
+		    !xdr_u_longlong_t(xdrs, &entry->cookie)) {
 			return (FALSE);
 		}
-		bufsize += entrysz;
 	}
+
 	if (!xdr_bool(xdrs, &false))
 		return (FALSE);
 	if (!xdr_bool(xdrs, &objp->reply.eof))
@@ -2287,41 +2220,23 @@ xdr_READDIRPLUS3args(XDR *xdrs, READDIRPLUS3args *objp)
 static bool_t
 xdr_putdirpluslist(XDR *xdrs, READDIRPLUS3resok *objp)
 {
-	struct dirent64 *dp;
-	char *name;
-	int nents;
 	bool_t true = TRUE;
 	bool_t false = FALSE;
-	fileid3 fileid;
-	cookie3 cookie;
-	entryplus3_info *infop;
+	entryplus3 *entry;
 
 	if (xdrs->x_op != XDR_ENCODE)
 		return (FALSE);
 
-	dp = (struct dirent64 *)objp->reply.entries;
-	nents = objp->size;
-	infop = objp->infop;
-
-	while (nents > 0) {
-		if (dp->d_reclen == 0)
+	for (entry = objp->reply.entries; entry != NULL;
+	    entry = entry->nextentry) {
+		if (!xdr_bool(xdrs, &true) ||
+		    !xdr_u_longlong_t(xdrs, &entry->fileid) ||
+		    !xdr_string(xdrs, &entry->name, MAXPATHLEN) ||
+		    !xdr_u_longlong_t(xdrs, &entry->cookie) ||
+		    !xdr_post_op_attr(xdrs, &entry->name_attributes) ||
+		    !xdr_post_op_fh3(xdrs, &entry->name_handle)) {
 			return (FALSE);
-		if (dp->d_ino != 0) {
-			name = dp->d_name;
-			fileid = (fileid3)(dp->d_ino);
-			cookie = (cookie3)(dp->d_off);
-			if (!xdr_bool(xdrs, &true) ||
-			    !xdr_u_longlong_t(xdrs, &fileid) ||
-			    !xdr_bytes(xdrs, &name, &infop->namelen, ~0) ||
-			    !xdr_u_longlong_t(xdrs, &cookie) ||
-			    !xdr_post_op_attr(xdrs, &infop->attr) ||
-			    !xdr_post_op_fh3(xdrs, &infop->fh)) {
-				return (FALSE);
-			}
 		}
-		dp = nextdp(dp);
-		infop++;
-		nents--;
 	}
 
 	if (!xdr_bool(xdrs, &false))

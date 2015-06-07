@@ -23,7 +23,7 @@
 # Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2013 by Delphix. All rights reserved.
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
-# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -156,6 +156,7 @@ GENUNIX_OBJS +=	\
 		devid_smp.o	\
 		devpolicy.o	\
 		disp_lock.o	\
+		dkioc_free_util.o \
 		dnlc.o		\
 		driver.o	\
 		dumpsubr.o	\
@@ -942,14 +943,18 @@ EMLXS_OBJS +=	emlxs_clock.o emlxs_dfc.o emlxs_dhchap.o emlxs_diag.o \
 EMLXS_FW_OBJS +=	emlxs_fw.o
 
 OCE_OBJS +=	oce_buf.o oce_fm.o oce_gld.o oce_hw.o oce_intr.o oce_main.o \
-		oce_mbx.o oce_mq.o oce_queue.o oce_rx.o oce_stat.o oce_tx.o \
-		oce_utils.o
+		oce_mbx.o oce_mq.o oce_queue.o oce_ring.o oce_rx.o oce_stat.o \
+		oce_tx.o oce_utils.o
 
 FCT_OBJS += discovery.o fct.o
 
 QLT_OBJS += 2400.o 2500.o 8100.o qlt.o qlt_dma.o
 
 SRPT_OBJS += srpt_mod.o srpt_ch.o srpt_cm.o srpt_ioc.o srpt_stp.o
+
+AOE_OBJS += aoe.o
+
+AOEBLK_OBJS += aoeblk.o
 
 FCOE_OBJS += fcoe.o fcoe_eth.o fcoe_fc.o
 
@@ -969,7 +974,7 @@ PPPT_OBJS +=	alua_ic_if.o pppt.o pppt_msg.o pppt_tgt.o
 
 STMF_OBJS += lun_map.o stmf.o
 
-STMF_SBD_OBJS += sbd.o sbd_scsi.o sbd_pgr.o sbd_zvol.o
+STMF_SBD_OBJS += sbd.o sbd_scsi.o sbd_pgr.o sbd_zvol.o ats_copy_mgr.o
 
 SYSMSG_OBJS +=	sysmsg.o
 
@@ -1165,31 +1170,39 @@ NFSSRV_OBJS +=	nfs_server.o	nfs_srv.o	nfs3_srv.o \
 		nfs4_deleg_ops.o nfs4_srv_readdir.o nfs4_dispatch.o
 
 SMBSRV_SHARED_OBJS += \
+		smb_door_legacy.o \
 		smb_inet.o \
 		smb_match.o \
 		smb_msgbuf.o \
+		smb_native.o \
+		smb_netbios_util.o \
 		smb_oem.o \
+		smb_sid.o \
+		smb_status2winerr.o \
 		smb_string.o \
-		smb_utf8.o \
-		smb_door_legacy.o \
-		smb_xdr.o \
 		smb_token.o \
 		smb_token_xdr.o \
-		smb_sid.o \
-		smb_native.o \
-		smb_netbios_util.o
+		smb_utf8.o \
+		smb_xdr.o
 
+# See also: $SRC/lib/smbsrv/libfksmbsrv/Makefile.com
 SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_acl.o				\
 		smb_alloc.o				\
+		smb_authenticate.o			\
 		smb_close.o				\
+		smb_cmn_rename.o			\
+		smb_cmn_setfile.o			\
 		smb_common_open.o			\
 		smb_common_transact.o			\
 		smb_create.o				\
+		smb_cred.o				\
 		smb_delete.o				\
+		smb_dfs.o				\
 		smb_directory.o				\
 		smb_dispatch.o				\
 		smb_echo.o				\
+		smb_errno.o				\
 		smb_fem.o				\
 		smb_find.o				\
 		smb_flush.o				\
@@ -1210,6 +1223,7 @@ SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_negotiate.o				\
 		smb_net.o				\
 		smb_node.o				\
+		smb_notify.o				\
 		smb_nt_cancel.o				\
 		smb_nt_create_andx.o			\
 		smb_nt_transact_create.o		\
@@ -1221,12 +1235,12 @@ SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_ofile.o				\
 		smb_open_andx.o				\
 		smb_opipe.o				\
-		smb_opipe_door.o			\
 		smb_oplock.o				\
 		smb_pathname.o				\
 		smb_print.o				\
 		smb_process_exit.o			\
 		smb_query_fileinfo.o			\
+		smb_quota.o				\
 		smb_read.o				\
 		smb_rename.o				\
 		smb_sd.o				\
@@ -1248,7 +1262,38 @@ SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_vfs.o				\
 		smb_vops.o				\
 		smb_vss.o				\
-		smb_write.o
+		smb_write.o				\
+		\
+		smb2_dispatch.o \
+		smb2_cancel.o \
+		smb2_change_notify.o \
+		smb2_close.o \
+		smb2_create.o \
+		smb2_echo.o \
+		smb2_flush.o \
+		smb2_ioctl.o \
+		smb2_lock.o \
+		smb2_logoff.o \
+		smb2_negotiate.o \
+		smb2_ofile.o \
+		smb2_oplock.o \
+		smb2_qinfo_file.o \
+		smb2_qinfo_fs.o \
+		smb2_qinfo_sec.o \
+		smb2_qinfo_quota.o \
+		smb2_query_dir.o \
+		smb2_query_info.o \
+		smb2_read.o \
+		smb2_session_setup.o \
+		smb2_set_info.o \
+		smb2_setinfo_file.o \
+		smb2_setinfo_fs.o \
+		smb2_setinfo_quota.o \
+		smb2_setinfo_sec.o \
+		smb2_signing.o \
+		smb2_tree_connect.o \
+		smb2_tree_disconn.o \
+		smb2_write.o
 
 PCFS_OBJS +=	pc_alloc.o	pc_dir.o	pc_node.o	pc_subr.o \
 		pc_vfsops.o	pc_vnops.o
@@ -1398,7 +1443,13 @@ ZFS_COMMON_OBJS +=		\
 	zio_compress.o		\
 	zio_inject.o		\
 	zle.o			\
-	zrlock.o
+	zrlock.o		\
+	zio_parallel_checksum.o	\
+	sha1crc32.o		\
+	special.o		\
+	cos.o			\
+	spa_vdev_props.o	\
+	wrcache.o
 
 ZFS_SHARED_OBJS +=		\
 	zfeature_common.o	\
@@ -1408,7 +1459,9 @@ ZFS_SHARED_OBJS +=		\
 	zfs_namecheck.o		\
 	zfs_prop.o		\
 	zpool_prop.o		\
-	zprop_common.o
+	zprop_common.o		\
+	cos_prop.o		\
+	vdev_prop.o		
 
 ZFS_OBJS +=			\
 	$(ZFS_COMMON_OBJS)	\
@@ -1985,6 +2038,9 @@ VIRTIO_OBJS = virtio.o
 
 # Virtio block driver
 VIOBLK_OBJS = vioblk.o
+
+#Virtio network driver
+VIOIF_OBJS = vioif.o
 
 #
 #	kiconv modules

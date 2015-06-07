@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB_IOCTL_H_
@@ -150,6 +150,7 @@ typedef	struct smb_ioc_fileid {
 	uint32_t	uniqid;
 } smb_ioc_fileid_t;
 
+/* See also: smb_kmod_cfg_t */
 typedef struct smb_ioc_cfg {
 	smb_ioc_header_t hdr;
 	uint32_t	maxworkers;
@@ -161,12 +162,21 @@ typedef struct smb_ioc_cfg {
 	int32_t		oplock_enable;
 	int32_t		sync_enable;
 	int32_t		secmode;
+	int32_t		netbios_enable;
 	int32_t		ipv6_enable;
 	int32_t		print_enable;
 	int32_t		traverse_mounts;
-	int32_t		netbios_enable;
+	uint32_t	max_protocol;
 	uint32_t	exec_flags;
+	uint32_t	negtok_len;
 	smb_version_t	version;
+	uint16_t	initial_credits;
+	uint16_t	maximum_credits;
+	/* SMB negotiate protocol response. */
+	uuid_t		machine_uuid;
+	uchar_t		negtok[SMB_PI_MAX_NEGTOK];
+	char		native_os[SMB_PI_MAX_NATIVE_OS];
+	char		native_lm[SMB_PI_MAX_LANMAN];
 	char		nbdomain[NETBIOS_NAME_SZ];
 	char		fqdn[SMB_PI_MAX_DOMAIN];
 	char		hostname[SMB_PI_MAX_HOST];

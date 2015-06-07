@@ -82,6 +82,9 @@ struct zfsvfs {
 	uint64_t	z_groupquota_obj;
 	uint64_t	z_replay_eof;	/* New end of file - replay only */
 	sa_attr_type_t	*z_attr_table;	/* SA attr mapping->id */
+	boolean_t	z_isworm;	/* true if this is a WORM FS */
+	/* true if suspend-resume cycle is in progress */
+	boolean_t	z_busy;
 #define	ZFS_OBJ_MTX_SZ	64
 	kmutex_t	z_hold_mtx[ZFS_OBJ_MTX_SZ];	/* znode hold locks */
 };

@@ -23,14 +23,15 @@ sources that are specified for the \fIdatabase\fR in \fB/etc/nsswitch.conf\fR.
 .LP
 \fIdatabase\fR is the name of the database to be examined. This can be
 \fBpasswd\fR, \fBshadow\fR, \fBgroup\fR, \fBhosts\fR, \fBipnodes\fR, \fBservices\fR,
-\fBprotocols\fR, \fBethers\fR, \fBproject\fR, \fBnetworks\fR, or
-\fBnetmasks\fR. For each of these databases, \fBgetent\fR uses the appropriate
+\fBprotocols\fR, \fBethers\fR, \fBproject\fR, \fBnetworks\fR,
+\fBnetmasks\fR, or \fBnetgroup\fR.
+For each of these databases, \fBgetent\fR uses the appropriate
 library routines described in \fBgetpwnam\fR(3C), \fBgetspnam\fR(3C), \fBgetgrnam\fR(3C),
 \fBgethostbyaddr\fR(3NSL), \fBgethostbyname\fR(3NSL),
 \fBgetipnodebyaddr\fR(3SOCKET), \fBgetipnodebyname\fR(3SOCKET),
 \fBgetservbyname\fR(3SOCKET), \fBgetprotobyname\fR(3SOCKET),
-\fBethers\fR(3SOCKET), \fBgetprojbyname\fR(3PROJECT) and
-\fBgetnetbyname\fR(3SOCKET), respectively.
+\fBethers\fR(3SOCKET), \fBgetprojbyname\fR(3PROJECT),
+\fBgetnetbyname\fR(3SOCKET), or \fBgetnetgrent\fR(3C) respectively.
 .sp
 .LP
 Each \fIkey\fR must be in a format appropriate for searching on the respective

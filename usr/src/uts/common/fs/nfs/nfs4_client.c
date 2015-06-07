@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1986, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -1384,7 +1385,7 @@ nfs4_async_common_start(struct vfs *vfsp, int async_queue)
 	clock_t time_left = 1;
 	callb_cpr_t cprinfo;
 	int i;
-	extern int nfs_async_timeout;
+	extern volatile int nfs_async_timeout;
 	int async_types;
 	kcondvar_t *async_work_cv;
 

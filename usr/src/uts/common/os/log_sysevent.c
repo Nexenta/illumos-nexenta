@@ -92,7 +92,7 @@ static int encoding = NV_ENCODE_NATIVE;
  * system startup. Experience showed that more than 2000 events could be posted
  * due to correctable memory errors.
  */
-int logevent_max_q_sz = 5000;
+volatile int logevent_max_q_sz = 5000;
 
 
 static int log_event_delivery = LOGEVENT_DELIVERY_HOLD;

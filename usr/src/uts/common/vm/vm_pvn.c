@@ -344,7 +344,7 @@ pvn_read_done(page_t *plist, int flags)
  * write queue.
  */
 int	write_free = 1;
-pgcnt_t	pages_before_pager = 200;	/* LMXXX */
+volatile pgcnt_t pages_before_pager = 200;	/* LMXXX */
 
 /*
  * Routine to be called when page-out's complete.

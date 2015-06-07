@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1983, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -484,7 +485,7 @@ struct instats {
  */
 
 #define	XATTR_DIR_NAME	"/@/"
-extern int	ufs_ninode;		/* high-water mark for inode cache */
+extern volatile int	ufs_ninode;	/* high-water mark for inode cache */
 
 extern struct vnodeops *ufs_vnodeops;	/* vnode operations for ufs */
 extern const struct fs_operation_def ufs_vnodeops_template[];

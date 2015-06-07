@@ -22,8 +22,9 @@
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <sys/types.h>
 #include <sys/systm.h>
@@ -498,7 +499,7 @@ xdr_nfslog_createhow3(XDR *xdrs, createhow3 *objp)
 	case UNCHECKED:
 	case GUARDED:
 		if (!xdr_set_size3(xdrs,
-			&objp->createhow3_u.obj_attributes.size))
+		    &objp->createhow3_u.obj_attributes.size))
 			return (FALSE);
 		break;
 	case EXCLUSIVE:
@@ -793,44 +794,22 @@ xdr_nfslog_READDIRPLUS3args(XDR *xdrs, READDIRPLUS3args *objp)
 	return (xdr_uint32(xdrs, &objp->maxcount));
 }
 
-#ifdef	nextdp
-#undef	nextdp
-#endif
-#define	nextdp(dp)	((struct dirent64 *)((char *)(dp) + (dp)->d_reclen))
-
 bool_t
 xdr_nfslog_READDIRPLUS3resok(XDR *xdrs, READDIRPLUS3resok *objp)
 {
-	struct dirent64 *dp;
+	entryplus3 *entry;
 	bool_t true = TRUE;
 	bool_t false = FALSE;
-	int nents;
-	char *name;
-	entryplus3_info *infop;
 
-	dp = (struct dirent64 *)objp->reply.entries;
-	nents = objp->size;
-	infop = objp->infop;
-	while (nents > 0) {
-		if (dp->d_reclen == 0)
-			return (FALSE);
-		if (dp->d_ino == 0) {
-			dp = nextdp(dp);
-			infop++;
-			nents--;
-			continue;
-		}
-		name = dp->d_name;
-
+	for (entry = objp->reply.entries; entry != NULL;
+	    entry = entry->nextentry) {
 		if (!xdr_bool(xdrs, &true) ||
-		    !xdr_post_op_fh3(xdrs, &infop->fh) ||
-		    !xdr_string(xdrs, &name, ~0)) {
+		    !xdr_post_op_fh3(xdrs, &entry->name_handle) ||
+		    !xdr_string(xdrs, &entry->name, MAXPATHLEN)) {
 			return (FALSE);
 		}
-		dp = nextdp(dp);
-		infop++;
-		nents--;
 	}
+
 	if (!xdr_bool(xdrs, &false))
 		return (FALSE);
 

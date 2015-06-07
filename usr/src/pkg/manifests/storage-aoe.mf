@@ -1,0 +1,51 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+#
+
+set name=pkg.fmri value=pkg:/storage/aoe@$(PKGVERS)
+set name=pkg.description \
+    value="Nexenta common AoE driver, libraries and tools"
+set name=pkg.summary value="Nexenta common AoE driver, libraries and tools"
+set name=info.classification \
+    value=org.opensolaris.category.2008:System/Hardware
+set name=variant.arch value=$(ARCH)
+dir path=kernel group=sys
+dir path=kernel/drv group=sys
+dir path=kernel/drv/$(ARCH64) group=sys
+dir path=usr group=sys
+dir path=usr/include
+dir path=usr/include/sys
+dir path=usr/lib
+dir path=usr/lib/$(ARCH64)
+dir path=usr/sbin
+dir path=usr/share/man
+dir path=usr/share/man/man1m
+dir path=usr/share/man/man7d
+driver name=aoe perms="* 0666 root sys"
+file path=kernel/drv/$(ARCH64)/aoe group=sys
+$(i386_ONLY)file path=kernel/drv/aoe group=sys
+file path=kernel/drv/aoe.conf group=sys
+file path=usr/include/libaoe.h
+file path=usr/include/sys/aoe.h
+file path=usr/lib/$(ARCH64)/libaoe.so.1
+file path=usr/lib/$(ARCH64)/llib-laoe.ln
+file path=usr/lib/libaoe.so.1
+file path=usr/lib/llib-laoe
+file path=usr/lib/llib-laoe.ln
+file path=usr/sbin/aoeadm mode=0555
+file path=usr/share/man/man1m/aoeadm.1m
+file path=usr/share/man/man7d/aoe.7d
+license lic_CDDL license=lic_CDDL
+link path=usr/lib/$(ARCH64)/libaoe.so target=libaoe.so.1
+link path=usr/lib/libaoe.so target=libaoe.so.1

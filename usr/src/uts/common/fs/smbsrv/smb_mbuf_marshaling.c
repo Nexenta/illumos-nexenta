@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -84,7 +86,10 @@ static int mbc_marshal_get_skip(mbuf_chain_t *, uint_t);
  *		specified (number preceding m).
  *
  *	M	Read the 32 bit value at the current location of the mbuf chain
- *		and check if it matches the signature of an SMB request (SMBX).
+ *		and check if it matches the signature of an SMB1 request (SMBx).
+ *
+ *	N	Read the 32 bit value at the current location of the mbuf chain
+ *		and check if it matches the signature of an SMB2 request (SMBx).
  *
  *	b	Pointer to a buffer. Copy to that buffer the number of bytes
  *		specified (number preceding b).
@@ -142,7 +147,7 @@ static int mbc_marshal_get_skip(mbuf_chain_t *, uint_t);
  *	,	Same as '.' but take in account it is an unicode string.
  */
 int
-smb_mbc_vdecodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
+smb_mbc_vdecodef(mbuf_chain_t *mbc, const char *fmt, va_list ap)
 {
 	uint8_t		c;
 	uint8_t		cval;
@@ -157,8 +162,10 @@ smb_mbc_vdecodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 	uint32_t	lval;
 	int		unicode = 0;
 	int		repc;
+	boolean_t	repc_specified;
 
 	while ((c = *fmt++) != 0) {
+		repc_specified = B_FALSE;
 		repc = 1;
 
 		if ('0' <= c && c <= '9') {
@@ -167,14 +174,20 @@ smb_mbc_vdecodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 				repc = repc * 10 + c - '0';
 				c = *fmt++;
 			} while ('0' <= c && c <= '9');
+			repc_specified = B_TRUE;
 		} else if (c == '#') {
 			repc = va_arg(ap, int);
 			c = *fmt++;
+			repc_specified = B_TRUE;
 		}
 
 		switch (c) {
 		case '%':
 			sr = va_arg(ap, struct smb_request *);
+			if (sr->session->dialect >= SMB_VERS_2_BASE) {
+				unicode = 1;
+				break;
+			}
 			unicode = sr->smb_flg2 & SMB_FLAGS2_UNICODE;
 			break;
 
@@ -192,10 +205,15 @@ smb_mbc_vdecodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 
 		case 'M':
 			if (mbc_marshal_get_long(mbc, &lval) != 0)
-				/* Data will never be available */
 				return (-1);
-
 			if (lval != 0x424D53FF) /* 0xFF S M B */
+				return (-1);
+			break;
+
+		case 'N':
+			if (mbc_marshal_get_long(mbc, &lval) != 0)
+				return (-1);
+			if (lval != 0x424D53FE) /* 0xFE S M B */
 				return (-1);
 			break;
 
@@ -296,7 +314,7 @@ smb_mbc_vdecodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 ascii_conversion:
 			ASSERT(sr != NULL);
 			cvalpp = va_arg(ap, uint8_t **);
-			if (repc <= 1)
+			if (!repc_specified)
 				repc = 0;
 			if (mbc_marshal_get_ascii_string(sr,
 			    mbc, cvalpp, repc) != 0)
@@ -307,7 +325,7 @@ ascii_conversion:
 unicode_translation:
 			ASSERT(sr != 0);
 			cvalpp = va_arg(ap, uint8_t **);
-			if (repc <= 1)
+			if (!repc_specified)
 				repc = 0;
 			if (mbc->chain_offset & 1)
 				mbc->chain_offset++;
@@ -373,7 +391,7 @@ unicode_translation:
  * (for a description of the format string see smb_mbc_vencodef()).
  */
 int
-smb_mbc_decodef(mbuf_chain_t *mbc, char *fmt, ...)
+smb_mbc_decodef(mbuf_chain_t *mbc, const char *fmt, ...)
 {
 	int	xx;
 	va_list	ap;
@@ -394,7 +412,7 @@ smb_mbc_decodef(mbuf_chain_t *mbc, char *fmt, ...)
  * (for a description of the format string see smb_mbc_vdecodef()).
  */
 int
-smb_mbc_peek(mbuf_chain_t *mbc, int offset, char *fmt, ...)
+smb_mbc_peek(mbuf_chain_t *mbc, int offset, const char *fmt, ...)
 {
 	mbuf_chain_t	tmp;
 	va_list		ap;
@@ -431,7 +449,9 @@ smb_mbc_peek(mbuf_chain_t *mbc, int offset, char *fmt, ...)
  *		by that structure into the mbuf chain. The tag field is hard
  *		coded to '1'.
  *
- *	M	Write the SMB request signature ('SMBX') into the mbuf chain.
+ *	M	Write the SMB1 request signature ('SMBX') into the mbuf chain.
+ *
+ *	N	Write the SMB2 request signature ('SMBX') into the mbuf chain.
  *
  *	T	Pointer to a timestruc_t. Convert the content of the structure
  *		into NT time and store the result of the conversion in the
@@ -497,7 +517,7 @@ smb_mbc_peek(mbuf_chain_t *mbc, int offset, char *fmt, ...)
  *	U	Align the offset of the mbuf chain on a 16bit boundary.
  */
 int
-smb_mbc_vencodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
+smb_mbc_vencodef(mbuf_chain_t *mbc, const char *fmt, va_list ap)
 {
 	uint8_t		*cvalp;
 	timestruc_t	*tvp;
@@ -508,12 +528,14 @@ smb_mbc_vencodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 	uint32_t	lval;
 	uint_t		tag;
 	int		unicode = 0;
-	int		repc = 1;
+	int		repc;
+	boolean_t	repc_specified;
 	uint16_t	wval;
 	uint8_t		cval;
 	uint8_t		c;
 
 	while ((c = *fmt++) != 0) {
+		repc_specified = B_FALSE;
 		repc = 1;
 
 		if ('0' <= c && c <= '9') {
@@ -522,14 +544,21 @@ smb_mbc_vencodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 				repc = repc * 10 + c - '0';
 				c = *fmt++;
 			} while ('0' <= c && c <= '9');
+			repc_specified = B_TRUE;
 		} else if (c == '#') {
 			repc = va_arg(ap, int);
 			c = *fmt++;
+			repc_specified = B_TRUE;
+
 		}
 
 		switch (c) {
 		case '%':
 			sr = va_arg(ap, struct smb_request *);
+			if (sr->session->dialect >= SMB_VERS_2_BASE) {
+				unicode = 1;
+				break;
+			}
 			unicode = sr->smb_flg2 & SMB_FLAGS2_UNICODE;
 			break;
 
@@ -553,6 +582,12 @@ smb_mbc_vencodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 		case 'M':
 			/* 0xFF S M B */
 			if (mbc_marshal_put_long(mbc, 0x424D53FF))
+				return (DECODE_NO_MORE_DATA);
+			break;
+
+		case 'N':
+			/* 0xFE S M B */
+			if (mbc_marshal_put_long(mbc, 0x424D53FE))
 				return (DECODE_NO_MORE_DATA);
 			break;
 
@@ -647,6 +682,8 @@ smb_mbc_vencodef(mbuf_chain_t *mbc, char *fmt, va_list ap)
 
 		case 's':	/* ASCII/multibyte string */
 ascii_conversion:	cvalp = va_arg(ap, uint8_t *);
+			if (!repc_specified)
+				repc = 0;
 			if (mbc_marshal_put_ascii_string(mbc,
 			    (char *)cvalp, repc) != 0)
 				return (DECODE_NO_MORE_DATA);
@@ -696,6 +733,8 @@ unicode_translation:
 			if (mbc->chain_offset & 1)
 				mbc->chain_offset++;
 			cvalp = va_arg(ap, uint8_t *);
+			if (!repc_specified)
+				repc = 0;
 			if (mbc_marshal_put_unicode_string(mbc,
 			    (char *)cvalp, repc) != 0)
 				return (DECODE_NO_MORE_DATA);
@@ -718,7 +757,7 @@ unicode_translation:
  * (for a description of the format string see smb_mbc_vencodef()).
  */
 int
-smb_mbc_encodef(mbuf_chain_t *mbc, char *fmt, ...)
+smb_mbc_encodef(mbuf_chain_t *mbc, const char *fmt, ...)
 {
 	int	rc;
 	va_list	ap;
@@ -739,17 +778,23 @@ smb_mbc_encodef(mbuf_chain_t *mbc, char *fmt, ...)
  * (for a description of the format string see smb_mbc_vencodef()).
  */
 int
-smb_mbc_poke(mbuf_chain_t *mbc, int offset, char *fmt, ...)
+smb_mbc_poke(mbuf_chain_t *mbc, int offset, const char *fmt, ...)
 {
-	int		xx;
+	int		len, rc;
 	mbuf_chain_t	tmp;
 	va_list		ap;
 
-	(void) MBC_SHADOW_CHAIN(&tmp, mbc, offset, mbc->max_bytes - offset);
+	if ((len = mbc->max_bytes - offset) < 0)
+		return (DECODE_NO_MORE_DATA);
+	rc = MBC_SHADOW_CHAIN(&tmp, mbc, offset, len);
+	if (rc)
+		return (DECODE_NO_MORE_DATA);
+
 	va_start(ap, fmt);
-	xx = smb_mbc_vencodef(&tmp, fmt, ap);
+	rc = smb_mbc_vencodef(&tmp, fmt, ap);
 	va_end(ap);
-	return (xx);
+
+	return (rc);
 }
 
 /*
@@ -1040,7 +1085,7 @@ mbc_marshal_put_ascii_string(mbuf_chain_t *mbc, char *mbs, int repc)
 
 	length += sizeof (char);
 
-	if ((repc > 1) && (repc < length))
+	if ((repc > 0) && (repc < length))
 		length = repc;
 	if (mbc_marshal_make_room(mbc, length))
 		return (DECODE_NO_MORE_DATA);
@@ -1077,7 +1122,7 @@ mbc_marshal_put_unicode_string(mbuf_chain_t *mbc, char *ascii, int repc)
 
 	length += sizeof (smb_wchar_t);
 
-	if ((repc > 1) && (repc < length))
+	if ((repc > 0) && (repc < length))
 		length = repc;
 
 	if (mbc_marshal_make_room(mbc, length))
@@ -1100,6 +1145,12 @@ mbc_marshal_put_unicode_string(mbuf_chain_t *mbc, char *ascii, int repc)
 	return (0);
 }
 
+static int /*ARGSUSED*/
+uiorefnoop(caddr_t p, int size, int adj)
+{
+	return (0);
+}
+
 static int
 mbc_marshal_put_uio(mbuf_chain_t *mbc, struct uio *uio)
 {
@@ -1113,7 +1164,7 @@ mbc_marshal_put_uio(mbuf_chain_t *mbc, struct uio *uio)
 	for (i = 0; i < iov_cnt; i++) {
 		MGET(m, M_WAIT, MT_DATA);
 		m->m_ext.ext_buf = iov->iov_base;
-		m->m_ext.ext_ref = mclrefnoop;
+		m->m_ext.ext_ref = uiorefnoop;
 		m->m_data = m->m_ext.ext_buf;
 		m->m_flags |= M_EXT;
 		m->m_len = m->m_ext.ext_size = iov->iov_len;

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -30,6 +31,7 @@
 #include <sys/lpif.h>
 #include <sys/stmf.h>
 #include <sys/portif.h>
+#include <sys/list.h>
 #include <stmf_impl.h>
 #include <lun_map.h>
 #include <stmf_state.h>
@@ -1105,8 +1107,9 @@ fct_icmds(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		return (DCMD_ERR);
 	}
 
-	icmdp = iport.iport_cached_cmdlist;
+	icmdp = list_head(&iport.iport_cached_cmdlist);
 	while (icmdp) {
+
 		if (mdb_vread(&icmd, sizeof (struct fct_i_cmd),
 		    (uintptr_t)icmdp) == -1) {
 			mdb_warn("failed to read fct_i_cmd at %p", icmdp);
@@ -1118,7 +1121,7 @@ fct_icmds(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			mdb_printf("  fct cmd: %p\n", icmd.icmd_cmd);
 		}
 
-		icmdp = icmd.icmd_next;
+		icmdp = list_next(&iport.iport_cached_cmdlist, icmdp);
 	}
 
 	return (DCMD_OK);

@@ -20,8 +20,10 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ */
+/*
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <assert.h>
@@ -932,7 +934,10 @@ zfs_fm_timeout(fmd_hdl_t *hdl, id_t id, void *data)
 static void
 zfs_fm_close(fmd_hdl_t *hdl, fmd_case_t *cs)
 {
-	zfs_case_t *zcp = fmd_case_getspecific(hdl, cs);
+	zfs_case_t *zcp;
+
+	if ((zcp = fmd_case_getspecific(hdl, cs)) == NULL)
+		return;
 
 	if (zcp->zc_data.zc_serd_checksum[0] != '\0')
 		fmd_serd_destroy(hdl, zcp->zc_data.zc_serd_checksum);
@@ -972,7 +977,7 @@ static const fmd_prop_t fmd_props[] = {
 };
 
 static const fmd_hdl_info_t fmd_info = {
-	"ZFS Diagnosis Engine", "1.0", &fmd_ops, fmd_props
+	"ZFS Diagnosis Engine", "1.1", &fmd_ops, fmd_props
 };
 
 void

@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Joyent, Inc. All rights reserved.
  */
 
@@ -285,7 +286,7 @@ nfstsize(void)
  */
 
 /* this should reflect the largest transfer size possible */
-static int nfs3_max_transfer_size = 1024 * 1024;
+volatile int nfs3_max_transfer_size = 1024 * 1024;
 
 int
 nfs3tsize(void)
@@ -297,9 +298,9 @@ nfs3tsize(void)
 	return (nfs3_max_transfer_size);
 }
 
-static uint_t nfs3_max_transfer_size_clts = 32 * 1024;
-static uint_t nfs3_max_transfer_size_cots = 1024 * 1024;
-static uint_t nfs3_max_transfer_size_rdma = 1024 * 1024;
+volatile uint_t nfs3_max_transfer_size_clts = 32 * 1024;
+volatile uint_t nfs3_max_transfer_size_cots = 1024 * 1024;
+volatile uint_t nfs3_max_transfer_size_rdma = 1024 * 1024;
 
 uint_t
 nfs3_tsize(struct knetconfig *knp)

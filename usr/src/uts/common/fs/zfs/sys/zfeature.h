@@ -42,6 +42,11 @@ struct spa;
 struct dmu_tx;
 struct objset;
 
+#define	FEATURE_META_DEVICES "feature@meta_devices"
+
+extern boolean_t feature_is_supported(struct objset *os, uint64_t obj,
+    uint64_t desc_obj, nvlist_t *unsup_feat, nvlist_t *enabled_feat);
+
 extern void spa_feature_create_zap_objects(struct spa *, struct dmu_tx *);
 extern void spa_feature_enable(struct spa *, spa_feature_t,
     struct dmu_tx *);

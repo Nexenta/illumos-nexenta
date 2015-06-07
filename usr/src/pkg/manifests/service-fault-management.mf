@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions
 # and limitations under the License.
 #
+#
 # When distributing Covered Code, include this CDDL HEADER in each
 # file and include the License file at usr/src/OPENSOLARIS.LICENSE.
 # If applicable, add the following below this CDDL HEADER, with the
@@ -22,7 +23,7 @@
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 #
-
+# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
 #
 # The default for payload-bearing actions in this package is to appear in the
 # global zone only.  See the include file for greater detail, as well as
@@ -424,10 +425,10 @@ file path=usr/lib/fm/fmd/ipmitopo mode=0555
 #
 file path=usr/lib/fm/fmd/plugins/cpumem-retire.conf
 file path=usr/lib/fm/fmd/plugins/cpumem-retire.so mode=0555
-file path=usr/lib/fm/fmd/plugins/disk-lights.conf
-file path=usr/lib/fm/fmd/plugins/disk-lights.so mode=0555
 file path=usr/lib/fm/fmd/plugins/disk-monitor.conf
 file path=usr/lib/fm/fmd/plugins/disk-monitor.so mode=0555
+file path=usr/lib/fm/fmd/plugins/disk-sense-de.conf
+file path=usr/lib/fm/fmd/plugins/disk-sense-de.so mode=0555
 file path=usr/lib/fm/fmd/plugins/disk-transport.conf
 file path=usr/lib/fm/fmd/plugins/disk-transport.so mode=0555
 file path=usr/lib/fm/fmd/plugins/eft.conf
@@ -450,6 +451,8 @@ file path=usr/lib/fm/fmd/plugins/sensor-transport.conf
 file path=usr/lib/fm/fmd/plugins/sensor-transport.so mode=0555
 file path=usr/lib/fm/fmd/plugins/ses-log-transport.conf
 file path=usr/lib/fm/fmd/plugins/ses-log-transport.so mode=0555
+file path=usr/lib/fm/fmd/plugins/slow-io-de.conf
+file path=usr/lib/fm/fmd/plugins/slow-io-de.so mode=0555
 file path=usr/lib/fm/fmd/plugins/software-diagnosis.conf \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/plugins/software-diagnosis.so mode=0555 \
@@ -466,8 +469,12 @@ file path=usr/lib/fm/fmd/plugins/syslog-msgs.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/plugins/zfs-diagnosis.conf
 file path=usr/lib/fm/fmd/plugins/zfs-diagnosis.so mode=0555
+file path=usr/lib/fm/fmd/plugins/zfs-monitor.conf
+file path=usr/lib/fm/fmd/plugins/zfs-monitor.so mode=0555
 file path=usr/lib/fm/fmd/plugins/zfs-retire.conf
 file path=usr/lib/fm/fmd/plugins/zfs-retire.so mode=0555
+
+
 #
 # fmri scheme support: all are common to both global and non-global zones
 #

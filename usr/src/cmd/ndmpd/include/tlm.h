@@ -435,15 +435,6 @@ typedef struct tm_ops {
 #define	CHKBLANKS	"        "	/* 8 blanks, no null */
 
 #define	LONGNAME_PREFIX	"././_LoNg_NaMe_"
-extern void ndmp_log(ulong_t, char *, char *, ...);
-char ndmp_log_info[256];
-#define	NDMP_LOG(p, ...) { \
-				(void) snprintf(ndmp_log_info, \
-				    sizeof (ndmp_log_info), \
-				    "[%d][%s:%d]", \
-				    (int)pthread_self(), __func__, __LINE__); \
-				ndmp_log(p, ndmp_log_info, __VA_ARGS__); \
-			}
 extern void *ndmp_malloc(size_t size);
 
 /*

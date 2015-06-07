@@ -1,0 +1,215 @@
+'\" te
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+.\"
+.\" Note usage messages in sub-command scripts for this brand:
+.\" $SRC/lib/brand/solaris10/zone/
+.\"
+.TH IPKG 5 "Mar 10, 2013"
+.SH NAME
+ipkg \- Image Packaging System (IPS) branded zone
+.SH DESCRIPTION
+
+.sp
+.LP
+The \fBipkg\fR brand allows the branded zones framework
+described in \fBbrands\fR(5) to run Solaris 10 programs.
+This brand supports only the "whole root", non-global zone
+model.
+
+.sp
+.LP
+You create a \fBipkg\fR branded zone using the
+\fBzonecfg\fR(1M) utility, specifying the property
+\fBbrand=ipkg\fR in its configuration.
+
+.sp
+.LP
+After configuring a \fBipkg\fR branded zone,
+you attach or install it using \fBzoneadm\fR(1M).
+
+.SH SUB-COMMANDS
+
+.LP
+The \fBipkg\fR brand supports the following
+\fBzoneadm\fR(1M) sub-commands:
+
+.LP
+.nf
+\fB\fBattach\fR [\fB-a \fIarchive\fR|\fB-d \fIdirectory\fR|\fB-r \fIrecv_type\fR]
+.fi
+
+.sp .6
+.RS 4n
+The \fBattach\fR subcommand creates a zone from a previously detached
+\fBipkg\fR zone image.
+.sp
+.ne 2
+.na
+\fB\fB-a \fIarchive\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies an archive name which can be a flar, tar, pax or cpio archive.
+.RE
+.sp
+.ne 2
+.na
+\fB\fB-d \fIdirectory\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies an existing \fIdirectory\fR where the zone image has
+already been created.
+.RE
+.sp
+.ne 2
+.na
+\fB\fB-r \fIrecv_type\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies the type of archive to be read from standard input.
+.RE
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fBclone\fR \fIsource_zone\fR
+.ad
+.sp .6
+.RS 4n
+The \fBclone\fR subcommand creates a zone by making a \fBzfs\fR
+clone of an existing \fIsource zone\fR.
+.RE
+
+.LP
+.\" This documents the image_install.ksh usage (p2v existing image)
+.nf
+\fB\fBinstall\fR [\fB-u\fR|\fB-p\fR] [\fB-v\fR|\fB-s\fR] [\fB-a \fIarchive\fR|\fB-d \fIdirectory\fR]
+.fi
+
+.LP
+.\" This documents the pkgcreatezone.ksh usage (build a new image)
+.nf
+\fB\fBinstall\fR [\fB-c \fIcertificate\fR] [\fB-k \fIkey_file\fR] [\fB-P \fIPublisher\fR] [\fB-e \fIextra_pkgs\fR [...]]
+.fi
+
+.sp .6
+.RS 4n
+The \fBinstall\fR subcommand creates a zone from an archive image
+or an existing directory.
+
+.sp
+.ne 2
+.na
+\fB\fB-a \fIarchive\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies an archive name which can be a flar, tar, pax or cpio archive.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-c \fIcertificate\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies the \fIcertificate\fR to install for the \fIPublisher\fR.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-d \fIdirectory\fR\fR
+.ad
+.sp .6
+.RS 4n
+Specifies an existing \fIdirectory\fR where the zone image has
+already been created. If the \fIdirectory\fR specified is \fB-\fR
+then installation into the zone root is skipped, and the \fBinstall\fR
+subcommand only modifies the zone root as necessary to run in a zone.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-e \fIextra_pkg\fR [...]
+.ad
+.sp .6
+.RS 4n
+Specifies an extra package to install in the new zone.
+Multiple packages may be specified using multiple
+\fB-e \fIextra_pkg\fR options.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-P \fIPublisher\fR
+.ad
+.sp .6
+.RS 4n
+Specifies the IPS \fIPublisher\fR to configure in the new zone.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-p\fR
+.ad
+.sp .6
+.RS 4n
+Preserves the configuration of the new zone.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-s\fR
+.ad
+.sp .6
+.RS 4n
+Slient installation.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-u\fR
+.ad
+.sp .6
+.RS 4n
+Unconfigures the new zone.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-v\fR
+.ad
+.sp .6
+.RS 4n
+Verbose messages.
+.RE
+
+.RE
+
+.SH SEE ALSO
+.LP
+\fBcpio\fR(1), \fBpax\fR(1), \fBzfs\fR(1M), \fBzoneadm\fR(1M),
+\fBzonecfg\fR(1M),
+\fBbrands\fR(5), \fBzones\fR(5)

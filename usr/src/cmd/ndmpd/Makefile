@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
 #
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+#
 
 #
 # BSD 3 Clause License
@@ -70,7 +72,7 @@ CERRWARN += -_gcc=-Wno-switch
 CERRWARN += -_gcc=-Wno-uninitialized
 CERRWARN += -_gcc=-Wno-address
 
-LDLIBS   += -lsocket -lnsl -lzfs -lsec -lndmp -lmd5 -lnvpair -lumem -lbsm -lgen -lcmdutils -linetutil
+LDLIBS   += -lsocket -lnsl -lzfs -lsec -lndmp -lmd5 -lnvpair -lumem -lbsm -lcmdutils -linetutil
 
 OBJS= \
 	$(NDMP_DIR)/ndmp_xdr.o \
@@ -87,7 +89,6 @@ NDMP_OBJ = \
 	ndmpd_dtime.o \
 	ndmpd_fhistory.o \
 	ndmpd_handler.o \
-	ndmpd_log.o \
 	ndmpd_main.o \
 	ndmpd_mark.o \
 	ndmpd_mover.o \
@@ -120,11 +121,15 @@ MANIFEST = ndmp.xml
 ROOTMANIFESTDIR= $(ROOTSVCSYSTEM)
 $(ROOTMANIFEST) := FILEMODE = 444
 
-ROOTNDMPDDIR=	$(ROOTLIB)/ndmp
+ROOTNDMPDDIR = $(ROOTLIB)/ndmp
+LOGNDMPDDIR = $(ROOT)/var/log/ndmp
 ROOTNDMPDFILE = $(PROG:%=$(ROOTNDMPDDIR)/%)
 
 FILEMODE = 0444
 $(ROOTNDMPDFILE):= FILEMODE = 0555
+
+$(LOGNDMPDDIR):
+	$(INS.dir)
 
 $(ROOTNDMPDDIR):
 	$(INS.dir)
@@ -136,7 +141,8 @@ $(ROOTNDMPDDIR)/%: %
 
 all: $(PROG)
 
-install: all $(ROOTNDMPDDIR)  $(ROOTNDMPDFILE) $(ROOTSVCMETHOD) $(ROOTMANIFEST) 
+install: all $(ROOTNDMPDDIR) $(LOGNDMPDDIR) $(ROOTNDMPDFILE) $(ROOTSVCMETHOD) \
+	$(ROOTMANIFEST)
 
 check:	$(CHKMANIFEST)
 

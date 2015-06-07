@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2012, 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -113,6 +113,15 @@ static int max_cached_ncmds = FCT_MAX_CACHED_CMDS;
 static fct_i_local_port_t *fct_iport_list = NULL;
 static kmutex_t fct_global_mutex;
 uint32_t fct_rscn_options = RSCN_OPTION_VERIFY;
+
+/*
+ * For use during core examination. These counts are normally really low
+ * since they're bumped during port operations. If a customer core shows
+ * really high values without having an uptime of a year something is most
+ * likely wrong with their environment.
+ */
+int fct_els_cnt = 0;
+int fct_abort_cnt = 0;
 
 int
 _init(void)
@@ -1183,7 +1192,11 @@ fct_register_local_port(fct_local_port_t *port)
 	iport->iport_cached_ncmds = 0;
 	port->port_fca_fcp_cmd_size =
 	    (port->port_fca_fcp_cmd_size + 7) & ~7;
-	iport->iport_cached_cmdlist = NULL;
+	list_create(&iport->iport_cached_cmdlist, sizeof (fct_i_cmd_t),
+	    offsetof(fct_i_cmd_t, icmd_node));
+	list_create(&iport->iport_abort_queue, sizeof (fct_i_cmd_t),
+	    offsetof(fct_i_cmd_t, icmd_node));
+
 	mutex_init(&iport->iport_cached_cmd_lock, NULL, MUTEX_DRIVER, NULL);
 
 	/* Initialize cmd slots */
@@ -1272,7 +1285,7 @@ fct_status_t
 fct_deregister_local_port(fct_local_port_t *port)
 {
 	fct_i_local_port_t	*iport;
-	fct_i_cmd_t		*icmd, *next_icmd;
+	fct_i_cmd_t		*icmd;
 	int			ndx;
 
 	iport = (fct_i_local_port_t *)port->port_fct_private;
@@ -1317,9 +1330,9 @@ fct_deregister_local_port(fct_local_port_t *port)
 	 * I/Os, so we can just release resources.
 	 */
 	ASSERT(iport->iport_total_alloced_ncmds == iport->iport_cached_ncmds);
-	for (icmd = iport->iport_cached_cmdlist; icmd; icmd = next_icmd) {
-		next_icmd = icmd->icmd_next;
-		fct_free(icmd->icmd_cmd);
+	while (!list_is_empty(&iport->iport_cached_cmdlist)) {
+		icmd = list_remove_head(&iport->iport_cached_cmdlist);
+		fct_free(icmd);
 	}
 	mutex_destroy(&iport->iport_cached_cmd_lock);
 	kmem_free(iport->iport_cmd_slots, port->port_max_xchges *
@@ -1472,7 +1485,7 @@ fct_is_irp_logging_out(fct_i_remote_port_t *irp, int force_implicit)
 		logging_out = 0;
 		goto ilo_done;
 	}
-	if ((irp->irp_els_list == NULL) && (irp->irp_deregister_timer)) {
+	if (list_is_empty(&irp->irp_els_list) && (irp->irp_deregister_timer)) {
 		if (force_implicit && irp->irp_nonfcp_xchg_count) {
 			logging_out = 0;
 		} else {
@@ -1480,10 +1493,11 @@ fct_is_irp_logging_out(fct_i_remote_port_t *irp, int force_implicit)
 		}
 		goto ilo_done;
 	}
-	if (irp->irp_els_list) {
+	if (!list_is_empty(&irp->irp_els_list)) {
 		fct_i_cmd_t *icmd;
 		/* Last session affecting ELS should be a LOGO */
-		for (icmd = irp->irp_els_list; icmd; icmd = icmd->icmd_next) {
+		for (icmd = list_head(&irp->irp_els_list); icmd;
+		    icmd = list_next(&irp->irp_els_list, icmd)) {
 			uint8_t op = (ICMD_TO_ELS(icmd))->els_req_payload[0];
 			if (op == ELS_OP_LOGO) {
 				if (force_implicit) {
@@ -1656,8 +1670,8 @@ fct_scsi_task_alloc(fct_local_port_t *port, uint16_t rp_handle,
 	}
 
 	mutex_enter(&iport->iport_cached_cmd_lock);
-	if ((icmd = iport->iport_cached_cmdlist) != NULL) {
-		iport->iport_cached_cmdlist = icmd->icmd_next;
+	if (!list_is_empty(&iport->iport_cached_cmdlist)) {
+		icmd = list_remove_head(&iport->iport_cached_cmdlist);
 		iport->iport_cached_ncmds--;
 		cmd = icmd->icmd_cmd;
 	} else {
@@ -1676,7 +1690,7 @@ fct_scsi_task_alloc(fct_local_port_t *port, uint16_t rp_handle,
 		}
 
 		icmd = (fct_i_cmd_t *)cmd->cmd_fct_private;
-		icmd->icmd_next = NULL;
+		list_link_init(&icmd->icmd_node);
 		cmd->cmd_port = port;
 		atomic_inc_32(&iport->iport_total_alloced_ncmds);
 	}
@@ -1880,16 +1894,10 @@ void
 fct_post_to_discovery_queue(fct_i_local_port_t *iport,
     fct_i_remote_port_t *irp, fct_i_cmd_t *icmd)
 {
-	fct_i_cmd_t	**p;
-
 	ASSERT(!MUTEX_HELD(&iport->iport_worker_lock));
 	if (icmd) {
-		icmd->icmd_next = NULL;
-		for (p = &irp->irp_els_list; *p != NULL;
-		    p = &((*p)->icmd_next))
-			;
-
-		*p = icmd;
+		list_insert_tail(&irp->irp_els_list, icmd);
+		fct_els_cnt++;
 		atomic_or_32(&icmd->icmd_flags, ICMD_IN_IRP_QUEUE);
 	}
 
@@ -2121,8 +2129,7 @@ fct_cmd_free(fct_cmd_t *cmd)
 		if (iport->iport_cached_ncmds < max_cached_ncmds) {
 			icmd->icmd_flags = 0;
 			mutex_enter(&iport->iport_cached_cmd_lock);
-			icmd->icmd_next = iport->iport_cached_cmdlist;
-			iport->iport_cached_cmdlist = icmd;
+			list_insert_head(&iport->iport_cached_cmdlist, icmd);
 			iport->iport_cached_ncmds++;
 			mutex_exit(&iport->iport_cached_cmd_lock);
 		} else {
@@ -3041,7 +3048,6 @@ fct_q_for_termination_lock_held(fct_i_local_port_t *iport, fct_i_cmd_t *icmd,
 		fct_status_t s)
 {
 	uint32_t old, new;
-	fct_i_cmd_t **ppicmd;
 
 	do {
 		old = icmd->icmd_flags;
@@ -3053,12 +3059,8 @@ fct_q_for_termination_lock_held(fct_i_local_port_t *iport, fct_i_cmd_t *icmd,
 	icmd->icmd_start_time = ddi_get_lbolt();
 	icmd->icmd_cmd->cmd_comp_status = s;
 
-	icmd->icmd_next = NULL;
-	for (ppicmd = &(iport->iport_abort_queue); *ppicmd != NULL;
-	    ppicmd = &((*ppicmd)->icmd_next))
-		;
-
-	*ppicmd = icmd;
+	list_insert_tail(&iport->iport_abort_queue, icmd);
+	fct_abort_cnt++;
 }
 
 /*
@@ -3237,7 +3239,7 @@ fct_cmd_terminator(fct_i_local_port_t *iport)
 {
 	char			info[FCT_INFO_LEN];
 	clock_t			endtime;
-	fct_i_cmd_t		**ppicmd;
+	fct_i_cmd_t		*next;
 	fct_i_cmd_t		*icmd;
 	fct_cmd_t		*cmd;
 	fct_local_port_t	*port = iport->iport_port;
@@ -3252,10 +3254,10 @@ fct_cmd_terminator(fct_i_local_port_t *iport)
 
 	/* Start from where we left off last time */
 	if (iport->iport_ppicmd_term) {
-		ppicmd = iport->iport_ppicmd_term;
+		icmd = iport->iport_ppicmd_term;
 		iport->iport_ppicmd_term = NULL;
 	} else {
-		ppicmd = &iport->iport_abort_queue;
+		icmd = list_head(&iport->iport_abort_queue);
 	}
 
 	/*
@@ -3264,7 +3266,7 @@ fct_cmd_terminator(fct_i_local_port_t *iport)
 	 */
 	mutex_exit(&iport->iport_worker_lock);
 
-	while ((icmd = *ppicmd) != NULL) {
+	while (icmd) {
 		cmd = icmd->icmd_cmd;
 
 		/* Always remember that cmd->cmd_rp can be NULL */
@@ -3297,7 +3299,7 @@ fct_cmd_terminator(fct_i_local_port_t *iport)
 					    STMF_RFLAG_RESET, info);
 
 					mutex_enter(&iport->iport_worker_lock);
-					iport->iport_ppicmd_term = ppicmd;
+					iport->iport_ppicmd_term = icmd;
 					return (DISC_ACTION_DELAY_RESCAN);
 				}
 				atomic_and_32(&icmd->icmd_flags,
@@ -3325,9 +3327,10 @@ fct_cmd_terminator(fct_i_local_port_t *iport)
 			fct_done = 0;
 		if ((fca_done || cmd_implicit) && fct_done) {
 			mutex_enter(&iport->iport_worker_lock);
-			ASSERT(*ppicmd == icmd);
-			*ppicmd = (*ppicmd)->icmd_next;
+			next = list_next(&iport->iport_abort_queue, icmd);
+			list_remove(&iport->iport_abort_queue, icmd);
 			mutex_exit(&iport->iport_worker_lock);
+
 			if ((cmd->cmd_type == FCT_CMD_RCVD_ELS) ||
 			    (cmd->cmd_type == FCT_CMD_RCVD_ABTS)) {
 				/* Free the cmd */
@@ -3403,17 +3406,21 @@ fct_cmd_terminator(fct_i_local_port_t *iport)
 				    STMF_RFLAG_FATAL_ERROR | STMF_RFLAG_RESET,
 				    info);
 			}
-			ppicmd = &((*ppicmd)->icmd_next);
+			mutex_enter(&iport->iport_worker_lock);
+			next = list_next(&iport->iport_abort_queue, icmd);
+			mutex_exit(&iport->iport_worker_lock);
 		}
 
 		if (ddi_get_lbolt() > endtime) {
 			mutex_enter(&iport->iport_worker_lock);
-			iport->iport_ppicmd_term = ppicmd;
+			iport->iport_ppicmd_term = next;
 			return (DISC_ACTION_DELAY_RESCAN);
+		} else {
+			icmd = next;
 		}
 	}
 	mutex_enter(&iport->iport_worker_lock);
-	if (iport->iport_abort_queue)
+	if (!list_is_empty(&iport->iport_abort_queue))
 		return (DISC_ACTION_DELAY_RESCAN);
 	if (ret == DISC_ACTION_NO_WORK)
 		return (DISC_ACTION_RESCAN);

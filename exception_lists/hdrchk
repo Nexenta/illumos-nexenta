@@ -154,6 +154,10 @@ usr/src/lib/librstp/common/topoch.h
 usr/src/lib/librstp/common/transmit.h
 usr/src/lib/librstp/common/uid_stp.h
 usr/src/lib/librstp/common/vector.h
+usr/src/lib/libsmbfs/netsmb/spnego.h
+usr/src/lib/libsmbfs/smb/derparse.h
+usr/src/lib/libsmbfs/smb/spnegoparse.h
+usr/src/lib/pkcs11/include/pkcs11t.h
 usr/src/uts/common/gssapi/mechs/krb5/include/aes_s2k.h
 usr/src/uts/common/gssapi/mechs/krb5/include/auth_con.h
 usr/src/uts/common/gssapi/mechs/krb5/include/cksumtypes.h
@@ -287,6 +291,8 @@ usr/src/uts/common/io/bnxe/bnxe_binding.h
 usr/src/uts/common/io/bnxe/bnxe_debug.h
 usr/src/uts/common/io/bnxe/bnxe.h
 usr/src/uts/common/io/bnxe/version.h
+usr/src/uts/common/io/comstar/lu/stmf_sbd/stmf_sbd.h
+usr/src/uts/common/io/comstar/port/qlt/qlt.h
 usr/src/uts/common/io/e1000api/e1000_mac.h
 usr/src/uts/common/io/e1000api/e1000_82543.h
 usr/src/uts/common/io/e1000api/e1000_regs.h
@@ -308,14 +314,5 @@ usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_sas.h
 usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_targ.h
 usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_tool.h
 usr/src/uts/common/sys/scsi/adapters/mpt_sas/mpi/mpi2_type.h
-usr/src/uts/intel/sys/acpi/acdebug.h
-usr/src/uts/intel/sys/acpi/acdisasm.h
-usr/src/uts/intel/sys/acpi/acevents.h
-usr/src/uts/intel/sys/acpi/acinterp.h
-usr/src/uts/intel/sys/acpi/acmacros.h
-usr/src/uts/intel/sys/acpi/acnames.h
-usr/src/uts/intel/sys/acpi/acpredef.h
-usr/src/uts/intel/sys/acpi/acresrc.h
-usr/src/uts/intel/sys/acpi/acstruct.h
-usr/src/uts/intel/sys/acpi/amlresrc.h
-usr/src/uts/intel/sys/acpi/platform/acwin64.h
+usr/src/uts/intel/io/acpica/compiler
+usr/src/uts/intel/sys/acpi

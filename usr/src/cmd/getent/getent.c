@@ -51,6 +51,7 @@ static struct table t[] = {
 	{ "networks",	dogetnet },
 	{ "netmasks",	dogetnetmask },
 	{ "project",	dogetproject },
+	{ "netgroup",	dogetnetgr },
 	{ NULL,		NULL }
 };
 

@@ -18,7 +18,9 @@
 #
 # CDDL HEADER END
 #
+
 #
+# Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
@@ -40,6 +42,8 @@ LINT_LIBS	= $(LINT_LIB) $(GEN_LINT_LIB) \
 		  $(LINT_KMODLIBS:%=$(LINT_LIB_DIR)/llib-l%.ln) \
 		  $(LINT_XMODLIBS:%=$(LINT_LIB_DIR)/llib-l%.ln)
 
+$(NZA_MODS)LINT_LIBS += $(NZA_LINT_KMODS:%=$(LINT_LIB_DIR)/llib-l%.ln)
+
 DRV_KMODS	+= dprov
 
 def		:=	TARGET= def
@@ -57,14 +61,20 @@ install_h	:=	TARGET= install_h
 
 .KEEP_STATE:
 
-.PARALLEL:	$(PARALLEL_KMODS) $(XMODS) config $(LINT_DEPS)
+.PARALLEL:	$(PARALLEL_KMODS) $(XMODS) \
+		%(NZA_KMODS) config $(LINT_DEPS)
 
-def all install clean clobber modlist: $(KMODS) $(XMODS) config
+def all install clean clobber modlist: $(KMODS) \
+	$(XMODS) $(NZA_KMODS) config
 
-modlintlib clean.lint: $(LINT_KMODS) $(XMODS)
+modlintlib clean.lint: $(LINT_KMODS) \
+	$(NZA_LINT_KMODS) $(XMODS)
 
 $(KMODS) config:	FRC
 	@cd $@; pwd; $(MAKE) $(NO_STATE) $(TARGET)
+
+$(NZA_KMODS):	FRC
+	cd $(NZA_UTS)/sparc/$@; pwd; $(MAKE) $(NO_STATE) $(TARGET)
 
 $(XMODS):	FRC
 	@if [ -f $@/Makefile  ]; then \
@@ -91,3 +101,4 @@ globallint:
 lint:	modlintlib .WAIT $(LINT_DEPS)
 
 include ../Makefile.targ
+include $(NZA_MAKEDEFS)

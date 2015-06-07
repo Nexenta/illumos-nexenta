@@ -81,7 +81,7 @@ pt_socket_connect(int server_node, char *server)
 	struct	sockaddr_in sin;
 	int cliLen = sizeof (cli_addr);
 
-	if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) <= 0) {
+	if ((sfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		syslog(LOG_DAEMON|LOG_WARNING,
 		    "socket() call failed: %d", errno);
 		return (NULL);

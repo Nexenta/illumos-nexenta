@@ -11,10 +11,32 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
-
 .PARALLEL: $(SUBDIRS)
 
-SUBDIRS =
+include $(SRC)/Makefile.master
+
+ROOTOPTPKG = $(ROOT)/opt/zfs-tests
+TESTDIR = $(ROOTOPTPKG)/tests/stress
+
+FILE = stress.cfg
+
+CONFIG = $(FILE:%=$(TESTDIR)/%)
+$(CONFIG) := FILEMODE = 0555
+
+all lint clean clobber:
+
+install: $(CONFIG)
+
+$(CONFIG): $(TESTDIR)
+
+$(TESTDIR):
+	$(INS.dir)
+
+$(TESTDIR)/%: %
+	$(INS.file)
+
+SUBDIRS = bin replica_stress
 
 include $(SRC)/test/Makefile.com

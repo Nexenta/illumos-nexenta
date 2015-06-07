@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SYS_ZAP_H
@@ -87,22 +88,17 @@ extern "C" {
 
 /*
  * Specifies matching criteria for ZAP lookups.
+ * MT_EXACT - exact match, bypasses normalization to do strcmp()
+ * MT_FIRST - Normalizes the lookup - compose/decompose and then
+ *            match the normalized string.
+ * MT_CASE - Used to keep track of whether the lookup request is
+ *           case sensitive or not (i.e. Windows vs Unix.)
  */
 typedef enum matchtype
 {
-	/* Only find an exact match (non-normalized) */
-	MT_EXACT,
-	/*
-	 * If there is an exact match, find that, otherwise find the
-	 * first normalized match.
-	 */
-	MT_BEST,
-	/*
-	 * Find the "first" normalized (case and Unicode form) match;
-	 * the designated "first" match will not change as long as the
-	 * set of entries with this normalization doesn't change.
-	 */
-	MT_FIRST
+	MT_EXACT = 0x1,
+	MT_FIRST,
+	MT_CASE = 0x4
 } matchtype_t;
 
 typedef enum zap_flags {
@@ -126,8 +122,7 @@ typedef enum zap_flags {
  * 0: no normalization (legacy on-disk format, supports MT_EXACT matching
  *     only)
  * U8_TEXTPREP_TOLOWER: case normalization will be performed.
- *     MT_FIRST/MT_BEST matching will find entries that match without
- *     regard to case (eg. looking for "foo" can find an entry "Foo").
+ *
  * Eventually, other flags will permit unicode normalization as well.
  */
 uint64_t zap_create(objset_t *ds, dmu_object_type_t ot,

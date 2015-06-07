@@ -21,6 +21,7 @@
 #
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2013 Nexenta Systems, Inc. All rights reserved.
 #
 
 LIBRARY= libzfs.a
@@ -34,7 +35,9 @@ OBJS_SHARED=			\
 	zfs_namecheck.o		\
 	zfs_prop.o		\
 	zpool_prop.o		\
-	zprop_common.o
+	zprop_common.o		\
+	cos_prop.o	     	\
+	vdev_prop.o
 
 OBJS_COMMON=			\
 	libzfs_changelist.o	\
@@ -50,7 +53,14 @@ OBJS_COMMON=			\
 	libzfs_status.o		\
 	libzfs_util.o
 
+
 OBJECTS= $(OBJS_COMMON) $(OBJS_SHARED)
+#
+# ZFS Plus shared
+#
+include $(NZA_MAKEDEFS)
+OBJECTS += $(NZA_ZFSPLUS_SHARED_OBJS)
+OBJECTS += $(LIBZFS_LOG_EVENT_OBJS)
 
 include ../../Makefile.lib
 
@@ -65,6 +75,7 @@ INCS += -I$(SRCDIR)
 INCS += -I../../../uts/common/fs/zfs
 INCS += -I../../../common/zfs
 INCS += -I../../libc/inc
+INCS += $(NZA_ZFSPLUSBASE_FLAGS)
 
 C99MODE=	-xc99=%all
 C99LMODE=	-Xc99=%all
@@ -78,7 +89,9 @@ CERRWARN +=	-_gcc=-Wno-uninitialized
 CERRWARN +=	-_gcc=-Wno-unused-function
 
 SRCS=	$(OBJS_COMMON:%.o=$(SRCDIR)/%.c)	\
-	$(OBJS_SHARED:%.o=$(SRC)/common/zfs/%.c)
+	$(OBJS_SHARED:%.o=$(SRC)/common/zfs/%.c) \
+	$(NZA_ZFSPLUS_SHARED_SRC) \
+	$(LIBZFS_LOG_EVENT_SRC)
 $(LINTLIB) := SRCS=	$(SRCDIR)/$(LINTSRC)
 
 .KEEP_STATE:

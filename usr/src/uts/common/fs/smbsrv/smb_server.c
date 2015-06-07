@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -210,7 +210,7 @@
 #include <netinet/ip_icmp.h>
 #include <netinet/ip_var.h>
 #include <netinet/tcp.h>
-#include <smbsrv/smb_kproto.h>
+#include <smbsrv/smb2_kproto.h>
 #include <smbsrv/string.h>
 #include <smbsrv/netbios.h>
 #include <smbsrv/smb_fsops.h>
@@ -280,6 +280,15 @@ kmem_cache_t		*smb_cache_event;
  */
 
 /*
+ * How many zones have an SMB server active?
+ */
+int
+smb_server_get_count(void)
+{
+	return (smb_llist_get_count(&smb_servers));
+}
+
+/*
  * smb_server_g_init
  *
  * This function must be called from smb_drv_attach().
@@ -293,13 +302,10 @@ smb_server_g_init(void)
 		goto errout;
 	if ((rc = smb_fem_init()) != 0)
 		goto errout;
-	if ((rc = smb_oplock_init()) != 0)
-		goto errout;
 
 	smb_kshare_g_init();
 	smb_codepage_init();
 	smb_mbc_init();		/* smb_mbc_cache */
-	smb_net_init();		/* smb_txr_cache */
 	smb_node_init();	/* smb_node_cache, lists */
 
 	smb_cache_request = kmem_cache_create("smb_request_cache",
@@ -337,12 +343,12 @@ errout:
  * This function must called from smb_drv_detach(). It will fail if servers
  * still exist.
  */
-int
+void
 smb_server_g_fini(void)
 {
 
-	if (smb_llist_get_count(&smb_servers) != 0)
-		return (EBUSY);
+	ASSERT(smb_llist_get_count(&smb_servers) == 0);
+
 	smb_llist_fini();
 
 	kmem_cache_destroy(smb_cache_request);
@@ -355,17 +361,13 @@ smb_server_g_fini(void)
 	kmem_cache_destroy(smb_cache_event);
 
 	smb_node_fini();
-	smb_net_fini();
 	smb_mbc_fini();
 	smb_kshare_g_fini();
 
-	smb_oplock_fini();
 	smb_fem_fini();
 	smb_vop_fini();
 
 	smb_llist_destructor(&smb_servers);
-
-	return (0);
 }
 
 /*
@@ -404,9 +406,6 @@ smb_server_create(void)
 	cv_init(&sv->sv_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&sv->sp_info.sp_cv, NULL, CV_DEFAULT, NULL);
 
-	smb_llist_constructor(&sv->sv_opipe_list, sizeof (smb_opipe_t),
-	    offsetof(smb_opipe_t, p_lnd));
-
 	smb_llist_constructor(&sv->sv_event_list, sizeof (smb_event_t),
 	    offsetof(smb_event_t, se_lnd));
 
@@ -416,7 +415,10 @@ smb_server_create(void)
 	smb_llist_constructor(&sv->sp_info.sp_fidlist,
 	    sizeof (smb_spoolfid_t), offsetof(smb_spoolfid_t, sf_lnd));
 
-	sv->sv_disp_stats = kmem_zalloc(SMB_COM_NUM *
+	sv->sv_disp_stats1 = kmem_zalloc(SMB_COM_NUM *
+	    sizeof (smb_disp_stats_t), KM_SLEEP);
+
+	sv->sv_disp_stats2 = kmem_zalloc(SMB2__NCMDS *
 	    sizeof (smb_disp_stats_t), KM_SLEEP);
 
 	smb_thread_init(&sv->si_thread_timers, "smb_timers",
@@ -426,7 +428,6 @@ smb_server_create(void)
 
 	smb_kdoor_init(sv);
 	smb_kshare_init(sv);
-	smb_opipe_door_init(sv);
 	smb_server_kstat_init(sv);
 
 	smb_threshold_init(&sv->sv_ssetup_ct, SMB_SSETUP_CMD,
@@ -502,14 +503,15 @@ smb_server_delete(void)
 	smb_server_listener_destroy(&sv->sv_tcp_daemon);
 	rw_destroy(&sv->sv_cfg_lock);
 	smb_server_kstat_fini(sv);
-	smb_opipe_door_fini(sv);
 	smb_kshare_fini(sv);
 	smb_kdoor_fini(sv);
-	smb_llist_destructor(&sv->sv_opipe_list);
 	smb_llist_destructor(&sv->sv_event_list);
 
-	kmem_free(sv->sv_disp_stats,
+	kmem_free(sv->sv_disp_stats1,
 	    SMB_COM_NUM * sizeof (smb_disp_stats_t));
+
+	kmem_free(sv->sv_disp_stats2,
+	    SMB2__NCMDS * sizeof (smb_disp_stats_t));
 
 	smb_srqueue_destroy(&sv->sv_srqueue);
 	smb_thread_destroy(&sv->si_thread_timers);
@@ -619,14 +621,9 @@ smb_server_start(smb_ioc_start_t *ioc)
 			cmn_err(CE_WARN, "Cannot open smbd door");
 			break;
 		}
-		if (rc = smb_opipe_door_open(sv, ioc->opipe)) {
-			cmn_err(CE_WARN, "Cannot open opipe door");
-			break;
-		}
 #else	/* _KERNEL */
 		/* Fake kernel does not use the kshare_door */
 		fksmb_kdoor_open(sv, ioc->udoor_func);
-		fksmb_opipe_door_open(sv, ioc->opipe_func);
 #endif	/* _KERNEL */
 
 		if (rc = smb_thread_start(&sv->si_thread_timers))
@@ -1079,7 +1076,6 @@ smb_server_disconnect_share(smb_llist_t *ll, const char *sharename)
 		smb_rwx_rwenter(&session->s_lock, RW_READER);
 		switch (session->s_state) {
 		case SMB_SESSION_STATE_NEGOTIATED:
-		case SMB_SESSION_STATE_OPLOCK_BREAKING:
 			smb_session_disconnect_share(session, sharename);
 			break;
 		default:
@@ -1256,6 +1252,7 @@ smb_server_kstat_init(smb_server_t *sv)
 		((smbsrv_kstats_t *)sv->sv_ksp->ks_data)->ks_start_time =
 		    sv->sv_start_time;
 		smb_dispatch_stats_init(sv);
+		smb2_dispatch_stats_init(sv);
 		kstat_install(sv->sv_ksp);
 	} else {
 		cmn_err(CE_WARN, "SMB Server: Statistics unavailable");
@@ -1306,6 +1303,7 @@ smb_server_kstat_fini(smb_server_t *sv)
 		kstat_delete(sv->sv_ksp);
 		sv->sv_ksp = NULL;
 		smb_dispatch_stats_fini(sv);
+		smb2_dispatch_stats_fini(sv);
 	}
 }
 
@@ -1346,7 +1344,8 @@ smb_server_kstat_update(kstat_t *ksp, int rw)
 		/*
 		 * Latency & Throughput of the requests
 		 */
-		smb_dispatch_stats_update(sv, ksd->ks_reqs, 0, SMB_COM_NUM);
+		smb_dispatch_stats_update(sv, ksd->ks_reqs1, 0, SMB_COM_NUM);
+		smb2_dispatch_stats_update(sv, ksd->ks_reqs2, 0, SMB2__NCMDS);
 		return (0);
 	}
 	if (rw == KSTAT_WRITE)
@@ -1413,7 +1412,6 @@ smb_server_shutdown(smb_server_t *sv)
 	smb_threshold_wake_all(&sv->sv_tcon_ct);
 	smb_threshold_wake_all(&sv->sv_opipe_ct);
 
-	smb_opipe_door_close(sv);
 	smb_kdoor_close(sv);
 #ifdef	_KERNEL
 	smb_kshare_door_fini(sv->sv_lmshrd);
@@ -1901,6 +1899,7 @@ smb_server_fclose(smb_llist_t *ll, uint32_t uniqid)
 	return (rc);
 }
 
+/* See also: libsmb smb_kmod_setcfg */
 static void
 smb_server_store_cfg(smb_server_t *sv, smb_ioc_cfg_t *ioc)
 {
@@ -1921,12 +1920,26 @@ smb_server_store_cfg(smb_server_t *sv, smb_ioc_cfg_t *ioc)
 	sv->sv_cfg.skc_oplock_enable = ioc->oplock_enable;
 	sv->sv_cfg.skc_sync_enable = ioc->sync_enable;
 	sv->sv_cfg.skc_secmode = ioc->secmode;
+	sv->sv_cfg.skc_netbios_enable = ioc->netbios_enable;
 	sv->sv_cfg.skc_ipv6_enable = ioc->ipv6_enable;
 	sv->sv_cfg.skc_print_enable = ioc->print_enable;
 	sv->sv_cfg.skc_traverse_mounts = ioc->traverse_mounts;
-	sv->sv_cfg.skc_netbios_enable = ioc->netbios_enable;
+	sv->sv_cfg.skc_max_protocol = ioc->max_protocol;
 	sv->sv_cfg.skc_execflags = ioc->exec_flags;
+	sv->sv_cfg.skc_negtok_len = ioc->negtok_len;
 	sv->sv_cfg.skc_version = ioc->version;
+	sv->sv_cfg.skc_initial_credits = ioc->initial_credits;
+	sv->sv_cfg.skc_maximum_credits = ioc->maximum_credits;
+
+	(void) memcpy(sv->sv_cfg.skc_machine_uuid, ioc->machine_uuid,
+	    sizeof (uuid_t));
+	(void) memcpy(sv->sv_cfg.skc_negtok, ioc->negtok,
+	    sizeof (sv->sv_cfg.skc_negtok));
+	(void) memcpy(sv->sv_cfg.skc_native_os, ioc->native_os,
+	    sizeof (sv->sv_cfg.skc_native_os));
+	(void) memcpy(sv->sv_cfg.skc_native_lm, ioc->native_lm,
+	    sizeof (sv->sv_cfg.skc_native_lm));
+
 	(void) strlcpy(sv->sv_cfg.skc_nbdomain, ioc->nbdomain,
 	    sizeof (sv->sv_cfg.skc_nbdomain));
 	(void) strlcpy(sv->sv_cfg.skc_fqdn, ioc->fqdn,

@@ -22,6 +22,7 @@
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2010, Richard Lowe
+# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2012, Piotr Jasiukajtis
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2014, Joyent, Inc.
@@ -87,6 +88,7 @@ file path=opt/onbld/bin/bldenv mode=0555
 file path=opt/onbld/bin/bringovercheck mode=0555
 file path=opt/onbld/bin/build_cscope mode=0555
 file path=opt/onbld/bin/cddlchk mode=0555
+file path=opt/onbld/bin/check_mail_msg mode=0555
 file path=opt/onbld/bin/check_rtime mode=0555
 file path=opt/onbld/bin/checkpaths mode=0555
 file path=opt/onbld/bin/checkproto mode=0555
@@ -105,11 +107,13 @@ file path=opt/onbld/bin/hg-active mode=0555
 file path=opt/onbld/bin/hgsetup mode=0555
 file path=opt/onbld/bin/interface_check mode=0555
 file path=opt/onbld/bin/interface_cmp mode=0555
+file path=opt/onbld/bin/ips2deb mode=0555
 file path=opt/onbld/bin/jstyle mode=0555
 file path=opt/onbld/bin/make_pkg_db mode=0555
 file path=opt/onbld/bin/mapfilechk mode=0555
 file path=opt/onbld/bin/nightly mode=0555
 file path=opt/onbld/bin/onu mode=0555
+file path=opt/onbld/bin/onu-deb mode=0555
 file path=opt/onbld/bin/protocmp.terse mode=0555
 file path=opt/onbld/bin/sccscheck mode=0555
 file path=opt/onbld/bin/signit mode=0555
@@ -127,12 +131,16 @@ file path=opt/onbld/bin/xref.mk
 file path=opt/onbld/env/developer
 file path=opt/onbld/env/gatekeeper
 file path=opt/onbld/env/illumos
+file path=opt/onbld/env/nza
 file path=opt/onbld/etc/SampleLinks
 file path=opt/onbld/etc/SamplePkgLinks
 file path=opt/onbld/etc/exception_lists/check_rtime
 file path=opt/onbld/etc/exception_lists/interface_check
 file path=opt/onbld/etc/exception_lists/interface_cmp
 file path=opt/onbld/etc/hgstyle
+file path=opt/onbld/etc/ips2deb.priorities
+file path=opt/onbld/etc/ips2deb.replaces
+file path=opt/onbld/etc/ips2deb.versions
 file path=opt/onbld/etc/its.conf
 file path=opt/onbld/etc/its.reg
 file path=opt/onbld/gk/.cshrc

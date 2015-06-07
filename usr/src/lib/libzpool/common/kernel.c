@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013, Joyent, Inc.  All rights reserved.
  */
 
@@ -880,6 +881,19 @@ ddi_strtoull(const char *str, char **nptr, int base, u_longlong_t *result)
 	return (0);
 }
 
+/* ARGSUSED */
+timeout_id_t
+timeout(void (*func)(void *), void *arg, clock_t delta)
+{
+	return ((timeout_id_t)1);
+}
+
+/* ARGSUSED */
+clock_t
+untimeout(timeout_id_t id_arg)
+{
+	return (0);
+}
 /* ARGSUSED */
 cyclic_id_t
 cyclic_add(cyc_handler_t *hdlr, cyc_time_t *when)

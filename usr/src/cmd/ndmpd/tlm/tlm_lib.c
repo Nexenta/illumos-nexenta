@@ -36,6 +36,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/errno.h>
+#include <syslog.h>
 #include <ctype.h>
 #include <stdlib.h>
 #include <time.h>
@@ -317,7 +318,7 @@ tlm_vfy_tar_checksum(tlm_tar_hdr_t *tar_hdr)
 	}
 
 	if (sum == 0) {
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_DEBUG,
 		    "should be %d, is 0", chksum);
 		/* a zero record ==> end of tar file */
 		return (0);
@@ -338,7 +339,7 @@ tlm_vfy_tar_checksum(tlm_tar_hdr_t *tar_hdr)
 	sum += ' ' * 8;
 
 	if (sum != chksum)
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_DEBUG,
 		    "should be %d, is %d", chksum, sum);
 
 	return ((sum == chksum) ? 1 : -1);
@@ -358,11 +359,11 @@ tlm_get_scsi_sasd_entry(int lib, int drv)
 	entry = -1;
 	dp = tlm_drive(lib, drv);
 	if (!dp) {
-		NDMP_LOG(LOG_DEBUG, "NULL dp for (%d.%d)", lib, drv);
+		syslog(LOG_DEBUG, "NULL dp for (%d.%d)", lib, drv);
 	} else if (!dp->td_slink) {
-		NDMP_LOG(LOG_DEBUG, "NULL dp->td_slink for (%d.%d)", lib, drv);
+		syslog(LOG_DEBUG, "NULL dp->td_slink for (%d.%d)", lib, drv);
 	} else if (!dp->td_slink->sl_sa) {
-		NDMP_LOG(LOG_DEBUG, "NULL dp->td_slink->sl_sa for (%d.%d)",
+		syslog(LOG_DEBUG, "NULL dp->td_slink->sl_sa for (%d.%d)",
 		    lib, drv);
 	} else {
 		/* search through the SASD table */
@@ -495,16 +496,16 @@ tlm_log_fhdir(tlm_job_stats_t *job_stats, char *dir, struct stat64 *stp,
 
 	rv = 0;
 	if (job_stats == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhdir: jstat is NULL");
+		syslog(LOG_DEBUG, "log_fhdir: jstat is NULL");
 	} else if (dir == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhdir: dir is NULL");
+		syslog(LOG_DEBUG, "log_fhdir: dir is NULL");
 	} else if (stp == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhdir: stp is NULL");
+		syslog(LOG_DEBUG, "log_fhdir: stp is NULL");
 	} else if ((cbp = (lbr_fhlog_call_backs_t *)job_stats->js_callbacks)
 	    == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhdir: cbp is NULL");
+		syslog(LOG_DEBUG, "log_fhdir: cbp is NULL");
 	} else if (cbp->fh_log_dir == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhdir: callback is NULL");
+		syslog(LOG_DEBUG, "log_fhdir: callback is NULL");
 	} else
 		rv = (*cbp->fh_log_dir)(cbp, dir, stp, fhp);
 
@@ -523,18 +524,18 @@ tlm_log_fhnode(tlm_job_stats_t *job_stats, char *dir, char *file,
 
 	rv = 0;
 	if (job_stats == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhnode: jstat is NULL");
+		syslog(LOG_DEBUG, "log_fhnode: jstat is NULL");
 	} else if (dir == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhnode: dir is NULL");
+		syslog(LOG_DEBUG, "log_fhnode: dir is NULL");
 	} else if (file == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhnode: file is NULL");
+		syslog(LOG_DEBUG, "log_fhnode: file is NULL");
 	} else if (stp == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhnode: stp is NULL");
+		syslog(LOG_DEBUG, "log_fhnode: stp is NULL");
 	} else if ((cbp = (lbr_fhlog_call_backs_t *)job_stats->js_callbacks)
 	    == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhnode: cbp is NULL");
+		syslog(LOG_DEBUG, "log_fhnode: cbp is NULL");
 	} else if (cbp->fh_log_node == NULL) {
-		NDMP_LOG(LOG_DEBUG, "log_fhnode: callback is NULL");
+		syslog(LOG_DEBUG, "log_fhnode: callback is NULL");
 	} else
 		rv = (*cbp->fh_log_node)(cbp, dir, file, stp, off);
 
@@ -553,16 +554,16 @@ tlm_log_fhpath_name(tlm_job_stats_t *job_stats, char *pathname,
 
 	rv = 0;
 	if (!job_stats) {
-		NDMP_LOG(LOG_DEBUG, "log_fhpath_name: jstat is NULL");
+		syslog(LOG_DEBUG, "log_fhpath_name: jstat is NULL");
 	} else if (!pathname) {
-		NDMP_LOG(LOG_DEBUG, "log_fhpath_name: pathname is NULL");
+		syslog(LOG_DEBUG, "log_fhpath_name: pathname is NULL");
 	} else if (!stp) {
-		NDMP_LOG(LOG_DEBUG, "log_fhpath_name: stp is NULL");
+		syslog(LOG_DEBUG, "log_fhpath_name: stp is NULL");
 	} else if ((cbp = (lbr_fhlog_call_backs_t *)job_stats->js_callbacks)
 	    == 0) {
-		NDMP_LOG(LOG_DEBUG, "log_fhpath_name: cbp is NULL");
+		syslog(LOG_DEBUG, "log_fhpath_name: cbp is NULL");
 	} else if (!cbp->fh_logpname) {
-		NDMP_LOG(LOG_DEBUG, "log_fhpath_name: callback is NULL");
+		syslog(LOG_DEBUG, "log_fhpath_name: callback is NULL");
 	} else
 		rv = (*cbp->fh_logpname)(cbp, pathname, stp, off);
 
@@ -578,15 +579,13 @@ tlm_entry_restored(tlm_job_stats_t *job_stats, char *name, int pos)
 {
 	lbr_fhlog_call_backs_t *cbp; /* callbacks pointer */
 
-	NDMP_LOG(LOG_DEBUG, "name: \"%s\", pos: %d", name, pos);
-
 	if (job_stats == NULL) {
-		NDMP_LOG(LOG_DEBUG, "entry_restored: jstat is NULL");
+		syslog(LOG_DEBUG, "entry_restored: jstat is NULL");
 		return (0);
 	}
 	cbp = (lbr_fhlog_call_backs_t *)job_stats->js_callbacks;
 	if (cbp == NULL) {
-		NDMP_LOG(LOG_DEBUG, "entry_restored is NULL");
+		syslog(LOG_DEBUG, "entry_restored is NULL");
 		return (0);
 	}
 	return (*cbp->fh_logpname)(cbp, name, 0, (longlong_t)pos);
@@ -651,7 +650,7 @@ tlm_get_chkpnt_time(char *path, int auto_checkpoint, time_t *tp, char *jname)
 	char chk_name[PATH_MAX];
 	char *cp_nm;
 
-	NDMP_LOG(LOG_DEBUG, "path [%s] auto_checkpoint: %d",
+	syslog(LOG_DEBUG, "path [%s] auto_checkpoint: %d",
 	    path, auto_checkpoint);
 
 	if (path == NULL || *path == '\0' || tp == NULL)
@@ -662,12 +661,12 @@ tlm_get_chkpnt_time(char *path, int auto_checkpoint, time_t *tp, char *jname)
 		return (-1);
 
 	if (auto_checkpoint) {
-		NDMP_LOG(LOG_DEBUG, "volname [%s]", volname);
+		syslog(LOG_DEBUG, "volname [%s]", volname);
 		(void) snprintf(chk_name, PATH_MAX, "%s", jname);
 		return (chkpnt_creationtime_bypattern(volname, chk_name, tp));
 	}
 	cp_nm = strchr(volname, '@');
-	NDMP_LOG(LOG_DEBUG, "volname [%s] cp_nm [%s]", volname, cp_nm);
+	syslog(LOG_DEBUG, "volname [%s] cp_nm [%s]", volname, cp_nm);
 
 	return (chkpnt_creationtime_bypattern(volname, cp_nm, tp));
 }
@@ -700,10 +699,10 @@ tlm_log_list(char *title, char **lpp)
 	if (!lpp)
 		return;
 
-	NDMP_LOG(LOG_DEBUG, "%s:", title);
+	syslog(LOG_DEBUG, "%s:", title);
 
 	for (i = 0; *lpp; lpp++, i++)
-		NDMP_LOG(LOG_DEBUG, "%d: [%s]", i, *lpp);
+		syslog(LOG_DEBUG, "%d: [%s]", i, *lpp);
 }
 
 /*
@@ -825,7 +824,7 @@ tlm_is_excluded(char *dir, char *name, char **excl_files)
 		return (FALSE);
 
 	if (!tlm_cat_path(full_name, dir, name)) {
-		NDMP_LOG(LOG_DEBUG, "Path too long [%s][%s]",
+		syslog(LOG_DEBUG, "Path too long [%s][%s]",
 		    dir, name);
 		return (FALSE);
 	}
@@ -879,7 +878,7 @@ tlm_enable_barcode(int l)
 
 	if ((lp = tlm_library(l))) {
 		lp->tl_capability_barcodes = TRUE;
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_DEBUG,
 		    "Barcode capability on library %d enabled.", l);
 	}
 }
@@ -1024,7 +1023,7 @@ probe_scsi(void)
 	/* Scan for the changer */
 	dirp = opendir(SCSI_CHANGER_DIR);
 	if (dirp == NULL) {
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_DEBUG,
 		    "Changer directory read error %s", SCSI_CHANGER_DIR);
 	} else {
 		while ((dp = readdir(dirp)) != NULL) {
@@ -1049,14 +1048,14 @@ probe_scsi(void)
 	/* Scan for tape drives */
 	dirp = opendir(SCSI_TAPE_DIR);
 	if (dirp == NULL) {
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_DEBUG,
 		    "Tape directory read error %s", SCSI_TAPE_DIR);
 	} else {
 		drive_type = ndmpd_get_prop(NDMP_DRIVE_TYPE);
 
 		if ((strcasecmp(drive_type, "sysv") != 0) &&
 		    (strcasecmp(drive_type, "bsd") != 0)) {
-			NDMP_LOG(LOG_ERR, "Invalid ndmpd/drive-type value. "
+			syslog(LOG_ERR, "Invalid ndmpd/drive-type value. "
 			    "Valid values are 'sysv' and 'bsd'.");
 			return (-1);
 		}
@@ -1164,7 +1163,7 @@ tlm_ioctl(int fd, int cmd, void *data)
 {
 	int retries = 0;
 
-	NDMP_LOG(LOG_DEBUG, "tlm_ioctl fd %d cmd %d", fd, cmd);
+	syslog(LOG_DEBUG, "tlm_ioctl fd %d cmd %d", fd, cmd);
 	if (fd == 0 || data == NULL)
 		return (EINVAL);
 
@@ -1173,9 +1172,9 @@ tlm_ioctl(int fd, int cmd, void *data)
 			break;
 
 		if (errno != EIO && errno != 0) {
-			NDMP_LOG(LOG_ERR,
+			syslog(LOG_ERR,
 			    "Failed to send command to device: %m.");
-			NDMP_LOG(LOG_DEBUG, "IOCTL error %d", errno);
+			syslog(LOG_DEBUG, "IOCTL error %d", errno);
 			return (errno);
 		}
 		(void) sleep(1);
@@ -1214,7 +1213,7 @@ chkpnt_creationtime_bypattern(char *volname, char *pattern, time_t *tp)
 
 	(void) mutex_lock(&zlib_mtx);
 	if ((zhp = zfs_open(zlibh, chk_name, ZFS_TYPE_DATASET)) == NULL) {
-		NDMP_LOG(LOG_DEBUG, "chkpnt_creationtime: open %s failed",
+		syslog(LOG_DEBUG, "chkpnt_creationtime: open %s failed",
 		    chk_name);
 		(void) mutex_unlock(&zlib_mtx);
 		return (-1);

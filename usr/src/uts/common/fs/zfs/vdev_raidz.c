@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  */
@@ -35,6 +36,7 @@
 #include <sys/zio_checksum.h>
 #include <sys/fs/zfs.h>
 #include <sys/fm/fs/zfs.h>
+#include <sys/dkioc_free_util.h>
 
 /*
  * Virtual device vector for RAID-Z.
@@ -165,7 +167,15 @@ typedef struct raidz_map {
  */
 int vdev_raidz_default_to_general;
 
-/* Powers of 2 in the Galois field defined above. */
+/*
+ * xor_p hook for external acceleration libraries.
+ */
+int (*zfs_xorp_hook)(int vects, int len, void **array) = NULL;
+
+/*
+ * These two tables represent powers and logs of 2 in the Galois field defined
+ * above. These values were computed by repeatedly multiplying by 2 as above.
+ */
 static const uint8_t vdev_raidz_pow2[256] = {
 	0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
 	0x1d, 0x3a, 0x74, 0xe8, 0xcd, 0x87, 0x13, 0x26,
@@ -237,6 +247,7 @@ static const uint8_t vdev_raidz_log2[256] = {
 };
 
 static void vdev_raidz_generate_parity(raidz_map_t *rm);
+static void vdev_raidz_trim_done(zio_t *zio);
 
 /*
  * Multiply a given number by 2 raised to the given power.
@@ -264,7 +275,9 @@ vdev_raidz_map_free(raidz_map_t *rm)
 	size_t size;
 
 	for (c = 0; c < rm->rm_firstdatacol; c++) {
-		zio_buf_free(rm->rm_col[c].rc_data, rm->rm_col[c].rc_size);
+		if (rm->rm_col[c].rc_data != NULL)
+			zio_buf_free(rm->rm_col[c].rc_data,
+			    rm->rm_col[c].rc_size);
 
 		if (rm->rm_col[c].rc_gdata != NULL)
 			zio_buf_free(rm->rm_col[c].rc_gdata,
@@ -437,12 +450,27 @@ static const zio_vsd_ops_t vdev_raidz_vsd_ops = {
 };
 
 /*
- * Divides the IO evenly across all child vdevs; usually, dcols is
- * the number of children in the target vdev.
+ * Allocates and computes a raidz column map, which directs the raidz column
+ * handling algorithms where to locate and store data and parity columns for
+ * a particular DVA. Usually, dcols is the number of children in the target
+ * vdev.
+ *
+ * The `io_offset', `io_size' and `io_data' hold the offset, size and data
+ * of the zio for which this map is to be computed.
+ * The `unit_shift' parameter contains the minimum allocation bitshift of
+ * the storage pool. The `dcols' parameter contains the number of drives in
+ * this raidz vdev (including parity drives), with `nparity' denoting how
+ * many those contain the parity (one, two or three).
+ *
+ * The `alloc_io_bufs' flag denotes whether you want the constructed raidz
+ * map to contain allocated buffers to hold column IO data or not (if
+ * you're using this function simply to determine raidz geometry, you'll
+ * want to pass B_FALSE here).
  */
 static raidz_map_t *
 vdev_raidz_map_alloc(caddr_t data, uint64_t size, uint64_t offset,
-    uint64_t unit_shift, uint64_t dcols, uint64_t nparity)
+    uint64_t unit_shift, uint64_t dcols, uint64_t nparity,
+    boolean_t alloc_data)
 {
 	raidz_map_t *rm;
 	/* The starting RAIDZ (parent) vdev sector of the block. */
@@ -536,14 +564,17 @@ vdev_raidz_map_alloc(caddr_t data, uint64_t size, uint64_t offset,
 	ASSERT3U(rm->rm_asize - asize, ==, rm->rm_nskip << unit_shift);
 	ASSERT3U(rm->rm_nskip, <=, nparity);
 
-	for (c = 0; c < rm->rm_firstdatacol; c++)
-		rm->rm_col[c].rc_data = zio_buf_alloc(rm->rm_col[c].rc_size);
-
-	rm->rm_col[c].rc_data = data;
-
-	for (c = c + 1; c < acols; c++)
-		rm->rm_col[c].rc_data = (char *)rm->rm_col[c - 1].rc_data +
-		    rm->rm_col[c - 1].rc_size;
+	if (alloc_data) {
+		for (c = 0; c < rm->rm_firstdatacol; c++)
+			rm->rm_col[c].rc_data =
+			    zio_buf_alloc(rm->rm_col[c].rc_size);
+		if (data != NULL)
+			rm->rm_col[c].rc_data = data;
+		for (c = c + 1; c < acols; c++)
+			rm->rm_col[c].rc_data =
+			    (char *)rm->rm_col[c - 1].rc_data +
+			    rm->rm_col[c - 1].rc_size;
+	}
 
 	/*
 	 * If all data stored spans all columns, there's a danger that parity
@@ -583,11 +614,87 @@ vdev_raidz_map_alloc(caddr_t data, uint64_t size, uint64_t offset,
 	return (rm);
 }
 
+/*
+ * software acceleration of XOR calculations, requirements
+ *
+ * the (src/dst) vectors needs to be 64 byte aligned
+ * all the vectors have to be the same size
+ */
+#define	RAIDZ_ACCELERATION_ALIGNMENT	64ul
+#define	UNALIGNED(addr)	\
+	((unsigned long)(addr) & (RAIDZ_ACCELERATION_ALIGNMENT-1))
+
 static void
 vdev_raidz_generate_parity_p(raidz_map_t *rm)
 {
 	uint64_t *p, *src, pcount, ccount, i;
 	int c;
+	int parity_done;
+	void *va[16];
+	void **array;
+	int j, nvects;
+
+	parity_done = 0;
+	while (zfs_xorp_hook && !parity_done) {
+		unsigned long no_accel = 0;
+		/* at least two columns (plus one for result) */
+		if (rm->rm_cols < 3) {
+			DTRACE_PROBE1(raidz_few_cols, int, rm->rm_cols);
+			break;
+		}
+		/* check sizes and alignment */
+		no_accel = UNALIGNED(rm->rm_col[VDEV_RAIDZ_P].rc_data);
+		if (no_accel) {
+			DTRACE_PROBE1(raidz_unaligned_dst, unsigned long,
+			    no_accel);
+			break;
+		}
+		pcount = rm->rm_col[rm->rm_firstdatacol].rc_size;
+		nvects = 1; /* for the destination */
+		for (c = rm->rm_firstdatacol; c < rm->rm_cols; c++) {
+			no_accel = UNALIGNED(rm->rm_col[c].rc_data);
+			if (no_accel) {
+				DTRACE_PROBE1(raidz_unaligned_src,
+				    unsigned long, no_accel);
+				break;
+			}
+			if (rm->rm_col[c].rc_size != pcount) {
+				DTRACE_PROBE(raidz_sizes_vary);
+				no_accel = 1;
+				break;
+			}
+			nvects++;
+		}
+		if (no_accel)
+			break;
+		if (nvects > 16) {
+			array = kmem_alloc(nvects * sizeof (void *),
+			    KM_NOSLEEP);
+			if (array == NULL) {
+				DTRACE_PROBE(raidz_alloc_failed);
+				break;
+			}
+		} else {
+			array = va;
+		}
+		for (j = 0, c = rm->rm_firstdatacol; c < rm->rm_cols;
+		    c++, j++) {
+			array[j] = rm->rm_col[c].rc_data;
+		}
+		array[j] = rm->rm_col[VDEV_RAIDZ_P].rc_data;
+		if (zfs_xorp_hook(nvects,
+		    rm->rm_col[rm->rm_firstdatacol].rc_size, array)) {
+			DTRACE_PROBE(raidz_accel_failure);
+			break;
+		}
+		if (array != va) {
+			kmem_free(array, nvects * sizeof (void *));
+		}
+		parity_done = 1;
+		DTRACE_PROBE(raidz_accel_success);
+	}
+	if (parity_done)
+		return;
 
 	pcount = rm->rm_col[VDEV_RAIDZ_P].rc_size / sizeof (src[0]);
 
@@ -1620,7 +1727,7 @@ vdev_raidz_physio(vdev_t *vd, caddr_t data, size_t size,
 	 */
 	rm = vdev_raidz_map_alloc(data - (offset - origoffset),
 	    SPA_OLD_MAXBLOCKSIZE, origoffset, tvd->vdev_ashift,
-	    vd->vdev_children, vd->vdev_nparity);
+	    vd->vdev_children, vd->vdev_nparity, B_TRUE);
 
 	coloffset = origoffset;
 
@@ -1722,8 +1829,7 @@ vdev_raidz_io_start(zio_t *zio)
 	int c, i;
 
 	rm = vdev_raidz_map_alloc(zio->io_data, zio->io_size, zio->io_offset,
-	    tvd->vdev_ashift, vd->vdev_children,
-	    vd->vdev_nparity);
+	    tvd->vdev_ashift, vd->vdev_children, vd->vdev_nparity, B_TRUE);
 
 	zio->io_vsd = rm;
 	zio->io_vsd_ops = &vdev_raidz_vsd_ops;
@@ -1839,7 +1945,7 @@ raidz_checksum_verify(zio_t *zio)
 	zio_bad_cksum_t zbc;
 	raidz_map_t *rm = zio->io_vsd;
 
-	int ret = zio_checksum_error(zio, &zbc);
+	int ret = zio_checksum_error(zio, &zbc, NULL);
 	if (ret != 0 && zbc.zbc_injected != 0)
 		rm->rm_ecksuminjected = 1;
 
@@ -2360,6 +2466,82 @@ vdev_raidz_state_change(vdev_t *vd, int faulted, int degraded)
 		vdev_set_state(vd, B_FALSE, VDEV_STATE_HEALTHY, VDEV_AUX_NONE);
 }
 
+/*
+ * Processes a trim for a raidz vdev.
+ */
+static void
+vdev_raidz_trim(vdev_t *vd, zio_t *pio, void *trim_exts)
+{
+	dkioc_free_list_t *dfl = trim_exts;
+	dkioc_free_list_t **sub_dfl;
+
+	sub_dfl = kmem_zalloc(sizeof (*sub_dfl) * vd->vdev_children, KM_SLEEP);
+	for (int i = 0; i < vd->vdev_children; i++) {
+		sub_dfl[i] = kmem_zalloc(DFL_SZ(dfl->dfl_num_exts), KM_SLEEP);
+		sub_dfl[i]->dfl_flags = dfl->dfl_flags;
+		sub_dfl[i]->dfl_num_exts = dfl->dfl_num_exts;
+		sub_dfl[i]->dfl_offset = dfl->dfl_offset;
+		/* don't copy the check func, because it isn't raidz-aware */
+	}
+
+	/*
+	 * Process all extents and redistribute them to the component vdevs
+	 * according to a computed raidz map geometry.
+	 */
+	for (int i = 0; i < dfl->dfl_num_exts; i++) {
+		uint64_t start = dfl->dfl_exts[i].dfle_start;
+		uint64_t length = dfl->dfl_exts[i].dfle_length;
+		raidz_map_t *rm = vdev_raidz_map_alloc(NULL, length, start,
+		    vd->vdev_top->vdev_ashift, vd->vdev_children,
+		    vd->vdev_nparity, B_FALSE);
+
+		for (int j = 0; j < rm->rm_cols; j++) {
+			const raidz_col_t *rc = &rm->rm_col[j];
+
+			sub_dfl[rc->rc_devidx]->dfl_exts[i].dfle_start =
+			    rc->rc_offset;
+			sub_dfl[rc->rc_devidx]->dfl_exts[i].dfle_length =
+			    rc->rc_size;
+			ASSERT(rc->rc_size != 0);
+			/*
+			 * Actual number of extents required to be trimmed on
+			 * each component device may be smaller (but not
+			 * larger!) than the total number of extents in the
+			 * original list. This is OK, as the underlying driver
+			 * will ignore zero-length extents.
+			 */
+		}
+		vdev_raidz_map_free(rm);
+	}
+
+	/*
+	 * Issue the component ioctls as children of the parent zio.
+	 */
+	for (int i = 0; i < vd->vdev_children; i++) {
+		if (sub_dfl[i]->dfl_num_exts != 0) {
+			zio_nowait(zio_ioctl(pio, vd->vdev_child[i]->vdev_spa,
+			    vd->vdev_child[i], DKIOCFREE,
+			    vdev_raidz_trim_done, sub_dfl[i],
+			    ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
+			    ZIO_FLAG_DONT_RETRY));
+		} else {
+			kmem_free(sub_dfl[i], sizeof (*sub_dfl));
+		}
+	}
+	kmem_free(sub_dfl, sizeof (*sub_dfl) * vd->vdev_children);
+}
+
+/*
+ * Releases a dkioc_free_list_t from ioctls issued to component devices in
+ * vdev_raidz_dkioc_free.
+ */
+static void
+vdev_raidz_trim_done(zio_t *zio)
+{
+	ASSERT(zio->io_private != NULL);
+	dfl_free(zio->io_private);
+}
+
 vdev_ops_t vdev_raidz_ops = {
 	vdev_raidz_open,
 	vdev_raidz_close,
@@ -2369,6 +2551,7 @@ vdev_ops_t vdev_raidz_ops = {
 	vdev_raidz_state_change,
 	NULL,
 	NULL,
+	vdev_raidz_trim,
 	VDEV_TYPE_RAIDZ,	/* name of this vdev type */
 	B_FALSE			/* not a leaf vdev */
 };

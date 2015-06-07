@@ -1,0 +1,48 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+#
+include $(SRC)/cmd/Makefile.cmd
+
+SRCS = $(TPS:%=%.c)
+OBJS = $(TPS:%=%.o)
+
+TESTS = $(TPS:%=$(TESTDIR)/%)
+$(TESTS) := FILEMODE = 0555
+
+COMSTAR_INC = ../../../include
+CFLAGS = -I$(COMSTAR_INC)
+LDLIBS += -lstmf -lnvpair
+LDFLAGS += -zignore
+
+$(TPS): $(OBJS)
+	$(LINK.c) $@.o -o $@ $(LDLIBS)
+	$(POST_PROCESS)
+
+%.o: %.c
+	$(COMPILE.c) $(CFLAGS) $<
+
+all install: $(TESTS)
+
+lint:
+	for src in $(SRCS); \
+	do \
+	$(LINT.c) $(CFLAGS) $${src} $(LDLIBS); \
+	done
+	
+clobber clean:
+	-$(RM) $(OBJS) $(TPS)
+
+$(TESTDIR)/%: %
+	$(INS.file)

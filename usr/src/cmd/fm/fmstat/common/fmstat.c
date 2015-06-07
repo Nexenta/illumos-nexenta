@@ -574,7 +574,7 @@ stat_mod(const char *name, int aflag, int zflag)
 		switch (sp->fmds_type) {
 		case FMD_TYPE_BOOL:
 			(void) printf("%-16s",
-			    sp->fmds_value.bool ? "true" : "false");
+			    sp->fmds_value.b ? "true" : "false");
 			break;
 		case FMD_TYPE_INT32:
 			(void) printf("%-16d", sp->fmds_value.i32);

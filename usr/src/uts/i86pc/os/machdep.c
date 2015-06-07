@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 /*
  * Copyright (c) 2010, Intel Corporation.
@@ -170,7 +171,7 @@ uint64_t plat_dr_physmax;
  * maxphys - used during physio
  * klustsize - used for klustering by swapfs and specfs
  */
-int maxphys = 56 * 1024;    /* XXX See vm_subr.c - max b_count in physio */
+volatile int maxphys = 56 * 1024; /* See vm_subr.c - max b_bcount in physio */
 int klustsize = 56 * 1024;
 
 caddr_t	p0_va;		/* Virtual address for accessing physical page 0 */

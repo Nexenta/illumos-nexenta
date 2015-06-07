@@ -22,8 +22,9 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * This file contains global data and code shared between master and slave parts
@@ -194,10 +195,11 @@
 /*
  * Tuneable variables.
  */
-uint_t	pt_cnt = 0;			/* Minimum number of ptys */
-size_t 	pt_max_pty = 0;			/* Maximum number of ptys */
+volatile uint_t	pt_cnt = 0;		/* Minimum number of ptys */
+volatile size_t	pt_max_pty = 0;		/* Maximum number of ptys */
 uint_t	pt_init_cnt = NPTY_INITIAL;	/* Initial number of ptms slots */
-uint_t	pt_pctofmem = NPTY_PERCENT;	/* Percent of memory to use for ptys */
+volatile uint_t	pt_pctofmem = NPTY_PERCENT;	/* Percent of memory to use */
+						/* for ptys */
 uint_t	pt_maxdelta = PTY_MAXDELTA;	/* Max increment for slot table size */
 
 /* Other global variables */

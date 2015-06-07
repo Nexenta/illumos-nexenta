@@ -259,15 +259,15 @@ fmd_module_create(const char *path, const fmd_modops_t *ops)
 	    &mp->mod_stats->ms_xprtqlimit.fmds_value.ui32);
 
 	(void) fmd_conf_getprop(fmd.d_conf, "ckpt.save",
-	    &mp->mod_stats->ms_ckpt_save.fmds_value.bool);
+	    &mp->mod_stats->ms_ckpt_save.fmds_value.b);
 
 	(void) fmd_conf_getprop(fmd.d_conf, "ckpt.restore",
-	    &mp->mod_stats->ms_ckpt_restore.fmds_value.bool);
+	    &mp->mod_stats->ms_ckpt_restore.fmds_value.b);
 
 	(void) fmd_conf_getprop(fmd.d_conf, "ckpt.zero",
-	    &mp->mod_stats->ms_ckpt_zeroed.fmds_value.bool);
+	    &mp->mod_stats->ms_ckpt_zeroed.fmds_value.b);
 
-	if (mp->mod_stats->ms_ckpt_zeroed.fmds_value.bool)
+	if (mp->mod_stats->ms_ckpt_zeroed.fmds_value.b)
 		fmd_ckpt_delete(mp); /* blow away any pre-existing checkpoint */
 
 	/*

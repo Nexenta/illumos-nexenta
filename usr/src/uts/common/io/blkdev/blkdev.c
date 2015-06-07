@@ -49,6 +49,7 @@
 #include <sys/ddi.h>
 #include <sys/sunddi.h>
 #include <sys/note.h>
+#include <sys/mhd.h>
 #include <sys/blkdev.h>
 
 #define	BD_MAXPART	64
@@ -161,6 +162,7 @@ static void bd_runq_exit(bd_xfer_impl_t *, int);
 static void bd_update_state(bd_t *);
 static int bd_check_state(bd_t *, enum dkio_state *);
 static int bd_flush_write_cache(bd_t *, struct dk_callback *);
+static int bd_reserve(bd_t *bd, int);
 
 struct cmlb_tg_ops bd_tg_ops = {
 	TG_DK_OPS_VERSION_1,
@@ -685,6 +687,7 @@ bd_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 	int		rv;
 	diskaddr_t	nblks;
 	diskaddr_t	lba;
+	int		i;
 
 	_NOTE(ARGUNUSED(credp));
 
@@ -757,7 +760,7 @@ bd_open(dev_t *devp, int flag, int otyp, cred_t *credp)
 			rv = EBUSY;
 			goto done;
 		}
-		for (int i = 0; i < OTYP_LYR; i++) {
+		for (i = 0; i < OTYP_LYR; i++) {
 			if (bd->d_open_reg[i] & mask) {
 				rv = EBUSY;
 				goto done;
@@ -790,6 +793,7 @@ bd_close(dev_t dev, int flag, int otyp, cred_t *credp)
 	minor_t		part;
 	uint64_t	mask;
 	boolean_t	last = B_TRUE;
+	int		i;
 
 	_NOTE(ARGUNUSED(flag));
 	_NOTE(ARGUNUSED(credp));
@@ -816,12 +820,12 @@ bd_close(dev_t dev, int flag, int otyp, cred_t *credp)
 	} else {
 		bd->d_open_reg[otyp] &= ~mask;
 	}
-	for (int i = 0; i < 64; i++) {
+	for (i = 0; i < 64; i++) {
 		if (bd->d_open_lyr[part]) {
 			last = B_FALSE;
 		}
 	}
-	for (int i = 0; last && (i < OTYP_LYR); i++) {
+	for (i = 0; last && (i < OTYP_LYR); i++) {
 		if (bd->d_open_reg[i]) {
 			last = B_FALSE;
 		}
@@ -1154,6 +1158,34 @@ bd_ioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *credp, int *rvalp)
 
 		rv = bd_flush_write_cache(bd, dkc);
 		return (rv);
+	}
+
+	case MHIOCTKOWN:
+	{
+		return (bd_reserve(bd, BD_XFER_MHD_TKOWN));
+	}
+
+	case MHIOCRELEASE:
+	{
+		return (bd_reserve(bd, BD_XFER_MHD_RELEASE));
+	}
+
+	case MHIOCSTATUS:
+	{
+		rv = bd_reserve(bd, BD_XFER_MHD_STATUS);
+		if (rvalp != NULL)
+			*rvalp = rv == 0 ? 0: 1;
+		return (0);
+	}
+
+	case MHIOCQRESERVE:
+	{
+		return (bd_reserve(bd, BD_XFER_MHD_QRESERVE));
+	}
+
+	case MHIOCENFAILFAST:
+	{
+		return (bd_reserve(bd, BD_XFER_MHD_ENFAILFAST));
 	}
 
 	default:
@@ -1510,6 +1542,41 @@ bd_flush_write_cache(bd_t *bd, struct dk_callback *dkc)
 
 	/* In case there is no callback, perform a synchronous flush */
 	bd_submit(bd, xi);
+	(void) biowait(bp);
+	rv = geterror(bp);
+	freerbuf(bp);
+
+	return (rv);
+}
+
+static int
+bd_reserve(bd_t *bd, int flag)
+{
+	buf_t			*bp;
+	bd_xfer_impl_t		*xi;
+	int			rv;
+
+	if (bd->d_ops.o_reserve == NULL) {
+		return (ENOTSUP);
+	}
+	if ((bp = getrbuf(KM_SLEEP)) == NULL) {
+		return (ENOMEM);
+	}
+	bp->b_resid = 0;
+	bp->b_bcount = 0;
+
+	xi = bd_xfer_alloc(bd, bp, bd->d_ops.o_reserve, KM_SLEEP);
+	if (xi == NULL) {
+		rv = geterror(bp);
+		freerbuf(bp);
+		return (rv);
+	}
+
+	xi->i_flags = flag;
+
+	bd_submit(bd, xi);
+
+	/* wait synchronously */
 	(void) biowait(bp);
 	rv = geterror(bp);
 	freerbuf(bp);

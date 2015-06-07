@@ -66,6 +66,7 @@
 #include <sys/disp.h>
 #include <sys/tuneable.h>
 #include <sys/systeminfo.h>
+#include <rpc/auth_sys.h>
 
 #include <sys/vmem.h>
 #include <sys/clock.h>
@@ -159,7 +160,7 @@ const unsigned int	_nbpg		= (unsigned int)MMU_PAGESIZE;
 int hz = HZ_DEFAULT;
 int hires_hz = HIRES_HZ_DEFAULT;
 
-int hires_tick = 0;
+volatile int hires_tick = 0;
 int cpu_decay_factor = 10;	/* this is no longer tied to clock */
 int max_hres_adj;	/* maximum adjustment of hrtime per tick */
 int tick_per_msec;	/* clock ticks per millisecond (zero if hz < 1000) */
@@ -267,13 +268,13 @@ void	(*mp_init_tbl[])(void) = {
 	0
 };
 
-int maxusers;		/* kitchen-sink knob for dynamic configuration */
+volatile int maxusers;	/* kitchen-sink knob for dynamic configuration */
 
 /*
  * pidmax -- highest pid value assigned by the system
  * Settable in /etc/system
  */
-int pidmax = DEFAULT_MAXPID;
+volatile int pidmax = DEFAULT_MAXPID;
 
 /*
  * jump_pid - if set, this value is where pid numbers should start
@@ -289,7 +290,7 @@ pid_t jump_pid = DEFAULT_JUMPPID;
  * buffer must be in seconds before bdflush will write it out.
  */
 #define	DEFAULT_AUTOUP	30
-int autoup = DEFAULT_AUTOUP;
+volatile int autoup = DEFAULT_AUTOUP;
 
 /*
  * bufhwm -- tuneable variable for struct var for v_bufhwm.
@@ -297,23 +298,23 @@ int autoup = DEFAULT_AUTOUP;
  *
  * bufhwm_pct -- ditto, but given in % of physmem.
  */
-int bufhwm = 0;
-int bufhwm_pct = 0;
+volatile int bufhwm = 0;
+volatile int bufhwm_pct = 0;
 
 /*
  * Process table.
  */
 int maxpid;
-int max_nprocs;		/* set in param_init() */
-int maxuprc;		/* set in param_init() */
-int reserved_procs;
+volatile int max_nprocs;	/* set in param_init() */
+volatile int maxuprc;		/* set in param_init() */
+volatile int reserved_procs;
 int nthread = 1;
 
 /*
  * UFS tunables
  */
-int ufs_ninode;		/* declared here due to backwards compatibility */
-int ndquot;		/* declared here due to backwards compatibility */
+volatile int ufs_ninode; /* declared here due to backwards compatibility */
+volatile int ndquot;	 /* declared here due to backwards compatibility */
 
 /*
  * Exec switch table. This is used by the generic exec module
@@ -410,8 +411,8 @@ kmutex_t execsw_lock;	/* Used for allocation of execsw entries */
 #define	RLIM_FD_CUR 0x100
 #define	RLIM_FD_MAX 0x10000
 
-uint_t rlim_fd_cur = RLIM_FD_CUR;
-uint_t rlim_fd_max = RLIM_FD_MAX;
+volatile uint_t rlim_fd_cur = RLIM_FD_CUR;
+volatile uint_t rlim_fd_max = RLIM_FD_MAX;
 
 /*
  * (Default resource limits were formerly declared here, but are now provided by
@@ -421,14 +422,14 @@ uint_t rlim_fd_max = RLIM_FD_MAX;
 /*
  * STREAMS tunables
  */
-int	nstrpush = 9;		/* maximum # of modules/drivers on a stream */
-ssize_t	strctlsz = 1024;	/* maximum size of user-generated M_PROTO */
-ssize_t	strmsgsz = 0x10000;	/* maximum size of user-generated M_DATA */
+volatile int	nstrpush = 9;	/* maximum # of modules/drivers on a stream */
+volatile ssize_t strctlsz = 1024;   /* maximum size of user-generated M_PROTO */
+volatile ssize_t strmsgsz = 0x10000; /* maximum size of user-generated M_DATA */
 				/* for `strmsgsz', zero means unlimited */
 /*
  * Filesystem tunables
  */
-int	rstchown = 1;		/* POSIX_CHOWN_RESTRICTED is enabled */
+volatile int	rstchown = 1;	/* POSIX_CHOWN_RESTRICTED is enabled */
 int	ngroups_max = NGROUPS_MAX_DEFAULT;
 
 /*
@@ -486,13 +487,13 @@ int tune_t_gpgslo = 25;
  * Rate at which fsflush is run, in seconds.
  */
 #define	DEFAULT_TUNE_T_FSFLUSHR	1
-int tune_t_fsflushr = DEFAULT_TUNE_T_FSFLUSHR;
+volatile int tune_t_fsflushr = DEFAULT_TUNE_T_FSFLUSHR;
 
 /*
  * The minimum available resident (not swappable) memory to maintain
  * in order to avoid deadlock.  In pages.
  */
-int tune_t_minarmem = 25;
+volatile int tune_t_minarmem = 25;
 
 /*
  * The minimum available swappable memory to maintain in order to avoid
@@ -507,7 +508,7 @@ int tune_t_flckrec = 512;	/* max # of active frlocks */
  * This is set in init_pages_pp_maximum, and must be initialized
  * to zero here to detect an override in /etc/system
  */
-pgcnt_t pages_pp_maximum = 0;
+volatile pgcnt_t pages_pp_maximum = 0;
 
 int boothowto;			/* boot flags passed to kernel */
 struct var v;			/* System Configuration Information */

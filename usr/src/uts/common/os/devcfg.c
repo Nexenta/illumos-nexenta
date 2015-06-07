@@ -20,9 +20,9 @@
  */
 /*
  * Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved
  */
 
 #include <sys/note.h>
@@ -5764,6 +5764,17 @@ e_ddi_offline_notify(dev_info_t *dip)
 		ASSERT(retval == LDI_EV_NONE);
 	}
 
+	/*
+	 * In order to allow a device retire to succeed that is in use
+	 */
+
+	if (ddi_getprop(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "allow-unconstrained-retire", 0) == 1 && failure == 0) {
+		RIO_VERBOSE((CE_NOTE, "e_ddi_offline_notify(): setting "
+		    "constraint flag due to 'allow-unconstrained-retire' "
+		    "property on dip=%p", (void *)dip));
+		constraint = 1;
+	}
 out:
 	mutex_enter(&(DEVI(dip)->devi_lock));
 	if ((DEVI(dip)->devi_flags & DEVI_RETIRING) && failure) {

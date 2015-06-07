@@ -21,6 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SYS_CMLB_H
@@ -308,6 +309,26 @@ cmlb_attach(dev_info_t *devi, cmlb_tg_ops_t *tgopsp, int device_type,
     boolean_t is_removable, boolean_t is_hotpluggable, char *node_type,
     int alter_behavior, cmlb_handle_t cmlbhandle, void *tg_cookie);
 
+
+/*
+ * cmlb_workaround_off_by_one:
+ *
+ *	Enables the workaround for the ancient off-by-one bug in sd.
+ *      See comment preceding cmlb_attach().
+ *
+ * Arguments
+ *	cmlbhandle	cmlb handle associated with device.
+ *
+ *
+ * Notes:
+ *	This should only be called by sd_unit_attach(), and only before
+ *	validating the label for the first time.
+ *
+ * Return values:
+ *	None.
+ */
+void
+cmlb_workaround_off_by_one(cmlb_handle_t cmlbhandle);
 
 /*
  * cmlb_validate:

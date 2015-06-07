@@ -26,6 +26,9 @@
  * Copyright 2011 Bayard G. Bell <buffer.g.overflow@gmail.com>.
  * All rights reserved. Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * Kernel's linker/loader
@@ -322,7 +325,7 @@ static kobj_stat_t kobj_stat;
 #define	MINALIGN	8	/* at least a double-word */
 
 int
-get_weakish_int(int *ip)
+get_weakish_int(volatile int *ip)
 {
 	if (standalone)
 		return (0);

@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -134,14 +135,13 @@ ddt_zap_walk(objset_t *os, uint64_t object, ddt_entry_t *dde, uint64_t *walk)
 	return (error);
 }
 
-static uint64_t
-ddt_zap_count(objset_t *os, uint64_t object)
+static int
+ddt_zap_count(objset_t *os, uint64_t object, uint64_t *count)
 {
-	uint64_t count = 0;
+	int error = zap_count(os, object, count);
+	ASSERT(error == 0);
 
-	VERIFY(zap_count(os, object, &count) == 0);
-
-	return (count);
+	return (error);
 }
 
 const ddt_ops_t ddt_zap_ops = {

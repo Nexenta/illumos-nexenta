@@ -22,7 +22,7 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2011, 2015 Nexenta Systems, Inc. All rights reserved.
 #
 
 .KEEP_STATE:
@@ -118,7 +118,8 @@ MAPFILE_SOURCES_COMMON = \
 	../../../common/mdb/mdb_ks.h \
 	../../../common/mdb/mdb_modapi.h \
 	../../../common/mdb/mdb_param.h \
-	../../../common/mdb/mdb_whatis.h
+	../../../common/mdb/mdb_whatis.h \
+	$(SRC)/uts/common/sys/list.h
 
 mdb_lex.o mdb_grammar.o := CCVERBOSE =
 

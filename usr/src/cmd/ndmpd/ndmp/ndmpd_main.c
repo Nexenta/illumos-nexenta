@@ -40,10 +40,11 @@
 
 #include <errno.h>
 #include <signal.h>
-#include <libgen.h>
 #include <libscf.h>
 #include <libintl.h>
 #include <sys/wait.h>
+#include <syslog.h>
+#include <syslog.h>
 #include <zone.h>
 #include <tsol/label.h>
 #include <dlfcn.h>
@@ -81,7 +82,7 @@ mod_init()
 		return (0);
 
 	if ((mod_plp = dlopen(plname, RTLD_LOCAL | RTLD_NOW)) == NULL) {
-		NDMP_LOG(LOG_ERR, "Error loading the plug-in %s: %s",
+		syslog(LOG_ERR, "Error loading the plug-in %s: %s",
 		    plname, dlerror());
 		return (0);
 	}
@@ -92,7 +93,7 @@ mod_init()
 		return (0);
 	}
 	if ((ndmp_pl = plugin_init(NDMP_PLUGIN_VERSION)) == NULL) {
-		NDMP_LOG(LOG_ERR, "Error loading the plug-in %s", plname);
+		syslog(LOG_ERR, "Error loading the plug-in %s", plname);
 		return (-1);
 	}
 	return (0);
@@ -203,7 +204,6 @@ main(int argc, char *argv[])
 	char c;
 	void *arg = NULL;
 	boolean_t run_in_foreground = B_FALSE;
-	boolean_t override_debug = B_FALSE;
 
 	/*
 	 * Check for existing ndmpd door server (make sure ndmpd is not already
@@ -237,16 +237,13 @@ main(int argc, char *argv[])
 	opterr = 0;
 	while ((c = getopt(argc, argv, "df")) != -1) {
 		switch (c) {
-		case 'd':
-			override_debug = B_TRUE;
-			break;
 		case 'f':
 			run_in_foreground = B_TRUE;
 			break;
 		default:
 			(void) fprintf(stderr, "%s: Invalid option -%c.\n",
 			    argv[0], optopt);
-			(void) fprintf(stderr, "Usage: %s [-df]\n", argv[0]);
+			(void) fprintf(stderr, "Usage: %s [-f]\n", argv[0]);
 			exit(SMF_EXIT_ERR_CONFIG);
 		}
 	}
@@ -271,14 +268,7 @@ main(int argc, char *argv[])
 
 	set_privileges();
 	(void) umask(077);
-	openlog(argv[0], LOG_PID | LOG_NDELAY, LOG_DAEMON);
-
-	/*
-	 * Open log file before we detach from terminal in case that open
-	 * fails and error message is printed to stderr.
-	 */
-	if (ndmp_log_open_file(run_in_foreground, override_debug) != 0)
-		exit(SMF_EXIT_ERR_FATAL);
+	openlog(argv[0], LOG_PID | LOG_NDELAY, LOG_LOCAL4);
 
 	if (!run_in_foreground)
 		daemonize_init();
@@ -286,24 +276,24 @@ main(int argc, char *argv[])
 	(void) mutex_init(&ndmpd_zfs_fd_lock, 0, NULL);
 
 	if (mod_init() != 0) {
-		NDMP_LOG(LOG_ERR, "Failed to load the plugin module.");
+		syslog(LOG_ERR, "Failed to load the plugin module.");
 		exit(SMF_EXIT_ERR_CONFIG);
 	}
 
 	/* libzfs init */
 	if ((zlibh = libzfs_init()) == NULL) {
-		NDMP_LOG(LOG_ERR, "Failed to initialize ZFS library.");
+		syslog(LOG_ERR, "Failed to initialize ZFS library.");
 		exit(SMF_EXIT_ERR_CONFIG);
 	}
 
 	/* initialize and start the door server */
 	if (ndmp_door_init()) {
-		NDMP_LOG(LOG_ERR, "Can not start ndmpd door server.");
+		syslog(LOG_ERR, "Can not start ndmpd door server.");
 		exit(SMF_EXIT_ERR_CONFIG);
 	}
 
 	if (tlm_init() == -1) {
-		NDMP_LOG(LOG_ERR, "Failed to initialize tape manager.");
+		syslog(LOG_ERR, "Failed to initialize tape manager.");
 		exit(SMF_EXIT_ERR_CONFIG);
 	}
 
@@ -327,7 +317,7 @@ main(int argc, char *argv[])
 		case SIGHUP:
 			/* Refresh SMF properties */
 			if (ndmpd_load_prop())
-				NDMP_LOG(LOG_ERR,
+				syslog(LOG_ERR,
 				    "Service properties initialization "
 				    "failed.");
 			break;
@@ -347,7 +337,7 @@ main(int argc, char *argv[])
 	libzfs_fini(zlibh);
 	mod_fini();
 	ndmp_door_fini();
-	ndmp_log_close_file();
+	closelog();
 
 	return (SMF_EXIT_OK);
 }

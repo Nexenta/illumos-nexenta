@@ -21,6 +21,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  *
  * iSCSI logical unit interfaces
  */
@@ -123,6 +124,11 @@ iscsi_lun_create(iscsi_sess_t *isp, uint16_t lun_num, uint8_t lun_addr_type,
 	ilp->lun_addr	    = addr;
 	ilp->lun_type	    = inq->inq_dtype & DTYPE_MASK;
 	ilp->lun_oid	    = oid_tmp;
+	/*
+	 * Setting refcnt to 1 is the first hold for the LUN structure.
+	 */
+	ilp->lun_refcnt	    = 1;
+	mutex_init(&ilp->lun_mutex, NULL, MUTEX_DRIVER, NULL);
 
 	bcopy(inq->inq_vid, ilp->lun_vid, sizeof (inq->inq_vid));
 	bcopy(inq->inq_pid, ilp->lun_pid, sizeof (inq->inq_pid));
@@ -189,6 +195,7 @@ iscsi_lun_create(iscsi_sess_t *isp, uint16_t lun_num, uint8_t lun_addr_type,
 			kmem_free(ilp->lun_guid, ilp->lun_guid_size);
 			ilp->lun_guid = NULL;
 		}
+		mutex_destroy(&ilp->lun_mutex);
 		kmem_free(ilp, sizeof (iscsi_lun_t));
 	} else {
 		ilp->lun_state &= ISCSI_LUN_STATE_CLEAR;
@@ -213,6 +220,49 @@ iscsi_lun_create(iscsi_sess_t *isp, uint16_t lun_num, uint8_t lun_addr_type,
 	rw_exit(&isp->sess_lun_list_rwlock);
 
 	return (rtn);
+}
+
+void
+iscsi_lun_hold(iscsi_lun_t *ilp)
+{
+	mutex_enter(&ilp->lun_mutex);
+	/*
+	 * By design lun_refcnt should never be zero when this routine
+	 * is called. When the LUN is created the refcnt is set to 1.
+	 * If iscsi_lun_rele is called and the refcnt goes to zero the
+	 * structure will be freed so this method shouldn't be called
+	 * afterwards.
+	 */
+	ASSERT(ilp->lun_refcnt > 0);
+	ilp->lun_refcnt++;
+	mutex_exit(&ilp->lun_mutex);
+}
+
+void
+iscsi_lun_rele(iscsi_lun_t *ilp)
+{
+	ASSERT(ilp != NULL);
+
+	mutex_enter(&ilp->lun_mutex);
+	ASSERT(ilp->lun_refcnt > 0);
+	if (--ilp->lun_refcnt == 0) {
+		iscsi_sess_t		*isp;
+
+		isp = ilp->lun_sess;
+		ASSERT(isp != NULL);
+
+		/* ---- release its memory ---- */
+		kmem_free(ilp->lun_addr, (strlen((char *)isp->sess_name) +
+		    ADDR_EXT_SIZE + 1));
+
+		if (ilp->lun_guid != NULL) {
+			kmem_free(ilp->lun_guid, ilp->lun_guid_size);
+		}
+		mutex_destroy(&ilp->lun_mutex);
+		kmem_free(ilp, sizeof (iscsi_lun_t));
+	} else {
+		mutex_exit(&ilp->lun_mutex);
+	}
 }
 
 /*
@@ -269,16 +319,7 @@ iscsi_lun_destroy(iscsi_hba_t *ihp, iscsi_lun_t *ilp)
 			}
 		}
 
-		/* release its memory */
-		kmem_free(ilp->lun_addr, (strlen((char *)isp->sess_name) +
-		    ADDR_EXT_SIZE + 1));
-		ilp->lun_addr = NULL;
-		if (ilp->lun_guid != NULL) {
-			kmem_free(ilp->lun_guid, ilp->lun_guid_size);
-			ilp->lun_guid = NULL;
-		}
-		kmem_free(ilp, sizeof (iscsi_lun_t));
-		ilp = NULL;
+		iscsi_lun_rele(ilp);
 	}
 
 	return (status);

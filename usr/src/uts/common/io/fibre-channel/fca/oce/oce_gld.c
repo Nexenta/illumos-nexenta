@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Source file containing the implementation of the driver entry points
@@ -28,17 +33,6 @@
 
 #include <oce_impl.h>
 #include <oce_ioctl.h>
-
-/* array of properties supported by this driver */
-char *oce_priv_props[] = {
-	"_tx_ring_size",
-	"_tx_bcopy_limit",
-	"_rx_ring_size",
-	"_rx_bcopy_limit",
-	NULL
-};
-
-extern int pow10[];
 
 /* ---[ static function declarations ]----------------------------------- */
 static int oce_set_priv_prop(struct oce_dev *dev, const char *name,
@@ -52,7 +46,7 @@ int
 oce_m_start(void *arg)
 {
 	struct oce_dev *dev = arg;
-	int ret;
+	int i;
 
 	mutex_enter(&dev->dev_lock);
 
@@ -65,51 +59,116 @@ oce_m_start(void *arg)
 		mutex_exit(&dev->dev_lock);
 		return (EIO);
 	}
-	ret = oce_start(dev);
-	if (ret != DDI_SUCCESS) {
+
+	/* allocate Tx buffers */
+	if (oce_init_tx(dev) != DDI_SUCCESS) {
+		mutex_exit(&dev->dev_lock);
+		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
+		    "Failed to init rings");
+		return (DDI_FAILURE);
+	}
+
+	if (oce_start(dev) != DDI_SUCCESS) {
+		oce_fini_tx(dev);
 		mutex_exit(&dev->dev_lock);
 		return (EIO);
 	}
-
 	dev->state |= STATE_MAC_STARTED;
+
+	/* initialise the group locks */
+	for (i = 0; i < dev->num_rx_groups; i++) {
+		mutex_init(&dev->rx_group[i].grp_lock, NULL, MUTEX_DRIVER,
+		    DDI_INTR_PRI(dev->intr_pri));
+	}
+
 	mutex_exit(&dev->dev_lock);
-
-
+	oce_enable_wd_timer(dev);
 	return (DDI_SUCCESS);
 }
 
+void
+oce_start_eqs(struct oce_dev *dev)
+{
+	int qidx = 0;
+
+	for (qidx = 0; qidx < dev->neqs; qidx++) {
+		mutex_enter(&dev->eq[qidx].lock);
+		oce_arm_eq(dev, dev->eq[qidx].eq_id, 0, B_TRUE, B_FALSE);
+		dev->eq[qidx].qstate = QSTARTED;
+		mutex_exit(&dev->eq[qidx].lock);
+	}
+}
+
+void
+oce_stop_eqs(struct oce_dev *dev)
+{
+	int qidx = 0;
+
+	for (qidx = 0; qidx < dev->neqs; qidx++) {
+		mutex_enter(&dev->eq[qidx].lock);
+		oce_arm_eq(dev, dev->eq[qidx].eq_id, 0, B_FALSE, B_FALSE);
+		dev->eq[qidx].qstate = QSTOPPED;
+		mutex_exit(&dev->eq[qidx].lock);
+	}
+}
 int
 oce_start(struct oce_dev *dev)
 {
 	int qidx = 0;
-	struct link_status link = {0};
 
-	/* get link status */
-	(void) oce_get_link_status(dev, &link);
+	/* disable the interrupts */
+	if (!LANCER_CHIP(dev))
+		oce_chip_di(dev);
 
-	dev->link_status  = (link.logical_link_status == NTWK_LOGICAL_LINK_UP) ?
-	    LINK_STATE_UP : LINK_STATE_DOWN;
+	/* set default flow control */
+	(void) oce_set_flow_control(dev, dev->flow_control, MBX_BOOTSTRAP);
+	(void) oce_set_promiscuous(dev, dev->promisc, MBX_BOOTSTRAP);
 
-	dev->link_speed = link.qos_link_speed ? link.qos_link_speed * 10 :
-	    pow10[link.mac_speed];
-
-	mac_link_update(dev->mac_handle, dev->link_status);
-
-	for (qidx = 0; qidx < dev->nwqs; qidx++) {
-		(void) oce_start_wq(dev->wq[qidx]);
+	if (oce_ei(dev) != DDI_SUCCESS) {
+		return (DDI_FAILURE);
 	}
-	for (qidx = 0; qidx < dev->nrqs; qidx++) {
-		(void) oce_start_rq(dev->rq[qidx]);
+
+	if (oce_create_queues(dev) != DDI_SUCCESS) {
+		goto cleanup_handler;
+	}
+
+	for (qidx = 0; qidx < dev->tx_rings; qidx++) {
+		mac_ring_intr_set(dev->default_tx_rings[qidx].tx->handle,
+		    dev->htable[dev->default_tx_rings[qidx].tx->cq->eq->idx]);
+		(void) oce_start_wq(dev->default_tx_rings[qidx].tx);
+	}
+
+	if (oce_create_mcc_queue(dev) != DDI_SUCCESS) {
+		goto delete_queues;
 	}
 	(void) oce_start_mq(dev->mq);
-	/* enable interrupts */
-	oce_ei(dev);
+
+	dev->state |= STATE_INTR_ENABLED;
+
+	if (!LANCER_CHIP(dev))
+		oce_chip_ei(dev);
+
 	/* arm the eqs */
-	for (qidx = 0; qidx < dev->neqs; qidx++) {
-		oce_arm_eq(dev, dev->eq[qidx]->eq_id, 0, B_TRUE, B_FALSE);
+	oce_start_eqs(dev);
+
+	/* get link status */
+	if (oce_get_link_status(dev, &dev->link_status, &dev->link_speed,
+	    (uint8_t *)&dev->link_duplex, 1, MBX_ASYNC_MQ) != DDI_SUCCESS) {
+		(void) oce_get_link_status(dev, &dev->link_status,
+		    &dev->link_speed, (uint8_t *)&dev->link_duplex,
+		    0, MBX_ASYNC_MQ);
 	}
-	/* TODO update state */
+	oce_log(dev, CE_NOTE, MOD_CONFIG, "link speed %d "
+	    "link status %d", dev->link_speed, dev->link_status);
+
+	mac_link_update(dev->mac_handle, dev->link_status);
 	return (DDI_SUCCESS);
+
+delete_queues:
+	oce_delete_queues(dev);
+cleanup_handler:
+	(void) oce_di(dev);
+	return (DDI_FAILURE);
 } /* oce_start */
 
 
@@ -117,43 +176,82 @@ void
 oce_m_stop(void *arg)
 {
 	struct oce_dev *dev = arg;
-
-	/* disable interrupts */
+	int i;
 
 	mutex_enter(&dev->dev_lock);
 	if (dev->suspended) {
 		mutex_exit(&dev->dev_lock);
 		return;
 	}
-	dev->state |= STATE_MAC_STOPPING;
+
+	dev->state &= ~STATE_MAC_STARTED;
 	oce_stop(dev);
-	dev->state &= ~(STATE_MAC_STOPPING | STATE_MAC_STARTED);
+
+	/* free Tx buffers */
+	oce_fini_tx(dev);
+
+	for (i = 0; i < dev->rx_rings; i++) {
+		while (dev->rq[i].pending > 0) {
+			oce_log(dev, CE_NOTE, MOD_CONFIG,
+			    "%d pending buffers on rq %p\n",
+			    dev->rq[i].pending, (void *)&dev->rq[i]);
+			drv_usecwait(10 * 1000);
+		}
+	}
+
+	/* destroy group locks */
+	for (i = 0; i < dev->num_rx_groups; i++) {
+		mutex_destroy(&dev->rx_group[i].grp_lock);
+	}
+
 	mutex_exit(&dev->dev_lock);
+	oce_disable_wd_timer(dev);
 }
+
+
 /* called with Tx/Rx comp locks held */
 void
 oce_stop(struct oce_dev *dev)
 {
 	int qidx;
+
+	dev->state |= STATE_MAC_STOPPING;
+
 	/* disable interrupts */
-	oce_di(dev);
+	(void) oce_di(dev);
+	oce_stop_eqs(dev);
+	dev->state &= (~STATE_INTR_ENABLED);
+
 	for (qidx = 0; qidx < dev->nwqs; qidx++) {
-		mutex_enter(&dev->wq[qidx]->tx_lock);
+		mac_ring_intr_set(dev->default_tx_rings[qidx].tx->handle, NULL);
+		mutex_enter(&dev->wq[qidx].tx_lock);
 	}
 	mutex_enter(&dev->mq->lock);
-	/* complete the pending Tx */
-	for (qidx = 0; qidx < dev->nwqs; qidx++)
-		oce_clean_wq(dev->wq[qidx]);
+
+	for (qidx = 0; qidx < dev->tx_rings; qidx++) {
+		/* stop and flush the Tx */
+		(void) oce_clean_wq(dev->default_tx_rings[qidx].tx);
+	}
+
+	/* Free the pending commands */
+	oce_clean_mq(dev->mq);
+
 	/* Release all the locks */
 	mutex_exit(&dev->mq->lock);
 	for (qidx = 0; qidx < dev->nwqs; qidx++)
-		mutex_exit(&dev->wq[qidx]->tx_lock);
+		mutex_exit(&dev->wq[qidx].tx_lock);
+
 	if (dev->link_status == LINK_STATE_UP) {
 		dev->link_status = LINK_STATE_UNKNOWN;
 		mac_link_update(dev->mac_handle, dev->link_status);
 	}
 
+	oce_delete_mcc_queue(dev);
+	oce_delete_queues(dev);
+
+	dev->state &= ~STATE_MAC_STOPPING;
 } /* oce_stop */
+
 
 int
 oce_m_multicast(void *arg, boolean_t add, const uint8_t *mca)
@@ -165,10 +263,6 @@ oce_m_multicast(void *arg, boolean_t add, const uint8_t *mca)
 	int ret;
 	int i;
 
-	/* check the address */
-	if ((mca[0] & 0x1) == 0) {
-		return (EINVAL);
-	}
 	/* Allocate the local array for holding the addresses temporarily */
 	bzero(&mca_hw_list, sizeof (&mca_hw_list));
 	mca_drv_list = &dev->multi_cast[0];
@@ -194,10 +288,10 @@ oce_m_multicast(void *arg, boolean_t add, const uint8_t *mca)
 				bcopy(mca_drv_list + i, hwlistp,
 				    ETHERADDRL);
 				hwlistp++;
-			} else {
-				new_mcnt--;
 			}
 		}
+		/* Decrement the count */
+		new_mcnt--;
 	}
 
 	if (dev->suspended) {
@@ -205,14 +299,14 @@ oce_m_multicast(void *arg, boolean_t add, const uint8_t *mca)
 	}
 	if (new_mcnt > OCE_MAX_MCA) {
 		ret = oce_set_multicast_table(dev, dev->if_id, &mca_hw_list[0],
-		    OCE_MAX_MCA, B_TRUE);
+		    OCE_MAX_MCA, B_TRUE, MBX_BOOTSTRAP);
 	} else {
 		ret = oce_set_multicast_table(dev, dev->if_id,
-		    &mca_hw_list[0], new_mcnt, B_FALSE);
+		    &mca_hw_list[0], new_mcnt, B_FALSE, MBX_BOOTSTRAP);
 	}
-		if (ret != 0) {
+	if (ret != 0) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "mcast %s fails", add ? "ADD" : "DEL");
+		    "mcast %s failed 0x%x", add ? "ADD" : "DEL", ret);
 		DEV_UNLOCK(dev);
 		return (EIO);
 	}
@@ -235,83 +329,6 @@ finish:
 	return (0);
 } /* oce_m_multicast */
 
-int
-oce_m_unicast(void *arg, const uint8_t *uca)
-{
-	struct oce_dev *dev = arg;
-	int ret;
-
-	DEV_LOCK(dev);
-	if (dev->suspended) {
-		bcopy(uca, dev->unicast_addr, ETHERADDRL);
-		dev->num_smac = 0;
-		DEV_UNLOCK(dev);
-		return (DDI_SUCCESS);
-	}
-
-	/* Delete previous one and add new one */
-	ret = oce_del_mac(dev, dev->if_id, &dev->pmac_id);
-	if (ret != DDI_SUCCESS) {
-		DEV_UNLOCK(dev);
-		return (EIO);
-	}
-	dev->num_smac = 0;
-	bzero(dev->unicast_addr, ETHERADDRL);
-
-	/* Set the New MAC addr earlier is no longer valid */
-	ret = oce_add_mac(dev, dev->if_id, uca, &dev->pmac_id);
-	if (ret != DDI_SUCCESS) {
-		DEV_UNLOCK(dev);
-		return (EIO);
-	}
-	bcopy(uca, dev->unicast_addr, ETHERADDRL);
-	dev->num_smac = 1;
-	DEV_UNLOCK(dev);
-	return (ret);
-} /* oce_m_unicast */
-
-/*
- * Hashing policy for load balancing over the set of TX rings
- * available to the driver.
- */
-mblk_t *
-oce_m_send(void *arg, mblk_t *mp)
-{
-	struct oce_dev *dev = arg;
-	mblk_t *nxt_pkt;
-	mblk_t *rmp = NULL;
-	struct oce_wq *wq;
-
-	DEV_LOCK(dev);
-	if (dev->suspended || !(dev->state & STATE_MAC_STARTED)) {
-		DEV_UNLOCK(dev);
-		freemsg(mp);
-		return (NULL);
-	}
-	DEV_UNLOCK(dev);
-	/*
-	 * Hash to pick a wq
-	 */
-	wq = oce_get_wq(dev, mp);
-
-	while (mp != NULL) {
-		/* Save the Pointer since mp will be freed in case of copy */
-		nxt_pkt = mp->b_next;
-		mp->b_next = NULL;
-		/* Hardcode wq since we have only one */
-		rmp = oce_send_packet(wq, mp);
-		if (rmp != NULL) {
-			/* reschedule Tx */
-			wq->resched = B_TRUE;
-			oce_arm_cq(dev, wq->cq->cq_id, 0, B_TRUE);
-			/* restore the chain */
-			rmp->b_next = nxt_pkt;
-			break;
-		}
-		mp  = nxt_pkt;
-	}
-	return (rmp);
-} /* oce_send */
 
 boolean_t
 oce_m_getcap(void *arg, mac_capab_t cap, void *data)
@@ -337,6 +354,11 @@ oce_m_getcap(void *arg, mac_capab_t cap, void *data)
 		}
 		break;
 	}
+	case MAC_CAPAB_RINGS:
+
+		ret = oce_fill_rings_capab(dev, (mac_capab_rings_t *)data);
+		break;
+
 	default:
 		ret = B_FALSE;
 		break;
@@ -365,6 +387,11 @@ oce_m_setprop(void *arg, const char *name, mac_prop_id_t id,
 
 		if (mtu != OCE_MIN_MTU && mtu != OCE_MAX_MTU) {
 			ret = EINVAL;
+			break;
+		}
+
+		if (dev->state & STATE_MAC_STARTED) {
+			ret =  EBUSY;
 			break;
 		}
 
@@ -414,10 +441,10 @@ oce_m_setprop(void *arg, const char *name, mac_prop_id_t id,
 			break;
 		}
 		/* call to set flow control */
-		ret = oce_set_flow_control(dev, fc);
+		ret = oce_set_flow_control(dev, fc, MBX_ASYNC_MQ);
 		/* store the new fc setting on success */
 		if (ret == 0) {
-		dev->flow_control = fc;
+			dev->flow_control = fc;
 		}
 		break;
 	}
@@ -460,22 +487,9 @@ oce_m_getprop(void *arg, const char *name, mac_prop_id_t id,
 	}
 
 	case MAC_PROP_SPEED: {
-		uint64_t *speed = (uint64_t *)val;
-		struct link_status link = {0};
-
-		ASSERT(size >= sizeof (uint64_t));
-		*speed = 0;
-
-		if (dev->state & STATE_MAC_STARTED) {
-			if (dev->link_speed < 0) {
-				(void) oce_get_link_status(dev, &link);
-				dev->link_speed = link.qos_link_speed ?
-				    link.qos_link_speed * 10 :
-				    pow10[link.mac_speed];
-			}
-
-			*speed = dev->link_speed * 1000000ull;
-		}
+		uint64_t speed;
+		speed = dev->link_speed * 1000000ull;
+		bcopy(&speed, val, sizeof (speed));
 		break;
 	}
 
@@ -545,18 +559,41 @@ oce_m_propinfo(void *arg, const char *name, mac_prop_id_t pr_num,
 	case MAC_PROP_PRIVATE: {
 		char valstr[64];
 		int value;
+		uint_t perm = MAC_PROP_PERM_READ;
 
-		if (strcmp(name, "_tx_ring_size") == 0) {
+		bzero(valstr, sizeof (valstr));
+		if (strcmp(name, "_tx_rings") == 0) {
+			value = OCE_DEFAULT_WQS;
+		} else if (strcmp(name, "_tx_ring_size") == 0) {
 			value = OCE_DEFAULT_TX_RING_SIZE;
+			perm = MAC_PROP_PERM_RW;
+		} else if (strcmp(name, "_tx_bcopy_limit") == 0) {
+			value = OCE_DEFAULT_TX_BCOPY_LIMIT;
+			perm = MAC_PROP_PERM_RW;
+		} else if (strcmp(name, "_tx_reclaim_threshold") == 0) {
+			value = OCE_DEFAULT_TX_RECLAIM_THRESHOLD;
+			perm = MAC_PROP_PERM_RW;
+		} else if (strcmp(name, "_rx_rings") == 0) {
+			value = OCE_DEFAULT_RQS;
+		} else if (strcmp(name, "_rx_rings_per_group") == 0) {
+			value = OCE_DEF_RING_PER_GROUP;
 		} else if (strcmp(name, "_rx_ring_size") == 0) {
 			value = OCE_DEFAULT_RX_RING_SIZE;
-		} else {
+		} else if (strcmp(name, "_rx_bcopy_limit") == 0) {
+			value = OCE_DEFAULT_RX_BCOPY_LIMIT;
+			perm = MAC_PROP_PERM_RW;
+		} else if (strcmp(name, "_rx_pkts_per_intr") == 0) {
+			value = OCE_DEFAULT_RX_PKTS_PER_INTR;
+			perm = MAC_PROP_PERM_RW;
+		} else if (strcmp(name, "_log_level") == 0) {
+			value = OCE_DEFAULT_LOG_SETTINGS;
+			perm = MAC_PROP_PERM_RW;
+		} else
 			return;
-		}
 
 		(void) snprintf(valstr, sizeof (valstr), "%d", value);
 		mac_prop_info_set_default_str(prh, valstr);
-		mac_prop_info_set_perm(prh, MAC_PROP_PERM_READ);
+		mac_prop_info_set_perm(prh, perm);
 		break;
 	}
 	}
@@ -589,7 +626,7 @@ oce_m_ioctl(void *arg, queue_t *wq, mblk_t *mp)
 	switch (cmd) {
 
 	case OCE_ISSUE_MBOX: {
-		ret = oce_issue_mbox(dev, wq, mp, &payload_length);
+		ret = oce_issue_mbox_passthru(dev, wq, mp, &payload_length);
 		miocack(wq, mp, payload_length, ret);
 		break;
 	}
@@ -659,9 +696,23 @@ oce_m_promiscuous(void *arg, boolean_t enable)
 		return (ret);
 	}
 
-	ret = oce_set_promiscuous(dev, enable);
-	if (ret == DDI_SUCCESS)
+	ret = oce_set_promiscuous(dev, enable, MBX_ASYNC_MQ);
+	if (ret == DDI_SUCCESS) {
 		dev->promisc = enable;
+		if (!(enable)) {
+			struct ether_addr  *mca_drv_list;
+			mca_drv_list = &dev->multi_cast[0];
+			if (dev->num_mca > OCE_MAX_MCA) {
+				ret = oce_set_multicast_table(dev, dev->if_id,
+				    &mca_drv_list[0], OCE_MAX_MCA, B_TRUE,
+				    MBX_ASYNC_MQ);
+			} else {
+				ret = oce_set_multicast_table(dev, dev->if_id,
+				    &mca_drv_list[0], dev->num_mca, B_FALSE,
+				    MBX_ASYNC_MQ);
+			}
+		}
+	}
 	DEV_UNLOCK(dev);
 	return (ret);
 } /* oce_m_promiscuous */
@@ -681,35 +732,56 @@ static int
 oce_set_priv_prop(struct oce_dev *dev, const char *name,
     uint_t size, const void *val)
 {
-	int ret = ENOTSUP;
+	int ret = EINVAL;
 	long result;
 
 	_NOTE(ARGUNUSED(size));
 
 	if (NULL == val) {
-		ret = EINVAL;
-		return (ret);
+		return (EINVAL);
 	}
-
-	if (strcmp(name, "_tx_bcopy_limit") == 0) {
-		(void) ddi_strtol(val, (char **)NULL, 0, &result);
-		if (result <= OCE_WQ_BUF_SIZE) {
+	(void) ddi_strtol(val, (char **)NULL, 0, &result);
+	if (strcmp(name, "_tx_ring_size") == 0) {
+		if (result <= SIZE_2K) {
+			if (dev->tx_ring_size != result) {
+				dev->tx_ring_size = (uint32_t)result;
+			}
+			ret = 0;
+		}
+	} else if (strcmp(name, "_tx_bcopy_limit") == 0) {
+		if (result <= SIZE_2K) {
 			if (result != dev->tx_bcopy_limit)
 				dev->tx_bcopy_limit = (uint32_t)result;
 			ret = 0;
-		} else {
-			ret = EINVAL;
 		}
-	}
-	if (strcmp(name, "_rx_bcopy_limit") == 0) {
-		(void) ddi_strtol(val, (char **)NULL, 0, &result);
-		if (result <= OCE_RQ_BUF_SIZE) {
-			if (result != dev->rx_bcopy_limit)
-				dev->rx_bcopy_limit = (uint32_t)result;
+	} else if (strcmp(name, "_tx_reclaim_threshold") == 0) {
+		if (result <= dev->tx_ring_size) {
+			if (dev->tx_reclaim_threshold != result) {
+				dev->tx_reclaim_threshold = (uint32_t)result;
+			}
 			ret = 0;
-		} else {
-			ret = EINVAL;
 		}
+	} else if (strcmp(name, "_rx_bcopy_limit") == 0) {
+		if (result <= dev->mtu) {
+			if (dev->rx_bcopy_limit != result) {
+				dev->rx_bcopy_limit = (uint32_t)result;
+			}
+			ret = 0;
+		}
+	} else if (strcmp(name, "_rx_pkts_per_intr") == 0) {
+		if (result <= dev->rx_ring_size) {
+			if (dev->rx_pkt_per_intr != result) {
+				dev->rx_pkt_per_intr = (uint32_t)result;
+			}
+			ret = 0;
+		}
+	} else if (strcmp(name, "_log_level") == 0) {
+		if (result <= OCE_MAX_LOG_SETTINGS) {
+			/* derive from the loglevel */
+			dev->severity = (uint16_t)(result & 0xffff);
+			dev->mod_mask = (uint16_t)(result >> 16);
+		}
+		ret = 0;
 	}
 
 	return (ret);
@@ -731,14 +803,26 @@ oce_get_priv_prop(struct oce_dev *dev, const char *name,
 {
 	int value;
 
-	if (strcmp(name, "_tx_ring_size") == 0) {
+	if (strcmp(name, "_tx_rings") == 0) {
+		value = dev->tx_rings;
+	} else if (strcmp(name, "_tx_ring_size") == 0) {
 		value = dev->tx_ring_size;
 	} else if (strcmp(name, "_tx_bcopy_limit") == 0) {
 		value = dev->tx_bcopy_limit;
+	} else if (strcmp(name, "_tx_reclaim_threshold") == 0) {
+		value = dev->tx_reclaim_threshold;
+	} else if (strcmp(name, "_rx_rings") == 0) {
+			value = dev->rx_rings;
+	} else if (strcmp(name, "_rx_rings_per_group") == 0) {
+			value = dev->rx_rings_per_group;
 	} else if (strcmp(name, "_rx_ring_size") == 0) {
 		value = dev->rx_ring_size;
 	} else if (strcmp(name, "_rx_bcopy_limit") == 0) {
 		value = dev->rx_bcopy_limit;
+	} else if (strcmp(name, "_rx_pkts_per_intr") == 0) {
+		value = dev->rx_pkt_per_intr;
+	} else if (strcmp(name, "_log_level") == 0) {
+		value = (dev->mod_mask << 16UL) | dev->severity;
 	} else {
 		return (ENOTSUP);
 	}

@@ -360,8 +360,6 @@ todpc_rtcget(unsigned char *buf)
 
 	outb(RTC_ADDR, RTC_D);		/* check if clock valid */
 	reg = inb(RTC_DATA);
-	if ((reg & RTC_VRT) == 0)
-		return (ENXIO);
 
 checkuip:
 	if (retries-- < 0)

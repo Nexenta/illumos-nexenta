@@ -732,7 +732,7 @@ fzap_checksize(uint64_t integer_size, uint64_t num_integers)
 	}
 
 	if (integer_size * num_integers > ZAP_MAXVALUELEN)
-		return (E2BIG);
+		return (SET_ERROR(E2BIG));
 
 	return (0);
 }

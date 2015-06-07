@@ -19,11 +19,12 @@
 # CDDL HEADER END
 #
 
-# Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+#
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright (c) 2012, Joyent, Inc. All rights reserved.
 # Copyright (c) 2013 Gary Mills
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 
 include ../Makefile.master
@@ -146,6 +147,7 @@ SUBDIRS += \
 	krb5	.WAIT	\
 	libsmbfs	\
 	libfcoe		\
+	libaoe		\
 	libsrpt		\
 	libstmf		\
 	libstmfproxy	\
@@ -153,7 +155,6 @@ SUBDIRS += \
 	libunistat	\
 	libdscfg	\
 	librdc		\
-	libinstzones	\
 	libpkg		\
 	libpcidb	\
 	libm1		\
@@ -203,6 +204,7 @@ SUBDIRS += \
 	libxcurses2	\
 	libbrand	.WAIT   \
 	libzonecfg	\
+	libinstzones	\
 	libzoneinfo	\
 	libzonestat	\
 	libtsnet	\
@@ -247,6 +249,7 @@ SUBDIRS += \
 	libshare	\
 	libsqlite	\
 	libidmap	\
+	libads		\
 	libadutils	\
 	libipmi		\
 	libexacct/demo	\
@@ -375,6 +378,7 @@ i386_MSGSUBDIRS= libfdisk
 
 HDRSUBDIRS=		\
 	auditd_plugins	\
+	libads		\
 	libast		\
 	libbrand	\
 	libbsm		\
@@ -454,6 +458,7 @@ HDRSUBDIRS=		\
 	libsocket	\
 	libsqlite	\
 	libfcoe		\
+	libaoe		\
 	libsrpt		\
 	libstmf		\
 	libstmfproxy	\
@@ -588,7 +593,7 @@ libfstyp:	libnvpair
 libelfsign:	libcryptoutil libkmf
 libidmap:	libadutils libldap5 libavl libsldap libuutil
 libipadm:	libnsl libinetutil libsocket libdlpi libnvpair libdhcpagent \
-		libdladm libsecdb
+		libdladm libsecdb libcmdutils
 libiscsit:	libc libnvpair libstmf libuuid libnsl
 libkmf:		libcryptoutil pkcs11
 libm:		libc
@@ -644,13 +649,14 @@ libzfs_core:	libnvpair
 libzfs_jni:	libdiskmgt libnvpair libzfs
 libzpool:	libavl libumem libnvpair libcmdutils
 libsec:		libavl libidmap
-brand:		libc libsocket
+brand:		libzonecfg libmapmalloc
 libshare:	libscf libzfs libuuid libfsmgt libsecdb libumem libsmbfs
 libexacct/demo:	libexacct libproject libsocket libnsl
 libtsalarm:	libpcp
 smbsrv:		libsocket libnsl libmd libxnet libpthread librt \
 		libshare libidmap pkcs11 libsqlite libcryptoutil \
-		libreparse libcmdutils libfakekernel
+		libreparse libcmdutils libresolv libsmbfs libuuid \
+		libfakekernel libads
 libv12n:	libds libuuid
 libvrrpadm:	libsocket libdladm libscf
 libvscan:	libscf

@@ -12,11 +12,12 @@
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 
 include $(SRC)/Makefile.master
 
-SRCS = delphix.run openindiana.run omnios.run
+SRCS = delphix.run openindiana.run omnios.run nexenta.run
 
 ROOTOPTPKG = $(ROOT)/opt/zfs-tests
 RUNFILES = $(ROOTOPTPKG)/runfiles

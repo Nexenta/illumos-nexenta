@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /* Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T */
 /* All Rights Reserved */
@@ -771,16 +774,9 @@ xdr_rddirargs(XDR *xdrs, struct nfsrddirargs *rda)
 bool_t
 xdr_putrddirres(XDR *xdrs, struct nfsrddirres *rd)
 {
-	struct dirent64 *dp;
-	char *name;
-	int size;
-	uint_t namlen;
 	bool_t true = TRUE;
 	bool_t false = FALSE;
-	int entrysz;
-	int tofit;
-	int bufsize;
-	uint32_t ino, off;
+	struct nfsentry *entry;
 
 	if (xdrs->x_op != XDR_ENCODE)
 		return (FALSE);
@@ -789,34 +785,13 @@ xdr_putrddirres(XDR *xdrs, struct nfsrddirres *rd)
 	if (rd->rd_status != NFS_OK)
 		return (TRUE);
 
-	bufsize = 1 * BYTES_PER_XDR_UNIT;
-	for (size = rd->rd_size, dp = rd->rd_entries;
-	    size > 0;
-	    size -= dp->d_reclen, dp = nextdp(dp)) {
-		if (dp->d_reclen == 0 /* || DIRSIZ(dp) > dp->d_reclen */)
-			return (FALSE);
-		if (dp->d_ino == 0)
-			continue;
-		ino = (uint32_t)dp->d_ino; /* for LP64 we clip the bits */
-		if (dp->d_ino != (ino64_t)ino)	/* and they better be zeros */
-			return (FALSE);
-		off = (uint32_t)dp->d_off;
-		name = dp->d_name;
-		namlen = (uint_t)strlen(name);
-		entrysz = (1 + 1 + 1 + 1) * BYTES_PER_XDR_UNIT +
-		    roundup(namlen, BYTES_PER_XDR_UNIT);
-		tofit = entrysz + 2 * BYTES_PER_XDR_UNIT;
-		if (bufsize + tofit > rd->rd_bufsize) {
-			rd->rd_eof = FALSE;
-			break;
-		}
+	for (entry = rd->rd_entries; entry != NULL; entry = entry->nextentry) {
 		if (!xdr_bool(xdrs, &true) ||
-		    !xdr_u_int(xdrs, &ino) ||
-		    !xdr_bytes(xdrs, &name, &namlen, NFS_MAXNAMLEN) ||
-		    !xdr_u_int(xdrs, &off)) {
+		    !xdr_u_int(xdrs, &entry->fileid) ||
+		    !xdr_string(xdrs, &entry->name, NFS_MAXNAMLEN) ||
+		    !xdr_u_int(xdrs, &entry->cookie)) {
 			return (FALSE);
 		}
-		bufsize += entrysz;
 	}
 	if (!xdr_bool(xdrs, &false))
 		return (FALSE);
@@ -847,7 +822,7 @@ xdr_getrddirres(XDR *xdrs, struct nfsrddirres *rd)
 		return (TRUE);
 
 	size = rd->rd_size;
-	dp = rd->rd_entries;
+	dp = rd->rd_dirents;
 	offset = rd->rd_offset;
 	for (;;) {
 		if (!xdr_bool(xdrs, &valid))
@@ -877,7 +852,7 @@ xdr_getrddirres(XDR *xdrs, struct nfsrddirres *rd)
 	if (!xdr_bool(xdrs, &rd->rd_eof))
 		return (FALSE);
 bufovflw:
-	rd->rd_size = (uint32_t)((char *)dp - (char *)(rd->rd_entries));
+	rd->rd_size = (uint32_t)((char *)dp - (char *)(rd->rd_dirents));
 	rd->rd_offset = offset;
 	return (TRUE);
 }

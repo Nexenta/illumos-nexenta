@@ -442,7 +442,7 @@ zio_inject_fault(char *name, int flags, int *id, zinject_record_t *record)
 		 * We must use FALSE to ensure arc_flush returns, since
 		 * we're not preventing concurrent ARC insertions.
 		 */
-		arc_flush(NULL, FALSE);
+		arc_flush(NULL, B_FALSE);
 
 	return (0);
 }

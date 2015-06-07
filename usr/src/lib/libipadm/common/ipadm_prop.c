@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright (c) 2014 Nexenta Systems, Inc. All rights reserved
  */
 
 /*
@@ -144,6 +145,11 @@ static ipadm_prop_desc_t ipadm_ip_prop_table[] = {
 	{ "hostmodel", NULL, IPADMPROP_CLASS_MODULE, MOD_PROTO_IPV4, 0,
 	    i_ipadm_set_hostmodel, i_ipadm_get_hostmodel,
 	    i_ipadm_get_hostmodel },
+
+	{ "standby", NULL, IPADMPROP_CLASS_IF, MOD_PROTO_IP, 0,
+	    i_ipadm_set_ifprop_flags, i_ipadm_get_onoff,
+	    i_ipadm_get_ifprop_flags },
+
 
 	{ NULL, NULL, 0, 0, 0, NULL, NULL, NULL }
 };
@@ -595,7 +601,8 @@ i_ipadm_set_ifprop_flags(ipadm_handle_t iph, const void *arg,
 		    strcmp(pdp->ipd_name, "arp") == 0 ||
 		    strcmp(pdp->ipd_name, "nud") == 0) {
 			pval = IPADM_ONSTR;
-		} else if (strcmp(pdp->ipd_name, "forwarding") == 0) {
+		} else if (strcmp(pdp->ipd_name, "forwarding") == 0 ||
+		    strcmp(pdp->ipd_name, "standby") == 0) {
 			pval = IPADM_OFFSTR;
 		} else {
 			return (IPADM_PROP_UNKNOWN);
@@ -629,6 +636,11 @@ i_ipadm_set_ifprop_flags(ipadm_handle_t iph, const void *arg,
 			on_flags = IFF_ROUTER;
 		else
 			off_flags = IFF_ROUTER;
+	} else if (strcmp(pdp->ipd_name, "standby") == 0) {
+		if (on)
+			on_flags = IFF_STANDBY;
+		else
+			off_flags = IFF_STANDBY;
 	}
 
 	if (on_flags || off_flags)  {
@@ -997,7 +1009,8 @@ i_ipadm_get_ifprop_flags(ipadm_handle_t iph, const void *arg,
 		    strcmp(pdp->ipd_name, "arp") == 0 ||
 		    strcmp(pdp->ipd_name, "nud") == 0) {
 			val = IPADM_ONSTR;
-		} else if (strcmp(pdp->ipd_name, "forwarding") == 0) {
+		} else if (strcmp(pdp->ipd_name, "forwarding") == 0 ||
+		    strcmp(pdp->ipd_name, "standby") == 0) {
 			val = IPADM_OFFSTR;
 		} else {
 			return (IPADM_PROP_UNKNOWN);
@@ -1022,6 +1035,9 @@ i_ipadm_get_ifprop_flags(ipadm_handle_t iph, const void *arg,
 				val = IPADM_ONSTR;
 		} else if (strcmp(pdp->ipd_name, "nud") == 0) {
 			if (!(intf_flags & IFF_NONUD))
+				val = IPADM_ONSTR;
+		} else if (strcmp(pdp->ipd_name, "standby") == 0) {
+			if (!(intf_flags & IFF_STANDBY))
 				val = IPADM_ONSTR;
 		}
 		nbytes = snprintf(buf, *bufsize, "%s", val);
@@ -1698,8 +1714,7 @@ i_ipadm_persist_propval(ipadm_handle_t iph, ipadm_prop_desc_t *pdp,
  * This is called from ipadm_set_ifprop() to validate the set operation.
  * It does the following steps:
  * 1. Validates the interface name.
- * 2. Fails if it is an IPMP meta-interface or an underlying interface.
- * 3. In case of a persistent operation, verifies that the
+ * 2. In case of a persistent operation, verifies that the
  *	interface is persistent.
  */
 static ipadm_status_t
@@ -1716,12 +1731,6 @@ i_ipadm_validate_if(ipadm_handle_t iph, const char *ifname,
 		return (IPADM_INVALID_ARG);
 
 	af = (proto == MOD_PROTO_IPV6 ? AF_INET6 : AF_INET);
-	/*
-	 * Setting properties on an IPMP meta-interface or underlying
-	 * interface is not supported.
-	 */
-	if (i_ipadm_is_ipmp(iph, ifname) || i_ipadm_is_under_ipmp(iph, ifname))
-		return (IPADM_NOTSUP);
 
 	/* Check if interface exists in the persistent configuration. */
 	status = i_ipadm_if_pexists(iph, ifname, af, &p_exists);

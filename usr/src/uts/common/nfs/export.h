@@ -187,6 +187,7 @@ struct exportdata32 {
 #define	EX_CHARMAP	0x1000	/* NFS may need a character set conversion */
 #define	EX_NOACLFAB	0x2000	/* If set, NFSv2 and v3 servers doesn't */
 				/* fabricate ACL for VOP_GETSECATTR OTW call */
+#define	EX_NOHIDE	0x4000	/* traversable from exported parent */
 
 #ifdef	_KERNEL
 

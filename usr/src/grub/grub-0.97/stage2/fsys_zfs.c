@@ -1049,6 +1049,9 @@ static const char *spa_feature_names[] = {
 	"com.delphix:extensible_dataset",
 	"com.delphix:embedded_data",
 	"org.open-zfs:large_blocks",
+	"com.nexenta:meta_devices",
+	"com.nexenta:vdev_attributes",
+	"com.nexenta:class_of_storages",
 	NULL
 };
 

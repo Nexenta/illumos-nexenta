@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Source file containing the implementation of the Transmit
@@ -33,53 +38,17 @@ static int oce_map_wqe(struct oce_wq *wq, oce_wqe_desc_t *wqed,
     mblk_t *mp, uint32_t pkt_len);
 static int oce_bcopy_wqe(struct oce_wq *wq, oce_wqe_desc_t *wqed, mblk_t *mp,
     uint32_t pkt_len);
-static void oce_wqb_dtor(struct oce_wq *wq, oce_wq_bdesc_t *wqbd);
-static int oce_wqb_ctor(oce_wq_bdesc_t *wqbd, struct oce_wq *wq,
-    size_t size, int flags);
 static inline oce_wq_bdesc_t *oce_wqb_alloc(struct oce_wq *wq);
 static void oce_wqb_free(struct oce_wq *wq, oce_wq_bdesc_t *wqbd);
 
 static void oce_wqmd_free(struct oce_wq *wq, oce_wq_mdesc_t *wqmd);
 static void oce_wqm_free(struct oce_wq *wq, oce_wq_mdesc_t *wqmd);
-static oce_wq_mdesc_t *oce_wqm_alloc(struct oce_wq *wq);
+static inline oce_wq_mdesc_t *oce_wqm_alloc(struct oce_wq *wq);
 static int oce_wqm_ctor(oce_wq_mdesc_t *wqmd, struct oce_wq *wq);
 static void oce_wqm_dtor(struct oce_wq *wq, oce_wq_mdesc_t *wqmd);
 static void oce_fill_ring_descs(struct oce_wq *wq, oce_wqe_desc_t *wqed);
-static void oce_remove_vtag(mblk_t *mp);
-static void oce_insert_vtag(mblk_t  *mp, uint16_t vlan_tag);
 static inline int oce_process_tx_compl(struct oce_wq *wq, boolean_t rearm);
 
-
-static ddi_dma_attr_t tx_map_dma_attr = {
-	DMA_ATTR_V0,		/* version number */
-	0x0000000000000000ull,	/* low address */
-	0xFFFFFFFFFFFFFFFFull,	/* high address */
-	0x0000000000010000ull,	/* dma counter max */
-	OCE_TXMAP_ALIGN,	/* alignment */
-	0x7FF,			/* burst sizes */
-	0x00000001,		/* minimum transfer size */
-	0x00000000FFFFFFFFull,	/* maximum transfer size */
-	0xFFFFFFFFFFFFFFFFull,	/* maximum segment size */
-	OCE_MAX_TXDMA_COOKIES,	/* scatter/gather list length */
-	0x00000001,		/* granularity */
-	DDI_DMA_FLAGERR		/* dma_attr_flags */
-};
-
-
-ddi_dma_attr_t oce_tx_dma_buf_attr = {
-	DMA_ATTR_V0,		/* version number */
-	0x0000000000000000ull,	/* low address */
-	0xFFFFFFFFFFFFFFFFull,	/* high address */
-	0x00000000FFFFFFFFull,	/* dma counter max */
-	OCE_DMA_ALIGNMENT,	/* alignment */
-	0x000007FF,		/* burst sizes */
-	0x00000001,		/* minimum transfer size */
-	0x00000000FFFFFFFFull,	/* maximum transfer size */
-	0xFFFFFFFFFFFFFFFFull,	/* maximum segment size */
-	1,			/* scatter/gather list length */
-	0x00000001,		/* granularity */
-	DDI_DMA_FLAGERR		/* dma_attr_flags */
-};
 
 /*
  * WQ map handle destructor
@@ -113,10 +82,27 @@ oce_wqm_ctor(oce_wq_mdesc_t *wqmd, struct oce_wq *wq)
 {
 	struct oce_dev *dev;
 	int ret;
+	ddi_dma_attr_t tx_map_attr = {0};
 
 	dev = wq->parent;
+	/* Populate the DMA attributes structure */
+	tx_map_attr.dma_attr_version	= DMA_ATTR_V0;
+	tx_map_attr.dma_attr_addr_lo	= 0x0000000000000000ull;
+	tx_map_attr.dma_attr_addr_hi	= 0xFFFFFFFFFFFFFFFFull;
+	tx_map_attr.dma_attr_count_max	= 0x00000000FFFFFFFFull;
+	tx_map_attr.dma_attr_align		= OCE_TXMAP_ALIGN;
+	tx_map_attr.dma_attr_burstsizes = 0x000007FF;
+	tx_map_attr.dma_attr_minxfer	= 0x00000001;
+	tx_map_attr.dma_attr_maxxfer	= 0x00000000FFFFFFFFull;
+	tx_map_attr.dma_attr_seg		= 0xFFFFFFFFFFFFFFFFull;
+	tx_map_attr.dma_attr_sgllen		= OCE_MAX_TXDMA_COOKIES;
+	tx_map_attr.dma_attr_granular	= 0x00000001;
+
+	if (DDI_FM_DMA_ERR_CAP(dev->fm_caps)) {
+		tx_map_attr.dma_attr_flags |= DDI_DMA_FLAGERR;
+	}
 	/* Allocate DMA handle */
-	ret = ddi_dma_alloc_handle(dev->dip, &tx_map_dma_attr,
+	ret = ddi_dma_alloc_handle(dev->dip, &tx_map_attr,
 	    DDI_DMA_DONTWAIT, NULL, &wqmd->dma_handle);
 
 	return (ret);
@@ -143,17 +129,29 @@ oce_wqm_cache_create(struct oce_wq *wq)
 		return (DDI_FAILURE);
 	}
 
-	/* Create the free buffer list */
-	OCE_LIST_CREATE(&wq->wq_mdesc_list, DDI_INTR_PRI(dev->intr_pri));
+	wq->wqm_freelist =
+	    kmem_zalloc(wq->cfg.nhdl * sizeof (oce_wq_mdesc_t *), KM_NOSLEEP);
+	if (wq->wqm_freelist == NULL) {
+		kmem_free(wq->wq_mdesc_array, size);
+		return (DDI_FAILURE);
+	}
 
 	for (cnt = 0; cnt < wq->cfg.nhdl; cnt++) {
 		ret = oce_wqm_ctor(&wq->wq_mdesc_array[cnt], wq);
 		if (ret != DDI_SUCCESS) {
 			goto wqm_fail;
 		}
-		OCE_LIST_INSERT_TAIL(&wq->wq_mdesc_list,
-		    &wq->wq_mdesc_array[cnt]);
+		wq->wqm_freelist[cnt] = &wq->wq_mdesc_array[cnt];
+		atomic_inc_32(&wq->wqm_free);
 	}
+
+	wq->wqmd_next_free = 0;
+	wq->wqmd_rc_head = 0;
+
+	mutex_init(&wq->wqm_alloc_lock, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(dev->intr_pri));
+	mutex_init(&wq->wqm_free_lock, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(dev->intr_pri));
 	return (DDI_SUCCESS);
 
 wqm_fail:
@@ -173,14 +171,16 @@ oce_wqm_cache_destroy(struct oce_wq *wq)
 {
 	oce_wq_mdesc_t *wqmd;
 
-	while ((wqmd = OCE_LIST_REM_HEAD(&wq->wq_mdesc_list)) != NULL) {
+	while ((wqmd = oce_wqm_alloc(wq)) != NULL) {
 		oce_wqm_dtor(wq, wqmd);
 	}
 
+	mutex_destroy(&wq->wqm_alloc_lock);
+	mutex_destroy(&wq->wqm_free_lock);
+	kmem_free(wq->wqm_freelist,
+	    wq->cfg.nhdl * sizeof (oce_wq_mdesc_t *));
 	kmem_free(wq->wq_mdesc_array,
 	    wq->cfg.nhdl * sizeof (oce_wq_mdesc_t));
-
-	OCE_LIST_DESTROY(&wq->wq_mdesc_list);
 }
 
 /*
@@ -195,8 +195,16 @@ int
 oce_wqb_cache_create(struct oce_wq *wq, size_t buf_size)
 {
 	struct oce_dev *dev = wq->parent;
+	oce_wq_bdesc_t *wqbd;
+	uint64_t paddr;
+	caddr_t  vaddr;
 	int size;
-	int cnt;
+	int bufs_per_cookie = 0;
+	int tidx = 0;
+	int ncookies = 0;
+	int i = 0;
+	ddi_dma_cookie_t cookie;
+	ddi_dma_attr_t tx_buf_attr = {0};
 	int ret;
 
 	size = wq->cfg.nbufs * sizeof (oce_wq_bdesc_t);
@@ -205,23 +213,89 @@ oce_wqb_cache_create(struct oce_wq *wq, size_t buf_size)
 		return (DDI_FAILURE);
 	}
 
-	/* Create the free buffer list */
-	OCE_LIST_CREATE(&wq->wq_buf_list, DDI_INTR_PRI(dev->intr_pri));
-
-	for (cnt = 0; cnt <  wq->cfg.nbufs; cnt++) {
-		ret = oce_wqb_ctor(&wq->wq_bdesc_array[cnt],
-		    wq, buf_size, DDI_DMA_STREAMING);
-		if (ret != DDI_SUCCESS) {
-			goto wqb_fail;
-		}
-		OCE_LIST_INSERT_TAIL(&wq->wq_buf_list,
-		    &wq->wq_bdesc_array[cnt]);
+	wq->wqb_freelist =
+	    kmem_zalloc(wq->cfg.nbufs * sizeof (oce_wq_bdesc_t *), KM_NOSLEEP);
+	if (wq->wqb_freelist == NULL) {
+		kmem_free(wq->wq_bdesc_array,
+		    wq->cfg.nbufs * sizeof (oce_wq_bdesc_t));
+		return (DDI_FAILURE);
 	}
-	return (DDI_SUCCESS);
 
-wqb_fail:
-	oce_wqb_cache_destroy(wq);
-	return (DDI_FAILURE);
+	size = wq->cfg.nbufs * wq->cfg.buf_size;
+
+	/* Populate dma attributes */
+	tx_buf_attr.dma_attr_version	= DMA_ATTR_V0;
+	tx_buf_attr.dma_attr_addr_lo	= 0x0000000000000000ull;
+	tx_buf_attr.dma_attr_addr_hi	= 0xFFFFFFFFFFFFFFFFull;
+	tx_buf_attr.dma_attr_count_max	= 0x00000000FFFFFFFFull;
+	tx_buf_attr.dma_attr_align	= OCE_DMA_ALIGNMENT;
+	tx_buf_attr.dma_attr_burstsizes	= 0x000007FF;
+	tx_buf_attr.dma_attr_minxfer	= 0x00000001;
+	tx_buf_attr.dma_attr_maxxfer	= 0x00000000FFFFFFFFull;
+	tx_buf_attr.dma_attr_seg	= 0xFFFFFFFFFFFFFFFFull;
+	tx_buf_attr.dma_attr_granular	= (uint32_t)buf_size;
+
+	if (DDI_FM_DMA_ERR_CAP(dev->fm_caps)) {
+		tx_buf_attr.dma_attr_flags |= DDI_DMA_FLAGERR;
+	}
+
+	tx_buf_attr.dma_attr_sgllen = 1;
+
+	ret = oce_alloc_dma_buffer(dev, &wq->wqb, size, &tx_buf_attr,
+	    DDI_DMA_STREAMING|DDI_DMA_WRITE);
+	if (ret != DDI_SUCCESS) {
+		tx_buf_attr.dma_attr_sgllen =
+		    size/ddi_ptob(dev->dip, (ulong_t)1) + 2;
+		ret = oce_alloc_dma_buffer(dev, &wq->wqb, size, &tx_buf_attr,
+		    DDI_DMA_STREAMING|DDI_DMA_WRITE);
+		if (ret != DDI_SUCCESS) {
+			kmem_free(wq->wq_bdesc_array,
+			    wq->cfg.nbufs * sizeof (oce_wq_bdesc_t));
+			kmem_free(wq->wqb_freelist,
+			    wq->cfg.nbufs * sizeof (oce_wq_bdesc_t *));
+			return (DDI_FAILURE);
+		}
+	}
+
+	wqbd = wq->wq_bdesc_array;
+	vaddr = wq->wqb.base;
+	cookie = wq->wqb.cookie;
+	ncookies = wq->wqb.ncookies;
+	do {
+		paddr = cookie.dmac_laddress;
+		bufs_per_cookie = cookie.dmac_size/buf_size;
+		for (i = 0; i <  bufs_per_cookie; i++, wqbd++) {
+			wqbd->wqb.acc_handle = wq->wqb.acc_handle;
+			wqbd->wqb.dma_handle = wq->wqb.dma_handle;
+			wqbd->wqb.base = vaddr;
+			wqbd->wqb.addr = paddr;
+			wqbd->wqb.len  = buf_size;
+			wqbd->wqb.size = buf_size;
+			wqbd->wqb.off  = tidx * buf_size;
+			wqbd->frag_addr.dw.addr_lo = ADDR_LO(paddr);
+			wqbd->frag_addr.dw.addr_hi = ADDR_HI(paddr);
+			wq->wqb_freelist[tidx] = wqbd;
+			/* increment the addresses */
+			paddr += buf_size;
+			vaddr += buf_size;
+			atomic_inc_32(&wq->wqb_free);
+			tidx++;
+			if (tidx >= wq->cfg.nbufs)
+				break;
+		}
+		if (--ncookies > 0) {
+			(void) ddi_dma_nextcookie(wq->wqb.dma_handle, &cookie);
+		}
+	} while (ncookies > 0);
+
+	wq->wqbd_next_free = 0;
+	wq->wqbd_rc_head = 0;
+
+	mutex_init(&wq->wqb_alloc_lock, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(dev->intr_pri));
+	mutex_init(&wq->wqb_free_lock, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(dev->intr_pri));
+	return (DDI_SUCCESS);
 }
 
 /*
@@ -234,53 +308,16 @@ wqb_fail:
 void
 oce_wqb_cache_destroy(struct oce_wq *wq)
 {
-	oce_wq_bdesc_t *wqbd;
-	while ((wqbd = OCE_LIST_REM_HEAD(&wq->wq_buf_list)) != NULL) {
-		oce_wqb_dtor(wq, wqbd);
-	}
+	/* Free Tx buffer dma memory */
+	oce_free_dma_buffer(wq->parent, &wq->wqb);
+
+	mutex_destroy(&wq->wqb_alloc_lock);
+	mutex_destroy(&wq->wqb_free_lock);
+	kmem_free(wq->wqb_freelist,
+	    wq->cfg.nbufs * sizeof (oce_wq_bdesc_t *));
+	wq->wqb_freelist = NULL;
 	kmem_free(wq->wq_bdesc_array,
 	    wq->cfg.nbufs * sizeof (oce_wq_bdesc_t));
-	OCE_LIST_DESTROY(&wq->wq_buf_list);
-}
-
-/*
- * WQ buffer constructor
- *
- * wqbd - pointer to WQ buffer descriptor
- * wq - pointer to WQ structure
- * size - size of the buffer
- * flags - KM_SLEEP or KM_NOSLEEP
- *
- * return DDI_SUCCESS=>success, DDI_FAILURE=>error
- */
-static int
-oce_wqb_ctor(oce_wq_bdesc_t *wqbd, struct oce_wq *wq, size_t size, int flags)
-{
-	struct oce_dev *dev;
-	dev = wq->parent;
-
-	wqbd->wqb = oce_alloc_dma_buffer(dev, size, &oce_tx_dma_buf_attr,
-	    flags);
-	if (wqbd->wqb == NULL) {
-		return (DDI_FAILURE);
-	}
-	wqbd->frag_addr.dw.addr_lo = ADDR_LO(wqbd->wqb->addr);
-	wqbd->frag_addr.dw.addr_hi = ADDR_HI(wqbd->wqb->addr);
-	return (DDI_SUCCESS);
-}
-
-/*
- * WQ buffer destructor
- *
- * wq - pointer to WQ structure
- * wqbd - pointer to WQ buffer descriptor
- *
- * return none
- */
-static void
-oce_wqb_dtor(struct oce_wq *wq, oce_wq_bdesc_t *wqbd)
-{
-	oce_free_dma_buffer(wq->parent, wqbd->wqb);
 }
 
 /*
@@ -293,7 +330,18 @@ oce_wqb_dtor(struct oce_wq *wq, oce_wq_bdesc_t *wqbd)
 static inline oce_wq_bdesc_t *
 oce_wqb_alloc(struct oce_wq *wq)
 {
-	return (OCE_LIST_REM_HEAD(&wq->wq_buf_list));
+	oce_wq_bdesc_t *wqbd;
+	if (oce_atomic_reserve(&wq->wqb_free, 1) < 0) {
+		return (NULL);
+	}
+
+	mutex_enter(&wq->wqb_alloc_lock);
+	wqbd = wq->wqb_freelist[wq->wqbd_next_free];
+	wq->wqb_freelist[wq->wqbd_next_free] = NULL;
+	wq->wqbd_next_free = GET_Q_NEXT(wq->wqbd_next_free, 1, wq->cfg.nbufs);
+	mutex_exit(&wq->wqb_alloc_lock);
+
+	return (wqbd);
 }
 
 /*
@@ -307,7 +355,11 @@ oce_wqb_alloc(struct oce_wq *wq)
 static inline void
 oce_wqb_free(struct oce_wq *wq, oce_wq_bdesc_t *wqbd)
 {
-	OCE_LIST_INSERT_TAIL(&wq->wq_buf_list, wqbd);
+	mutex_enter(&wq->wqb_free_lock);
+	wq->wqb_freelist[wq->wqbd_rc_head] = wqbd;
+	wq->wqbd_rc_head = GET_Q_NEXT(wq->wqbd_rc_head, 1, wq->cfg.nbufs);
+	atomic_inc_32(&wq->wqb_free);
+	mutex_exit(&wq->wqb_free_lock);
 } /* oce_wqb_free */
 
 /*
@@ -320,7 +372,19 @@ oce_wqb_free(struct oce_wq *wq, oce_wq_bdesc_t *wqbd)
 static inline oce_wq_mdesc_t *
 oce_wqm_alloc(struct oce_wq *wq)
 {
-	return (OCE_LIST_REM_HEAD(&wq->wq_mdesc_list));
+	oce_wq_mdesc_t *wqmd;
+
+	if (oce_atomic_reserve(&wq->wqm_free, 1) < 0) {
+		return (NULL);
+	}
+
+	mutex_enter(&wq->wqm_alloc_lock);
+	wqmd = wq->wqm_freelist[wq->wqmd_next_free];
+	wq->wqm_freelist[wq->wqmd_next_free] = NULL;
+	wq->wqmd_next_free = GET_Q_NEXT(wq->wqmd_next_free, 1, wq->cfg.nhdl);
+	mutex_exit(&wq->wqm_alloc_lock);
+
+	return (wqmd);
 } /* oce_wqm_alloc */
 
 /*
@@ -334,7 +398,11 @@ oce_wqm_alloc(struct oce_wq *wq)
 static inline void
 oce_wqm_free(struct oce_wq *wq, oce_wq_mdesc_t *wqmd)
 {
-	OCE_LIST_INSERT_TAIL(&wq->wq_mdesc_list, wqmd);
+	mutex_enter(&wq->wqm_free_lock);
+	wq->wqm_freelist[wq->wqmd_rc_head] = wqmd;
+	wq->wqmd_rc_head = GET_Q_NEXT(wq->wqmd_rc_head, 1, wq->cfg.nhdl);
+	atomic_inc_32(&wq->wqm_free);
+	mutex_exit(&wq->wqm_free_lock);
 }
 
 /*
@@ -385,32 +453,6 @@ oce_wqe_desc_dtor(void *buf, void *arg)
 	_NOTE(ARGUNUSED(buf));
 	_NOTE(ARGUNUSED(arg));
 }
-
-/*
- * function to choose a WQ given a mblk depending on priority, flowID etc.
- *
- * dev - software handle to device
- * mp - the mblk to send
- *
- * return pointer to the WQ selected
- */
-static uint8_t oce_tx_hash_policy = 0x4;
-struct oce_wq *
-oce_get_wq(struct oce_dev *dev, mblk_t *mp)
-{
-	struct oce_wq *wq;
-	int qidx = 0;
-	if (dev->nwqs > 1) {
-		qidx = mac_pkt_hash(DL_ETHER, mp, oce_tx_hash_policy, B_TRUE);
-		qidx = qidx % dev->nwqs;
-
-	} else {
-		qidx = 0;
-	}
-	wq = dev->wq[qidx];
-	/* for the time being hardcode */
-	return (wq);
-} /* oce_get_wq */
 
 /*
  * function to populate the single WQE
@@ -476,8 +518,7 @@ oce_bcopy_wqe(struct oce_wq *wq, oce_wqe_desc_t *wqed, mblk_t *mp,
 		len += MBLKL(mp);
 	}
 
-	(void) ddi_dma_sync(DBUF_DHDL(wqbd->wqb), 0, pkt_len,
-	    DDI_DMA_SYNC_FORDEV);
+	DBUF_SYNC(wqbd->wqb, wqbd->wqb.off, pkt_len, DDI_DMA_SYNC_FORDEV);
 
 	if (oce_fm_check_dma_handle(dev, DBUF_DHDL(wqbd->wqb))) {
 		ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
@@ -486,6 +527,7 @@ oce_bcopy_wqe(struct oce_wq *wq, oce_wqe_desc_t *wqed, mblk_t *mp,
 		return (EIO);
 	}
 	wqed->frag[wqed->frag_idx].u0.s.frag_len   =  pkt_len;
+	wqed->frag[wqed->frag_idx].u0.s.rsvd0 = 0;
 	wqed->hdesc[wqed->nhdl].hdl = (void *)(wqbd);
 	wqed->hdesc[wqed->nhdl].type = COPY_WQE;
 	wqed->frag_cnt++;
@@ -538,12 +580,13 @@ oce_map_wqe(struct oce_wq *wq, oce_wqe_desc_t *wqed, mblk_t *mp,
 		    ADDR_LO(cookie.dmac_laddress);
 		wqed->frag[wqed->frag_idx].u0.s.frag_len =
 		    (uint32_t)cookie.dmac_size;
+		wqed->frag[wqed->frag_idx].u0.s.rsvd0 = 0;
 		wqed->frag_cnt++;
 		wqed->frag_idx++;
 		if (--ncookies > 0)
-			ddi_dma_nextcookie(wqmd->dma_handle,
-			    &cookie);
-			else break;
+			ddi_dma_nextcookie(wqmd->dma_handle, &cookie);
+		else
+			break;
 	} while (ncookies > 0);
 
 	wqed->hdesc[wqed->nhdl].hdl = (void *)wqmd;
@@ -561,11 +604,15 @@ oce_process_tx_compl(struct oce_wq *wq, boolean_t rearm)
 	oce_wqe_desc_t *wqed;
 	int wqe_freed = 0;
 	struct oce_dev *dev;
+	list_t wqe_desc_list;
 
 	cq  = wq->cq;
 	dev = wq->parent;
-	(void) ddi_dma_sync(cq->ring->dbuf->dma_handle, 0, 0,
-	    DDI_DMA_SYNC_FORKERNEL);
+
+	DBUF_SYNC(cq->ring->dbuf, 0, 0, DDI_DMA_SYNC_FORKERNEL);
+
+	list_create(&wqe_desc_list, sizeof (oce_wqe_desc_t),
+	    offsetof(oce_wqe_desc_t, link));
 
 	mutex_enter(&wq->txc_lock);
 	cqe = RING_GET_CONSUMER_ITEM_VA(cq->ring, struct oce_nic_tx_cqe);
@@ -578,23 +625,47 @@ oce_process_tx_compl(struct oce_wq *wq, boolean_t rearm)
 			atomic_inc_32(&dev->tx_errors);
 		}
 
-		/* complete the WQEs */
-		wqed = OCE_LIST_REM_HEAD(&wq->wqe_desc_list);
+		mutex_enter(&wq->wqed_list_lock);
+		wqed = list_remove_head(&wq->wqe_desc_list);
+		mutex_exit(&wq->wqed_list_lock);
+		if (wqed == NULL) {
+			oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
+			    "oce_process_tx_compl: wqed list empty");
+			break;
+		}
+		atomic_dec_32(&wq->wqe_pending);
 
-		wqe_freed = wqed->wqe_cnt;
-		oce_free_wqed(wq, wqed);
-		RING_GET(wq->ring, wqe_freed);
-		atomic_add_32(&wq->wq_free, wqe_freed);
+		wqe_freed += wqed->wqe_cnt;
+		list_insert_tail(&wqe_desc_list, wqed);
 		/* clear the valid bit and progress cqe */
 		WQ_CQE_INVALIDATE(cqe);
 		RING_GET(cq->ring, 1);
+
 		cqe = RING_GET_CONSUMER_ITEM_VA(cq->ring,
 		    struct oce_nic_tx_cqe);
 		num_cqe++;
 	} /* for all valid CQE */
+
+	if (num_cqe == 0 && wq->wqe_pending > 0) {
+		mutex_exit(&wq->txc_lock);
+		return (0);
+	}
+
+	DBUF_SYNC(cq->ring->dbuf, 0, 0, DDI_DMA_SYNC_FORDEV);
+	oce_arm_cq(wq->parent, cq->cq_id, num_cqe, rearm);
+
+	RING_GET(wq->ring, wqe_freed);
+	atomic_add_32(&wq->wq_free, wqe_freed);
+	if (wq->resched && wq->wq_free >= OCE_MAX_TX_HDL) {
+		wq->resched = B_FALSE;
+		mac_tx_ring_update(dev->mac_handle, wq->handle);
+	}
+	wq->last_compl = ddi_get_lbolt();
 	mutex_exit(&wq->txc_lock);
-	if (num_cqe)
-		oce_arm_cq(wq->parent, cq->cq_id, num_cqe, rearm);
+	while (wqed = list_remove_head(&wqe_desc_list)) {
+		oce_free_wqed(wq, wqed);
+	}
+	list_destroy(&wqe_desc_list);
 	return (num_cqe);
 } /* oce_process_tx_completion */
 
@@ -606,62 +677,127 @@ oce_process_tx_compl(struct oce_wq *wq, boolean_t rearm)
  *
  * return the number of CQEs processed
  */
-uint16_t
-oce_drain_wq_cq(void *arg)
+void *
+oce_drain_wq_cq(void *arg, int arg2, int arg3)
 {
-	uint16_t num_cqe = 0;
 	struct oce_dev *dev;
 	struct oce_wq *wq;
 
+	_NOTE(ARGUNUSED(arg2));
+	_NOTE(ARGUNUSED(arg3));
+
 	wq = (struct oce_wq *)arg;
 	dev = wq->parent;
-
+	wq->last_intr = ddi_get_lbolt();
 	/* do while we do not reach a cqe that is not valid */
-	num_cqe = oce_process_tx_compl(wq, B_FALSE);
-
-	/* check if we need to restart Tx */
-	if (wq->resched && num_cqe) {
+	(void) oce_process_tx_compl(wq, B_FALSE);
+	(void) atomic_cas_uint(&wq->qmode, OCE_MODE_INTR, OCE_MODE_POLL);
+	if ((wq->wq_free > OCE_MAX_TX_HDL) && wq->resched) {
 		wq->resched = B_FALSE;
-		mac_tx_update(dev->mac_handle);
+		mac_tx_ring_update(dev->mac_handle, wq->handle);
 	}
+	return (NULL);
 
-	return (num_cqe);
 } /* oce_process_wq_cqe */
 
-/*
- * function to insert vtag to packet
- *
- * mp - mblk pointer
- * vlan_tag - tag to be inserted
- *
- * return none
- */
-static inline void
-oce_insert_vtag(mblk_t *mp, uint16_t vlan_tag)
+
+boolean_t
+oce_tx_stall_check(struct oce_dev *dev)
 {
-	struct ether_vlan_header  *evh;
-	(void) memmove(mp->b_rptr - VTAG_SIZE,
-	    mp->b_rptr, 2 * ETHERADDRL);
-	mp->b_rptr -= VTAG_SIZE;
+	struct oce_wq *wq;
+	int ring = 0;
+	boolean_t is_stalled = B_FALSE;
+
+	if (!(dev->state & STATE_MAC_STARTED) ||
+	    (dev->link_status != LINK_STATE_UP)) {
+		return (B_FALSE);
+	}
+
+	for (ring = 0; ring < dev->tx_rings; ring++) {
+		wq = &dev->wq[ring];
+
+		if (wq->resched) {
+			if (wq->wq_free > OCE_MAX_TX_HDL) {
+				mac_tx_ring_update(dev->mac_handle, wq->handle);
+			} else {
+				/* enable the interrupts only once */
+				if (atomic_cas_uint(&wq->qmode, OCE_MODE_POLL,
+				    OCE_MODE_INTR) == OCE_MODE_POLL) {
+					oce_arm_cq(dev, wq->cq->cq_id, 0,
+					    B_TRUE);
+				}
+			}
+		}
+	}
+	return (is_stalled);
+}
+/*
+ * Function to check whether TX stall
+ * can occur for an IPV6 packet for
+ * some versions of BE cards
+ *
+ * dev - software handle to the device
+ * mp - Pointer to packet chain
+ * ipoffset - ip header offset in mp chain
+ *
+ * return B_TRUE or B_FALSE
+ */
+
+static inline int
+oce_check_ipv6_tx_stall(struct oce_dev *dev,
+	mblk_t *mp, uint32_t ip_offset) {
+
+	_NOTE(ARGUNUSED(dev));
+	ip6_t *ipv6_hdr;
+	struct ip6_opt *v6_op;
+	ipv6_hdr =  (ip6_t *)(void *)
+		(mp->b_rptr + ip_offset);
+	v6_op = (struct ip6_opt *)(ipv6_hdr+1);
+	if (ipv6_hdr->ip6_nxt  != IPPROTO_TCP &&
+	    ipv6_hdr->ip6_nxt  != IPPROTO_UDP &&
+	    v6_op->ip6o_len == 0xFF) {
+		return (B_TRUE);
+	} else {
+		return (B_FALSE);
+	}
+}
+/*
+ * Function to insert VLAN Tag to
+ * mp cahin
+ *
+ * dev - software handle to the device
+ * mblk_haad - Pointer holding packet chain
+ *
+ * return DDI_FAILURE or DDI_SUCCESS
+ */
+
+static int
+oce_ipv6_tx_stall_workaround(struct oce_dev *dev,
+	mblk_t **mblk_head) {
+
+	mblk_t *mp;
+	struct ether_vlan_header *evh;
+	mp = allocb(OCE_HDR_LEN, BPRI_HI);
+	if (mp == NULL) {
+		return (DDI_FAILURE);
+	}
+	/* copy ether header */
+	(void) memcpy(mp->b_rptr, (*mblk_head)->b_rptr, 2 * ETHERADDRL);
 	evh = (struct ether_vlan_header *)(void *)mp->b_rptr;
 	evh->ether_tpid = htons(VLAN_TPID);
-	evh->ether_tci = htons(vlan_tag);
-}
+	evh->ether_tci = ((dev->pvid > 0) ? LE_16(dev->pvid) :
+	    htons(dev->QnQ_tag));
+	mp->b_wptr = mp->b_rptr + (2 * ETHERADDRL) + VTAG_SIZE;
+	(*mblk_head)->b_rptr += 2 * ETHERADDRL;
 
-/*
- * function to strip  vtag from packet
- *
- * mp - mblk pointer
- *
- * return none
- */
-
-static inline void
-oce_remove_vtag(mblk_t *mp)
-{
-	(void) memmove(mp->b_rptr + VTAG_SIZE, mp->b_rptr,
-	    ETHERADDRL * 2);
-	mp->b_rptr += VTAG_SIZE;
+	if (MBLKL(*mblk_head) > 0) {
+		mp->b_cont = *mblk_head;
+	} else {
+		mp->b_cont = (*mblk_head)->b_cont;
+		freeb(*mblk_head);
+	}
+	*mblk_head = mp;
+	return (DDI_SUCCESS);
 }
 
 /*
@@ -685,7 +821,7 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 	uint32_t csum_flags = 0;
 	boolean_t use_copy = B_FALSE;
 	boolean_t tagged   = B_FALSE;
-	uint16_t  vlan_tag;
+	boolean_t ipv6_stall   = B_FALSE;
 	uint32_t  reg_value = 0;
 	oce_wqe_desc_t *wqed = NULL;
 	mblk_t *nmp = NULL;
@@ -705,6 +841,9 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 		(void) oce_process_tx_compl(wq, B_FALSE);
 	}
 	if (wq->wq_free < OCE_MAX_TX_HDL) {
+		wq->resched = B_TRUE;
+		wq->last_defered = ddi_get_lbolt();
+		atomic_inc_32(&wq->tx_deferd);
 		return (mp);
 	}
 
@@ -736,6 +875,14 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 		/* Reset it to new collapsed mp */
 		freemsg(mp);
 		mp = nmp;
+		/* restore the flags on new mp */
+		if (flags & HW_LSO) {
+			DB_CKSUMFLAGS(mp) |= HW_LSO;
+			DB_LSOMSS(mp) = (uint16_t)mss;
+		}
+		if (csum_flags != 0) {
+			DB_CKSUMFLAGS(mp) |= csum_flags;
+		}
 	}
 
 	/* Get the packet descriptor for Tx */
@@ -745,19 +892,6 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 		freemsg(mp);
 		return (NULL);
 	}
-	eh = (struct ether_header *)(void *)mp->b_rptr;
-	if (ntohs(eh->ether_type) == VLAN_TPID) {
-		evh = (struct ether_vlan_header *)(void *)mp->b_rptr;
-		tagged = B_TRUE;
-		etype = ntohs(evh->ether_type);
-		ip_offset = sizeof (struct ether_vlan_header);
-		pkt_len -= VTAG_SIZE;
-		vlan_tag = ntohs(evh->ether_tci);
-		oce_remove_vtag(mp);
-	} else {
-		etype = ntohs(eh->ether_type);
-		ip_offset = sizeof (struct ether_header);
-	}
 
 	/* Save the WQ pointer */
 	wqed->wq = wq;
@@ -765,7 +899,50 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 	wqed->frag_cnt = 0;
 	wqed->nhdl = 0;
 	wqed->mp = NULL;
-	OCE_LIST_LINK_INIT(&wqed->link);
+
+	eh = (struct ether_header *)(void *)mp->b_rptr;
+	if (ntohs(eh->ether_type) == VLAN_TPID) {
+		evh = (struct ether_vlan_header *)(void *)mp->b_rptr;
+		tagged = B_TRUE;
+		etype = ntohs(evh->ether_type);
+		ip_offset = sizeof (struct ether_vlan_header);
+
+	} else {
+		etype = ntohs(eh->ether_type);
+		ip_offset = sizeof (struct ether_header);
+	}
+	/* Check Workaround required for IPV6 TX stall */
+	if (BE3_A1(dev) && (etype == ETHERTYPE_IPV6) &&
+	    ((dev->QnQ_valid) || (!tagged && dev->pvid != 0))) {
+		len = ip_offset + sizeof (ip6_t) + sizeof (struct ip6_opt);
+		if (MBLKL(mp) < len) {
+			nmp = msgpullup(mp, len);
+			if (nmp == NULL) {
+				oce_free_wqed(wq, wqed);
+				atomic_inc_32(&wq->pkt_drops);
+				freemsg(mp);
+				return (NULL);
+			}
+			freemsg(mp);
+			mp = nmp;
+		}
+		ipv6_stall = oce_check_ipv6_tx_stall(dev, mp, ip_offset);
+		if (ipv6_stall) {
+			if (dev->QnQ_queried)
+				ret = oce_ipv6_tx_stall_workaround(dev, &mp);
+			else {
+				/* FW Workaround not available */
+				ret = DDI_FAILURE;
+			}
+			if (ret) {
+				oce_free_wqed(wq, wqed);
+				atomic_inc_32(&wq->pkt_drops);
+				freemsg(mp);
+				return (NULL);
+			}
+			pkt_len += VTAG_SIZE;
+		}
+	}
 
 	/* If entire packet is less than the copy limit  just do copy */
 	if (pkt_len < dev->tx_bcopy_limit) {
@@ -823,20 +1000,21 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 
 	if (csum_flags & HCK_IPV4_HDRCKSUM)
 		wqeh->u0.s.ipcs = B_TRUE;
-	if (tagged) {
-		wqeh->u0.s.vlan = B_TRUE;
-		wqeh->u0.s.vlan_tag = vlan_tag;
-	}
+	if (ipv6_stall) {
+		wqeh->u0.s.complete = B_FALSE;
+		wqeh->u0.s.event = B_TRUE;
+	} else {
 
-	wqeh->u0.s.complete = B_TRUE;
-	wqeh->u0.s.event = B_TRUE;
+		wqeh->u0.s.complete = B_TRUE;
+		wqeh->u0.s.event = B_TRUE;
+	}
 	wqeh->u0.s.crc = B_TRUE;
 	wqeh->u0.s.total_length = pkt_len;
 
 	num_wqes = wqed->frag_cnt + 1;
 
 	/* h/w expects even no. of WQEs */
-	if (num_wqes & 0x1) {
+	if ((num_wqes & 0x1) && !(LANCER_CHIP(dev))) {
 		bzero(&wqed->frag[num_wqes], sizeof (struct oce_nic_frag_wqe));
 		num_wqes++;
 	}
@@ -845,7 +1023,7 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 	DW_SWAP(u32ptr(&wqed->frag[0]), (wqed->wqe_cnt * NIC_WQE_SIZE));
 
 	mutex_enter(&wq->tx_lock);
-	if (num_wqes > wq->wq_free) {
+	if (num_wqes > wq->wq_free - 2) {
 		atomic_inc_32(&wq->tx_deferd);
 		mutex_exit(&wq->tx_lock);
 		goto wqe_fail;
@@ -860,14 +1038,21 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 		wqed->mp = mp;
 	}
 	/* Add the packet desc to list to be retrieved during cmpl */
-	OCE_LIST_INSERT_TAIL(&wq->wqe_desc_list,  wqed);
-	(void) ddi_dma_sync(wq->ring->dbuf->dma_handle, 0, 0,
-	    DDI_DMA_SYNC_FORDEV);
+	mutex_enter(&wq->wqed_list_lock);
+	list_insert_tail(&wq->wqe_desc_list,  wqed);
+	mutex_exit(&wq->wqed_list_lock);
+	atomic_inc_32(&wq->wqe_pending);
+	DBUF_SYNC(wq->ring->dbuf, 0, 0, DDI_DMA_SYNC_FORDEV);
 
 	/* ring tx doorbell */
 	reg_value = (num_wqes << 16) | wq->wq_id;
 	/* Ring the door bell  */
 	OCE_DB_WRITE32(dev, PD_TXULP_DB, reg_value);
+
+	/* update the ring stats */
+	wq->stat_bytes += pkt_len;
+	wq->stat_pkts++;
+
 	mutex_exit(&wq->tx_lock);
 	if (oce_fm_check_acc_handle(dev, dev->db_handle) != DDI_FM_OK) {
 		ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
@@ -881,10 +1066,9 @@ oce_send_packet(struct oce_wq *wq, mblk_t *mp)
 
 wqe_fail:
 
-	if (tagged) {
-		oce_insert_vtag(mp, vlan_tag);
-	}
 	oce_free_wqed(wq, wqed);
+	wq->resched = B_TRUE;
+	wq->last_defered = ddi_get_lbolt();
 	return (mp);
 } /* oce_send_packet */
 
@@ -953,31 +1137,11 @@ oce_clean_wq(struct oce_wq *wq)
 	}
 
 	/* Free the remaining descriptors */
-	while ((wqed = OCE_LIST_REM_HEAD(&wq->wqe_desc_list)) != NULL) {
+	mutex_enter(&wq->wqed_list_lock);
+	while ((wqed = list_remove_head(&wq->wqe_desc_list)) != NULL) {
 		atomic_add_32(&wq->wq_free, wqed->wqe_cnt);
 		oce_free_wqed(wq, wqed);
 	}
+	mutex_exit(&wq->wqed_list_lock);
 	oce_drain_eq(wq->cq->eq);
 } /* oce_stop_wq */
-
-/*
- * function to set the tx mapping handle fma attr
- *
- * fm_caps - capability flags
- *
- * return none
- */
-
-void
-oce_set_tx_map_dma_fma_flags(int fm_caps)
-{
-	if (fm_caps == DDI_FM_NOT_CAPABLE) {
-		return;
-	}
-
-	if (DDI_FM_DMA_ERR_CAP(fm_caps)) {
-		tx_map_dma_attr.dma_attr_flags |= DDI_DMA_FLAGERR;
-	} else {
-		tx_map_dma_attr.dma_attr_flags &= ~DDI_DMA_FLAGERR;
-	}
-} /* oce_set_tx_map_dma_fma_flags */

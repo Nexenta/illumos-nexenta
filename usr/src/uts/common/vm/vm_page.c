@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1986, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989  AT&T	*/
@@ -6237,8 +6238,6 @@ page_capture_hash_head_t page_capture_hash[NUM_PAGE_CAPTURE_BUCKETS];
 /* for now use a very simple hash based upon the size of a page struct */
 #define	PAGE_CAPTURE_HASH(pp)	\
 	((int)(((uintptr_t)pp >> 7) & (NUM_PAGE_CAPTURE_BUCKETS - 1)))
-
-extern pgcnt_t swapfs_minfree;
 
 int page_trycapture(page_t *pp, uint_t szc, uint_t flags, void *datap);
 

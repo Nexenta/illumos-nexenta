@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -75,24 +78,24 @@ static int checkpage(page_t *, int);
  * a loaded vmunix they are left alone and may thus be changed per system
  * using adb on the loaded system.
  */
-pgcnt_t		slowscan = 0;
-pgcnt_t		fastscan = 0;
+volatile pgcnt_t	slowscan = 0;
+volatile pgcnt_t	fastscan = 0;
 
-static pgcnt_t	handspreadpages = 0;
+volatile pgcnt_t	handspreadpages = 0;
 static int	loopfraction = 2;
 static pgcnt_t	looppages;
-static int	min_percent_cpu = 4;
+volatile int	min_percent_cpu = 4;
 static int	max_percent_cpu = 80;
 static pgcnt_t	maxfastscan = 0;
 static pgcnt_t	maxslowscan = 100;
 
-pgcnt_t	maxpgio = 0;
-pgcnt_t	minfree = 0;
-pgcnt_t	desfree = 0;
-pgcnt_t	lotsfree = 0;
+volatile pgcnt_t	maxpgio = 0;
+volatile pgcnt_t	minfree = 0;
+volatile pgcnt_t	desfree = 0;
+volatile pgcnt_t	lotsfree = 0;
 pgcnt_t	needfree = 0;
-pgcnt_t	throttlefree = 0;
-pgcnt_t	pageout_reserve = 0;
+volatile pgcnt_t	throttlefree = 0;
+volatile pgcnt_t	pageout_reserve = 0;
 
 pgcnt_t	deficit;
 pgcnt_t	nscan;

@@ -18,10 +18,13 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
  * Copyright 2012 Milan Jurik. All rights reserved.
+ * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <stdlib.h>
@@ -535,8 +538,10 @@ checkScsiNameString(wchar_t *input, stmfDevid *devid)
 		} else if (checkHexUpper(mbString + 4) != 0) {
 			return (-1);
 		}
-	} else {
-		return (-1);
+	/*
+	 * If none of iqn., wwn., and eui. matches, it might be a
+	 * name string for AoE.
+	 */
 	}
 
 	/*

@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2014 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -62,13 +63,12 @@
  * of names after deciding which is the appropriate lookup interface.
  */
 static int
-zfs_match_find(zfsvfs_t *zfsvfs, znode_t *dzp, char *name, boolean_t exact,
+zfs_match_find(zfsvfs_t *zfsvfs, znode_t *dzp, char *name, matchtype_t mt,
     boolean_t update, int *deflags, pathname_t *rpnp, uint64_t *zoid)
 {
 	int error;
 
 	if (zfsvfs->z_norm) {
-		matchtype_t mt = MT_FIRST;
 		boolean_t conflict = B_FALSE;
 		size_t bufsz = 0;
 		char *buf = NULL;
@@ -77,8 +77,7 @@ zfs_match_find(zfsvfs_t *zfsvfs, znode_t *dzp, char *name, boolean_t exact,
 			buf = rpnp->pn_buf;
 			bufsz = rpnp->pn_bufsize;
 		}
-		if (exact)
-			mt = MT_EXACT;
+
 		/*
 		 * In the non-mixed case we only expect there would ever
 		 * be one match, but we need to use the normalizing lookup.
@@ -140,7 +139,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	zfsvfs_t	*zfsvfs = dzp->z_zfsvfs;
 	zfs_dirlock_t	*dl;
 	boolean_t	update;
-	boolean_t	exact;
+	matchtype_t	mt;
 	uint64_t	zoid;
 	vnode_t		*vp = NULL;
 	int		error = 0;
@@ -175,13 +174,22 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 	 */
 
 	/*
-	 * Decide if exact matches should be requested when performing
-	 * a zap lookup on file systems supporting case-insensitive
-	 * access.
+	 * When matching we may need to normalize & change case and in addition
+	 * we need to honor the lookup request during the match.  First
+	 * determine if we need to normalize this text by looking for a FIRST
+	 * match, or if this is an EXACT match, bypassing normalization.  Then
+	 * determine if the match needs to honor case, and if so keep track of
+	 * that so that during normalization we don't fold case.
 	 */
-	exact =
-	    ((zfsvfs->z_case == ZFS_CASE_INSENSITIVE) && (flag & ZCIEXACT)) ||
-	    ((zfsvfs->z_case == ZFS_CASE_MIXED) && !(flag & ZCILOOK));
+	if (zfsvfs->z_norm & ~U8_TEXTPREP_TOUPPER) {
+		mt = MT_FIRST;
+	} else {
+		mt = MT_EXACT;
+	}
+	if (((zfsvfs->z_case == ZFS_CASE_INSENSITIVE) && (flag & ZCIEXACT)) ||
+	    ((zfsvfs->z_case == ZFS_CASE_MIXED) && !(flag & ZCILOOK))) {
+		mt |= MT_CASE;
+	}
 
 	/*
 	 * Only look in or update the DNLC if we are looking for the
@@ -308,7 +316,7 @@ zfs_dirent_lock(zfs_dirlock_t **dlpp, znode_t *dzp, char *name, znode_t **zpp,
 			*zpp = VTOZ(vp);
 			return (0);
 		} else {
-			error = zfs_match_find(zfsvfs, dzp, name, exact,
+			error = zfs_match_find(zfsvfs, dzp, name, mt,
 			    update, direntflags, realpnp, &zoid);
 		}
 	}
@@ -461,7 +469,8 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 
 /*
  * Clean up any znodes that had no links when we either crashed or
- * (force) umounted the file system.
+ * (force) umounted the file system. Caller or invoking thread must
+ * VN_HOLD the vfs_t to correctly handle async operation.
  */
 void
 zfs_unlinked_drain(zfsvfs_t *zfsvfs)
@@ -509,6 +518,8 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 		VN_RELE(ZTOV(zp));
 	}
 	zap_cursor_fini(&zc);
+
+	VFS_RELE(zfsvfs->z_vfs);
 }
 
 /*

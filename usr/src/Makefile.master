@@ -22,6 +22,7 @@
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
 #
@@ -154,6 +155,7 @@ STRIP=		/usr/ccs/bin/strip
 LEX=		/usr/ccs/bin/lex
 FLEX=		/usr/bin/flex
 YACC=		/usr/ccs/bin/yacc
+BISON=		/usr/bin/bison
 CPP=		/usr/lib/cpp
 JAVAC=		$(JAVA_ROOT)/bin/javac
 JAVAH=		$(JAVA_ROOT)/bin/javah
@@ -223,7 +225,14 @@ MANIFEST_CHECK=	\
 	SVCCFG_CONFIGD_PATH=$(SRC)/cmd/svc/configd/svc.configd-native \
 	$(SRC)/cmd/svc/svccfg/svccfg-native validate $<
 
-INS.file=	$(RM) $@; $(INS) -s -m $(FILEMODE) -f $(@D) $<
+# dmake SOURCEDEBUG=yes ... enables source-level debugging information,
+# and avoids stripping it.
+SOURCEDEBUG	= $(POUND_SIGN)
+SRCDBGBLD	= $(SOURCEDEBUG:yes=)
+
+INS_STRIP=  -s
+$(SRCDBGBLD)INS_STRIP=
+INS.file=	$(RM) $@; $(INS) $(INS_STRIP) -m $(FILEMODE) -f $(@D) $<
 INS.dir=	$(INS) -s -d -m $(DIRMODE) $@
 # installs and renames at once
 #
@@ -423,6 +432,8 @@ amd64_COPTFLAG=		-xO3
 
 COPTFLAG= $($(MACH)_COPTFLAG)
 COPTFLAG64= $($(MACH64)_COPTFLAG)
+$(SRCDBGBLD)COPTFLAG		= -g -xs
+$(SRCDBGBLD)COPTFLAG64		= -g -xs
 
 # When -g is used, the compiler globalizes static objects
 # (gives them a unique prefix). Disable that.
@@ -508,11 +519,6 @@ amd64_XREGSFLAG		=
 XREGSFLAG		= $($(MACH)_XREGSFLAG)
 XREGSFLAG64		= $($(MACH64)_XREGSFLAG)
 
-# dmake SOURCEDEBUG=yes ... enables source-level debugging information, and
-# avoids stripping it.
-SOURCEDEBUG	= $(POUND_SIGN)
-SRCDBGBLD	= $(SOURCEDEBUG:yes=)
-
 #
 # These variables are intended ONLY for use by developers to safely pass extra
 # flags to the compilers without unintentionally overriding Makefile-set
@@ -529,8 +535,6 @@ CCUSERFLAGS64		= $(CCUSERFLAGS)
 
 CSOURCEDEBUGFLAGS	=
 CCSOURCEDEBUGFLAGS	=
-$(SRCDBGBLD)CSOURCEDEBUGFLAGS	= -g -xs
-$(SRCDBGBLD)CCSOURCEDEBUGFLAGS	= -g -xs
 
 CFLAGS=         $(COPTFLAG) $($(MACH)_CFLAGS) $(SPACEFLAG) $(CCMODE) \
 		$(ILDOFF) $(CERRWARN) $(C99MODE) $(CCUNBOUND) $(IROPTFLAG) \
@@ -612,6 +616,9 @@ amd64_CCOPTFLAG=	-O
 
 CCOPTFLAG=	$($(MACH)_CCOPTFLAG)
 CCOPTFLAG64=	$($(MACH64)_CCOPTFLAG)
+$(SRCDBGBLD)CCOPTFLAG		= -g -xs
+$(SRCDBGBLD)CCOPTFLAG64		= -g -xs
+
 CCFLAGS=	$(CCOPTFLAG) $($(MACH)_CCFLAGS) $(CCSOURCEDEBUGFLAGS) \
 		$(CCUSERFLAGS)
 CCFLAGS64=	$(CCOPTFLAG64) $($(MACH64)_CCFLAGS) $(CCSOURCEDEBUGFLAGS) \
@@ -866,6 +873,8 @@ ZTEXT=		-ztext
 ZVERBOSE=	-zverbose
 
 GSHARED=	-G
+$(SRCDBGBLD)GSHARED += -g -xs
+
 CCMT=		-mt
 
 # Handle different PIC models on different ISAs

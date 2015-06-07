@@ -22,6 +22,8 @@
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright 2014 PALO, Richard. All rights reserved.
+#
 # cmd/pools/poold/com/sun/solaris/domain/pools/Makefile
 
 include $(SRC)/cmd/Makefile.cmd

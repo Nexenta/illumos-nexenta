@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1986, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  *
  *	Copyright (c) 1983,1984,1985,1986,1987,1988,1989  AT&T.
  *	All rights reserved.
@@ -1135,10 +1136,10 @@ pathconf_rele(struct mntinfo *mi)
 	}
 }
 
-static int nfs_dynamic = 1;	/* global variable to enable dynamic retrans. */
-static ushort_t nfs_max_threads = 8;	/* max number of active async threads */
-static uint_t nfs_async_clusters = 1;	/* # of reqs from each async queue */
-static uint_t nfs_cots_timeo = NFS_COTS_TIMEO;
+volatile int nfs_dynamic = 1;	/* global variable to enable dynamic retrans. */
+volatile ushort_t nfs_max_threads = 8;	/* max number of active async threads */
+volatile uint_t nfs_async_clusters = 1;	/* # of reqs from each async queue */
+volatile uint_t nfs_cots_timeo = NFS_COTS_TIMEO;
 
 static int
 nfsrootvp(vnode_t **rtvpp, vfs_t *vfsp, struct servinfo *svp,

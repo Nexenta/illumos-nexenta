@@ -23,8 +23,8 @@
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2008, 2010, Richard Lowe
-# Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2012 Joshua M. Clulow <josh@sysmgr.org>
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 # Based on the nightly script from the integration folks,
 # Mostly modified and owned by mike_s.
@@ -105,6 +105,7 @@ function normal_build {
 	# DEBUG build begins
 
 	if [ "$D_FLAG" = "y" ]; then
+		VERSION=$VERSION":debug"
 		set_debug_build_flags
 		CODESIGN_USER="$crypto_signer" \
 		    build "DEBUG" "$suffix" "" "$MULTI_PROTO"
@@ -1181,6 +1182,10 @@ function logshuffle {
 	NIGHTLY_STATUS=$state
 	export NIGHTLY_STATUS
 
+	# Want ${LLOG}/mail_msg available to POST_NIGHTLY
+	cat $build_time_file $build_environ_file $mail_msg_file \
+	    > ${LLOG}/mail_msg
+
 	run_hook POST_NIGHTLY $state
 	run_hook SYS_POST_NIGHTLY $state
 
@@ -1193,8 +1198,6 @@ function logshuffle {
 		mailx_r="-r ${MAILFROM}"
 	fi
 
-	cat $build_time_file $build_environ_file $mail_msg_file \
-	    > ${LLOG}/mail_msg
 	if [ "$m_FLAG" = "y" ]; then
 	    	cat ${LLOG}/mail_msg | /usr/bin/mailx ${mailx_r} -s \
 	"Nightly ${MACH} Build of `basename ${CODEMGR_WS}` ${state}." \
@@ -1509,6 +1512,15 @@ SCM_TYPE=$(child_wstype)
 if [ "$i_FLAG" = "n" -a -d "$SRC" ]; then
 	echo "\n==== Make clobber at `date` ====\n" >> $LOGFILE
 
+	#
+	# One NZA evironment variable needs to be set.
+	#
+	if [ -f $SRC/../nza-closed/Makefile.nza ]; then
+		export NZA_MAKEDEFS=$SRC/../nza-closed/Makefile.nza
+	else
+		export NZA_MAKEDEFS=$SRC/Makefile.nza
+	fi
+
 	cd $SRC
 	# remove old clobber file
 	rm -f $SRC/clobber.out
@@ -1676,6 +1688,50 @@ type bringover_mercurial > /dev/null 2>&1 || function bringover_mercurial {
 	printf "\n"
 
 	#
+	# XXXNZA -> update usr/nza-closed if it exists in the parent
+	# (as expressed by NZA_CLOSED_SRC).  This is not quite as
+	# thorough as the other workspaces (no check for merge failures).
+	#
+	if [[ -d ${NZA_CLOSED_SRC:=/dev/null} && -d $NZA_CLOSED_SRC/.hg ]]; then
+		if [[ ! -d $CODEMGR_WS/usr/nza-closed ]]; then
+			staffer mkdir -p $CODEMGR_WS/usr/nza-closed
+			staffer hg init $CODEMGR_WS/usr/nza-closed
+			staffer echo "[paths]" \
+			    > $CODEMGR_WS/usr/nza-closed/.hg/hgrc
+			staffer echo "default=$NZA_CLOSED_SRC" \
+			    >> $CODEMGR_WS/usr/nza-closed/.hg/hgrc
+		fi
+		staffer hg --cwd $CODEMGR_WS/usr/nza-closed pull -u \
+		    $NZA_CLOSED_SRC > $TMPDIR/pull_nza_closed.out 2>&1
+		if (( $? != 0 )); then
+			printf "nza-closed pull failed as follows:\n\n"
+			cat $TMPDIR/pull_nza_closed.out
+			if grep "^merging.*failed" $TMPDIR/pull_nza_closed.out > /dev/null 2>&1; then
+				printf "$mergefailmsg"
+			fi
+			touch $TMPDIR/bringover_failed
+			return
+		fi
+		if grep "not updating" $TMPDIR/pull_nza_closed.out > /dev/null 2>&1; then
+			staffer hg --cwd $CODEMGR_WS/usr/nza-closed merge \
+			    >> $TMPDIR/pull_nza_closed.out 2>&1
+			if (( $? != 0 )); then
+				printf "nza-closed merge failed as follows:\n\n"
+				cat $TMPDIR/pull_nza_closed.out
+				if grep "^merging.*failed" \
+				    $TMPDIR/pull_nza_closed.out \
+				    > /dev/null 2>&1; then
+					printf "$mergefailmsg"
+				fi
+				touch $TMPDIR/bringover_failed
+				return
+			fi
+		fi
+	else
+		staffer echo "Building without NZA closed sources"
+	fi
+
+	#
 	# Per-changeset output is neither useful nor manageable for a
 	# newly-created repository.
 	#
@@ -1818,6 +1874,15 @@ if [[ "$t_FLAG" = "y" ]]; then
 	else
 		use_tools $TOOLS_PROTO
 	fi
+fi
+
+#
+# One NZA evironment variable needs to be set.
+#
+if [ -f $SRC/../nza-closed/Makefile.nza ]; then
+	export NZA_MAKEDEFS=$SRC/../nza-closed/Makefile.nza
+else
+	export NZA_MAKEDEFS=$SRC/Makefile.nza
 fi
 
 # timestamp the start of the normal build; the findunref tool uses it.

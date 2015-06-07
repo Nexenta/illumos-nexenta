@@ -22,6 +22,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * SunOS MT STREAMS ERI(PCI) 10/100 Mb Ethernet Device Driver
@@ -346,8 +349,8 @@ static uint8_t	etherbroadcastaddr[] = {
  * ERI ERX Interrupt Blanking Time
  * Each count is about 16 us (2048 clocks) for 66 MHz PCI.
  */
-static	int	intr_blank_time = 6;	/* for about 96 us */
-static	int	intr_blank_packets = 8;	/*  */
+volatile int	intr_blank_time = 6;	/* for about 96 us */
+volatile int	intr_blank_packets = 8;	/*  */
 
 /*
  * ERX PAUSE Threshold Register value

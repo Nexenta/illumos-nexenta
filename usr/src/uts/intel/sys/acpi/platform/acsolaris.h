@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef _ACSOLARIS_H_
@@ -60,7 +61,11 @@ void	 __acpi_wbinvd(void);
 #define	ACPI_USE_NATIVE_DIVIDE
 #define	ACPI_FLUSH_CPU_CACHE()	(__acpi_wbinvd())
 
+#ifdef	DEBUG
+#define	ACPI_DEBUG_OUTPUT
 #define	ACPI_DISASSEMBLER
+#endif
+
 #define	ACPI_PACKED_POINTERS_NOT_SUPPORTED
 
 /*

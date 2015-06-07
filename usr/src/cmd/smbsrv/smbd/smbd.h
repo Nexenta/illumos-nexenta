@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMBD_H
@@ -40,8 +40,8 @@ extern "C" {
 #include <smbsrv/libmlsvc.h>
 
 void smbd_report(const char *fmt, ...);
-int smbd_opipe_start(void);
-void smbd_opipe_stop(void);
+int smbd_pipesvc_start(void);
+void smbd_pipesvc_stop(void);
 int smbd_share_start(void);
 void smbd_share_stop(void);
 int smbd_nicmon_start(const char *);
@@ -52,10 +52,11 @@ void smbd_dc_monitor_refresh(void);
 smb_token_t *smbd_user_auth_logon(smb_logon_t *);
 void smbd_user_nonauth_logon(uint32_t);
 void smbd_user_auth_logoff(uint32_t);
-uint32_t smbd_join(smb_joininfo_t *);
+void smbd_join(smb_joininfo_t *, smb_joinres_t *);
 void smbd_set_secmode(int);
 boolean_t smbd_online(void);
 void smbd_online_wait(const char *);
+void smbd_get_authconf(smb_kmod_cfg_t *);
 
 void smbd_spool_start(void);
 void smbd_spool_stop(void);
@@ -66,7 +67,7 @@ void smbd_load_printers(void);
 int smbd_vss_get_count(const char *, uint32_t *);
 void smbd_vss_get_snapshots(const char *, uint32_t, uint32_t *,
     uint32_t *, char **);
-int smbd_vss_map_gmttoken(const char *, char *, char *);
+int smbd_vss_map_gmttoken(const char *, char *, time_t, char *);
 
 typedef struct smbd {
 	const char	*s_version;	/* smbd version string */
@@ -81,6 +82,7 @@ typedef struct smbd {
 	boolean_t	s_shutting_down; /* shutdown control */
 	volatile uint_t	s_refreshes;
 	boolean_t	s_kbound;	/* B_TRUE if bound to kernel */
+	int		s_authsvc_sock;
 	int		s_door_lmshr;
 	int		s_door_srv;
 	int		s_door_opipe;
@@ -89,6 +91,7 @@ typedef struct smbd {
 	smb_inaddr_t	s_pdc;
 	boolean_t	s_pdc_changed;
 	pthread_t	s_refresh_tid;
+	pthread_t	s_authsvc_tid;
 	pthread_t	s_localtime_tid;
 	pthread_t	s_spool_tid;
 	pthread_t	s_dc_monitor_tid;
@@ -140,10 +143,12 @@ void smbd_door_return(smbd_door_t *, char *, size_t, door_desc_t *, uint_t);
 
 void *smbd_door_dispatch_op(void *);
 
+int smbd_authsvc_start(void);
+void smbd_authsvc_stop(void);
+
 /* For fksmbd */
 void fksmbd_init(void);
 int fksmbd_door_dispatch(smb_doorarg_t *);
-int fksmbd_opipe_dispatch(door_arg_t *);
 
 #ifdef __cplusplus
 }

@@ -20,8 +20,8 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -390,6 +390,9 @@ zfs_params(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		"metaslab_df_free_pct",
 		"zio_injection_enabled",
 		"zvol_immediate_write_sz",
+		"zio_max_timeout_ms",
+		"zio_min_timeout_ms",
+		"zio_timeout_shift",
 	};
 
 	for (int i = 0; i < sizeof (params) / sizeof (params[0]); i++) {
@@ -962,15 +965,19 @@ arc_print(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		"p", "c", "c_min", "c_max", "size", "duplicate_buffers_size",
 		"arc_meta_used", "arc_meta_limit", "arc_meta_max",
 		"arc_meta_min", "hdr_size", "data_size", "metadata_size",
-		"other_size", "anon_size", "anon_evictable_data",
-		"anon_evictable_metadata", "mru_size", "mru_evictable_data",
-		"mru_evictable_metadata", "mru_ghost_size",
+		"ddt_size", "other_size", "anon_size", "anon_evictable_data",
+		"anon_evictable_metadata", "anon_evictable_ddt", "mru_size",
+		"mru_evictable_data", "mru_evictable_metadata",
+		"mru_evictable_ddt",  "mru_ghost_size",
 		"mru_ghost_evictable_data", "mru_ghost_evictable_metadata",
-		"mfu_size", "mfu_evictable_data", "mfu_evictable_metadata",
+		"mru_ghost_evictable_ddt", "mfu_size", "mfu_evictable_data",
+		"mfu_evictable_metadata", "mfu_evictable_ddt",
 		"mfu_ghost_size", "mfu_ghost_evictable_data",
-		"mfu_ghost_evictable_metadata", "evict_l2_cached",
-		"evict_l2_eligible", "evict_l2_ineligible", "l2_read_bytes",
-		"l2_write_bytes", "l2_size", "l2_asize", "l2_hdr_size",
+		"mfu_ghost_evictable_metadata", "mfu_ghost_evictable_ddt",
+		"evict_l2_cached", "evict_l2_eligible", "evict_l2_ineligible",
+		"l2_read_bytes", "l2_ddt_read_bytes", "l2_write_bytes",
+		"l2_ddt_write_bytes", "l2_size", "l2_asize",
+		"l2_hdr_size",
 		NULL
 	};
 

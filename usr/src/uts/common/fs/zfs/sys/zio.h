@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
@@ -40,6 +40,16 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+/*
+ * Checksum state w.r.t. SHA256 acceleration.
+ */
+typedef enum {
+	CKSTATE_NONE = 0,
+	CKSTATE_WAITING,
+	CKSTATE_CHECKSUMMING,
+	CKSTATE_CHECKSUM_DONE
+} zio_checksum_state_t;
 
 /*
  * Embedded checksum
@@ -80,6 +90,7 @@ enum zio_checksum {
 	ZIO_CHECKSUM_FLETCHER_4,
 	ZIO_CHECKSUM_SHA256,
 	ZIO_CHECKSUM_ZILOG2,
+	ZIO_CHECKSUM_SHA1CRC32,
 	ZIO_CHECKSUM_NOPARITY,
 	ZIO_CHECKSUM_FUNCTIONS
 };
@@ -154,6 +165,18 @@ typedef enum zio_priority {
 
 	ZIO_PRIORITY_NOW		/* non-queued i/os (e.g. free) */
 } zio_priority_t;
+
+/*
+ * Macro for asserting validity of the priorities obtained by conversion
+ * from CoS/vdev properties
+ */
+#define	ZIO_PRIORITY_QUEUEABLE_VALID(prio)	\
+	(((prio) >= ZIO_PRIORITY_SYNC_READ) &&	\
+	((prio) < ZIO_PRIORITY_NUM_QUEUEABLE))
+
+#define	ZIO_PIPELINE_CONTINUE		0x100
+#define	ZIO_PIPELINE_STOP		0x101
+#define	ZIO_PIPELINE_RESTART_STAGE	0x102
 
 enum zio_flag {
 	/*
@@ -249,6 +272,8 @@ typedef void zio_done_func_t(zio_t *zio);
 
 extern const char *zio_type_name[ZIO_TYPES];
 
+struct range_tree;
+
 /*
  * A bookmark is a four-tuple <objset, object, level, blkid> that uniquely
  * identifies any block in the pool.  By convention, the meta-objset (MOS)
@@ -300,13 +325,18 @@ typedef struct zbookmark_phys {
 
 typedef struct zio_prop {
 	enum zio_checksum	zp_checksum;
+	enum zio_checksum	zp_os_checksum;
 	enum zio_compress	zp_compress;
 	dmu_object_type_t	zp_type;
 	uint8_t			zp_level;
 	uint8_t			zp_copies;
-	boolean_t		zp_dedup;
-	boolean_t		zp_dedup_verify;
+	uint8_t			zp_dedup;
+	uint8_t			zp_dedup_verify;
 	boolean_t		zp_nopwrite;
+	boolean_t		zp_metadata;
+	boolean_t		zp_usesc;
+	uint64_t		zp_specflags;
+	uint64_t		zp_zpl_meta_to_special;
 } zio_prop_t;
 
 typedef struct zio_cksum_report zio_cksum_report_t;
@@ -452,6 +482,17 @@ struct zio {
 
 	/* Taskq dispatching state */
 	taskq_ent_t	io_tqent;
+
+	/* Timestamp for tracking vdev I/O latency */
+	hrtime_t io_vd_timestamp;
+
+	/* Checksum acceleration */
+	zio_checksum_state_t	zio_checksum_state;
+	zio_cksum_t		*zio_checksump;
+	void			*zio_checksum_datap;
+	uint64_t		zio_checksum_data_size;
+	struct zio		*zio_checksum_next;
+	zio_cksum_t		actual_cksum;
 };
 
 extern zio_t *zio_null(zio_t *pio, spa_t *spa, vdev_t *vd,
@@ -485,6 +526,10 @@ extern zio_t *zio_claim(zio_t *pio, spa_t *spa, uint64_t txg,
 
 extern zio_t *zio_ioctl(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
     zio_done_func_t *done, void *private, enum zio_flag flags);
+
+extern zio_t *zio_trim(spa_t *spa, vdev_t *vd, struct range_tree *tree,
+    zio_done_func_t *done, void *private, enum zio_flag flags,
+    int dkiocfree_flags, metaslab_t *msp);
 
 extern zio_t *zio_read_phys(zio_t *pio, vdev_t *vd, uint64_t offset,
     uint64_t size, void *data, int checksum,
@@ -582,7 +627,6 @@ extern void zfs_ereport_finish_checksum(zio_cksum_report_t *report,
 
 extern void zfs_ereport_send_interim_checksum(zio_cksum_report_t *report);
 extern void zfs_ereport_free_checksum(zio_cksum_report_t *report);
-
 /* If we have the good data in hand, this function can be used */
 extern void zfs_ereport_post_checksum(spa_t *spa, vdev_t *vd,
     struct zio *zio, uint64_t offset, uint64_t length,
@@ -594,6 +638,9 @@ extern void spa_handle_ignored_writes(spa_t *spa);
 /* zbookmark_phys functions */
 boolean_t zbookmark_is_before(const struct dnode_phys *dnp,
     const zbookmark_phys_t *zb1, const zbookmark_phys_t *zb2);
+
+/* best effort dedup */
+void zio_best_effort_dedup(zio_t *zio);
 
 #ifdef	__cplusplus
 }

@@ -146,9 +146,6 @@ typedef struct xd_cfg {
 #define	XD_DOM_ALL	(XD_DOM_ZERO | XD_DOM_GUEST)
 
 static i_xd_cfg_t xdci[] = {
-	{ XEN_CONSOLE, NULL, NULL, NULL, "xencons", NULL,
-	    "console", IPL_CONS, XD_DOM_ALL, },
-
 	{ XEN_VNET, "vif", "device/vif", "backend/vif", "xnf", "xnb",
 	    "network", IPL_VIF, XD_DOM_ALL, },
 
@@ -157,6 +154,9 @@ static i_xd_cfg_t xdci[] = {
 
 	{ XEN_BLKTAP, "tap", NULL, "backend/tap", NULL, "xpvtap",
 	    "block", IPL_VBD, XD_DOM_ALL, },
+#ifndef XPV_HVM_DRIVER
+	{ XEN_CONSOLE, NULL, NULL, NULL, "xencons", NULL,
+	    "console", IPL_CONS, XD_DOM_ALL, },
 
 	{ XEN_XENBUS, NULL, NULL, NULL, "xenbus", NULL,
 	    NULL, 0, XD_DOM_ALL, },
@@ -172,6 +172,7 @@ static i_xd_cfg_t xdci[] = {
 
 	{ XEN_PRIVCMD, NULL, NULL, NULL, "privcmd", NULL,
 	    NULL, 0, XD_DOM_ZERO, },
+#endif
 };
 #define	NXDC	(sizeof (xdci) / sizeof (xdci[0]))
 

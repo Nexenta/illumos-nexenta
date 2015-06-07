@@ -24,6 +24,7 @@
 #
 # include global definitions
 include ../Makefile.master
+include $(NZA_MAKEDEFS)
 
 #
 # List of architectures to build as part of the standard build.
@@ -214,8 +215,11 @@ clean.lint modlist: $($(MACH)_ARCHITECTURES)
 # the user will be interested in), it's historically been set to
 # mirror the $(XRDIRS) list, and that works kinda sorta okay.
 #
-XRDIRS = $(sparc_ARCHITECTURES) $(i386_ARCHITECTURES) sun4 sfmmu	\
+SHARED_XRDIRS = $(sparc_ARCHITECTURES) $(i386_ARCHITECTURES) sun4 sfmmu	\
 	sun common
+NZA_XRDIRS = $(SHARED_XRDIRS:%=% ../../nza-closed/uts/%)
+XRDIRS = $(SHARED_XRDIRS)
+$(NZA_MODS)XRDIRS = $(NZA_XRDIRS)
 
 XRINCDIRS = $(XRDIRS)
 

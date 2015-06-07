@@ -162,3 +162,24 @@ INFO=http://illumos.org
 EXTERNAL_URL=https://illumos.org/issues/\\1
 REGEX=\\([0-9]\\{1\,6\\}\\)
 CONTACT=developer@lists.illumos.org
+
+#
+# The Jira instance at jira.nexenta.com
+#
+PREFIX=nexenta-nex
+INFO=http://nexenta.com
+EXTERNAL_URL=https://jira.nexenta.com/browse/\\1
+REGEX=\\(NEX\-[0-9]\\{1\,6\\}\\)
+CONTACT=support@nexenta.com
+
+PREFIX=nexenta-os
+INFO=http://nexenta.com
+EXTERNAL_URL=https://jira.nexenta.com/browse/\\1
+REGEX=\\(OS\-[0-9]\\{1\,6\\}\\)
+CONTACT=support@nexenta.com
+
+PREFIX=nexenta-sup
+INFO=http://nexenta.com
+EXTERNAL_URL=https://jira.nexenta.com/browse/\\1
+REGEX=\\(SUP\-[0-9]\\{1\,6\\}\\)
+CONTACT=support@nexenta.com

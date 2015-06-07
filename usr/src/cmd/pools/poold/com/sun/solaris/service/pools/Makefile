@@ -29,7 +29,6 @@ include $(SRC)/cmd/Makefile.cmd
 
 CLASSPATH =	$(SRC)/cmd/pools/poold
 
-		
 SOURCE =	PoolInternal.java \
 		Component.java \
 		Configuration.java \

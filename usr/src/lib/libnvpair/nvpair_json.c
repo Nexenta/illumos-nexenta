@@ -9,6 +9,7 @@
  * http://www.illumos.org/license/CDDL.
  */
 /*
+ * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc.
  */
 

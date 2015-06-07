@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright (c) 2014 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
@@ -396,7 +397,7 @@ dnode_sync_free_range(void *arg, uint64_t blkid, uint64_t nblks)
  * Try to kick all the dnode's dbufs out of the cache...
  */
 void
-dnode_evict_dbufs(dnode_t *dn)
+dnode_evict_dbufs(dnode_t *dn, int level)
 {
 	dmu_buf_impl_t db_marker;
 	dmu_buf_impl_t *db, *db_next;
@@ -411,6 +412,12 @@ dnode_evict_dbufs(dnode_t *dn)
 #endif	/* DEBUG */
 
 		mutex_enter(&db->db_mtx);
+		if (level != DBUF_EVICT_ALL && db->db_level != level) {
+			mutex_exit(&db->db_mtx);
+			db_next = AVL_NEXT(&dn->dn_dbufs, db);
+			continue;
+		}	
+
 		if (db->db_state != DB_EVICTING &&
 		    refcount_is_zero(&db->db_holds)) {
 			db_marker.db_level = db->db_level;
@@ -491,7 +498,7 @@ dnode_sync_free(dnode_t *dn, dmu_tx_t *tx)
 	ASSERT(BP_IS_HOLE(dn->dn_phys->dn_blkptr));
 
 	dnode_undirty_dbufs(&dn->dn_dirty_records[txgoff]);
-	dnode_evict_dbufs(dn);
+	dnode_evict_dbufs(dn, DBUF_EVICT_ALL);
 	ASSERT(avl_is_empty(&dn->dn_dbufs));
 
 	/*

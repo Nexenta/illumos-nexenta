@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -68,7 +69,7 @@ size_t	spt_used;
  * If somebody wants even more memory for ISM (risking hanging
  * the system) they can patch the segspt_minfree to smaller number.
  */
-pgcnt_t segspt_minfree = 0;
+volatile pgcnt_t segspt_minfree = 0;
 
 static int segspt_create(struct seg *seg, caddr_t argsp);
 static int segspt_unmap(struct seg *seg, caddr_t raddr, size_t ssize);

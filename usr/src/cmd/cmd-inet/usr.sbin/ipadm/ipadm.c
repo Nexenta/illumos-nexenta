@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
  */
 #include <arpa/inet.h>
 #include <errno.h>
@@ -33,6 +33,8 @@
 #include <libdllink.h>
 #include <libinetutil.h>
 #include <libipadm.h>
+#include <ipmp.h>
+#include <ipmp_admin.h>
 #include <locale.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -46,12 +48,17 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <zone.h>
+#include <sys/list.h>
+#include <stddef.h>
 
 #define	STR_UNKNOWN_VAL	"?"
 #define	LIFC_DEFAULT	(LIFC_NOXMIT | LIFC_TEMPORARY | LIFC_ALLZONES |\
 			LIFC_UNDER_IPMP)
 
+static void do_create_if_common(int, char **, const char *, uint32_t);
+
 typedef void cmdfunc_t(int, char **, const char *);
+static cmdfunc_t do_create_ipmp, do_add_ipmp, do_remove_ipmp;
 static cmdfunc_t do_create_if, do_delete_if, do_enable_if, do_disable_if;
 static cmdfunc_t do_show_if;
 static cmdfunc_t do_set_prop, do_show_prop, do_set_ifprop;
@@ -69,6 +76,14 @@ typedef struct	cmd {
 
 static cmd_t	cmds[] = {
 	/* interface management related sub-commands */
+	{ "create-ipmp", do_create_ipmp, "\tcreate-ipmp\t[-t] <ipmp-group>"},
+	{ "delete-ipmp", do_delete_if, "\tdelete-ipmp\t[-t] <ipmp-group>"},
+	{ "add-ipmp", do_add_ipmp, "\tadd-ipmp\t[-t] -i"
+	    " <ipmp-member-interface> "
+	    "[-i <ipmp-member-interface>] <ipmp-group-interface>"},
+	{ "remove-ipmp", do_remove_ipmp, "\tremove-ipmp\t[-t] -i"
+	    " <ipmp-member-interface> "
+	    "[-i <ipmp-member-interface>] <ipmp-group-interface>"},
 	{ "create-if",	do_create_if,	"\tcreate-if\t[-t] <interface>"	},
 	{ "disable-if",	do_disable_if,	"\tdisable-if\t-t <interface>"	},
 	{ "enable-if",	do_enable_if,	"\tenable-if\t-t <interface>"	},
@@ -284,6 +299,7 @@ typedef enum {
 
 typedef enum {
 	SI_IFNAME,
+	SI_IFCLASS,
 	SI_STATE,
 	SI_CURRENT,
 	SI_PERSISTENT
@@ -303,6 +319,7 @@ static ofmt_field_t show_addr_fields[] = {
 static ofmt_field_t show_if_fields[] = {
 /* name,	field width,	id,		callback */
 { "IFNAME",	11,		SI_IFNAME,	print_si_cb},
+{ "CLASS",	10,		SI_IFCLASS,	print_si_cb},
 { "STATE",	9,		SI_STATE,	print_si_cb},
 { "CURRENT",	13,		SI_CURRENT,	print_si_cb},
 { "PERSISTENT",	11,		SI_PERSISTENT,	print_si_cb},
@@ -315,6 +332,11 @@ typedef struct intf_mask {
 	uint64_t	bits;
 	uint64_t	mask;
 } fmask_t;
+
+typedef enum {
+    IPMP_ADD_MEMBER,
+    IPMP_REMOVE_MEMBER
+} ipmp_action_t;
 
 /*
  * Handle to libipadm. Opened in main() before the sub-command specific
@@ -336,6 +358,7 @@ static void 	ipadm_ofmt_check(ofmt_status_t, boolean_t, ofmt_handle_t);
 static void 	ipadm_check_propstr(const char *, boolean_t, const char *);
 static void 	process_misc_addrargs(int, char **, const char *, int *,
 		    uint32_t *);
+static void	do_action_ipmp(int, char **, const char *, ipmp_action_t);
 
 static void
 usage(void)
@@ -398,19 +421,17 @@ main(int argc, char *argv[])
 }
 
 /*
- * Create an IP interface for which no saved configuration exists in the
- * persistent store.
+ * Create regular IP interface or IPMP group interface
  */
 static void
-do_create_if(int argc, char *argv[], const char *use)
+do_create_if_common(int argc, char *argv[], const char *use, uint32_t flags)
 {
 	ipadm_status_t	status;
 	int		option;
-	uint32_t	flags = IPADM_OPT_PERSIST|IPADM_OPT_ACTIVE;
 
 	opterr = 0;
-	while ((option = getopt_long(argc, argv, ":t", if_longopts,
-	    NULL)) != -1) {
+	while ((option = getopt_long(argc, argv,
+	    ":t", if_longopts, NULL)) != -1) {
 		switch (option) {
 		case 't':
 			/*
@@ -430,6 +451,124 @@ do_create_if(int argc, char *argv[], const char *use)
 		die("Could not create %s : %s",
 		    argv[optind], ipadm_status2str(status));
 	}
+}
+
+/*
+ * Create an IPMP group interface for which no saved configuration
+ * exists in the persistent store.
+ */
+static void
+do_create_ipmp(int argc, char *argv[], const char *use)
+{
+	ipmp_handle_t ipmp_handle;
+	int retval;
+	uint32_t flags = IPADM_OPT_PERSIST | IPADM_OPT_ACTIVE | IPADM_OPT_IPMP;
+
+	retval = ipmp_open(&ipmp_handle);
+	if (retval != IPMP_SUCCESS) {
+		die("Could not create IPMP handle: %s",
+		    ipadm_status2str(retval));
+	}
+
+	retval = ipmp_ping_daemon(ipmp_handle);
+	ipmp_close(ipmp_handle);
+
+	if (retval != IPMP_SUCCESS) {
+		die("Cannot ping in.mpathd: %s", ipmp_errmsg(retval));
+	}
+
+	do_create_if_common(argc, argv, use, flags);
+}
+
+static void
+do_add_ipmp(int argc, char *argv[], const char *use)
+{
+	do_action_ipmp(argc, argv, use, IPMP_ADD_MEMBER);
+}
+
+static void
+do_remove_ipmp(int argc, char *argv[], const char *use)
+{
+	do_action_ipmp(argc, argv, use, IPMP_REMOVE_MEMBER);
+}
+
+static void
+do_action_ipmp(int argc, char *argv[], const char *use,
+	ipmp_action_t action)
+{
+	int	option;
+	ipadm_status_t  status;
+	ipadm_ipmp_members_t members;
+	ipadm_ipmp_member_t *ipmp_member;
+	uint32_t flags = IPADM_OPT_PERSIST | IPADM_OPT_ACTIVE;
+
+	list_create(&members, sizeof (ipadm_ipmp_member_t),
+	    offsetof(ipadm_ipmp_member_t, node));
+
+	opterr = 0;
+	while ((option = getopt_long(argc, argv,
+	    ":ti:", if_longopts, NULL)) != -1) {
+		switch (option) {
+		case 't':
+			flags &= ~IPADM_OPT_PERSIST;
+			break;
+		case 'i':
+			if ((ipmp_member = calloc(1,
+			    sizeof (ipadm_ipmp_member_t))) == NULL)
+				die("insufficient memory");
+
+			if (strlcpy(ipmp_member->if_name,
+			    optarg, sizeof (ipmp_member->if_name)) >= LIFNAMSIZ)
+				die("Incorrect length of interface"
+				    "name: %s", optarg);
+
+			list_insert_tail(&members, ipmp_member);
+			break;
+		default:
+			die_opterr(optopt, option, use);
+		}
+	}
+
+	if (optind != (argc - 1))
+		die("Usage: %s", use);
+
+	while ((ipmp_member = list_remove_head(&members)) != NULL) {
+		switch (action) {
+			case IPMP_ADD_MEMBER:
+				if ((status = ipadm_add_ipmp_member(iph,
+				    argv[optind], ipmp_member->if_name, flags))
+				    != IPADM_SUCCESS)
+					die("Cannot add '%s' interface to"
+					    "'%s': %s",
+					    ipmp_member->if_name, argv[optind],
+					    ipadm_status2str(status));
+				break;
+			case IPMP_REMOVE_MEMBER:
+				if ((status = ipadm_remove_ipmp_member(iph,
+				    argv[optind], ipmp_member->if_name, flags))
+				    != IPADM_SUCCESS)
+					die("Cannot remove '%s' interface from "
+					    "'%s': %s",
+					    ipmp_member->if_name, argv[optind],
+					    ipadm_status2str(status));
+				break;
+		}
+
+		free(ipmp_member);
+	}
+
+	list_destroy(&members);
+}
+
+/*
+ * Create an IP interface for which no saved configuration exists in the
+ * persistent store.
+ */
+static void
+do_create_if(int argc, char *argv[], const char *use)
+{
+	do_create_if_common(argc, argv, use,
+	    IPADM_OPT_PERSIST | IPADM_OPT_ACTIVE);
 }
 
 /*
@@ -1908,11 +2047,22 @@ print_si_cb(ofmt_arg_t *ofarg, char *buf, uint_t bufsize)
 		{ "6",	IFIF_IPV6,		IFIF_IPV6	},
 		{ NULL,	0,			0		}
 	};
+	fmask_t intf_class[] = {
+		{ "IP",		IPADM_IF_CLASS_REGULAR, IPADM_ALL_BITS},
+		{ "IPMP",	IPADM_IF_CLASS_IPMP,    IPADM_ALL_BITS},
+		{ "VIRTUAL",	IPADM_IF_CLASS_VIRTUAL, IPADM_ALL_BITS},
+		{ "UNKNOWN",	IPADM_IF_CLASS_UNKNOWN, IPADM_ALL_BITS},
+		{ NULL,	0,	0}
+	};
 
 	buf[0] = '\0';
 	switch (ofarg->ofmt_id) {
 	case SI_IFNAME:
 		(void) snprintf(buf, bufsize, "%s", ifname);
+		break;
+	case SI_IFCLASS:
+		flags2str(ifinfo->ifi_class, intf_class, _B_FALSE,
+		    buf, bufsize);
 		break;
 	case SI_STATE:
 		flags2str(ifinfo->ifi_state, intf_state, _B_FALSE,

@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * IP interface to squeues.
@@ -147,7 +150,7 @@ static void (*ip_squeue_create_callback)(squeue_t *) = NULL;
  *	created. This is the time squeue code waits before waking up the worker
  *	thread after queuing a request.
  */
-uint_t ip_squeue_worker_wait = 10;
+volatile uint_t ip_squeue_worker_wait = 10;
 
 static squeue_t *ip_squeue_create(pri_t);
 static squeue_set_t *ip_squeue_set_create(processorid_t);

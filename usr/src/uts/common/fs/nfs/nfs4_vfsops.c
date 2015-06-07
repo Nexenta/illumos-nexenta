@@ -2160,10 +2160,10 @@ restore_svp(mntinfo4_t *mi, servinfo4_t *svp, servinfo4_t *origsvp)
 	return (svp);
 }
 
-static ushort_t nfs4_max_threads = 8;	/* max number of active async threads */
-uint_t nfs4_bsize = 32 * 1024;	/* client `block' size */
-static uint_t nfs4_async_clusters = 1;	/* # of reqs from each async queue */
-static uint_t nfs4_cots_timeo = NFS_COTS_TIMEO;
+volatile ushort_t nfs4_max_threads = 8;	/* max number of active async threads */
+volatile uint_t nfs4_bsize = 32 * 1024;	/* client `block' size */
+volatile uint_t nfs4_async_clusters = 1; /* # of reqs from each async queue */
+volatile uint_t nfs4_cots_timeo = NFS_COTS_TIMEO;
 
 /*
  * Remap the root filehandle for the given filesystem.

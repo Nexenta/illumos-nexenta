@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1986, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -1000,11 +1001,11 @@ errout:
 	return (error);
 }
 
-static int nfs3_dynamic = 0;	/* global variable to enable dynamic retrans. */
-static ushort_t nfs3_max_threads = 8;	/* max number of active async threads */
-uint_t nfs3_bsize = 32 * 1024;	/* client `block' size */
-static uint_t nfs3_async_clusters = 1;	/* # of reqs from each async queue */
-static uint_t nfs3_cots_timeo = NFS_COTS_TIMEO;
+volatile int nfs3_dynamic = 0;	/* global variable to enable dynamic retrans. */
+volatile ushort_t nfs3_max_threads = 8;	/* max number of active async threads */
+volatile uint_t nfs3_bsize = 32 * 1024;	/* client `block' size */
+volatile uint_t nfs3_async_clusters = 1; /* # of reqs from each async queue */
+volatile uint_t nfs3_cots_timeo = NFS_COTS_TIMEO;
 
 static int
 nfs3rootvp(vnode_t **rtvpp, vfs_t *vfsp, struct servinfo *svp,

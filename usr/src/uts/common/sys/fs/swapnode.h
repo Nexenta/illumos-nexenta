@@ -23,6 +23,9 @@
  * Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -31,8 +34,6 @@
 #ifndef	_SYS_FS_SWAPNODE_H
 #define	_SYS_FS_SWAPNODE_H
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -40,11 +41,11 @@ extern "C" {
 /*
  * pointer to swapfs global data structures
  */
-extern pgcnt_t swapfs_minfree;		/* amount of availrmem (in pages) */
+extern volatile pgcnt_t swapfs_minfree;	/* amount of availrmem (in pages) */
 					/* that is unavailable to swapfs */
 extern pgcnt_t swapfs_desfree;
 
-extern pgcnt_t swapfs_reserve;		/* amount of availrmem (in pages) */
+extern volatile pgcnt_t swapfs_reserve;	/* amount of availrmem (in pages) */
 					/* that is unavailable for swap */
 					/* reservation to non-priv processes */
 

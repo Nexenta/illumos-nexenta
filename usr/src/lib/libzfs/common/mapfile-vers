@@ -19,7 +19,7 @@
 # CDDL HEADER END
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2013 Nexenta Systems, Inc. All rights reserved.
 # Copyright (c) 2011, 2014 by Delphix. All rights reserved.
 #
 # MAPFILE HEADER START
@@ -176,8 +176,10 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zpool_create;
 	zpool_destroy;
 	zpool_disable_datasets;
+	zpool_disable_datasets_ex;
 	zpool_dump_ddt;
 	zpool_enable_datasets;
+	zpool_enable_datasets_ex;
 	zpool_expand_proplist;
 	zpool_explain_recover;
 	zpool_export;
@@ -228,6 +230,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zpool_scan;
 	zpool_search_import;
 	zpool_set_prop;
+	zpool_stage_history;
 	zpool_state_to_name;
 	zpool_unmount_datasets;
 	zpool_upgrade;
@@ -248,6 +251,33 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	zprop_width;
 	zvol_check_dump_config;
 	zvol_volsize_to_reservation;
+
+# NZA ZFS Plus
+	vdev_name_to_prop;
+	vdev_prop_to_name;
+	vdev_prop_readonly;
+	vdev_prop_values;
+	vdev_prop_column_name;
+	vdev_prop_align_right;
+	zpool_set_proplist;
+	vdev_set_proplist;
+	vdev_get_prop;
+	cos_set_proplist;
+	cos_get_prop;
+	cos_alloc;
+	cos_free;
+	cos_list;
+	cos_name_to_prop;
+	cos_prop_to_name;
+	cos_prop_readonly;
+	cos_prop_values;
+	cos_prop_column_name;
+	cos_prop_align_right;
+	vdev_print_one_property;
+	vdev_get_proplist;
+	cos_print_one_property;
+	cos_get_proplist;
+
     local:
 	*;
 };

@@ -1,0 +1,217 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# ident	"@(#)README	1.3	08/12/19 SMI"
+#
+
+DESCRIPTION:
+============
+
+This test suite is designed to test the loopback file (lofi) driver.
+The suite was primarily written to test lofi's compression/decompression
+functionality, so the bulk of the test assertions are in that area.
+However, since there was no pre-existing lofi test suite to add the
+compression tests to, this suite also provides some degree of general
+lofi coverage that does not involve compression.
+
+The suite auto-detects the presence or absence of lofi compression
+functionality.  If missing, the compression-related tests will not be
+run.  The lofi compression functionality was put back in snv_80, so when
+run against snv_80 or later the compression portion of the tests will be
+run; for snv_79 and before, as well as any s10 build, only those tests
+not involving compression will be executed.
+
+
+PREREQUISITES:
+==============
+
+1. The SUNWstc-tetlite test harness package is required to be installed,
+   or be accessible via nfs.
+
+2. A scratch directory with 1.1GB or more of free space.
+
+3. No pre-existing lofi devices may be configured on the system.  If
+   the suite detects pre-existing lofi devices, it will not run.
+
+
+CTI-TET PACKAGE INSTALLATION:
+=============================
+
+The CTI-TET package is called SUNWstc-tetlite and installs into "/opt"
+by default.  Installation is via the standard Solaris package
+installation tool pkgadd(1m).  To install SUNWstc-tetlite simply enter
+the following command line as root (or having adopted the root role):
+
+# pkgadd -d <package location>  SUNWstc-tetlite
+
+Where <package location> refers to the path containing the SUNWstc-tetlite
+package directory.
+
+o It is recommended that you install the packages from scratch, rather
+  than on top of an existing installation.  Thus, if an old version of
+  the tests is installed, remove it:
+
+# pkgrm SUNWstc-tetlite
+
+It is also acceptable to use an nfs accessible version of SUNWstc-tetlite.
+
+
+TEST SUITE INSTALLATION :
+=======================
+
+In the majority of cases, the test suite can be installed from
+packages. The package is called SUNWstc-os-lofi and installs into "/opt" by
+default.  Installation is via the standard Solaris package installation
+tool pkgadd(1m).  To install SUNWstc-os-lofi simply enter the following
+command line as root (or having adopted the root role):
+
+# pkgadd -d <package location>  SUNWstc-os-lofi
+
+Where <package location> refers to the path containing the SUNWstc-os-lofi
+package directory.
+
+ o It is recommended that you install the packages from scratch, rather
+   than on top of an existing installation.  Thus, if an old version of
+   the tests is installed:
+
+# pkgrm SUNWstc-os-lofi
+
+It is also acceptable to use an nfs accessible version of SUNWstc-os-lofi.
+
+Optionally, the test suite source can be installed locally, built in the
+source tree and run from that location.
+
+As any user do the following after installing the test suite source :
+
+1. TET_ROOT=/opt/SUNWstc-tetlite
+2. export TET_ROOT
+3. CTI_ROOT=$TET_ROOT/contrib/ctitools
+4. export CTI_ROOT
+5. TET_SUITE_ROOT=/export/home/cti_lofi/usr/src/suites/os (e.g location)
+6. export TET_SUITE_ROOT
+7. cd $TET_SUITE_ROOT/lofi
+8. /usr/bin/make
+
+The build can also install into a proto directory below the workspace
+root directory.  The workspace root is the directory under which the
+usr/src or usr/closed directory is located (so, in the example location
+used in step 5 above, the workspace root is "/export/home/cti_lofi").
+In addition, test suite packages can be built using the proto directory
+and stored in the packages directory below the defined workspace root
+directory.  To install the binaries into the proto area, do:
+
+9. /usr/ccs/bin/make install
+
+To create the test suite package, do
+
+10. /usr/ccs/bin/make package
+
+
+TEST SUITE CONFIGURATION:
+=========================
+
+The only configuration necessary is to define the mandatory SCRATCH_DIR
+variable for the test suite.  This must point to a directory that has
+slightly over 1GB of free space and in which root has write permissions.
+SCRATCH_DIR can be specified in the file:
+
+$TET_SUITE_ROOT/lofi/config/test_config
+
+or they can be specified on the command line when executing the tests
+(see TEST SUITE EXECUTION below).  Other variables can also be set
+to place limits on varying test parameters that get run.  See the 
+comments in $TET_SUITE_ROOT/lofi/config/test_config for details.
+
+
+TEST SUITE EXECUTION:
+=====================
+
+The test suite execution is required to be done as root.
+
+Set up the environment variables:
+
+export TET_ROOT=/opt/SUNWstc-tetlite
+export CTI_ROOT=$TET_ROOT/contrib/ctitools
+export TET_SUITE_ROOT=/opt/SUNWstc-os-lofi (installation path of suite)
+PATH=$PATH:$CTI_ROOT/bin
+export PATH
+
+To run the entire test suite do the following:
+
+# run_test lofi
+
+if you have defined SCRATCH_DIR in the test_config file (see TEST SUITE
+CONFIGURATION above).  If not, specify a value for SCRATCH_DIR on the
+command line:
+
+# run_test -v SCRATCH_DIR=/export/home lofi
+
+The following usage of the run_test command is supported:
+
+# run_test lofi [<scenario>|tc_dir:[tp_list]]
+
+For example:
+
+    # run_test lofi compression_dynamic
+    (run the compression_dynamic test scenario only)
+
+    # run_test lofi compression_dynamic:10
+    (only run test purpose 10 of the compression_dynamic scenario)
+
+
+EVALUATING TEST SUITE RESULTS:
+==============================
+
+At the completion of a test run, a summary of test results will be
+displayed on the terminal where the test suite was invoked.  If 0 tests
+were run, this typically indicates a problem was encountered in setup
+before any test cases were attempted.  Details on any issues can be
+found by viewing the journal file, the location of which will be
+reported by TET at the end of the test run.
+
+The STATUS.LIST file at the top level of the test suite lists any expected
+failures for the suite.  The following test status values can be reported:
+
+	PASS - Test ran to completion with no issues
+	FAIL - Test ran to completion, but failed to prove the assertion
+	UNRESOLVED - Unable to execute test assertion because of an issue
+	    in prerequisite steps.
+	UNTESTED - Test skipped, either because support for feature missing
+	    on test system (e.g. compression tests skipped on OS without
+	    compression support) or because of user configuration choices
+	    (e.g. RUNMODE set to 'short' so the more time-consuming tests
+	    are skipped)
+
+TEST SUITE UNCONFIGURE:
+=======================
+
+No test suite unconfiguration step is necessary.  So long as none of
+the tests terminated abnormally, the suite will leave the test system
+in the same shape that it found it.
+
+Should the test suite exit abnormally (system goes down during testing,
+etc.) then the tests may leave behind configured lofi devices (execute
+'lofiadm' to check for them) or files in SCRATCH_DIR that the user will
+need to clean up before attempting to run the test suite again.

@@ -20,8 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- *
- * Copyright 2011, 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Joyent, Inc. All rights reserved.
  */
 
@@ -61,9 +60,9 @@ struct modlfs modlfs4 = {
 	&vfw4
 };
 
-uint_t nfs4_max_transfer_size = 32 * 1024;
-uint_t nfs4_max_transfer_size_cots = 1024 * 1024;
-uint_t nfs4_max_transfer_size_rdma = 1024 * 1024;
+volatile uint_t nfs4_max_transfer_size = 32 * 1024;
+volatile uint_t nfs4_max_transfer_size_cots = 1024 * 1024;
+volatile uint_t nfs4_max_transfer_size_rdma = 1024 * 1024;
 
 int
 nfs4tsize(void)

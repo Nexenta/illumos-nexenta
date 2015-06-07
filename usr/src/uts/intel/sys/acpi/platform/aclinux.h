@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2011, Intel Corp.
+ * Copyright (C) 2000 - 2013, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,11 +55,9 @@
 
 #include <linux/string.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/ctype.h>
 #include <linux/sched.h>
-#include <asm/system.h>
-#include <asm/atomic.h>
+#include <linux/atomic.h>
 #include <asm/div64.h>
 #include <asm/acpi.h>
 #include <linux/slab.h>
@@ -112,12 +110,13 @@
 
 
 #ifdef __KERNEL__
+#include <acpi/actypes.h>
 /*
  * Overrides for in-kernel ACPICA
  */
 static inline acpi_thread_id acpi_os_get_thread_id(void)
 {
-    return current;
+    return (ACPI_THREAD_ID) (unsigned long) current;
 }
 
 /*
@@ -126,7 +125,6 @@ static inline acpi_thread_id acpi_os_get_thread_id(void)
  * However, boot has  (system_state != SYSTEM_RUNNING)
  * to quiet __might_sleep() in kmalloc() and resume does not.
  */
-#include <acpi/actypes.h>
 static inline void *acpi_os_allocate(acpi_size size)
 {
     return kmalloc(size, irqs_disabled() ? GFP_ATOMIC : GFP_KERNEL);
@@ -147,13 +145,35 @@ static inline void *acpi_os_acquire_object(acpi_cache_t * cache)
 #define ACPI_ALLOCATE_ZEROED(a) acpi_os_allocate_zeroed(a)
 #define ACPI_FREE(a)            kfree(a)
 
-/* Used within ACPICA to show where it is safe to preempt execution */
-
+#ifndef CONFIG_PREEMPT
+/*
+ * Used within ACPICA to show where it is safe to preempt execution
+ * when CONFIG_PREEMPT=n
+ */
 #define ACPI_PREEMPTION_POINT() \
     do { \
         if (!irqs_disabled()) \
             cond_resched(); \
     } while (0)
+#endif
+
+/*
+ * When lockdep is enabled, the spin_lock_init() macro stringifies it's
+ * argument and uses that as a name for the lock in debugging.
+ * By executing spin_lock_init() in a macro the key changes from "lock" for
+ * all locks to the name of the argument of acpi_os_create_lock(), which
+ * prevents lockdep from reporting false positives for ACPICA locks.
+ */
+#define AcpiOsCreateLock(__handle)				\
+({								\
+	spinlock_t *lock = ACPI_ALLOCATE(sizeof(*lock));	\
+								\
+	if (lock) {						\
+		*(__handle) = lock;				\
+		spin_lock_init(*(__handle));			\
+	}							\
+	lock ? AE_OK : AE_NO_MEMORY;				\
+})
 
 #endif /* __KERNEL__ */
 

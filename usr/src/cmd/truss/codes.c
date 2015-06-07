@@ -22,9 +22,9 @@
 /*
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014, OmniTI Computer Consulting, Inc. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -1164,6 +1164,8 @@ const struct ioc {
 		"zfs_cmd_t" },
 	{ (uint_t)ZFS_IOC_VDEV_DETACH,		"ZFS_IOC_VDEV_DETACH",
 		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_VDEV_SETL2ADDDT,	"ZFS_IOC_VDEV_SETL2ADDDT",
+		"zfs_cmd_t" },
 	{ (uint_t)ZFS_IOC_VDEV_SETPATH,		"ZFS_IOC_VDEV_SETPATH",
 		"zfs_cmd_t" },
 	{ (uint_t)ZFS_IOC_VDEV_SETFRU,		"ZFS_IOC_VDEV_SETFRU",
@@ -1269,6 +1271,20 @@ const struct ioc {
 	{ (uint_t)ZFS_IOC_GET_BOOKMARKS,	"ZFS_IOC_GET_BOOKMARKS",
 		"zfs_cmd_t" },
 	{ (uint_t)ZFS_IOC_DESTROY_BOOKMARKS,	"ZFS_IOC_DESTROY_BOOKMARKS",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_VDEV_SET_PROPS,	"ZFS_IOC_VDEV_SET_PROPS",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_VDEV_GET_PROPS,	"ZFS_IOC_VDEV_GET_PROPS",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_COS_ALLOC,		"ZFS_IOC_COS_ALLOC",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_COS_FREE,		"ZFS_IOC_COS_FREE",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_COS_LIST,		"ZFS_IOC_COS_LIST",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_COS_SET_PROPS,	"ZFS_IOC_COS_SET_PROPS",
+		"zfs_cmd_t" },
+	{ (uint_t)ZFS_IOC_COS_GET_PROPS,	"ZFS_IOC_COS_GET_PROPS",
 		"zfs_cmd_t" },
 
 	/* kssl ioctls */

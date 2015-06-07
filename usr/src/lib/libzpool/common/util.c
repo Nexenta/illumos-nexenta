@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <assert.h>
@@ -68,19 +69,22 @@ show_vdev_stats(const char *desc, const char *ctype, nvlist_t *nv, int indent)
 {
 	vdev_stat_t *vs;
 	vdev_stat_t v0 = { 0 };
-	uint64_t sec;
+	uint64_t sec, ops_rd, ops_wr;
 	uint64_t is_log = 0;
 	nvlist_t **child;
 	uint_t c, children;
 	char used[6], avail[6];
 	char rops[6], wops[6], rbytes[6], wbytes[6], rerr[6], werr[6], cerr[6];
+	char riotime[8], wiotime[8];
 	char *prefix = "";
 
 	if (indent == 0 && desc != NULL) {
 		(void) printf("                           "
-		    " capacity   operations   bandwidth  ---- errors ----\n");
+		    " capacity   operations   bandwidth   --- latency ---  "
+		    "---- errors ----\n");
 		(void) printf("description                "
-		    "used avail  read write  read write  read write cksum\n");
+		    "used avail  read write  read write     read    write  "
+		    "read write cksum\n");
 	}
 
 	if (desc != NULL) {
@@ -94,6 +98,8 @@ show_vdev_stats(const char *desc, const char *ctype, nvlist_t *nv, int indent)
 			vs = &v0;
 
 		sec = MAX(1, vs->vs_timestamp / NANOSEC);
+		ops_rd = MAX(1, vs->vs_ops[ZIO_TYPE_READ]);
+		ops_wr = MAX(1, vs->vs_ops[ZIO_TYPE_WRITE]);
 
 		nicenum(vs->vs_alloc, used);
 		nicenum(vs->vs_space - vs->vs_alloc, avail);
@@ -101,18 +107,22 @@ show_vdev_stats(const char *desc, const char *ctype, nvlist_t *nv, int indent)
 		nicenum(vs->vs_ops[ZIO_TYPE_WRITE] / sec, wops);
 		nicenum(vs->vs_bytes[ZIO_TYPE_READ] / sec, rbytes);
 		nicenum(vs->vs_bytes[ZIO_TYPE_WRITE] / sec, wbytes);
+		nicenum(vs->vs_iotime[ZIO_TYPE_READ] / ops_rd, riotime);
+		nicenum(vs->vs_iotime[ZIO_TYPE_WRITE] / ops_wr, wiotime);
 		nicenum(vs->vs_read_errors, rerr);
 		nicenum(vs->vs_write_errors, werr);
 		nicenum(vs->vs_checksum_errors, cerr);
 
-		(void) printf("%*s%s%*s%*s%*s %5s %5s %5s %5s %5s %5s %5s\n",
+		(void) printf(
+		    "%*s%s%*s%*s%*s %5s %5s %5s %5s %8s %8s %5s %5s %5s\n",
 		    indent, "",
 		    prefix,
 		    indent + strlen(prefix) - 25 - (vs->vs_space ? 0 : 12),
 		    desc,
 		    vs->vs_space ? 6 : 0, vs->vs_space ? used : "",
 		    vs->vs_space ? 6 : 0, vs->vs_space ? avail : "",
-		    rops, wops, rbytes, wbytes, rerr, werr, cerr);
+		    rops, wops, rbytes, wbytes, riotime, wiotime, rerr, werr,
+		        cerr);
 	}
 
 	if (nvlist_lookup_nvlist_array(nv, ctype, &child, &children) != 0)

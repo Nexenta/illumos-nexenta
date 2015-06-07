@@ -18,9 +18,10 @@
  *
  * CDDL HEADER END
  */
+
 /*
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -328,6 +329,80 @@ rfs_setattr_getfh(struct nfssaargs *args)
 	return (&args->saa_fh);
 }
 
+/* Change and release @exip and @vpp only in success */
+int
+rfs_cross_mnt(vnode_t **vpp, struct exportinfo **exip)
+{
+	struct exportinfo *exi;
+	vnode_t *vp = *vpp;
+	fid_t fid;
+	int error;
+
+	VN_HOLD(vp);
+
+	if ((error = traverse(&vp)) != 0) {
+		VN_RELE(vp);
+		return (error);
+	}
+
+	bzero(&fid, sizeof (fid));
+	fid.fid_len = MAXFIDSZ;
+	error = VOP_FID(vp, &fid, NULL);
+	if (error) {
+		VN_RELE(vp);
+		return (error);
+	}
+
+	exi = checkexport(&vp->v_vfsp->vfs_fsid, &fid);
+	if (exi == NULL ||
+	    (exi->exi_export.ex_flags & EX_NOHIDE) == 0) {
+		/*
+		 * It is not error, just subdir is not exported
+		 * or "nohide" is not set
+		 */
+		if (exi != NULL)
+			exi_rele(exi);
+		VN_RELE(vp);
+	} else {
+		/* go to submount */
+		exi_rele(*exip);
+		*exip = exi;
+
+		VN_RELE(*vpp);
+		*vpp = vp;
+	}
+
+	return (0);
+}
+
+/*
+ * Given mounted "dvp" and "exi", go upper mountpoint
+ * with dvp/exi correction
+ * Return 0 in success
+ */
+int
+rfs_climb_crossmnt(vnode_t **dvpp, struct exportinfo **exip, cred_t *cr)
+{
+	struct exportinfo *exi;
+	vnode_t *dvp = *dvpp;
+
+	ASSERT(dvp->v_flag & VROOT);
+
+	VN_HOLD(dvp);
+	dvp = untraverse(dvp);
+	exi = nfs_vptoexi(NULL, dvp, cr, NULL, NULL, FALSE);
+	if (exi == NULL) {
+		VN_RELE(dvp);
+		return (-1);
+	}
+
+	exi_rele(*exip);
+	*exip = exi;
+	VN_RELE(*dvpp);
+	*dvpp = dvp;
+
+	return (0);
+}
 /*
  * Directory lookup.
  * Returns an fhandle and file attributes for file name in a directory.
@@ -380,6 +455,8 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 		}
 	}
 
+	exi_hold(exi);
+
 	/*
 	 * Not allow lookup beyond root.
 	 * If the filehandle matches a filehandle of the exi,
@@ -387,9 +464,19 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	 */
 	if (strcmp(da->da_name, "..") == 0 &&
 	    EQFID(&exi->exi_fid, (fid_t *)&fhp->fh_len)) {
-		VN_RELE(dvp);
-		dr->dr_status = NFSERR_NOENT;
-		return;
+		if ((exi->exi_export.ex_flags & EX_NOHIDE) &&
+		    (dvp->v_flag & VROOT)) {
+			/*
+			 * special case for ".." and 'nohide'exported root
+			 */
+			if (rfs_climb_crossmnt(&dvp, &exi, cr) != 0) {
+				error = NFSERR_ACCES;
+				goto out;
+			}
+		} else  {
+			error = NFSERR_NOENT;
+			goto out;
+		}
 	}
 
 	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
@@ -397,8 +484,8 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	    MAXPATHLEN);
 
 	if (name == NULL) {
-		dr->dr_status = NFSERR_ACCES;
-		return;
+		error = NFSERR_ACCES;
+		goto out;
 	}
 
 	/*
@@ -412,6 +499,9 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	 */
 	if (PUBLIC_FH2(fhp)) {
 		publicfh_flag = TRUE;
+
+		exi_rele(exi);
+
 		error = rfs_publicfh_mclookup(name, dvp, cr, &vp, &exi,
 		    &sec);
 	} else {
@@ -425,6 +515,11 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	if (name != da->da_name)
 		kmem_free(name, MAXPATHLEN);
 
+	if (error == 0 && vn_ismntpt(vp)) {
+		error = rfs_cross_mnt(&vp, &exi);
+		if (error)
+			VN_RELE(vp);
+	}
 
 	if (!error) {
 		va.va_mask = AT_ALL;	/* we want everything */
@@ -451,15 +546,10 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 		VN_RELE(vp);
 	}
 
+out:
 	VN_RELE(dvp);
 
-	/*
-	 * If publicfh_flag is true then we have called rfs_publicfh_mclookup
-	 * and have obtained a new exportinfo in exi which needs to be
-	 * released. Note the the original exportinfo pointed to by exi
-	 * will be released by the caller, comon_dispatch.
-	 */
-	if (publicfh_flag && exi != NULL)
+	if (exi != NULL)
 		exi_rele(exi);
 
 	/*
@@ -1150,7 +1240,7 @@ struct rfs_async_write_list {
 
 static struct rfs_async_write_list *rfs_async_write_head = NULL;
 static kmutex_t rfs_async_write_lock;
-static int rfs_write_async = 1;	/* enables write clustering if == 1 */
+volatile int rfs_write_async = 1;	/* enables write clustering if == 1 */
 
 #define	MAXCLIOVECS	42
 #define	RFSWRITE_INITVAL (enum nfsstat) -1
@@ -1717,6 +1807,12 @@ rfs_create(struct nfscreatargs *args, struct nfsdiropres *dr,
 		return;
 	}
 
+	if (protect_zfs_mntpt(dvp) != 0) {
+		VN_RELE(dvp);
+		dr->dr_status = NFSERR_ACCES;
+		return;
+	}
+
 	/*
 	 * This is a completely gross hack to make mknod
 	 * work over the wire until we can wack the protocol
@@ -2096,6 +2192,13 @@ rfs_rename(struct nfsrnmargs *args, enum nfsstat *status,
 		return;
 	}
 
+	if (protect_zfs_mntpt(tovp) != 0) {
+		VN_RELE(tovp);
+		VN_RELE(fromvp);
+		*status = NFSERR_ACCES;
+		return;
+	}
+
 	/*
 	 * Check for a conflict with a non-blocking mandatory share reservation.
 	 */
@@ -2240,6 +2343,13 @@ rfs_link(struct nfslinkargs *args, enum nfsstat *status,
 		return;
 	}
 
+	if (protect_zfs_mntpt(tovp) != 0) {
+		VN_RELE(tovp);
+		VN_RELE(fromvp);
+		*status = NFSERR_ACCES;
+		return;
+	}
+
 	error = VOP_LINK(tovp, fromvp, args->la_to.da_name, cr, NULL, 0);
 
 	/*
@@ -2262,7 +2372,7 @@ rfs_link_getfh(struct nfslinkargs *args)
 
 /*
  * Symbolicly link to a file.
- * Create a file (to) with the given attributes which is a symbolic link
+ * Create a file (from) with the given attributes which is a symbolic link
  * to the given path name (to).
  */
 void
@@ -2307,6 +2417,12 @@ rfs_symlink(struct nfsslargs *args, enum nfsstat *status,
 	if (!(va.va_mask & AT_MODE)) {
 		VN_RELE(vp);
 		*status = NFSERR_INVAL;
+		return;
+	}
+
+	if (protect_zfs_mntpt(vp) != 0) {
+		VN_RELE(vp);
+		*status = NFSERR_ACCES;
 		return;
 	}
 
@@ -2399,6 +2515,12 @@ rfs_mkdir(struct nfscreatargs *args, struct nfsdiropres *dr,
 	if (!(va.va_mask & AT_MODE)) {
 		VN_RELE(vp);
 		dr->dr_status = NFSERR_INVAL;
+		return;
+	}
+
+	if (protect_zfs_mntpt(vp) != 0) {
+		VN_RELE(vp);
+		dr->dr_status = NFSERR_ACCES;
 		return;
 	}
 
@@ -2514,31 +2636,42 @@ rfs_rmdir_getfh(struct nfsdiropargs *da)
 	return (da->da_fhandle);
 }
 
+#ifdef nextdp
+#undef nextdp
+#endif
+#define	nextdp(dp)	((struct dirent64 *)((char *)(dp) + (dp)->d_reclen))
+
 /* ARGSUSED */
 void
 rfs_readdir(struct nfsrddirargs *rda, struct nfsrddirres *rd,
     struct exportinfo *exi, struct svc_req *req, cred_t *cr, bool_t ro)
 {
 	int error;
-	int iseof;
+	vnode_t *vp;
 	struct iovec iov;
 	struct uio uio;
-	vnode_t *vp;
-	char *ndata = NULL;
+	int iseof;
+
+	uint32_t count = rda->rda_count;
+	uint32_t size;		/* size of the readdirres structure */
+	int overflow = 0;
+
+	size_t datasz;
+	char *data = NULL;
+	dirent64_t *dp;
+
 	struct sockaddr *ca;
-	size_t nents;
-	int ret;
+	struct nfsentry **eptr;
+	struct nfsentry *entry;
 
 	vp = nfs_fhtovp(&rda->rda_fh, exi);
 	if (vp == NULL) {
-		rd->rd_entries = NULL;
 		rd->rd_status = NFSERR_STALE;
 		return;
 	}
 
 	if (vp->v_type != VDIR) {
 		VN_RELE(vp);
-		rd->rd_entries = NULL;
 		rd->rd_status = NFSERR_NOTDIR;
 		return;
 	}
@@ -2546,85 +2679,155 @@ rfs_readdir(struct nfsrddirargs *rda, struct nfsrddirres *rd,
 	(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, NULL);
 
 	error = VOP_ACCESS(vp, VREAD, 0, cr, NULL);
-
-	if (error) {
-		rd->rd_entries = NULL;
+	if (error)
 		goto bad;
-	}
-
-	if (rda->rda_count == 0) {
-		rd->rd_entries = NULL;
-		rd->rd_size = 0;
-		rd->rd_eof = FALSE;
-		goto bad;
-	}
-
-	rda->rda_count = MIN(rda->rda_count, NFS_MAXDATA);
 
 	/*
-	 * Allocate data for entries.  This will be freed by rfs_rddirfree.
+	 * Don't allow arbitrary counts for allocation
 	 */
-	rd->rd_bufsize = (uint_t)rda->rda_count;
-	rd->rd_entries = kmem_alloc(rd->rd_bufsize, KM_SLEEP);
+	if (count > NFS_MAXDATA)
+		count = NFS_MAXDATA;
 
 	/*
-	 * Set up io vector to read directory data
+	 * struct readdirres:
+	 *   status:		1
+	 *   entries (bool):	1
+	 *   eof:		1
 	 */
-	iov.iov_base = (caddr_t)rd->rd_entries;
-	iov.iov_len = rda->rda_count;
+	size = (1 + 1 + 1) * BYTES_PER_XDR_UNIT;
+
+	if (size > count) {
+		eptr = &rd->rd_entries;
+		iseof = 0;
+		size = 0;
+
+		goto done;
+	}
+
+	/*
+	 * This is simplification.  The dirent64_t size is not the same as the
+	 * size of XDR representation of entry, but the sizes are similar so
+	 * we'll assume they are same.  This assumption should not cause any
+	 * harm.  In worst case we will need to issue VOP_READDIR() once more.
+	 */
+	datasz = count;
+
+	/*
+	 * Make sure that there is room to read at least one entry
+	 * if any are available.
+	 */
+	if (datasz < DIRENT64_RECLEN(MAXNAMELEN))
+		datasz = DIRENT64_RECLEN(MAXNAMELEN);
+
+	data = kmem_alloc(datasz, KM_NOSLEEP);
+	if (data == NULL) {
+		/* The allocation failed; downsize and wait for it this time */
+		if (datasz > MAXBSIZE)
+			datasz = MAXBSIZE;
+		data = kmem_alloc(datasz, KM_SLEEP);
+	}
+
 	uio.uio_iov = &iov;
 	uio.uio_iovcnt = 1;
 	uio.uio_segflg = UIO_SYSSPACE;
 	uio.uio_extflg = UIO_COPY_CACHED;
 	uio.uio_loffset = (offset_t)rda->rda_offset;
-	uio.uio_resid = rda->rda_count;
-
-	/*
-	 * read directory
-	 */
-	error = VOP_READDIR(vp, &uio, cr, &iseof, NULL, 0);
-
-	/*
-	 * Clean up
-	 */
-	if (!error) {
-		/*
-		 * set size and eof
-		 */
-		if (uio.uio_resid == rda->rda_count) {
-			rd->rd_size = 0;
-			rd->rd_eof = TRUE;
-		} else {
-			rd->rd_size = (uint32_t)(rda->rda_count -
-			    uio.uio_resid);
-			rd->rd_eof = iseof ? TRUE : FALSE;
-		}
-	}
+	uio.uio_resid = datasz;
 
 	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
-	nents = nfscmd_countents((char *)rd->rd_entries, rd->rd_size);
-	ret = nfscmd_convdirplus(ca, exi, (char *)rd->rd_entries, nents,
-	    rda->rda_count, &ndata);
+	eptr = &rd->rd_entries;
+	entry = NULL;
 
-	if (ret != 0) {
-		size_t dropbytes;
-		/*
-		 * We had to drop one or more entries in order to fit
-		 * during the character conversion.  We need to patch
-		 * up the size and eof info.
-		 */
-		if (rd->rd_eof)
-			rd->rd_eof = FALSE;
-		dropbytes = nfscmd_dropped_entrysize(
-		    (struct dirent64 *)rd->rd_entries, nents, ret);
-		rd->rd_size -= dropbytes;
+getmoredents:
+	iov.iov_base = data;
+	iov.iov_len = datasz;
+
+	error = VOP_READDIR(vp, &uio, cr, &iseof, NULL, 0);
+	if (error) {
+		iseof = 0;
+		goto done;
 	}
-	if (ndata == NULL) {
-		ndata = (char *)rd->rd_entries;
-	} else if (ndata != (char *)rd->rd_entries) {
-		kmem_free(rd->rd_entries, rd->rd_bufsize);
-		rd->rd_entries = (void *)ndata;
-		rd->rd_bufsize = rda->rda_count;
+
+	if (iov.iov_len == datasz)
+		goto done;
+
+	for (dp = (dirent64_t *)data;
+	    (char *)dp - data < datasz - iov.iov_len && !overflow;
+	    dp = nextdp(dp)) {
+		char *name;
+		uint32_t esize;
+		uint32_t cookie;
+
+		overflow = (uint64_t)dp->d_off > UINT32_MAX;
+		if (overflow) {
+			cookie = 0;
+			iseof = 1;
+		} else
+			cookie = (uint32_t)dp->d_off;
+
+		if (dp->d_ino == 0 || (uint64_t)dp->d_ino > UINT32_MAX) {
+			if (entry != NULL)
+				entry->cookie = cookie;
+			continue;
+		}
+
+		name = nfscmd_convname(ca, exi, dp->d_name,
+		    NFSCMD_CONV_OUTBOUND, NFS_MAXPATHLEN + 1);
+		if (name == NULL) {
+			if (entry != NULL)
+				entry->cookie = cookie;
+			continue;
+		}
+
+		/*
+		 * struct entry:
+		 *   fileid:		1
+		 *   name (length):	1
+		 *   name (data):	length (rounded up)
+		 *   cookie:		1
+		 *   nextentry (bool):	1
+		 */
+		esize = (1 + 1 + 1 + 1) * BYTES_PER_XDR_UNIT +
+		    RNDUP(strlen(name));
+
+		/* If the new entry does not fit, discard it */
+		if (esize > count - size) {
+			if (name != dp->d_name)
+				kmem_free(name, NFS_MAXPATHLEN + 1);
+			iseof = 0;
+			goto done;
+		}
+
+		entry = kmem_alloc(sizeof (struct nfsentry), KM_SLEEP);
+
+		entry->fileid = (uint32_t)dp->d_ino;
+		entry->name = strdup(name);
+		if (name != dp->d_name)
+			kmem_free(name, NFS_MAXPATHLEN + 1);
+		entry->cookie = cookie;
+
+		size += esize;
+
+		/* Add the entry to the linked list */
+		*eptr = entry;
+		eptr = &entry->nextentry;
+	}
+
+	if (!iseof && size < count) {
+		uio.uio_resid = MIN(datasz, MAXBSIZE);
+		goto getmoredents;
+	}
+
+done:
+	*eptr = NULL;
+
+	if (iseof || rd->rd_entries != NULL || !error) {
+		error = 0;
+		rd->rd_eof = iseof ? TRUE : FALSE;
+
+		/* This is for nfslog only */
+		rd->rd_offset = rda->rda_offset;
+		rd->rd_size = size;
 	}
 
 bad:
@@ -2646,6 +2849,8 @@ bad:
 
 	rd->rd_status = puterrno(error);
 
+	if (data != NULL)
+		kmem_free(data, datasz);
 }
 void *
 rfs_readdir_getfh(struct nfsrddirargs *rda)
@@ -2655,8 +2860,15 @@ rfs_readdir_getfh(struct nfsrddirargs *rda)
 void
 rfs_rddirfree(struct nfsrddirres *rd)
 {
-	if (rd->rd_entries != NULL)
-		kmem_free(rd->rd_entries, rd->rd_bufsize);
+	if (rd->rd_status == NFS_OK) {
+		struct nfsentry *entry, *nentry;
+
+		for (entry = rd->rd_entries; entry != NULL; entry = nentry) {
+			nentry = entry->nextentry;
+			strfree(entry->name);
+			kmem_free(entry, sizeof (struct nfsentry));
+		}
+	}
 }
 
 /* ARGSUSED */

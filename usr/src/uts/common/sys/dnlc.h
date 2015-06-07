@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -174,7 +175,7 @@ struct nc_stats {
 #include <sys/vfs.h>
 #include <sys/vnode.h>
 
-extern int ncsize;		/* set in param_init() # of dnlc entries */
+extern volatile int ncsize;	/* set in param_init() # of dnlc entries */
 extern vnode_t negative_cache_vnode;
 #define	DNLC_NO_VNODE &negative_cache_vnode
 

@@ -22,8 +22,8 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
- * Copyright (c) 2013, 2014, Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -67,6 +67,8 @@
 #include <sys/dsl_scan.h>
 #include <sys/zfeature.h>
 #include <sys/dsl_destroy.h>
+#include <sys/cos.h>
+#include <sys/special.h>
 
 #ifdef	_KERNEL
 #include <sys/bootprops.h>
@@ -139,6 +141,8 @@ const zio_taskq_info_t zio_taskqs[ZIO_TYPES][ZIO_TASKQ_TYPES] = {
 
 static void spa_sync_version(void *arg, dmu_tx_t *tx);
 static void spa_sync_props(void *arg, dmu_tx_t *tx);
+static void spa_vdev_sync_props(void *arg, dmu_tx_t *tx);
+static int spa_vdev_prop_set_nosync(vdev_t *, nvlist_t *, boolean_t *);
 static boolean_t spa_has_active_shared_spare(spa_t *spa);
 static int spa_load_impl(spa_t *spa, uint64_t, nvlist_t *config,
     spa_load_state_t state, spa_import_type_t type, boolean_t mosconfig,
@@ -152,12 +156,6 @@ uint_t		zio_taskq_basedc = 80;		/* base duty cycle */
 
 boolean_t	spa_create_process = B_TRUE;	/* no process ==> no sysdc */
 extern int	zfs_sync_pass_deferred_free;
-
-/*
- * This (illegal) pool name is used when temporarily importing a spa_t in order
- * to get the vdev stats associated with the imported devices.
- */
-#define	TRYIMPORT_NAME	"$import"
 
 /*
  * ==========================================================================
@@ -195,6 +193,7 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 {
 	vdev_t *rvd = spa->spa_root_vdev;
 	dsl_pool_t *pool = spa->spa_dsl_pool;
+	spa_meta_placement_t *mp = &spa->spa_meta_policy;
 	uint64_t size, alloc, cap, version;
 	zprop_source_t src = ZPROP_SRC_NONE;
 	spa_config_dirent_t *dp;
@@ -210,6 +209,23 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 		spa_prop_add_list(*nvp, ZPOOL_PROP_ALLOCATED, NULL, alloc, src);
 		spa_prop_add_list(*nvp, ZPOOL_PROP_FREE, NULL,
 		    size - alloc, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_ENABLESPECIAL, NULL,
+		    (uint64_t)spa->spa_usesc, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_HIWATERMARK, NULL,
+		    spa->spa_hiwat, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_LOWATERMARK, NULL,
+		    spa->spa_lowat, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DEDUPMETA_DITTO, NULL,
+		    spa->spa_ddt_meta_copies, src);
+
+		spa_prop_add_list(*nvp, ZPOOL_PROP_META_PLACEMENT, NULL,
+		    mp->spa_enable_meta_placement_selection, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DDT_TO_METADEV, NULL,
+		    mp->spa_ddt_to_special, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_GENERAL_META_TO_METADEV,
+		    NULL, mp->spa_general_meta_to_special, src);
+		spa_prop_add_list(*nvp, ZPOOL_PROP_OTHER_META_TO_METADEV, NULL,
+		    mp->spa_other_meta_to_special, src);
 
 		spa_prop_add_list(*nvp, ZPOOL_PROP_FRAGMENTATION, NULL,
 		    metaslab_class_fragmentation(mc), src);
@@ -218,8 +234,20 @@ spa_prop_get_config(spa_t *spa, nvlist_t **nvp)
 		spa_prop_add_list(*nvp, ZPOOL_PROP_READONLY, NULL,
 		    (spa_mode(spa) == FREAD), src);
 
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DDT_DESEGREGATION, NULL,
+		    (spa->spa_ddt_class_min == spa->spa_ddt_class_max), src);
+
 		cap = (size == 0) ? 0 : (alloc * 100 / size);
 		spa_prop_add_list(*nvp, ZPOOL_PROP_CAPACITY, NULL, cap, src);
+
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DEDUP_BEST_EFFORT, NULL,
+		    spa->spa_dedup_best_effort, src);
+
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DEDUP_LO_BEST_EFFORT, NULL,
+		    spa->spa_dedup_lo_best_effort, src);
+
+		spa_prop_add_list(*nvp, ZPOOL_PROP_DEDUP_HI_BEST_EFFORT, NULL,
+		    spa->spa_dedup_hi_best_effort, src);
 
 		spa_prop_add_list(*nvp, ZPOOL_PROP_DEDUPRATIO, NULL,
 		    ddt_get_pool_dedup_ratio(spa), src);
@@ -407,6 +435,7 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 	int error = 0, reset_bootfs = 0;
 	uint64_t objnum = 0;
 	boolean_t has_feature = B_FALSE;
+	uint64_t lowat = spa->spa_lowat, hiwat = spa->spa_hiwat;
 
 	elem = NULL;
 	while ((elem = nvlist_next_nvpair(props, elem)) != NULL) {
@@ -462,8 +491,19 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 		case ZPOOL_PROP_AUTOREPLACE:
 		case ZPOOL_PROP_LISTSNAPS:
 		case ZPOOL_PROP_AUTOEXPAND:
+		case ZPOOL_PROP_DEDUP_BEST_EFFORT:
+		case ZPOOL_PROP_DDT_DESEGREGATION:
+		case ZPOOL_PROP_META_PLACEMENT:
 			error = nvpair_value_uint64(elem, &intval);
 			if (!error && intval > 1)
+				error = SET_ERROR(EINVAL);
+			break;
+
+		case ZPOOL_PROP_DDT_TO_METADEV:
+		case ZPOOL_PROP_GENERAL_META_TO_METADEV:
+		case ZPOOL_PROP_OTHER_META_TO_METADEV:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && intval > META_PLACEMENT_DUAL)
 				error = SET_ERROR(EINVAL);
 			break;
 
@@ -530,6 +570,20 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			}
 			break;
 
+		case ZPOOL_PROP_DEDUP_LO_BEST_EFFORT:
+			error = nvpair_value_uint64(elem, &intval);
+			if ((intval < 0) || (intval > 100) ||
+			    (intval >= spa->spa_dedup_hi_best_effort))
+				error = SET_ERROR(EINVAL);
+			break;
+
+		case ZPOOL_PROP_DEDUP_HI_BEST_EFFORT:
+			error = nvpair_value_uint64(elem, &intval);
+			if ((intval < 0) || (intval > 100) ||
+			    (intval <= spa->spa_dedup_lo_best_effort))
+				error = SET_ERROR(EINVAL);
+			break;
+
 		case ZPOOL_PROP_FAILUREMODE:
 			error = nvpair_value_uint64(elem, &intval);
 			if (!error && (intval < ZIO_FAILURE_MODE_WAIT ||
@@ -550,6 +604,13 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				spa->spa_failmode = intval;
 				error = SET_ERROR(EIO);
 			}
+			break;
+
+		case ZPOOL_PROP_FORCETRIM:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && (intval < SPA_FORCE_TRIM_AUTO ||
+			    intval > SPA_FORCE_TRIM_OFF))
+				error = SET_ERROR(EINVAL);
 			break;
 
 		case ZPOOL_PROP_CACHEFILE:
@@ -592,7 +653,7 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 				check++;
 			}
 			if (strlen(strval) > ZPROP_MAX_COMMENT)
-				error = E2BIG;
+				error = SET_ERROR(E2BIG);
 			break;
 
 		case ZPOOL_PROP_DEDUPDITTO:
@@ -604,11 +665,33 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			    intval != 0 && intval < ZIO_DEDUPDITTO_MIN)
 				error = SET_ERROR(EINVAL);
 			break;
+
+		case ZPOOL_PROP_LOWATERMARK:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && (intval > 100))
+				error = SET_ERROR(EINVAL);
+			lowat = intval;
+			break;
+		case ZPOOL_PROP_HIWATERMARK:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && (intval > 100))
+				error = SET_ERROR(EINVAL);
+			hiwat = intval;
+			break;
+		case ZPOOL_PROP_DEDUPMETA_DITTO:
+			error = nvpair_value_uint64(elem, &intval);
+			if (!error && (intval > SPA_DVAS_PER_BP))
+				error = SET_ERROR(EINVAL);
+			break;
 		}
 
 		if (error)
 			break;
 	}
+
+	/* check if low watermark is less than high watermark */
+	if (lowat > 0 && lowat >= hiwat)
+		error = SET_ERROR(EINVAL);
 
 	if (!error && reset_bootfs) {
 		error = nvlist_remove(props,
@@ -1053,6 +1136,7 @@ spa_activate(spa_t *spa, int mode)
 
 	spa->spa_normal_class = metaslab_class_create(spa, zfs_metaslab_ops);
 	spa->spa_log_class = metaslab_class_create(spa, zfs_metaslab_ops);
+	spa->spa_special_class = metaslab_class_create(spa, zfs_metaslab_ops);
 
 	/* Try to create a covering process */
 	mutex_enter(&spa->spa_proc_lock);
@@ -1136,6 +1220,9 @@ spa_deactivate(spa_t *spa)
 
 	metaslab_class_destroy(spa->spa_log_class);
 	spa->spa_log_class = NULL;
+
+	metaslab_class_destroy(spa->spa_special_class);
+	spa->spa_special_class = NULL;
 
 	/*
 	 * If this was part of an import or the open otherwise failed, we may
@@ -1514,8 +1601,14 @@ spa_load_l2cache(spa_t *spa)
 
 			(void) vdev_validate_aux(vd);
 
-			if (!vdev_is_dead(vd))
-				l2arc_add_vdev(spa, vd);
+			if (!vdev_is_dead(vd)) {
+				boolean_t do_rebuild = B_FALSE;
+
+				(void) nvlist_lookup_boolean_value(l2cache[i],
+				    ZPOOL_CONFIG_L2CACHE_PERSISTENT,
+				    &do_rebuild);
+				l2arc_add_vdev(spa, vd, do_rebuild);
+			}
 		}
 	}
 
@@ -1623,8 +1716,15 @@ spa_config_valid(spa_t *spa, nvlist_t *config)
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_WRITER);
 	VERIFY(spa_config_parse(spa, &mrvd, nv, NULL, 0, VDEV_ALLOC_LOAD) == 0);
 
-	ASSERT3U(rvd->vdev_children, ==, mrvd->vdev_children);
-
+	/*
+	 * One of the earliest signs of a stale config is a mismatch
+	 * in the numbers of children vdev's
+	 */
+	if (rvd->vdev_children != mrvd->vdev_children) {
+		vdev_free(mrvd);
+		spa_config_exit(spa, SCL_ALL, FTAG);
+		return (B_FALSE);
+	}
 	/*
 	 * If we're doing a normal import, then build up any additional
 	 * diagnostic information about missing devices in this config.
@@ -1847,8 +1947,7 @@ spa_load_verify_done(zio_t *zio)
 	spa_t *spa = zio->io_spa;
 
 	if (error) {
-		if ((BP_GET_LEVEL(bp) != 0 || DMU_OT_IS_METADATA(type)) &&
-		    type != DMU_OT_INTENT_LOG)
+		if (BP_IS_METADATA(bp) && type != DMU_OT_INTENT_LOG)
 			atomic_inc_64(&sle->sle_meta_count);
 		else
 			atomic_inc_64(&sle->sle_data_count);
@@ -1977,6 +2076,21 @@ spa_dir_prop(spa_t *spa, const char *name, uint64_t *val)
 {
 	return (zap_lookup(spa->spa_meta_objset, DMU_POOL_DIRECTORY_OBJECT,
 	    name, sizeof (uint64_t), 1, val));
+}
+
+static void
+spa_set_ddt_classes(spa_t *spa, int desegregation)
+{
+	/*
+	 * if desegregation is turned on then set up ddt_class restrictions
+	 */
+	if (desegregation) {
+		spa->spa_ddt_class_min = DDT_CLASS_DUPLICATE;
+		spa->spa_ddt_class_max = DDT_CLASS_DUPLICATE;
+	} else {
+		spa->spa_ddt_class_min = DDT_CLASS_DITTO;
+		spa->spa_ddt_class_max = DDT_CLASS_UNIQUE;
+	}
 }
 
 static int
@@ -2134,7 +2248,6 @@ spa_load(spa_t *spa, spa_load_state_t state, spa_import_type_t type,
 	}
 	spa->spa_load_state = error ? SPA_LOAD_ERROR : SPA_LOAD_NONE;
 	spa->spa_ena = 0;
-
 	return (error);
 }
 
@@ -2157,6 +2270,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	int parse;
 	uint64_t obj;
 	boolean_t missing_feat_write = B_FALSE;
+	spa_meta_placement_t *mp;
 
 	/*
 	 * If this is an untrusted config, access the pool in read-only mode.
@@ -2598,7 +2712,26 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa->spa_l2cache.sav_sync = B_TRUE;
 	}
 
+	mp = &spa->spa_meta_policy;
+
 	spa->spa_delegation = zpool_prop_default_numeric(ZPOOL_PROP_DELEGATION);
+	spa->spa_hiwat = zpool_prop_default_numeric(ZPOOL_PROP_HIWATERMARK);
+	spa->spa_lowat = zpool_prop_default_numeric(ZPOOL_PROP_LOWATERMARK);
+	spa->spa_dedup_lo_best_effort =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_LO_BEST_EFFORT);
+	spa->spa_dedup_hi_best_effort =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_HI_BEST_EFFORT);
+
+	mp->spa_enable_meta_placement_selection =
+	    zpool_prop_default_numeric(ZPOOL_PROP_META_PLACEMENT);
+	mp->spa_ddt_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DDT_TO_METADEV);
+	mp->spa_general_meta_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_GENERAL_META_TO_METADEV);
+	mp->spa_other_meta_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_OTHER_META_TO_METADEV);
+	spa_set_ddt_classes(spa,
+	    zpool_prop_default_numeric(ZPOOL_PROP_DDT_DESEGREGATION));
 
 	error = spa_dir_prop(spa, DMU_POOL_PROPS, &spa->spa_pool_props_object);
 	if (error && error != ENOENT)
@@ -2606,6 +2739,7 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 
 	if (error == 0) {
 		uint64_t autoreplace;
+		uint64_t val = 0;
 
 		spa_prop_find(spa, ZPOOL_PROP_BOOTFS, &spa->spa_bootfs);
 		spa_prop_find(spa, ZPOOL_PROP_AUTOREPLACE, &autoreplace);
@@ -2614,9 +2748,42 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa_prop_find(spa, ZPOOL_PROP_AUTOEXPAND, &spa->spa_autoexpand);
 		spa_prop_find(spa, ZPOOL_PROP_DEDUPDITTO,
 		    &spa->spa_dedup_ditto);
+		spa_prop_find(spa, ZPOOL_PROP_FORCETRIM, &spa->spa_force_trim);
+
+		spa_prop_find(spa, ZPOOL_PROP_HIWATERMARK, &spa->spa_hiwat);
+		spa_prop_find(spa, ZPOOL_PROP_LOWATERMARK, &spa->spa_lowat);
+		spa_prop_find(spa, ZPOOL_PROP_DEDUPMETA_DITTO,
+		    &spa->spa_ddt_meta_copies);
+		spa_prop_find(spa, ZPOOL_PROP_DDT_DESEGREGATION, &val);
+		spa_set_ddt_classes(spa, val);
+
+		spa_prop_find(spa, ZPOOL_PROP_DEDUP_BEST_EFFORT,
+		    &spa->spa_dedup_best_effort);
+		spa_prop_find(spa, ZPOOL_PROP_DEDUP_LO_BEST_EFFORT,
+		    &spa->spa_dedup_lo_best_effort);
+		spa_prop_find(spa, ZPOOL_PROP_DEDUP_HI_BEST_EFFORT,
+		    &spa->spa_dedup_hi_best_effort);
+
+		spa_prop_find(spa, ZPOOL_PROP_META_PLACEMENT,
+		    &mp->spa_enable_meta_placement_selection);
+		spa_prop_find(spa, ZPOOL_PROP_DDT_TO_METADEV,
+		    &mp->spa_ddt_to_special);
+		spa_prop_find(spa, ZPOOL_PROP_GENERAL_META_TO_METADEV,
+		    &mp->spa_general_meta_to_special);
+		spa_prop_find(spa, ZPOOL_PROP_OTHER_META_TO_METADEV,
+		    &mp->spa_other_meta_to_special);
 
 		spa->spa_autoreplace = (autoreplace != 0);
 	}
+
+	error = spa_dir_prop(spa, DMU_POOL_COS_PROPS,
+	    &spa->spa_cos_props_object);
+	if (error == 0)
+		(void) spa_load_cos_props(spa);
+	error = spa_dir_prop(spa, DMU_POOL_VDEV_PROPS,
+	    &spa->spa_vdev_props_object);
+	if (error == 0)
+		(void) spa_load_vdev_props(spa);
 
 	/*
 	 * If the 'autoreplace' property is set, then post a resource notifying
@@ -2799,6 +2966,8 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		 */
 		dsl_pool_clean_tmp_userrefs(spa->spa_dsl_pool);
 	}
+
+	spa_async_request(spa, SPA_ASYNC_L2CACHE_REBUILD);
 
 	return (0);
 }
@@ -3479,6 +3648,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	uint_t nspares, nl2cache;
 	uint64_t version, obj;
 	boolean_t has_features;
+	spa_meta_placement_t *mp;
 
 	/*
 	 * If this pool already exists, return failure.
@@ -3664,6 +3834,8 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	if (version >= SPA_VERSION_ZPOOL_HISTORY)
 		spa_history_create_obj(spa, tx);
 
+	mp = &spa->spa_meta_policy;
+
 	/*
 	 * Set pool properties.
 	 */
@@ -3671,10 +3843,37 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_delegation = zpool_prop_default_numeric(ZPOOL_PROP_DELEGATION);
 	spa->spa_failmode = zpool_prop_default_numeric(ZPOOL_PROP_FAILUREMODE);
 	spa->spa_autoexpand = zpool_prop_default_numeric(ZPOOL_PROP_AUTOEXPAND);
+	spa->spa_hiwat = zpool_prop_default_numeric(ZPOOL_PROP_HIWATERMARK);
+	spa->spa_lowat = zpool_prop_default_numeric(ZPOOL_PROP_LOWATERMARK);
+	spa->spa_ddt_meta_copies =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUPMETA_DITTO);
+	spa->spa_dedup_best_effort =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_BEST_EFFORT);
+	spa->spa_dedup_lo_best_effort =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_LO_BEST_EFFORT);
+	spa->spa_dedup_hi_best_effort =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_HI_BEST_EFFORT);
+	spa->spa_force_trim = zpool_prop_default_numeric(ZPOOL_PROP_FORCETRIM);
+
+	mp->spa_enable_meta_placement_selection =
+	    zpool_prop_default_numeric(ZPOOL_PROP_META_PLACEMENT);
+	mp->spa_ddt_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_DDT_TO_METADEV);
+	mp->spa_general_meta_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_GENERAL_META_TO_METADEV);
+	mp->spa_other_meta_to_special =
+	    zpool_prop_default_numeric(ZPOOL_PROP_OTHER_META_TO_METADEV);
+
+	spa_set_ddt_classes(spa, 0);
 
 	if (props != NULL) {
 		spa_configfile_set(spa, props, B_FALSE);
 		spa_sync_props(props, tx);
+	}
+
+	if (spa_has_special(spa)) {
+		spa_feature_enable(spa, SPA_FEATURE_META_DEVICES, tx);
+		spa_feature_incr(spa, SPA_FEATURE_META_DEVICES, tx);
 	}
 
 	dmu_tx_commit(tx);
@@ -3689,6 +3888,7 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	txg_wait_synced(spa->spa_dsl_pool, txg);
 
 	spa_config_sync(spa, B_FALSE, B_TRUE);
+	spa_event_notify(spa, NULL, ESC_ZFS_POOL_CREATE);
 
 	spa_history_log_version(spa, "create");
 
@@ -3700,8 +3900,51 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_minref = refcount_count(&spa->spa_refcount);
 
 	mutex_exit(&spa_namespace_lock);
-
 	return (0);
+}
+
+
+/*
+ * See if the pool has special tier, and if so, enable/activate
+ * the feature as needed. Activation is not reference counted.
+ */
+static void
+spa_check_special_feature(spa_t *spa)
+{
+	if (spa_has_special(spa)) {
+		nvlist_t *props = NULL;
+
+		if (!spa_feature_is_enabled(spa, SPA_FEATURE_META_DEVICES)) {
+			VERIFY(nvlist_alloc(&props, NV_UNIQUE_NAME, 0) == 0);
+			VERIFY(nvlist_add_uint64(props,
+			    FEATURE_META_DEVICES, 0) == 0);
+			VERIFY(spa_prop_set(spa, props) == 0);
+			nvlist_free(props);
+		}
+
+		if (!spa_feature_is_active(spa, SPA_FEATURE_META_DEVICES)) {
+			dmu_tx_t *tx =
+			    dmu_tx_create_dd(spa->spa_dsl_pool->dp_mos_dir);
+
+			VERIFY(dmu_tx_assign(tx, TXG_WAIT) == 0);
+			spa_feature_incr(spa, SPA_FEATURE_META_DEVICES, tx);
+			dmu_tx_commit(tx);
+		}
+	}
+}
+
+static void
+spa_special_feature_activate(void *arg, dmu_tx_t *tx)
+{
+	spa_t *spa = (spa_t *)arg;
+
+	if (spa_has_special(spa)) {
+		/* enable and activate as needed */
+		spa_feature_enable(spa, SPA_FEATURE_META_DEVICES, tx);
+		if (!spa_feature_is_active(spa, SPA_FEATURE_META_DEVICES)) {
+			spa_feature_incr(spa, SPA_FEATURE_META_DEVICES, tx);
+		}
+	}
 }
 
 #ifdef _KERNEL
@@ -3954,6 +4197,7 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 			spa_configfile_set(spa, props, B_FALSE);
 
 		spa_config_sync(spa, B_FALSE, B_TRUE);
+		spa_event_notify(spa, NULL, ESC_ZFS_POOL_IMPORT);
 
 		mutex_exit(&spa_namespace_lock);
 		return (0);
@@ -4063,6 +4307,9 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 		spa->spa_l2cache.sav_sync = B_TRUE;
 	}
 
+	/* At this point, we can load spare props */
+	(void) spa_load_vdev_props(spa);
+
 	/*
 	 * Check for any removed devices.
 	 */
@@ -4084,10 +4331,19 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	 */
 	spa_async_request(spa, SPA_ASYNC_AUTOEXPAND);
 
+	/* Set/activate meta feature as needed */
 	mutex_exit(&spa_namespace_lock);
+	if (!spa_writeable(spa))
+		spa_check_special_feature(spa);
 	spa_history_log_version(spa, "import");
 
-	return (0);
+	spa_event_notify(spa, NULL, ESC_ZFS_POOL_IMPORT);
+
+	if (!spa_writeable(spa))
+		return (0);
+
+	return (dsl_sync_task(spa->spa_name, NULL, spa_special_feature_activate,
+	    spa, 3, ZFS_SPACE_CHECK_RESERVED));
 }
 
 nvlist_t *
@@ -4193,9 +4449,10 @@ spa_tryimport(nvlist_t *tryconfig)
  */
 static int
 spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
-    boolean_t force, boolean_t hardforce)
+    boolean_t force, boolean_t hardforce, boolean_t saveconfig)
 {
 	spa_t *spa;
+	boolean_t wrcthr_stopped = B_FALSE;
 
 	if (oldconfig)
 		*oldconfig = NULL;
@@ -4210,11 +4467,13 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 	}
 
 	/*
-	 * Put a hold on the pool, drop the namespace lock, stop async tasks,
-	 * reacquire the namespace lock, and see if we can export.
+	 * Put a hold on the pool, drop the namespace lock, stop async tasks
+	 * and write cache thread, reacquire the namespace lock, and see
+	 * if we can export.
 	 */
 	spa_open_ref(spa, FTAG);
 	mutex_exit(&spa_namespace_lock);
+	wrcthr_stopped = stop_wrc_thread(spa); /* stop write cache thread */
 	spa_async_suspend(spa);
 	mutex_enter(&spa_namespace_lock);
 	spa_close(spa, FTAG);
@@ -4241,6 +4500,8 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 		    new_state != POOL_STATE_UNINITIALIZED)) {
 			spa_async_resume(spa);
 			mutex_exit(&spa_namespace_lock);
+			if (wrcthr_stopped)
+				start_wrc_thread(spa);
 			return (SET_ERROR(EBUSY));
 		}
 
@@ -4254,6 +4515,8 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 		    spa_has_active_shared_spare(spa)) {
 			spa_async_resume(spa);
 			mutex_exit(&spa_namespace_lock);
+			if (wrcthr_stopped)
+				start_wrc_thread(spa);
 			return (SET_ERROR(EXDEV));
 		}
 
@@ -4284,7 +4547,7 @@ spa_export_common(char *pool, int new_state, nvlist_t **oldconfig,
 
 	if (new_state != POOL_STATE_UNINITIALIZED) {
 		if (!hardforce)
-			spa_config_sync(spa, B_TRUE, B_TRUE);
+			spa_config_sync(spa, !saveconfig, B_TRUE);
 		spa_remove(spa);
 	}
 	mutex_exit(&spa_namespace_lock);
@@ -4299,7 +4562,7 @@ int
 spa_destroy(char *pool)
 {
 	return (spa_export_common(pool, POOL_STATE_DESTROYED, NULL,
-	    B_FALSE, B_FALSE));
+	    B_FALSE, B_FALSE, B_FALSE));
 }
 
 /*
@@ -4307,10 +4570,10 @@ spa_destroy(char *pool)
  */
 int
 spa_export(char *pool, nvlist_t **oldconfig, boolean_t force,
-    boolean_t hardforce)
+    boolean_t hardforce, boolean_t saveconfig)
 {
 	return (spa_export_common(pool, POOL_STATE_EXPORTED, oldconfig,
-	    force, hardforce));
+	    force, hardforce, saveconfig));
 }
 
 /*
@@ -4321,7 +4584,7 @@ int
 spa_reset(char *pool)
 {
 	return (spa_export_common(pool, POOL_STATE_UNINITIALIZED, NULL,
-	    B_FALSE, B_FALSE));
+	    B_FALSE, B_FALSE, B_FALSE));
 }
 
 /*
@@ -4342,6 +4605,7 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	vdev_t *vd, *tvd;
 	nvlist_t **spares, **l2cache;
 	uint_t nspares, nl2cache;
+	dmu_tx_t *tx = NULL;
 
 	ASSERT(spa_writeable(spa));
 
@@ -4410,6 +4674,8 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 		spa->spa_l2cache.sav_sync = B_TRUE;
 	}
 
+	spa_event_notify(spa, vd, ESC_ZFS_VDEV_ADD);
+
 	/*
 	 * We have to be careful when adding new vdevs to an existing pool.
 	 * If other threads start allocating from these vdevs before we
@@ -4428,6 +4694,10 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	mutex_enter(&spa_namespace_lock);
 	spa_config_update(spa, SPA_CONFIG_UPDATE_POOL);
 	mutex_exit(&spa_namespace_lock);
+
+	tx = dmu_tx_create_assigned(spa_get_dsl(spa), txg);
+	spa_special_feature_activate(spa, tx);
+	dmu_tx_commit(tx);
 
 	return (0);
 }
@@ -4622,6 +4892,14 @@ spa_vdev_attach(spa_t *spa, uint64_t guid, nvlist_t *nvroot, int replacing)
 	dsl_resilver_restart(spa->spa_dsl_pool, dtl_max_txg);
 
 	/*
+	 * Check CoS property of the old vdev, add reference by new vdev
+	 */
+	if (oldvd->vdev_queue.vq_cos) {
+		cos_hold(oldvd->vdev_queue.vq_cos);
+		newvd->vdev_queue.vq_cos = oldvd->vdev_queue.vq_cos;
+	}
+
+	/*
 	 * Commit the config
 	 */
 	(void) spa_vdev_exit(spa, newrootvd, dtl_max_txg, 0);
@@ -4637,6 +4915,8 @@ spa_vdev_attach(spa_t *spa, uint64_t guid, nvlist_t *nvroot, int replacing)
 
 	if (spa->spa_bootfs)
 		spa_event_notify(spa, newvd, ESC_ZFS_BOOTFS_VDEV_ATTACH);
+
+	spa_event_notify(spa, newvd, ESC_ZFS_VDEV_ATTACH);
 
 	return (0);
 }
@@ -4837,6 +5117,14 @@ spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid, int replace_done)
 	vdev_dirty(tvd, VDD_DTL, vd, txg);
 
 	spa_event_notify(spa, vd, ESC_ZFS_VDEV_REMOVE);
+
+	/*
+	 * Release the references to CoS descriptors if any
+	 */
+	if (vd->vdev_queue.vq_cos) {
+		cos_rele(vd->vdev_queue.vq_cos);
+		vd->vdev_queue.vq_cos = NULL;
+	}
 
 	/* hang on to the spa before we release the lock */
 	spa_open_ref(spa, FTAG);
@@ -5136,7 +5424,7 @@ spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
 	/* if we're not going to mount the filesystems in userland, export */
 	if (exp)
 		error = spa_export_common(newname, POOL_STATE_EXPORTED, NULL,
-		    B_FALSE, B_FALSE);
+		    B_FALSE, B_FALSE, B_FALSE);
 
 	return (error);
 
@@ -5328,6 +5616,15 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		 * in this pool.
 		 */
 		if (vd == NULL || unspare) {
+			if (vd == NULL)
+				vd = spa_lookup_by_guid(spa, guid, B_TRUE);
+			/*
+			 * Release the references to CoS descriptors if any
+			 */
+			if (vd != NULL && vd->vdev_queue.vq_cos) {
+				cos_rele(vd->vdev_queue.vq_cos);
+				vd->vdev_queue.vq_cos = NULL;
+			}
 			spa_vdev_remove_aux(spa->spa_spares.sav_config,
 			    ZPOOL_CONFIG_SPARES, spares, nspares, nv);
 			spa_load_spares(spa);
@@ -5342,6 +5639,15 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		/*
 		 * Cache devices can always be removed.
 		 */
+		if (vd == NULL)
+			vd = spa_lookup_by_guid(spa, guid, B_TRUE);
+		/*
+		 * Release the references to CoS descriptors if any
+		 */
+		if (vd != NULL && vd->vdev_queue.vq_cos) {
+			cos_rele(vd->vdev_queue.vq_cos);
+			vd->vdev_queue.vq_cos = NULL;
+		}
 		spa_vdev_remove_aux(spa->spa_l2cache.sav_config,
 		    ZPOOL_CONFIG_L2CACHE, l2cache, nl2cache, nv);
 		spa_load_l2cache(spa);
@@ -5377,6 +5683,14 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		if (error) {
 			metaslab_group_activate(mg);
 			return (spa_vdev_exit(spa, NULL, txg, error));
+		}
+
+		/*
+		 * Release the references to CoS descriptors if any
+		 */
+		if (vd->vdev_queue.vq_cos) {
+			cos_rele(vd->vdev_queue.vq_cos);
+			vd->vdev_queue.vq_cos = NULL;
 		}
 
 		/*
@@ -5517,58 +5831,6 @@ spa_vdev_resilver_done(spa_t *spa)
 	}
 
 	spa_config_exit(spa, SCL_ALL, FTAG);
-}
-
-/*
- * Update the stored path or FRU for this vdev.
- */
-int
-spa_vdev_set_common(spa_t *spa, uint64_t guid, const char *value,
-    boolean_t ispath)
-{
-	vdev_t *vd;
-	boolean_t sync = B_FALSE;
-
-	ASSERT(spa_writeable(spa));
-
-	spa_vdev_state_enter(spa, SCL_ALL);
-
-	if ((vd = spa_lookup_by_guid(spa, guid, B_TRUE)) == NULL)
-		return (spa_vdev_state_exit(spa, NULL, ENOENT));
-
-	if (!vd->vdev_ops->vdev_op_leaf)
-		return (spa_vdev_state_exit(spa, NULL, ENOTSUP));
-
-	if (ispath) {
-		if (strcmp(value, vd->vdev_path) != 0) {
-			spa_strfree(vd->vdev_path);
-			vd->vdev_path = spa_strdup(value);
-			sync = B_TRUE;
-		}
-	} else {
-		if (vd->vdev_fru == NULL) {
-			vd->vdev_fru = spa_strdup(value);
-			sync = B_TRUE;
-		} else if (strcmp(value, vd->vdev_fru) != 0) {
-			spa_strfree(vd->vdev_fru);
-			vd->vdev_fru = spa_strdup(value);
-			sync = B_TRUE;
-		}
-	}
-
-	return (spa_vdev_state_exit(spa, sync ? vd : NULL, 0));
-}
-
-int
-spa_vdev_setpath(spa_t *spa, uint64_t guid, const char *newpath)
-{
-	return (spa_vdev_set_common(spa, guid, newpath, B_TRUE));
-}
-
-int
-spa_vdev_setfru(spa_t *spa, uint64_t guid, const char *newfru)
-{
-	return (spa_vdev_set_common(spa, guid, newfru, B_FALSE));
 }
 
 /*
@@ -5755,6 +6017,12 @@ spa_async_thread(spa_t *spa)
 	 */
 	if (tasks & SPA_ASYNC_RESILVER)
 		dsl_resilver_restart(spa->spa_dsl_pool, 0);
+
+	/*
+	 * Kick off L2 cache rebuilding.
+	 */
+	if (tasks & SPA_ASYNC_L2CACHE_REBUILD)
+		l2arc_spa_rebuild_start(spa);
 
 	/*
 	 * Let the world know that we're done.
@@ -6013,6 +6281,7 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 {
 	nvlist_t *nvp = arg;
 	spa_t *spa = dmu_tx_pool(tx)->dp_spa;
+	spa_meta_placement_t *mp = &spa->spa_meta_policy;
 	objset_t *mos = spa->spa_meta_objset;
 	nvpair_t *elem = NULL;
 
@@ -6125,11 +6394,26 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 			case ZPOOL_PROP_DELEGATION:
 				spa->spa_delegation = intval;
 				break;
+			case ZPOOL_PROP_DDT_DESEGREGATION:
+				spa_set_ddt_classes(spa, intval);
+				break;
+			case ZPOOL_PROP_DEDUP_BEST_EFFORT:
+				spa->spa_dedup_best_effort = intval;
+				break;
+			case ZPOOL_PROP_DEDUP_LO_BEST_EFFORT:
+				spa->spa_dedup_lo_best_effort = intval;
+				break;
+			case ZPOOL_PROP_DEDUP_HI_BEST_EFFORT:
+				spa->spa_dedup_hi_best_effort = intval;
+				break;
 			case ZPOOL_PROP_BOOTFS:
 				spa->spa_bootfs = intval;
 				break;
 			case ZPOOL_PROP_FAILUREMODE:
 				spa->spa_failmode = intval;
+				break;
+			case ZPOOL_PROP_FORCETRIM:
+				spa->spa_force_trim = intval;
 				break;
 			case ZPOOL_PROP_AUTOEXPAND:
 				spa->spa_autoexpand = intval;
@@ -6139,6 +6423,28 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 				break;
 			case ZPOOL_PROP_DEDUPDITTO:
 				spa->spa_dedup_ditto = intval;
+				break;
+			case ZPOOL_PROP_LOWATERMARK:
+				spa->spa_lowat = intval;
+				break;
+			case ZPOOL_PROP_HIWATERMARK:
+				spa->spa_hiwat = intval;
+				break;
+			case ZPOOL_PROP_DEDUPMETA_DITTO:
+				spa->spa_ddt_meta_copies = intval;
+				break;
+			case ZPOOL_PROP_META_PLACEMENT:
+				mp->spa_enable_meta_placement_selection =
+				    intval;
+				break;
+			case ZPOOL_PROP_DDT_TO_METADEV:
+				mp->spa_ddt_to_special = intval;
+				break;
+			case ZPOOL_PROP_GENERAL_META_TO_METADEV:
+				mp->spa_general_meta_to_special = intval;
+				break;
+			case ZPOOL_PROP_OTHER_META_TO_METADEV:
+				mp->spa_other_meta_to_special = intval;
 				break;
 			default:
 				break;
@@ -6435,7 +6741,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 		vdev_sync_done(vd, txg);
 
 	spa_update_dspace(spa);
-
+	spa_update_latency(spa);
 	/*
 	 * It had better be the case that we didn't dirty anything
 	 * since vdev_config_sync().
@@ -6446,6 +6752,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 
 	spa->spa_sync_pass = 0;
 
+	spa_check_special(spa);
 	spa_config_exit(spa, SCL_CONFIG, FTAG);
 
 	spa_handle_ignored_writes(spa);
@@ -6609,6 +6916,34 @@ spa_has_active_shared_spare(spa_t *spa)
 	return (B_FALSE);
 }
 
+static void
+spa_init_einfo(spa_t *spa, vdev_t *vdev, const char *name, spa_einfo_t *spe)
+{
+	bzero(spe, sizeof (spa_einfo_t));
+
+	spe->spa_guid = spa_guid(spa);
+	spe->spa_name = spa_strdup(spa_name(spa));
+	spe->event_name = spa_strdup(name);
+
+	if (vdev) {
+		spe->vdev_guid = vdev->vdev_guid;
+		if (vdev->vdev_path)
+			spe->vdev_path = spa_strdup(vdev->vdev_path);
+	}
+}
+
+static void
+spa_fini_einfo(spa_einfo_t *spe)
+{
+	if (spe->spa_name)
+		spa_strfree(spe->spa_name);
+	if (spe->event_name)
+		spa_strfree(spe->event_name);
+	if (spe->vdev_path)
+		spa_strfree(spe->vdev_path);
+	kmem_free(spe, sizeof (spa_einfo_t));
+}
+
 /*
  * Post a sysevent corresponding to the given event.  The 'name' must be one of
  * the event definitions in sys/sysevent/eventdefs.h.  The payload will be
@@ -6616,38 +6951,41 @@ spa_has_active_shared_spare(spa_t *spa)
  * in the userland libzpool, as we don't want consumers to misinterpret ztest
  * or zdb as real changes.
  */
-void
-spa_event_notify(spa_t *spa, vdev_t *vd, const char *name)
+static void
+spa_event_notify_impl(void *arg)
 {
+	/* cast the argument; will need to be freed once done */
+	spa_einfo_t *evt = (spa_einfo_t *)arg;
+
 #ifdef _KERNEL
 	sysevent_t		*ev;
 	sysevent_attr_list_t	*attr = NULL;
 	sysevent_value_t	value;
 	sysevent_id_t		eid;
 
-	ev = sysevent_alloc(EC_ZFS, (char *)name, SUNW_KERN_PUB "zfs",
-	    SE_SLEEP);
+	ev = sysevent_alloc(EC_ZFS, (char *)evt->event_name,
+	    SUNW_KERN_PUB "zfs", SE_SLEEP);
 
 	value.value_type = SE_DATA_TYPE_STRING;
-	value.value.sv_string = spa_name(spa);
+	value.value.sv_string = evt->spa_name;
 	if (sysevent_add_attr(&attr, ZFS_EV_POOL_NAME, &value, SE_SLEEP) != 0)
 		goto done;
 
 	value.value_type = SE_DATA_TYPE_UINT64;
-	value.value.sv_uint64 = spa_guid(spa);
+	value.value.sv_uint64 = evt->spa_guid;
 	if (sysevent_add_attr(&attr, ZFS_EV_POOL_GUID, &value, SE_SLEEP) != 0)
 		goto done;
 
-	if (vd) {
+	if (evt->vdev_guid) {
 		value.value_type = SE_DATA_TYPE_UINT64;
-		value.value.sv_uint64 = vd->vdev_guid;
+		value.value.sv_uint64 = evt->vdev_guid;
 		if (sysevent_add_attr(&attr, ZFS_EV_VDEV_GUID, &value,
 		    SE_SLEEP) != 0)
 			goto done;
 
-		if (vd->vdev_path) {
+		if (evt->vdev_path) {
 			value.value_type = SE_DATA_TYPE_STRING;
-			value.value.sv_string = vd->vdev_path;
+			value.value.sv_string = evt->vdev_path;
 			if (sysevent_add_attr(&attr, ZFS_EV_VDEV_PATH,
 			    &value, SE_SLEEP) != 0)
 				goto done;
@@ -6665,4 +7003,35 @@ done:
 		sysevent_free_attr(attr);
 	sysevent_free(ev);
 #endif
+	spa_fini_einfo(evt);
+}
+
+/*
+ * Dispatch event notifications to the taskq such that the corresponding
+ * sysevents are queued with no spa locks held
+ */
+taskq_t *spa_sysevent_taskq;
+
+void
+spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name)
+{
+	spa_einfo_t *spe = kmem_alloc(sizeof (spa_einfo_t), KM_SLEEP);
+
+	spa_init_einfo(spa, vdev, name, spe);
+
+	if (taskq_dispatch(spa_sysevent_taskq, spa_event_notify_impl,
+	    spe, TQ_NOSLEEP) == NULL) {
+		/*
+		 * These are management sysevents; as much as it is
+		 * unpleasant to drop these due to syseventd not being able
+		 * to keep up, perhaps due to resource shortages, we are not
+		 * going to sleep here and risk locking up the pool sync
+		 * process; notify admin of problems
+		 */
+		cmn_err(CE_NOTE, "Could not dispatch sysevent nofitication "
+		    "for %s, please check state of syseventd\n",
+		    spe->event_name);
+		spa_fini_einfo(spe);
+		return;
+	}
 }

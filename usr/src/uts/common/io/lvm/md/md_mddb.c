@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -91,7 +92,7 @@ static int		mddb_allow_half = 0;
  * For mirrored root allow reboot with only half the replicas available
  * Flag inserted for Santa Fe project.
  */
-int mirrored_root_flag;
+volatile int mirrored_root_flag;
 
 #define	ISWHITE(c)	(((c) == ' ') || ((c) == '\t') || \
 			    ((c) == '\r') || ((c) == '\n'))

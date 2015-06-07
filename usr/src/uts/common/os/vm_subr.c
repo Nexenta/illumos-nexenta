@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1986, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -73,7 +74,7 @@
 #include <vm/seg_vn.h>
 #include <vm/seg_kmem.h>
 
-extern int maxphys;
+#include <sys/sunddi.h>
 
 void
 minphys(struct buf *bp)

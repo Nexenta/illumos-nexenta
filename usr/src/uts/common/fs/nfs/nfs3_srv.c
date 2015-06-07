@@ -144,7 +144,6 @@ out:
 void *
 rfs3_getattr_getfh(GETATTR3args *args)
 {
-
 	return (&args->object);
 }
 
@@ -358,7 +357,6 @@ out1:
 void *
 rfs3_setattr_getfh(SETATTR3args *args)
 {
-
 	return (&args->object);
 }
 
@@ -381,6 +379,9 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	char *name = NULL;
 
 	dvap = NULL;
+
+	if (exi != NULL)
+		exi_hold(exi);
 
 	/*
 	 * Allow lookups from the root - the default
@@ -420,8 +421,19 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	fhp = &args->what.dir;
 	if (strcmp(args->what.name, "..") == 0 &&
 	    EQFID(&exi->exi_fid, FH3TOFIDP(fhp))) {
-		resp->status = NFS3ERR_NOENT;
-		goto out1;
+		if ((exi->exi_export.ex_flags & EX_NOHIDE) &&
+		    (dvp->v_flag & VROOT)) {
+			/*
+			 * special case for ".." and 'nohide'exported root
+			 */
+			if (rfs_climb_crossmnt(&dvp, &exi, cr) != 0) {
+				resp->status = NFS3ERR_ACCES;
+				goto out1;
+			}
+		} else {
+			resp->status = NFS3ERR_NOENT;
+			goto out1;
+		}
 	}
 
 	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
@@ -439,10 +451,12 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	 */
 	if (PUBLIC_FH3(&args->what.dir)) {
 		publicfh_flag = TRUE;
+
+		exi_rele(exi);
+
 		error = rfs_publicfh_mclookup(name, dvp, cr, &vp,
 		    &exi, &sec);
-		if (error && exi != NULL)
-			exi_rele(exi); /* See comment below Re: publicfh_flag */
+
 		/*
 		 * Since WebNFS may bypass MOUNT, we need to ensure this
 		 * request didn't come from an unlabeled admin_low client.
@@ -464,8 +478,6 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 			if (tp == NULL || tp->tpc_tp.tp_doi !=
 			    l_admin_low->tsl_doi || tp->tpc_tp.host_type !=
 			    SUN_CIPSO) {
-				if (exi != NULL)
-					exi_rele(exi);
 				VN_RELE(vp);
 				error = EACCES;
 			}
@@ -480,6 +492,12 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	if (name != args->what.name)
 		kmem_free(name, MAXPATHLEN + 1);
 
+	if (error == 0 && vn_ismntpt(vp)) {
+		error = rfs_cross_mnt(&vp, &exi);
+		if (error)
+			VN_RELE(vp);
+	}
+
 	if (is_system_labeled() && error == 0) {
 		bslabel_t *clabel = req->rq_label;
 
@@ -490,8 +508,6 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 		if (!blequal(&l_admin_low->tsl_label, clabel)) {
 			if (!do_rfs_label_check(clabel, dvp,
 			    DOMINANCE_CHECK, exi)) {
-				if (publicfh_flag && exi != NULL)
-					exi_rele(exi);
 				VN_RELE(vp);
 				error = EACCES;
 			}
@@ -512,15 +528,6 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 			auth_weak = TRUE;
 	}
 
-	/*
-	 * If publicfh_flag is true then we have called rfs_publicfh_mclookup
-	 * and have obtained a new exportinfo in exi which needs to be
-	 * released. Note that the original exportinfo pointed to by exi
-	 * will be released by the caller, common_dispatch.
-	 */
-	if (publicfh_flag)
-		exi_rele(exi);
-
 	if (error) {
 		VN_RELE(vp);
 		goto out;
@@ -529,6 +536,7 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	va.va_mask = AT_ALL;
 	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
 
+	exi_rele(exi);
 	VN_RELE(vp);
 
 	resp->status = NFS3_OK;
@@ -556,6 +564,9 @@ out:
 	} else
 		resp->status = puterrno3(error);
 out1:
+	if (exi != NULL)
+		exi_rele(exi);
+
 	DTRACE_NFSV3_4(op__lookup__done, struct svc_req *, req,
 	    cred_t *, cr, vnode_t *, dvp, LOOKUP3res *, resp);
 
@@ -568,11 +579,9 @@ out1:
 void *
 rfs3_lookup_getfh(LOOKUP3args *args)
 {
-
 	return (&args->what.dir);
 }
 
-/* ARGSUSED */
 void
 rfs3_access(ACCESS3args *args, ACCESS3res *resp, struct exportinfo *exi,
     struct svc_req *req, cred_t *cr, bool_t ro)
@@ -724,7 +733,6 @@ out:
 void *
 rfs3_access_getfh(ACCESS3args *args)
 {
-
 	return (&args->object);
 }
 
@@ -895,14 +903,12 @@ out1:
 void *
 rfs3_readlink_getfh(READLINK3args *args)
 {
-
 	return (&args->symlink);
 }
 
 void
 rfs3_readlink_free(READLINK3res *resp)
 {
-
 	if (resp->status == NFS3_OK)
 		kmem_free(resp->resok.data, MAXPATHLEN + 1);
 }
@@ -1240,7 +1246,6 @@ rfs3_read_free(READ3res *resp)
 void *
 rfs3_read_getfh(READ3args *args)
 {
-
 	return (&args->file);
 }
 
@@ -1499,7 +1504,6 @@ out:
 void *
 rfs3_write_getfh(WRITE3args *args)
 {
-
 	return (&args->file);
 }
 
@@ -1554,6 +1558,11 @@ rfs3_create(CREATE3args *args, CREATE3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, dvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto out1;
+	}
+
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto out1;
 	}
 
@@ -1862,7 +1871,6 @@ out1:
 void *
 rfs3_create_getfh(CREATE3args *args)
 {
-
 	return (&args->where.dir);
 }
 
@@ -1911,6 +1919,11 @@ rfs3_mkdir(MKDIR3args *args, MKDIR3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, dvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto out1;
+	}
+
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto out1;
 	}
 
@@ -2010,7 +2023,6 @@ out1:
 void *
 rfs3_mkdir_getfh(MKDIR3args *args)
 {
-
 	return (&args->where.dir);
 }
 
@@ -2060,6 +2072,11 @@ rfs3_symlink(SYMLINK3args *args, SYMLINK3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, dvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto err1;
+	}
+
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto err1;
 	}
 
@@ -2184,7 +2201,6 @@ out:
 void *
 rfs3_symlink_getfh(SYMLINK3args *args)
 {
-
 	return (&args->where.dir);
 }
 
@@ -2236,6 +2252,11 @@ rfs3_mknod(MKNOD3args *args, MKNOD3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, dvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto out1;
+	}
+
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto out1;
 	}
 
@@ -2381,7 +2402,6 @@ out1:
 void *
 rfs3_mknod_getfh(MKNOD3args *args)
 {
-
 	return (&args->where.dir);
 }
 
@@ -2526,7 +2546,6 @@ out:
 void *
 rfs3_remove_getfh(REMOVE3args *args)
 {
-
 	return (&args->object.dir);
 }
 
@@ -2653,7 +2672,6 @@ out:
 void *
 rfs3_rmdir_getfh(RMDIR3args *args)
 {
-
 	return (&args->object.dir);
 }
 
@@ -2757,6 +2775,11 @@ rfs3_rename(RENAME3args *args, RENAME3res *resp, struct exportinfo *exi,
 
 	if (rdonly(ro, tvp)) {
 		resp->status = NFS3ERR_ROFS;
+		goto err1;
+	}
+
+	if (protect_zfs_mntpt(tvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
 		goto err1;
 	}
 
@@ -2885,7 +2908,6 @@ out:
 void *
 rfs3_rename_getfh(RENAME3args *args)
 {
-
 	return (&args->from.dir);
 }
 
@@ -2984,6 +3006,11 @@ rfs3_link(LINK3args *args, LINK3res *resp, struct exportinfo *exi,
 		goto out1;
 	}
 
+	if (protect_zfs_mntpt(dvp) != 0) {
+		resp->status = NFS3ERR_ACCES;
+		goto out1;
+	}
+
 	if (is_system_labeled()) {
 		DTRACE_PROBE2(tx__rfs3__log__info__oplinkdir__clabel, char *,
 		    "got client label from request(1)", struct svc_req *, req);
@@ -3059,38 +3086,13 @@ out1:
 void *
 rfs3_link_getfh(LINK3args *args)
 {
-
 	return (&args->file);
 }
 
-/*
- * This macro defines the size of a response which contains attribute
- * information and one directory entry (whose length is specified by
- * the macro parameter).  If the incoming request is larger than this,
- * then we are guaranteed to be able to return at one directory entry
- * if one exists.  Therefore, we do not need to check for
- * NFS3ERR_TOOSMALL if the requested size is larger then this.  If it
- * is not, then we need to check to make sure that this error does not
- * need to be returned.
- *
- * NFS3_READDIR_MIN_COUNT is comprised of following :
- *
- * status - 1 * BYTES_PER_XDR_UNIT
- * attr. flag - 1 * BYTES_PER_XDR_UNIT
- * cookie verifier - 2 * BYTES_PER_XDR_UNIT
- * attributes  - NFS3_SIZEOF_FATTR3 * BYTES_PER_XDR_UNIT
- * boolean - 1 * BYTES_PER_XDR_UNIT
- * file id - 2 * BYTES_PER_XDR_UNIT
- * directory name length - 1 * BYTES_PER_XDR_UNIT
- * cookie - 2 * BYTES_PER_XDR_UNIT
- * end of list - 1 * BYTES_PER_XDR_UNIT
- * end of file - 1 * BYTES_PER_XDR_UNIT
- * Name length of directory to the nearest byte
- */
-
-#define	NFS3_READDIR_MIN_COUNT(length)	\
-	((1 + 1 + 2 + NFS3_SIZEOF_FATTR3 + 1 + 2 + 1 + 2 + 1 + 1) * \
-		BYTES_PER_XDR_UNIT + roundup((length), BYTES_PER_XDR_UNIT))
+#ifdef nextdp
+#undef nextdp
+#endif
+#define	nextdp(dp)	((struct dirent64 *)((char *)(dp) + (dp)->d_reclen))
 
 /* ARGSUSED */
 void
@@ -3103,14 +3105,18 @@ rfs3_readdir(READDIR3args *args, READDIR3res *resp, struct exportinfo *exi,
 	struct vattr va;
 	struct iovec iov;
 	struct uio uio;
-	char *data;
 	int iseof;
-	int bufsize;
-	int namlen;
-	uint_t count;
-	struct sockaddr *ca;
 
-	vap = NULL;
+	count3 count = args->count;
+	count3 size;		/* size of the READDIR3resok structure */
+
+	size_t datasz;
+	char *data = NULL;
+	dirent64_t *dp;
+
+	struct sockaddr *ca;
+	entry3 **eptr;
+	entry3 *entry;
 
 	vp = nfs3_fhtovp(&args->dir, exi);
 
@@ -3118,8 +3124,15 @@ rfs3_readdir(READDIR3args *args, READDIR3res *resp, struct exportinfo *exi,
 	    cred_t *, cr, vnode_t *, vp, READDIR3args *, args);
 
 	if (vp == NULL) {
-		error = ESTALE;
-		goto out;
+		resp->status = NFS3ERR_STALE;
+		vap = NULL;
+		goto out1;
+	}
+
+	if (vp->v_type != VDIR) {
+		resp->status = NFS3ERR_NOTDIR;
+		vap = NULL;
+		goto out1;
 	}
 
 	if (is_system_labeled()) {
@@ -3133,6 +3146,7 @@ rfs3_readdir(READDIR3args *args, READDIR3res *resp, struct exportinfo *exi,
 			if (!do_rfs_label_check(clabel, vp, DOMINANCE_CHECK,
 			    exi)) {
 				resp->status = NFS3ERR_ACCES;
+				vap = NULL;
 				goto out1;
 			}
 		}
@@ -3143,118 +3157,147 @@ rfs3_readdir(READDIR3args *args, READDIR3res *resp, struct exportinfo *exi,
 	va.va_mask = AT_ALL;
 	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
 
-	if (vp->v_type != VDIR) {
-		resp->status = NFS3ERR_NOTDIR;
-		goto out1;
-	}
-
 	error = VOP_ACCESS(vp, VREAD, 0, cr, NULL);
 	if (error)
 		goto out;
 
 	/*
-	 * Now don't allow arbitrary count to alloc;
-	 * allow the maximum not to exceed rfs3_tsize()
+	 * Don't allow arbitrary counts for allocation
 	 */
-	if (args->count > rfs3_tsize(req))
-		args->count = rfs3_tsize(req);
+	if (count > rfs3_tsize(req))
+		count = rfs3_tsize(req);
+
+	/*
+	 * struct READDIR3resok:
+	 *   dir_attributes:	1 + NFS3_SIZEOF_FATTR3
+	 *   cookieverf:	2
+	 *   entries (bool):	1
+	 *   eof:		1
+	 */
+	size = (1 + NFS3_SIZEOF_FATTR3 + 2 + 1 + 1) * BYTES_PER_XDR_UNIT;
+
+	if (size > count) {
+		resp->status = NFS3ERR_TOOSMALL;
+		goto out1;
+	}
+
+	/*
+	 * This is simplification.  The dirent64_t size is not the same as the
+	 * size of XDR representation of entry3, but the sizes are similar so
+	 * we'll assume they are same.  This assumption should not cause any
+	 * harm.  In worst case we will need to issue VOP_READDIR() once more.
+	 */
+	datasz = count;
 
 	/*
 	 * Make sure that there is room to read at least one entry
 	 * if any are available.
 	 */
-	if (args->count < DIRENT64_RECLEN(MAXNAMELEN))
-		count = DIRENT64_RECLEN(MAXNAMELEN);
-	else
-		count = args->count;
+	if (datasz < DIRENT64_RECLEN(MAXNAMELEN))
+		datasz = DIRENT64_RECLEN(MAXNAMELEN);
 
-	data = kmem_alloc(count, KM_SLEEP);
+	data = kmem_alloc(datasz, KM_NOSLEEP);
+	if (data == NULL) {
+		/* The allocation failed; downsize and wait for it this time */
+		if (datasz > MAXBSIZE)
+			datasz = MAXBSIZE;
+		data = kmem_alloc(datasz, KM_SLEEP);
+	}
 
-	iov.iov_base = data;
-	iov.iov_len = count;
 	uio.uio_iov = &iov;
 	uio.uio_iovcnt = 1;
 	uio.uio_segflg = UIO_SYSSPACE;
 	uio.uio_extflg = UIO_COPY_CACHED;
 	uio.uio_loffset = (offset_t)args->cookie;
-	uio.uio_resid = count;
+	uio.uio_resid = datasz;
+
+	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
+	eptr = &resp->resok.reply.entries;
+	entry = NULL;
+
+getmoredents:
+	iov.iov_base = data;
+	iov.iov_len = datasz;
 
 	error = VOP_READDIR(vp, &uio, cr, &iseof, NULL, 0);
+	if (error) {
+		iseof = 0;
+		goto done;
+	}
+
+	if (iov.iov_len == datasz)
+		goto done;
+
+	for (dp = (dirent64_t *)data; (char *)dp - data < datasz - iov.iov_len;
+	    dp = nextdp(dp)) {
+		char *name;
+		count3 esize;
+
+		if (dp->d_ino == 0) {
+			if (entry != NULL)
+				entry->cookie = (cookie3)dp->d_off;
+			continue;
+		}
+
+		name = nfscmd_convname(ca, exi, dp->d_name,
+		    NFSCMD_CONV_OUTBOUND, MAXPATHLEN + 1);
+		if (name == NULL) {
+			if (entry != NULL)
+				entry->cookie = (cookie3)dp->d_off;
+			continue;
+		}
+
+		/*
+		 * struct entry3:
+		 *   fileid:		2
+		 *   name (length):	1
+		 *   name (data):	length (rounded up)
+		 *   cookie:		2
+		 *   nextentry (bool):	1
+		 */
+		esize = (2 + 1 + 2 + 1) * BYTES_PER_XDR_UNIT +
+		    RNDUP(strlen(name));
+
+		/* If the new entry does not fit, discard it */
+		if (esize > count - size) {
+			if (name != dp->d_name)
+				kmem_free(name, MAXPATHLEN + 1);
+			iseof = 0;
+			goto done;
+		}
+
+		entry = kmem_alloc(sizeof (entry3), KM_SLEEP);
+
+		entry->fileid = (fileid3)dp->d_ino;
+		entry->name = strdup(name);
+		if (name != dp->d_name)
+			kmem_free(name, MAXPATHLEN + 1);
+		entry->cookie = (cookie3)dp->d_off;
+
+		size += esize;
+
+		/* Add the entry to the linked list */
+		*eptr = entry;
+		eptr = &entry->nextentry;
+	}
+
+	if (!iseof && size < count) {
+		uio.uio_resid = MIN(datasz, MAXBSIZE);
+		goto getmoredents;
+	}
+
+done:
+	*eptr = NULL;
 
 	va.va_mask = AT_ALL;
 	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
 
-	if (error) {
-		kmem_free(data, count);
-		goto out;
+	if (!iseof && resp->resok.reply.entries == NULL) {
+		if (error)
+			goto out;
+		resp->status = NFS3ERR_TOOSMALL;
+		goto out1;
 	}
-
-	/*
-	 * If the count was not large enough to be able to guarantee
-	 * to be able to return at least one entry, then need to
-	 * check to see if NFS3ERR_TOOSMALL should be returned.
-	 */
-	if (args->count < NFS3_READDIR_MIN_COUNT(MAXNAMELEN)) {
-		/*
-		 * bufsize is used to keep track of the size of the response.
-		 * It is primed with:
-		 *	1 for the status +
-		 *	1 for the dir_attributes.attributes boolean +
-		 *	2 for the cookie verifier
-		 * all times BYTES_PER_XDR_UNIT to convert from XDR units
-		 * to bytes.  If there are directory attributes to be
-		 * returned, then:
-		 *	NFS3_SIZEOF_FATTR3 for the dir_attributes.attr fattr3
-		 * time BYTES_PER_XDR_UNIT is added to account for them.
-		 */
-		bufsize = (1 + 1 + 2) * BYTES_PER_XDR_UNIT;
-		if (vap != NULL)
-			bufsize += NFS3_SIZEOF_FATTR3 * BYTES_PER_XDR_UNIT;
-		/*
-		 * An entry is composed of:
-		 *	1 for the true/false list indicator +
-		 *	2 for the fileid +
-		 *	1 for the length of the name +
-		 *	2 for the cookie +
-		 * all times BYTES_PER_XDR_UNIT to convert from
-		 * XDR units to bytes, plus the length of the name
-		 * rounded up to the nearest BYTES_PER_XDR_UNIT.
-		 */
-		if (count != uio.uio_resid) {
-			namlen = strlen(((struct dirent64 *)data)->d_name);
-			bufsize += (1 + 2 + 1 + 2) * BYTES_PER_XDR_UNIT +
-			    roundup(namlen, BYTES_PER_XDR_UNIT);
-		}
-		/*
-		 * We need to check to see if the number of bytes left
-		 * to go into the buffer will actually fit into the
-		 * buffer.  This is calculated as the size of this
-		 * entry plus:
-		 *	1 for the true/false list indicator +
-		 *	1 for the eof indicator
-		 * times BYTES_PER_XDR_UNIT to convert from from
-		 * XDR units to bytes.
-		 */
-		bufsize += (1 + 1) * BYTES_PER_XDR_UNIT;
-		if (bufsize > args->count) {
-			kmem_free(data, count);
-			resp->status = NFS3ERR_TOOSMALL;
-			goto out1;
-		}
-	}
-
-	/*
-	 * Have a valid readir buffer for the native character
-	 * set. Need to check if a conversion is necessary and
-	 * potentially rewrite the whole buffer. Note that if the
-	 * conversion expands names enough, the structure may not
-	 * fit. In this case, we need to drop entries until if fits
-	 * and patch the counts in order that the next readdir will
-	 * get the correct entries.
-	 */
-	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
-	data = nfscmd_convdirent(ca, exi, data, count, &resp->status);
-
 
 	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 
@@ -3271,18 +3314,18 @@ rfs3_readdir(READDIR3args *args, READDIR3res *resp, struct exportinfo *exi,
 #endif
 
 	resp->status = NFS3_OK;
-	vattr_to_post_op_attr(vap, &resp->resok.dir_attributes);
 	resp->resok.cookieverf = 0;
-	resp->resok.reply.entries = (entry3 *)data;
-	resp->resok.reply.eof = iseof;
-	resp->resok.size = count - uio.uio_resid;
-	resp->resok.count = args->count;
-	resp->resok.freecount = count;
+	resp->resok.reply.eof = iseof ? TRUE : FALSE;
+
+	vattr_to_post_op_attr(vap, &resp->resok.dir_attributes);
 
 	DTRACE_NFSV3_4(op__readdir__done, struct svc_req *, req,
 	    cred_t *, cr, vnode_t *, vp, READDIR3res *, resp);
 
 	VN_RELE(vp);
+
+	if (data != NULL)
+		kmem_free(data, datasz);
 
 	return;
 
@@ -3293,6 +3336,8 @@ out:
 	} else
 		resp->status = puterrno3(error);
 out1:
+	vattr_to_post_op_attr(vap, &resp->resfail.dir_attributes);
+
 	DTRACE_NFSV3_4(op__readdir__done, struct svc_req *, req,
 	    cred_t *, cr, vnode_t *, vp, READDIR3res *, resp);
 
@@ -3300,54 +3345,31 @@ out1:
 		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 		VN_RELE(vp);
 	}
-	vattr_to_post_op_attr(vap, &resp->resfail.dir_attributes);
+
+	if (data != NULL)
+		kmem_free(data, datasz);
 }
 
 void *
 rfs3_readdir_getfh(READDIR3args *args)
 {
-
 	return (&args->dir);
 }
 
 void
 rfs3_readdir_free(READDIR3res *resp)
 {
+	if (resp->status == NFS3_OK) {
+		entry3 *entry, *nentry;
 
-	if (resp->status == NFS3_OK)
-		kmem_free(resp->resok.reply.entries, resp->resok.freecount);
+		for (entry = resp->resok.reply.entries; entry != NULL;
+		    entry = nentry) {
+			nentry = entry->nextentry;
+			strfree(entry->name);
+			kmem_free(entry, sizeof (entry3));
+		}
+	}
 }
-
-#ifdef nextdp
-#undef nextdp
-#endif
-#define	nextdp(dp)	((struct dirent64 *)((char *)(dp) + (dp)->d_reclen))
-
-/*
- * This macro computes the size of a response which contains
- * one directory entry including the attributes as well as file handle.
- * If the incoming request is larger than this, then we are guaranteed to be
- * able to return at least one more directory entry if one exists.
- *
- * NFS3_READDIRPLUS_ENTRY is made up of the following:
- *
- * boolean - 1 * BYTES_PER_XDR_UNIT
- * file id - 2 * BYTES_PER_XDR_UNIT
- * directory name length - 1 * BYTES_PER_XDR_UNIT
- * cookie - 2 * BYTES_PER_XDR_UNIT
- * attribute flag - 1 * BYTES_PER_XDR_UNIT
- * attributes - NFS3_SIZEOF_FATTR3 * BYTES_PER_XDR_UNIT
- * status byte for file handle - 1 *  BYTES_PER_XDR_UNIT
- * length of a file handle - 1 * BYTES_PER_XDR_UNIT
- * Maximum length of a file handle (NFS3_MAXFHSIZE)
- * name length of the entry to the nearest bytes
- */
-#define	NFS3_READDIRPLUS_ENTRY(namelen)	\
-	((1 + 2 + 1 + 2 + 1 + NFS3_SIZEOF_FATTR3 + 1 + 1) * \
-		BYTES_PER_XDR_UNIT + \
-	NFS3_MAXFHSIZE + roundup(namelen, BYTES_PER_XDR_UNIT))
-
-static int rfs3_readdir_unit = MAXBSIZE;
 
 /* ARGSUSED */
 void
@@ -3360,28 +3382,20 @@ rfs3_readdirplus(READDIRPLUS3args *args, READDIRPLUS3res *resp,
 	struct vattr va;
 	struct iovec iov;
 	struct uio uio;
-	char *data;
 	int iseof;
-	struct dirent64 *dp;
-	vnode_t *nvp;
-	struct vattr *nvap;
-	struct vattr nva;
-	entryplus3_info *infop = NULL;
-	int size = 0;
-	int nents = 0;
-	int bufsize = 0;
-	int entrysize = 0;
-	int tofit = 0;
-	int rd_unit = rfs3_readdir_unit;
-	int prev_len;
-	int space_left;
-	int i;
-	uint_t *namlen = NULL;
-	char *ndata = NULL;
-	struct sockaddr *ca;
-	size_t ret;
 
-	vap = NULL;
+	count3 dircount = args->dircount;
+	count3 maxcount = args->maxcount;
+	count3 dirsize = 0;
+	count3 size;		/* size of the READDIRPLUS3resok structure */
+
+	size_t datasz;
+	char *data = NULL;
+	dirent64_t *dp;
+
+	struct sockaddr *ca;
+	entryplus3 **eptr;
+	entryplus3 *entry;
 
 	vp = nfs3_fhtovp(&args->dir, exi);
 
@@ -3389,8 +3403,15 @@ rfs3_readdirplus(READDIRPLUS3args *args, READDIRPLUS3res *resp,
 	    cred_t *, cr, vnode_t *, vp, READDIRPLUS3args *, args);
 
 	if (vp == NULL) {
-		error = ESTALE;
-		goto out;
+		resp->status = NFS3ERR_STALE;
+		vap = NULL;
+		goto out1;
+	}
+
+	if (vp->v_type != VDIR) {
+		resp->status = NFS3ERR_NOTDIR;
+		vap = NULL;
+		goto out1;
 	}
 
 	if (is_system_labeled()) {
@@ -3405,6 +3426,7 @@ rfs3_readdirplus(READDIRPLUS3args *args, READDIRPLUS3res *resp,
 			if (!do_rfs_label_check(clabel, vp, DOMINANCE_CHECK,
 			    exi)) {
 				resp->status = NFS3ERR_ACCES;
+				vap = NULL;
 				goto out1;
 			}
 		}
@@ -3415,11 +3437,6 @@ rfs3_readdirplus(READDIRPLUS3args *args, READDIRPLUS3res *resp,
 	va.va_mask = AT_ALL;
 	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
 
-	if (vp->v_type != VDIR) {
-		error = ENOTDIR;
-		goto out;
-	}
-
 	error = VOP_ACCESS(vp, VREAD, 0, cr, NULL);
 	if (error)
 		goto out;
@@ -3427,218 +3444,213 @@ rfs3_readdirplus(READDIRPLUS3args *args, READDIRPLUS3res *resp,
 	/*
 	 * Don't allow arbitrary counts for allocation
 	 */
-	if (args->maxcount > rfs3_tsize(req))
-		args->maxcount = rfs3_tsize(req);
+	if (maxcount > rfs3_tsize(req))
+		maxcount = rfs3_tsize(req);
+
+	/*
+	 * struct READDIRPLUS3resok:
+	 *   dir_attributes:	1 + NFS3_SIZEOF_FATTR3
+	 *   cookieverf:	2
+	 *   entries (bool):	1
+	 *   eof:		1
+	 */
+	size = (1 + NFS3_SIZEOF_FATTR3 + 2 + 1 + 1) * BYTES_PER_XDR_UNIT;
+
+	if (size > maxcount) {
+		resp->status = NFS3ERR_TOOSMALL;
+		goto out1;
+	}
+
+	/*
+	 * This is simplification.  The dirent64_t size is not the same as the
+	 * size of XDR representation of entryplus3 (excluding attributes and
+	 * handle), but the sizes are similar so we'll assume they are same.
+	 * This assumption should not cause any harm.  In worst case we will
+	 * need to issue VOP_READDIR() once more.
+	 */
+
+	datasz = MIN(dircount, maxcount);
 
 	/*
 	 * Make sure that there is room to read at least one entry
-	 * if any are available
+	 * if any are available.
 	 */
-	args->dircount = MIN(args->dircount, args->maxcount);
+	if (datasz < DIRENT64_RECLEN(MAXNAMELEN))
+		datasz = DIRENT64_RECLEN(MAXNAMELEN);
 
-	if (args->dircount < DIRENT64_RECLEN(MAXNAMELEN))
-		args->dircount = DIRENT64_RECLEN(MAXNAMELEN);
+	data = kmem_alloc(datasz, KM_NOSLEEP);
+	if (data == NULL) {
+		/* The allocation failed; downsize and wait for it this time */
+		if (datasz > MAXBSIZE)
+			datasz = MAXBSIZE;
+		data = kmem_alloc(datasz, KM_SLEEP);
+	}
 
-	/*
-	 * This allocation relies on a minimum directory entry
-	 * being roughly 24 bytes.  Therefore, the namlen array
-	 * will have enough space based on the maximum number of
-	 * entries to read.
-	 */
-	namlen = kmem_alloc(args->dircount, KM_SLEEP);
-
-	space_left = args->dircount;
-	data = kmem_alloc(args->dircount, KM_SLEEP);
-	dp = (struct dirent64 *)data;
 	uio.uio_iov = &iov;
 	uio.uio_iovcnt = 1;
 	uio.uio_segflg = UIO_SYSSPACE;
 	uio.uio_extflg = UIO_COPY_CACHED;
 	uio.uio_loffset = (offset_t)args->cookie;
+	uio.uio_resid = datasz;
 
-	/*
-	 * bufsize is used to keep track of the size of the response as we
-	 * get post op attributes and filehandles for each entry.  This is
-	 * an optimization as the server may have read more entries than will
-	 * fit in the buffer specified by maxcount.  We stop calculating
-	 * post op attributes and filehandles once we have exceeded maxcount.
-	 * This will minimize the effect of truncation.
-	 *
-	 * It is primed with:
-	 *	1 for the status +
-	 *	1 for the dir_attributes.attributes boolean +
-	 *	2 for the cookie verifier
-	 * all times BYTES_PER_XDR_UNIT to convert from XDR units
-	 * to bytes.  If there are directory attributes to be
-	 * returned, then:
-	 *	NFS3_SIZEOF_FATTR3 for the dir_attributes.attr fattr3
-	 * time BYTES_PER_XDR_UNIT is added to account for them.
-	 */
-	bufsize = (1 + 1 + 2) * BYTES_PER_XDR_UNIT;
-	if (vap != NULL)
-		bufsize += NFS3_SIZEOF_FATTR3 * BYTES_PER_XDR_UNIT;
+	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
+	eptr = &resp->resok.reply.entries;
+	entry = NULL;
 
 getmoredents:
-	/*
-	 * Here we make a check so that our read unit is not larger than
-	 * the space left in the buffer.
-	 */
-	rd_unit = MIN(rd_unit, space_left);
-	iov.iov_base = (char *)dp;
-	iov.iov_len = rd_unit;
-	uio.uio_resid = rd_unit;
-	prev_len = rd_unit;
+	iov.iov_base = data;
+	iov.iov_len = datasz;
 
 	error = VOP_READDIR(vp, &uio, cr, &iseof, NULL, 0);
-
 	if (error) {
-		kmem_free(data, args->dircount);
-		goto out;
+		iseof = 0;
+		goto done;
 	}
 
-	if (uio.uio_resid == prev_len && !iseof) {
-		if (nents == 0) {
-			kmem_free(data, args->dircount);
-			resp->status = NFS3ERR_TOOSMALL;
-			goto out1;
-		}
+	if (iov.iov_len == datasz)
+		goto done;
 
-		/*
-		 * We could not get any more entries, so get the attributes
-		 * and filehandle for the entries already obtained.
-		 */
-		goto good;
-	}
-
-	/*
-	 * We estimate the size of the response by assuming the
-	 * entry exists and attributes and filehandle are also valid
-	 */
-	for (size = prev_len - uio.uio_resid;
-	    size > 0;
-	    size -= dp->d_reclen, dp = nextdp(dp)) {
+	for (dp = (dirent64_t *)data; (char *)dp - data < datasz - iov.iov_len;
+	    dp = nextdp(dp)) {
+		char *name;
+		vnode_t *nvp;
+		count3 edirsize;
+		count3 esize;
 
 		if (dp->d_ino == 0) {
-			nents++;
+			if (entry != NULL)
+				entry->cookie = (cookie3)dp->d_off;
 			continue;
 		}
 
-		namlen[nents] = strlen(dp->d_name);
-		entrysize = NFS3_READDIRPLUS_ENTRY(namlen[nents]);
-
-		/*
-		 * We need to check to see if the number of bytes left
-		 * to go into the buffer will actually fit into the
-		 * buffer.  This is calculated as the size of this
-		 * entry plus:
-		 *	1 for the true/false list indicator +
-		 *	1 for the eof indicator
-		 * times BYTES_PER_XDR_UNIT to convert from XDR units
-		 * to bytes.
-		 *
-		 * Also check the dircount limit against the first entry read
-		 *
-		 */
-		tofit = entrysize + (1 + 1) * BYTES_PER_XDR_UNIT;
-		if (bufsize + tofit > args->maxcount) {
-			/*
-			 * We make a check here to see if this was the
-			 * first entry being measured.  If so, then maxcount
-			 * was too small to begin with and so we need to
-			 * return with NFS3ERR_TOOSMALL.
-			 */
-			if (nents == 0) {
-				kmem_free(data, args->dircount);
-				resp->status = NFS3ERR_TOOSMALL;
-				goto out1;
-			}
-			iseof = FALSE;
-			goto good;
-		}
-		bufsize += entrysize;
-		nents++;
-	}
-
-	/*
-	 * If there is enough room to fit at least 1 more entry including
-	 * post op attributes and filehandle in the buffer AND that we haven't
-	 * exceeded dircount then go back and get some more.
-	 */
-	if (!iseof &&
-	    (args->maxcount - bufsize) >= NFS3_READDIRPLUS_ENTRY(MAXNAMELEN)) {
-		space_left -= (prev_len - uio.uio_resid);
-		if (space_left >= DIRENT64_RECLEN(MAXNAMELEN))
-			goto getmoredents;
-
-		/* else, fall through */
-	}
-good:
-	va.va_mask = AT_ALL;
-	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
-
-	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
-
-	infop = kmem_alloc(nents * sizeof (struct entryplus3_info), KM_SLEEP);
-	resp->resok.infop = infop;
-
-	dp = (struct dirent64 *)data;
-	for (i = 0; i < nents; i++) {
-
-		if (dp->d_ino == 0) {
-			infop[i].attr.attributes = FALSE;
-			infop[i].fh.handle_follows = FALSE;
-			dp = nextdp(dp);
+		name = nfscmd_convname(ca, exi, dp->d_name,
+		    NFSCMD_CONV_OUTBOUND, MAXPATHLEN + 1);
+		if (name == NULL) {
+			if (entry != NULL)
+				entry->cookie = (cookie3)dp->d_off;
 			continue;
 		}
 
-		infop[i].namelen = namlen[i];
+		/*
+		 * struct entryplus3:
+		 *   fileid:		2
+		 *   name (length):	1
+		 *   name (data):	length (rounded up)
+		 *   cookie:		2
+		 */
+		edirsize = (2 + 1 + 2) * BYTES_PER_XDR_UNIT +
+		    RNDUP(strlen(name));
+
+		/*
+		 * struct entryplus3:
+		 *   attributes_follow:	1
+		 *   handle_follows:	1
+		 *   nextentry (bool):	1
+		 */
+		esize = edirsize + (1 + 1 + 1) * BYTES_PER_XDR_UNIT;
+
+		/* If the new entry does not fit, we are done */
+		if (edirsize > dircount - dirsize || esize > maxcount - size) {
+			if (name != dp->d_name)
+				kmem_free(name, MAXPATHLEN + 1);
+			iseof = 0;
+			error = 0;
+			goto done;
+		}
+
+		entry = kmem_alloc(sizeof (entryplus3), KM_SLEEP);
+
+		entry->fileid = (fileid3)dp->d_ino;
+		entry->name = strdup(name);
+		if (name != dp->d_name)
+			kmem_free(name, MAXPATHLEN + 1);
+		entry->cookie = (cookie3)dp->d_off;
 
 		error = VOP_LOOKUP(vp, dp->d_name, &nvp, NULL, 0, NULL, cr,
 		    NULL, NULL, NULL);
 		if (error) {
-			infop[i].attr.attributes = FALSE;
-			infop[i].fh.handle_follows = FALSE;
-			dp = nextdp(dp);
-			continue;
+			entry->name_attributes.attributes = FALSE;
+			entry->name_handle.handle_follows = FALSE;
+		} else {
+			struct vattr nva;
+			struct vattr *nvap;
+
+			nva.va_mask = AT_ALL;
+			nvap = rfs4_delegated_getattr(nvp, &nva, 0, cr) ? NULL :
+			    &nva;
+
+			/* Lie about the object type for a referral */
+			if (nvap != NULL && vn_is_nfs_reparse(nvp, cr))
+				nvap->va_type = VLNK;
+
+			if (vn_ismntpt(nvp)) {
+				entry->name_attributes.attributes = FALSE;
+				entry->name_handle.handle_follows = FALSE;
+			} else {
+				vattr_to_post_op_attr(nvap,
+				    &entry->name_attributes);
+
+				error = makefh3(&entry->name_handle.handle, nvp,
+				    exi);
+				if (!error)
+					entry->name_handle.handle_follows =
+					    TRUE;
+				else
+					entry->name_handle.handle_follows =
+					    FALSE;
+			}
+
+			VN_RELE(nvp);
 		}
 
-		nva.va_mask = AT_ALL;
-		nvap = rfs4_delegated_getattr(nvp, &nva, 0, cr) ? NULL : &nva;
-
-		/* Lie about the object type for a referral */
-		if (vn_is_nfs_reparse(nvp, cr))
-			nvap->va_type = VLNK;
-
-		vattr_to_post_op_attr(nvap, &infop[i].attr);
-
-		error = makefh3(&infop[i].fh.handle, nvp, exi);
-		if (!error)
-			infop[i].fh.handle_follows = TRUE;
-		else
-			infop[i].fh.handle_follows = FALSE;
-
-		VN_RELE(nvp);
-		dp = nextdp(dp);
-	}
-
-	ca = (struct sockaddr *)svc_getrpccaller(req->rq_xprt)->buf;
-	ret = nfscmd_convdirplus(ca, exi, data, nents, args->dircount, &ndata);
-	if (ndata == NULL)
-		ndata = data;
-
-	if (ret > 0) {
 		/*
-		 * We had to drop one or more entries in order to fit
-		 * during the character conversion.  We need to patch
-		 * up the size and eof info.
+		 * struct entryplus3 (optionally):
+		 *   attributes:	NFS3_SIZEOF_FATTR3
+		 *   handle length:	1
+		 *   handle data:	length (rounded up)
 		 */
-		if (iseof)
-			iseof = FALSE;
+		if (entry->name_attributes.attributes == TRUE)
+			esize += NFS3_SIZEOF_FATTR3 * BYTES_PER_XDR_UNIT;
+		if (entry->name_handle.handle_follows == TRUE)
+			esize += 1 * BYTES_PER_XDR_UNIT +
+			    RNDUP(entry->name_handle.handle.fh3_length);
 
-		ret = nfscmd_dropped_entrysize((struct dirent64 *)data,
-		    nents, ret);
+		/* If the new entry does not fit, discard it */
+		if (esize > maxcount - size) {
+			strfree(entry->name);
+			kmem_free(entry, sizeof (entryplus3));
+			iseof = 0;
+			error = 0;
+			goto done;
+		}
+
+		dirsize += edirsize;
+		size += esize;
+
+		/* Add the entry to the linked list */
+		*eptr = entry;
+		eptr = &entry->nextentry;
 	}
 
+	if (!iseof && dirsize < dircount && size < maxcount) {
+		uio.uio_resid = MIN(datasz, MAXBSIZE);
+		goto getmoredents;
+	}
+
+done:
+	*eptr = NULL;
+
+	va.va_mask = AT_ALL;
+	vap = VOP_GETATTR(vp, &va, 0, cr, NULL) ? NULL : &va;
+
+	if (!iseof && resp->resok.reply.entries == NULL) {
+		if (error)
+			goto out;
+		resp->status = NFS3ERR_TOOSMALL;
+		goto out1;
+	}
+
+	VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
 
 #if 0 /* notyet */
 	/*
@@ -3652,24 +3664,19 @@ good:
 	(void) VOP_FSYNC(vp, FNODSYNC, cr, NULL);
 #endif
 
-	kmem_free(namlen, args->dircount);
-
 	resp->status = NFS3_OK;
-	vattr_to_post_op_attr(vap, &resp->resok.dir_attributes);
 	resp->resok.cookieverf = 0;
-	resp->resok.reply.entries = (entryplus3 *)ndata;
-	resp->resok.reply.eof = iseof;
-	resp->resok.size = nents;
-	resp->resok.count = args->dircount - ret;
-	resp->resok.maxcount = args->maxcount;
+	resp->resok.reply.eof = iseof ? TRUE : FALSE;
+
+	vattr_to_post_op_attr(vap, &resp->resok.dir_attributes);
 
 	DTRACE_NFSV3_4(op__readdirplus__done, struct svc_req *, req,
 	    cred_t *, cr, vnode_t *, vp, READDIRPLUS3res *, resp);
-	if (ndata != data)
-		kmem_free(data, args->dircount);
-
 
 	VN_RELE(vp);
+
+	if (data != NULL)
+		kmem_free(data, datasz);
 
 	return;
 
@@ -3681,6 +3688,8 @@ out:
 		resp->status = puterrno3(error);
 	}
 out1:
+	vattr_to_post_op_attr(vap, &resp->resfail.dir_attributes);
+
 	DTRACE_NFSV3_4(op__readdirplus__done, struct svc_req *, req,
 	    cred_t *, cr, vnode_t *, vp, READDIRPLUS3res *, resp);
 
@@ -3689,27 +3698,28 @@ out1:
 		VN_RELE(vp);
 	}
 
-	if (namlen != NULL)
-		kmem_free(namlen, args->dircount);
-
-	vattr_to_post_op_attr(vap, &resp->resfail.dir_attributes);
+	if (data != NULL)
+		kmem_free(data, datasz);
 }
 
 void *
 rfs3_readdirplus_getfh(READDIRPLUS3args *args)
 {
-
 	return (&args->dir);
 }
 
 void
 rfs3_readdirplus_free(READDIRPLUS3res *resp)
 {
-
 	if (resp->status == NFS3_OK) {
-		kmem_free(resp->resok.reply.entries, resp->resok.count);
-		kmem_free(resp->resok.infop,
-		    resp->resok.size * sizeof (struct entryplus3_info));
+		entryplus3 *entry, *nentry;
+
+		for (entry = resp->resok.reply.entries; entry != NULL;
+		    entry = nentry) {
+			nentry = entry->nextentry;
+			strfree(entry->name);
+			kmem_free(entry, sizeof (entryplus3));
+		}
 	}
 }
 
@@ -3803,7 +3813,6 @@ out1:
 void *
 rfs3_fsstat_getfh(FSSTAT3args *args)
 {
-
 	return (&args->fsroot);
 }
 
@@ -4010,7 +4019,6 @@ out1:
 void *
 rfs3_pathconf_getfh(PATHCONF3args *args)
 {
-
 	return (&args->object);
 }
 
@@ -4117,7 +4125,6 @@ out1:
 void *
 rfs3_commit_getfh(COMMIT3args *args)
 {
-
 	return (&args->file);
 }
 

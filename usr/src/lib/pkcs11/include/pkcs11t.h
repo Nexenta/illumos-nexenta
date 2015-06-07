@@ -974,6 +974,10 @@ typedef CK_ULONG          CK_MECHANISM_TYPE;
 /* AES counter mode is new for PKCS #11 v2.20 amendment 3 */
 #define CKM_AES_CTR                    0x00001086
 
+/* PKCS #11 v2.30 */
+#define	CKM_AES_CMAC_GENERAL           0x00001089
+#define	CKM_AES_CMAC                   0x0000108A
+
 /* BlowFish and TwoFish are new for v2.20 */
 #define CKM_BLOWFISH_KEY_GEN           0x00001090
 #define CKM_BLOWFISH_CBC               0x00001091

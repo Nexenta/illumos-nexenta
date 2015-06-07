@@ -21,6 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <errno.h>
@@ -83,4 +84,29 @@ num_logs(nvlist_t *nv)
 			nlogs++;
 	}
 	return (nlogs);
+}
+
+/*
+ * Return the number of special vdevs in supplied nvlist
+ */
+uint_t
+num_special(nvlist_t *nv)
+{
+	uint_t nspecial = 0;
+	uint_t c, children;
+	nvlist_t **child;
+
+	if (nvlist_lookup_nvlist_array(nv, ZPOOL_CONFIG_CHILDREN,
+	    &child, &children) != 0)
+		return (0);
+
+	for (c = 0; c < children; c++) {
+		uint64_t is_special = B_FALSE;
+
+		(void) nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_IS_SPECIAL,
+		    &is_special);
+		if (is_special)
+			nspecial++;
+	}
+	return (nspecial);
 }

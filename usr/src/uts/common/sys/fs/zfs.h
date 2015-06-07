@@ -22,8 +22,9 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
+ * Copyright (c) 2013, Saso Kiselkov. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -50,7 +51,9 @@ typedef enum {
 	ZFS_TYPE_SNAPSHOT	= (1 << 1),
 	ZFS_TYPE_VOLUME		= (1 << 2),
 	ZFS_TYPE_POOL		= (1 << 3),
-	ZFS_TYPE_BOOKMARK	= (1 << 4)
+	ZFS_TYPE_BOOKMARK	= (1 << 4),
+	ZFS_TYPE_VDEV		= (1 << 5),
+	ZFS_TYPE_COS		= (1 << 6)
 } zfs_type_t;
 
 typedef enum dmu_objset_type {
@@ -148,6 +151,9 @@ typedef enum {
 	ZFS_PROP_SNAPSHOT_COUNT,
 	ZFS_PROP_REDUNDANT_METADATA,
 	ZFS_PROP_PREV_SNAP,
+	ZFS_PROP_LSTXG,
+	ZFS_PROP_SPECIALCLASS,
+	ZFS_PROP_ZPL_TO_METADEV,
 	ZFS_NUM_PROPS
 } zfs_prop_t;
 
@@ -193,8 +199,80 @@ typedef enum {
 	ZPOOL_PROP_FRAGMENTATION,
 	ZPOOL_PROP_LEAKED,
 	ZPOOL_PROP_MAXBLOCKSIZE,
+	ZPOOL_PROP_ENABLESPECIAL,
+	ZPOOL_PROP_LOWATERMARK,
+	ZPOOL_PROP_HIWATERMARK,
+	ZPOOL_PROP_DEDUPMETA_DITTO,
+	ZPOOL_PROP_DDT_DESEGREGATION,
+	ZPOOL_PROP_META_PLACEMENT,
+	ZPOOL_PROP_DDT_TO_METADEV,
+	ZPOOL_PROP_GENERAL_META_TO_METADEV,
+	ZPOOL_PROP_OTHER_META_TO_METADEV,
+	ZPOOL_PROP_DEDUP_BEST_EFFORT,
+	ZPOOL_PROP_DEDUP_LO_BEST_EFFORT,
+	ZPOOL_PROP_DEDUP_HI_BEST_EFFORT,
+	ZPOOL_PROP_FORCETRIM,
 	ZPOOL_NUM_PROPS
 } zpool_prop_t;
+
+/*
+ * Note: it is important to keep min/max active properties together in the
+ * same order as the corresponding zio_priority_t definitions as this order
+ * is relied upon when processing in loops. See vdev_impl.h for the set of
+ * macros that rely on this dependency.
+ * Also path must be the first entry in the enum as loops use it as a starting
+ * index.
+ */
+typedef enum vdev_prop {
+	VDEV_PROP_PATH,
+	VDEV_PROP_FRU,
+	/* minactive props for queue classes */
+	VDEV_PROP_READ_MINACTIVE,
+	VDEV_PROP_AREAD_MINACTIVE,
+	VDEV_PROP_WRITE_MINACTIVE,
+	VDEV_PROP_AWRITE_MINACTIVE,
+	VDEV_PROP_SCRUB_MINACTIVE,
+	/* maxactive props for queue classes */
+	VDEV_PROP_READ_MAXACTIVE,
+	VDEV_PROP_AREAD_MAXACTIVE,
+	VDEV_PROP_WRITE_MAXACTIVE,
+	VDEV_PROP_AWRITE_MAXACTIVE,
+	VDEV_PROP_SCRUB_MAXACTIVE,
+	VDEV_PROP_PREFERRED_READ,
+	VDEV_PROP_COS,
+	VDEV_PROP_SPAREGROUP,
+	VDEV_PROP_L2ADDDT,
+	VDEV_PROP_GUID,
+	VDEV_NUM_PROPS
+} vdev_prop_t;
+
+/*
+ * Note: it is important to keep min/max active properties together in the
+ * same order as the corresponding zio_priority_t definitions as this order
+ * is relied upon when processing in loops. See cos.h for the set of
+ * macros that rely on this dependency.
+ */
+typedef enum cos_prop {
+	COS_PROP_GUID,
+	/* user-defined cos name */
+	COS_PROP_NAME,
+	/* IO tunables */
+	/* minactive props for queue classes */
+	COS_PROP_READ_MINACTIVE,
+	COS_PROP_AREAD_MINACTIVE,
+	COS_PROP_WRITE_MINACTIVE,
+	COS_PROP_AWRITE_MINACTIVE,
+	COS_PROP_SCRUB_MINACTIVE,
+	/* maxactive props for queue classes */
+	COS_PROP_READ_MAXACTIVE,
+	COS_PROP_AREAD_MAXACTIVE,
+	COS_PROP_WRITE_MAXACTIVE,
+	COS_PROP_AWRITE_MAXACTIVE,
+	COS_PROP_SCRUB_MAXACTIVE,
+	/* preference for read in mirror configurations */
+	COS_PROP_PREFERRED_READ,
+	COS_NUM_PROPS
+} cos_prop_t;
 
 /* Small enough to not hog a whole line of printout in zpool(1M). */
 #define	ZPROP_MAX_COMMENT	32
@@ -274,6 +352,31 @@ int zpool_prop_string_to_index(zpool_prop_t, const char *, uint64_t *);
 uint64_t zpool_prop_random_value(zpool_prop_t, uint64_t seed);
 
 /*
+ * Vdev property functions shared between libzfs and kernel.
+ */
+vdev_prop_t vdev_name_to_prop(const char *);
+const char *vdev_prop_to_name(vdev_prop_t);
+const char *vdev_prop_default_string(vdev_prop_t);
+uint64_t vdev_prop_default_numeric(vdev_prop_t);
+boolean_t vdev_prop_readonly(vdev_prop_t);
+int vdev_prop_index_to_string(vdev_prop_t, uint64_t, const char **);
+int vdev_prop_string_to_index(vdev_prop_t, const char *, uint64_t *);
+uint64_t vdev_prop_random_value(vdev_prop_t, uint64_t seed);
+
+/*
+ * COS property functions shared between libzfs and kernel.
+ */
+cos_prop_t cos_name_to_prop(const char *);
+const char *cos_prop_to_name(cos_prop_t);
+const char *cos_prop_default_string(cos_prop_t);
+uint64_t cos_prop_default_numeric(cos_prop_t);
+boolean_t cos_prop_readonly(cos_prop_t);
+int cos_prop_index_to_string(cos_prop_t, uint64_t, const char **);
+int cos_prop_string_to_index(cos_prop_t, const char *, uint64_t *);
+uint64_t cos_prop_random_value(cos_prop_t, uint64_t seed);
+
+#define	MAXCOSNAMELEN	(64)
+/*
  * Definitions for the Delegation.
  */
 typedef enum {
@@ -335,7 +438,8 @@ typedef enum zfs_smb_acl_op {
 typedef enum zfs_cache_type {
 	ZFS_CACHE_NONE = 0,
 	ZFS_CACHE_METADATA = 1,
-	ZFS_CACHE_ALL = 2
+	ZFS_CACHE_ALL = 2,
+	ZFS_CACHE_DATA = 3
 } zfs_cache_type_t;
 
 typedef enum {
@@ -524,7 +628,9 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_UNSPARE		"unspare"
 #define	ZPOOL_CONFIG_PHYS_PATH		"phys_path"
 #define	ZPOOL_CONFIG_IS_LOG		"is_log"
+#define	ZPOOL_CONFIG_IS_SPECIAL		"is_special"
 #define	ZPOOL_CONFIG_L2CACHE		"l2cache"
+#define	ZPOOL_CONFIG_L2CACHE_PERSISTENT	"l2cache_persistent"
 #define	ZPOOL_CONFIG_HOLE_ARRAY		"hole_array"
 #define	ZPOOL_CONFIG_VDEV_CHILDREN	"vdev_children"
 #define	ZPOOL_CONFIG_IS_HOLE		"is_hole"
@@ -536,6 +642,7 @@ typedef struct zpool_rewind_policy {
 #define	ZPOOL_CONFIG_SPLIT_GUID		"split_guid"
 #define	ZPOOL_CONFIG_SPLIT_LIST		"guid_list"
 #define	ZPOOL_CONFIG_REMOVING		"removing"
+#define	ZPOOL_CONFIG_RESILVERING	"resilvering"
 #define	ZPOOL_CONFIG_RESILVER_TXG	"resilver_txg"
 #define	ZPOOL_CONFIG_COMMENT		"comment"
 #define	ZPOOL_CONFIG_SUSPENDED		"suspended"	/* not stored on disk */
@@ -584,6 +691,7 @@ typedef struct zpool_rewind_policy {
 #define	VDEV_TYPE_SPARE			"spare"
 #define	VDEV_TYPE_LOG			"log"
 #define	VDEV_TYPE_L2CACHE		"l2cache"
+#define	VDEV_TYPE_SPECIAL		"special"
 
 /*
  * This is needed in userland to report the minimum necessary device size.
@@ -667,6 +775,8 @@ typedef enum pool_scan_func {
 	POOL_SCAN_NONE,
 	POOL_SCAN_SCRUB,
 	POOL_SCAN_RESILVER,
+	POOL_SCAN_MOS,
+	POOL_SCAN_META,
 	POOL_SCAN_FUNCS
 } pool_scan_func_t;
 
@@ -735,6 +845,13 @@ typedef struct vdev_stat {
 	uint64_t	vs_scan_removing;	/* removing?	*/
 	uint64_t	vs_scan_processed;	/* scan processed bytes	*/
 	uint64_t	vs_fragmentation;	/* device fragmentation */
+	hrtime_t	vs_latency[ZIO_TYPES];	/* moving average of latency */
+	hrtime_t	vs_iotime[ZIO_TYPES];	/* time spent doing i/o */
+	/* utilization telemetry */
+	hrtime_t	vs_bzstart;		/* busy time start */
+	hrtime_t	vs_bztotal;		/* busy time total */
+	hrtime_t	vs_wcstart;		/* wall-clock time start */
+	uint64_t	vs_busy;		/* vdev utilization */
 } vdev_stat_t;
 
 /*
@@ -799,6 +916,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_VDEV_SET_STATE,
 	ZFS_IOC_VDEV_ATTACH,
 	ZFS_IOC_VDEV_DETACH,
+	ZFS_IOC_VDEV_SETL2ADDDT,
 	ZFS_IOC_VDEV_SETPATH,
 	ZFS_IOC_VDEV_SETFRU,
 	ZFS_IOC_OBJSET_STATS,
@@ -853,6 +971,19 @@ typedef enum zfs_ioc {
 	ZFS_IOC_BOOKMARK,
 	ZFS_IOC_GET_BOOKMARKS,
 	ZFS_IOC_DESTROY_BOOKMARKS,
+	ZFS_IOC_VDEV_SET_PROPS,
+	ZFS_IOC_VDEV_GET_PROPS,
+	ZFS_IOC_COS_ALLOC,
+	ZFS_IOC_COS_FREE,
+	ZFS_IOC_COS_LIST,
+	ZFS_IOC_COS_SET_PROPS,
+	ZFS_IOC_COS_GET_PROPS,
+	ZFS_IOC_POOL_CONFIGS_NVL,
+	ZFS_IOC_POOL_STATS_NVL,
+	ZFS_IOC_OBJSET_STATS_NVL,
+	ZFS_IOC_DATASET_LIST_NEXT_NVL,
+	ZFS_IOC_SNAPSHOT_LIST_NEXT_NVL,
+	ZFS_IOC_POOL_GET_PROPS_NVL,
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 

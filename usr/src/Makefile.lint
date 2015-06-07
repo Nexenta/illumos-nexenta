@@ -34,6 +34,7 @@ include Makefile.master
 #
 COMMON_SUBDIRS = \
 	cmd/acctadm \
+	cmd/aoeadm \
 	cmd/asa \
 	cmd/amt \
 	cmd/audio/audioctl \
@@ -109,6 +110,7 @@ COMMON_SUBDIRS = \
 	cmd/dfs.cmds \
 	cmd/diff3 \
 	cmd/dis \
+	cmd/disk-dmc \
 	cmd/dirname \
 	cmd/diskscan \
 	cmd/dispadmin \
@@ -196,6 +198,7 @@ COMMON_SUBDIRS = \
 	cmd/lvm \
 	cmd/mailwrapper \
 	cmd/makekey \
+	cmd/man \
 	cmd/mdb \
 	cmd/mesg \
 	cmd/mkdir \
@@ -345,6 +348,7 @@ COMMON_SUBDIRS = \
 	lib/libadutils \
 	lib/libadt_jni \
 	lib/libaio \
+	lib/libaoe \
 	lib/libavl \
 	lib/libbrand \
 	lib/libbsdmalloc \

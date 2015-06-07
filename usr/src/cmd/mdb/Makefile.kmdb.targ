@@ -20,6 +20,7 @@
 #
 #
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 # Use is subject to license terms.
 #
 
@@ -133,6 +134,10 @@ kmdb_modlinktest.c: $(MAPFILE_INTERMEDIATE)
 %.o: kctl/%.s
 	$(COMPILE.s) -o $@ $<
 
+%.o: $(SRC)/common/list/%.c
+	$(COMPILE.c) $<
+	$(CTFCONVERT_O)
+
 %.o: $(SRC)/common/net/util/%.c
 	$(COMPILE.c) $<
 	$(CTFCONVERT_O)
@@ -180,6 +185,9 @@ kmdb_modlinktest.c: $(MAPFILE_INTERMEDIATE)
 
 %.ln: kctl/%.s
 	$(LINT.s) -c $<
+
+%.ln: $(SRC)/common/list/%.c
+	$(LINT.c) -c $<
 
 %.ln: $(SRC)/common/net/util/%.c
 	$(LINT.c) -c $<

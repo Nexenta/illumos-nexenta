@@ -93,7 +93,8 @@ if [ -x /usr/sbin/zfs ]; then
 		msg="WARNING: /usr/sbin/zfs mount -a failed: exit status $rc"
 		echo $msg
 		echo "$SMF_FMRI:" $msg >/dev/msglog
-		result=$SMF_EXIT_ERR_FATAL
+		# we do not fail fs-local in nexenta due to simplified
+		# rootfs architecture...
 	fi
 fi
 

@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -45,31 +46,29 @@ typedef enum {
 	IDM_STATUS_LOGIN_FAIL
 } idm_status_t;
 
+#define	IDM_CLIENT_NOTIFY_LIST() \
+	item(CN_UNDEFINED) \
+	item(CN_CONNECT_ACCEPT)		/* Target only */ \
+	item(CN_LOGIN_FAIL) \
+	item(CN_READY_FOR_LOGIN)	/* Initiator only */ \
+	item(CN_FFP_ENABLED) \
+	item(CN_FFP_DISABLED) \
+	item(CN_CONNECT_LOST) \
+	item(CN_CONNECT_DESTROY) \
+	item(CN_CONNECT_FAIL) \
+	item(CN_MAX)
 
 typedef enum {
-	CN_CONNECT_ACCEPT = 1,	/* Target only */
-	CN_LOGIN_FAIL,
-	CN_READY_FOR_LOGIN,	/* Initiator only */
-	CN_FFP_ENABLED,
-	CN_FFP_DISABLED,
-	CN_CONNECT_LOST,
-	CN_CONNECT_DESTROY,
-	CN_CONNECT_FAIL,
-	CN_MAX
+#define	item(a) a,
+	IDM_CLIENT_NOTIFY_LIST()
+#undef	item
 } idm_client_notify_t;
 
 #ifdef IDM_CN_NOTIFY_STRINGS
 static const char *idm_cn_strings[CN_MAX + 1] = {
-	"CN_UNDEFINED",
-	"CN_CONNECT_ACCEPT",
-	"CN_LOGIN_FAIL",
-	"CN_READY_FOR_LOGIN",
-	"CN_FFP_ENABLED",
-	"CN_FFP_DISABLED",
-	"CN_CONNECT_LOST",
-	"CN_CONNECT_DESTROY",
-	"CN_CONNECT_FAIL",
-	"CN_MAX"
+#define	item(a) #a,
+	IDM_CLIENT_NOTIFY_LIST()
+#undef	item
 };
 #endif
 
@@ -85,27 +84,27 @@ typedef enum {
 	AT_TASK_MGMT_ABORT
 } idm_abort_type_t;
 
+#define	IDM_TASK_STATE_LIST() \
+	item(TASK_IDLE) \
+	item(TASK_ACTIVE) \
+	item(TASK_SUSPENDING) \
+	item(TASK_SUSPENDED) \
+	item(TASK_ABORTING) \
+	item(TASK_ABORTED) \
+	item(TASK_COMPLETE) \
+	item(TASK_MAX_STATE)
+
 typedef enum {
-	TASK_IDLE,
-	TASK_ACTIVE,
-	TASK_SUSPENDING,
-	TASK_SUSPENDED,
-	TASK_ABORTING,
-	TASK_ABORTED,
-	TASK_COMPLETE,
-	TASK_MAX_STATE
+#define	item(a) a,
+	IDM_TASK_STATE_LIST()
+#undef	item
 } idm_task_state_t;
 
 #ifdef IDM_TASK_SM_STRINGS
 static const char *idm_ts_name[TASK_MAX_STATE+1] = {
-	"TASK_IDLE",
-	"TASK_ACTIVE",
-	"TASK_SUSPENDING",
-	"TASK_SUSPENDED",
-	"TASK_ABORTING",
-	"TASK_ABORTED",
-	"TASK_COMPLETE",
-	"TASK_MAX_STATE"
+#define	item(a) #a,
+	IDM_TASK_STATE_LIST()
+#undef	item
 };
 #endif
 

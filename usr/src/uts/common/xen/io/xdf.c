@@ -3355,23 +3355,18 @@ xdf_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	mutex_exit(&vdp->xdf_cb_lk);
 
 #if defined(XPV_HVM_DRIVER)
-
 	xdf_hvm_add(dip);
 
-	/* Report our version to dom0.  */
-	if (xenbus_printf(XBT_NULL, "guest/xdf", "version", "%d",
-	    HVMPV_XDF_VERS))
-		cmn_err(CE_WARN, "xdf: couldn't write version\n");
-
+	/* Report our version to dom0 */
+	(void) xenbus_printf(XBT_NULL, "guest/xdf", "version", "%d",
+	    HVMPV_XDF_VERS);
 #else /* !XPV_HVM_DRIVER */
-
-	/* create kstat for iostat(1M) */
+	/* Create kstat for iostat(1M) */
 	if (xdf_kstat_create(dip, "xdf", instance) != 0) {
 		cmn_err(CE_WARN, "xdf@%s: failed to create kstat",
 		    ddi_get_name_addr(dip));
 		goto errout1;
 	}
-
 #endif /* !XPV_HVM_DRIVER */
 
 	ddi_report_dev(dip);

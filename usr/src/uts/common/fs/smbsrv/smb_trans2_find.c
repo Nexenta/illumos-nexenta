@@ -282,10 +282,11 @@ smb_sdrc_t
 smb_com_trans2_find_first2(smb_request_t *sr, smb_xa_t *xa)
 {
 	int		count;
-	uint16_t	sattr, odid;
+	uint16_t	sattr;
 	smb_pathname_t	*pn;
 	smb_odir_t	*od;
 	smb_find_args_t	args;
+	uint32_t	status;
 	uint32_t	odir_flags = 0;
 
 	bzero(&args, sizeof (smb_find_args_t));
@@ -324,16 +325,11 @@ smb_com_trans2_find_first2(smb_request_t *sr, smb_xa_t *xa)
 	if (args.fa_maxdata == 0)
 		return (SDRC_ERROR);
 
-	odid = smb_odir_open(sr, pn->pn_path, sattr, odir_flags);
-	if (odid == 0) {
-		if (sr->smb_error.status == NT_STATUS_OBJECT_PATH_NOT_FOUND) {
-			smbsr_error(sr, NT_STATUS_OBJECT_NAME_NOT_FOUND,
-			    ERRDOS, ERROR_FILE_NOT_FOUND);
-		}
+	status = smb_odir_openpath(sr, pn->pn_path, sattr, odir_flags, &od);
+	if (status != 0) {
+		smbsr_error(sr, status, 0, 0);
 		return (SDRC_ERROR);
 	}
-
-	od = smb_tree_lookup_odir(sr, odid);
 	if (od == NULL)
 		return (SDRC_ERROR);
 
@@ -357,14 +353,14 @@ smb_com_trans2_find_first2(smb_request_t *sr, smb_xa_t *xa)
 		smb_odir_close(od);
 	} /* else leave odir open for trans2_find_next2 */
 
-	smb_odir_release(od);
-
 	(void) smb_mbc_encodef(&xa->rep_param_mb, "wwwww",
-	    odid,	/* Search ID */
+	    od->d_odid,	/* Search ID */
 	    count,	/* Search Count */
 	    args.fa_eos, /* End Of Search */
 	    0,		/* EA Error Offset */
 	    args.fa_lno); /* Last Name Offset */
+
+	smb_odir_release(od);
 
 	return (SDRC_SUCCESS);
 }
@@ -495,7 +491,11 @@ smb_com_trans2_find_next2(smb_request_t *sr, smb_xa_t *xa)
 	} else {
 		odir_resume.or_type = SMB_ODIR_RESUME_FNAME;
 	}
-	smb_odir_resume_at(od, &odir_resume);
+	if (od->d_flags & SMB_ODIR_FLAG_WILDCARDS) {
+		smb_odir_resume_at(od, &odir_resume);
+	} else {
+		od->d_eof = B_TRUE;
+	}
 
 	count = smb_trans2_find_entries(sr, xa, od, &args);
 	if (count == -1) {
@@ -549,10 +549,8 @@ smb_trans2_find_entries(smb_request_t *sr, smb_xa_t *xa, smb_odir_t *od,
 
 	count = 0;
 	while (count < maxcount) {
-		if (smb_odir_read_fileinfo(sr, od, &fileinfo, &args->fa_eos)
-		    != 0)
-			return (-1);
-		if (args->fa_eos != 0)
+		rc = smb_odir_read_fileinfo(sr, od, &fileinfo, &args->fa_eos);
+		if (rc != 0 || args->fa_eos != 0)
 			break;
 
 		rc = smb_trans2_find_mbc_encode(sr, xa, &fileinfo, args);
@@ -569,6 +567,8 @@ smb_trans2_find_entries(smb_request_t *sr, smb_xa_t *xa, smb_odir_t *od,
 
 		++count;
 	}
+	if (args->fa_eos != 0 && rc == ENOENT)
+		rc = 0;
 
 	/* save the last cookie returned to client */
 	if (count != 0)

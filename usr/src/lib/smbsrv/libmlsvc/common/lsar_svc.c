@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -512,23 +513,17 @@ lsarpc_s_OpenSecret(void *arg, ndr_xa_t *mxa)
  *
  * Return the account name and NetBIOS domain name for the user making
  * the request.  The hostname field should be ignored by the server.
+ *
+ * Note: MacOS uses this, whether we're a domain member or not.
  */
 static int
 lsarpc_s_GetConnectedUser(void *arg, ndr_xa_t *mxa)
 {
 	struct mslsa_GetConnectedUser *param = arg;
-	smb_netuserinfo_t *user = &mxa->pipe->np_user;
+	smb_netuserinfo_t *user = mxa->pipe->np_user;
 	DWORD status = NT_STATUS_SUCCESS;
-	smb_domainex_t di;
 	int rc1;
 	int rc2;
-
-	if (!smb_domain_getinfo(&di)) {
-		bzero(param, sizeof (struct mslsa_GetConnectedUser));
-		status = NT_SC_ERROR(NT_STATUS_CANT_ACCESS_DOMAIN_INFO);
-		param->status = status;
-		return (NDR_DRC_OK);
-	}
 
 	param->owner = NDR_NEW(mxa, struct mslsa_string_desc);
 	param->domain = NDR_NEW(mxa, struct mslsa_DomainName);

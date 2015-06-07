@@ -21,10 +21,12 @@
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
 
-
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -57,8 +59,8 @@
 #include <vm/pvn.h>
 #include <vm/seg_kmem.h>
 
-int doiflush = 1;	/* non-zero to turn inode flushing on */
-int dopageflush = 1;	/* non-zero to turn page flushing on */
+volatile int doiflush = 1;	/* non-zero to turn inode flushing on */
+volatile int dopageflush = 1;	/* non-zero to turn page flushing on */
 
 /*
  * To improve boot performance, don't run the inode flushing loop until

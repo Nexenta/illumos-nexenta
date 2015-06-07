@@ -27,19 +27,22 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2014 Nexenta Systems, Inc.
 #
 
 . $STF_SUITE/tests/functional/acl/acl_common.kshlib
 
 #
 # DESCRIPTION:
-#	Verify aclinherit=passthrough-x will inherit the 'x' bits while mode request.
+#	Verify aclinherit=passthrough-x will inherit the 'x' bits
+#	if mode requests.
 #
 # STRATEGY:
-#	1. Loop super user and non-super user to run the test case.
+#	1. Use both superuser and normal user to run the test case.
 #	2. Create basedir and a set of subdirectores and files within it.
-#	3. Set aclinherit=passthrough-x
-#	4. Verify only passthrough-x will inherit the 'x' bits while mode request.
+#	3. Set aclinherit=passthrough-x.
+#	4. Verify only passthrough-x will inherit the 'x' bits if
+#	   mode requests.
 #
 
 verify_runnable "both"
@@ -50,14 +53,14 @@ function cleanup
 		log_must $RM -rf $basedir
 	fi
 }
-$ZPOOL upgrade -v
-$ZPOOL upgrade -v | $GREP "passthrough-x aclinherit" > /dev/null 2>&1
+
+$ZPOOL upgrade -v | $GREP -q "passthrough-x aclinherit"
 if (($? != 0)); then
-	log_unsupported "passthrough-x aclinherit not supported."
+	log_unsupported "aclinherit=passthrough-x is not supported"
 fi
 
-log_assert "Verify aclinherit=passthrough-x will inherit the 'x' bits while" \
-    " mode request."
+log_assert "Verify aclinherit=passthrough-x will inherit the 'x' bits" \
+    "if mode requests"
 log_onexit cleanup
 
 set -A aces \
@@ -109,41 +112,38 @@ int main()
 EOF
 
 	mode=$(get_mode $ndir2)
-	if [[ $mode != "drwx--x--x"* ]]; then
-		log_fail "Unexpect mode of $ndir2, expect: drwx--x--x, current: $mode"
+	if [[ $mode != "drwxr-xr-x"* ]]; then
+		log_fail "$ndir2: unexpected mode $mode, expected drwxr-xr-x"
 	fi
 
 	mode=$(get_mode $nfile1)
 	if [[ $mode != "-rw-r--r--"* ]]; then
-		log_fail "Unexpect mode of $nfile1, expect: -rw-r--r--, current: $mode"
+		log_fail "$nfile1: unexpected mode $mode, expected -rw-r--r--"
 	fi
 
 	if [[ -x /usr/sfw/bin/gcc ]]; then
 		log_must /usr/sfw/bin/gcc -o $nfile2 $nfile1
 		mode=$(get_mode $nfile2)
 		if [[ $mode != "-rwxr-xr-x"* ]]; then
-			log_fail "Unexpect mode of $nfile2, expect: -rwxr-xr-x, current: $mode"
+			log_fail "$nfile2: unexpected mode $mode," \
+			    "expected -rwxr-xr-x,"
 		fi
 	fi
 }
 
 #
-# Set aclmode=passthrough to make sure
-# the acl will not change during chmod.
-# A general testing should verify the combination of
-# aclmode/aclinherit works well,
-# here we just simple test them separately.
+# Set aclmode=passthrough to make sure the acl will not change during chmod.
+# TODO: Need to check that different combinations of aclmode/aclinherit settings
+# work correctly.
 #
-
 log_must $ZFS set aclmode=passthrough $TESTPOOL/$TESTFS
 log_must $ZFS set aclinherit=passthrough-x $TESTPOOL/$TESTFS
 
 for user in root $ZFS_ACL_STAFF1; do
 	log_must set_cur_usr $user
-
 	verify_inherit $basedir
-
 	cleanup
 done
 
-log_pass "Verify aclinherit=passthrough-x will inherit the 'x' bits while mode request."
+log_pass "Verify aclinherit=passthrough-x will inherit the 'x' bits" \
+    "if mode requests"

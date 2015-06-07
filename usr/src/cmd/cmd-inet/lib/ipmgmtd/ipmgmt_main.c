@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -518,30 +519,6 @@ child_out:
 	/* return from main() forcibly exits an MT process */
 	ipmgmt_inform_parent_exit(EXIT_FAILURE);
 	return (EXIT_FAILURE);
-}
-
-/*
- * Return TRUE if `ifname' has persistent configuration for the `af' address
- * family in the datastore
- */
-static boolean_t
-ipmgmt_persist_if_exists(char *ifname, sa_family_t af)
-{
-	ipmgmt_getif_cbarg_t cbarg;
-	boolean_t exists = B_FALSE;
-	ipadm_if_info_t *ifp;
-
-	bzero(&cbarg, sizeof (cbarg));
-	cbarg.cb_ifname = ifname;
-	(void) ipmgmt_db_walk(ipmgmt_db_getif, &cbarg, IPADM_DB_READ);
-	if ((ifp = cbarg.cb_ifinfo) != NULL) {
-		if ((af == AF_INET && (ifp->ifi_pflags & IFIF_IPV4)) ||
-		    (af == AF_INET6 && (ifp->ifi_pflags & IFIF_IPV6))) {
-			exists = B_TRUE;
-		}
-	}
-	free(ifp);
-	return (exists);
 }
 
 /*

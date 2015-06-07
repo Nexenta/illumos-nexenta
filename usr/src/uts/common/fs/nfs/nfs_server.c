@@ -1358,7 +1358,7 @@ static struct rpc_disptable rfs_disptable[] = {
  * is it transport-dependent, it's laughably easy to spoof.  If you're
  * really interested in security, you must start with secure RPC instead.
  */
-static int nfs_portmon = 0;
+volatile int nfs_portmon = 0;
 
 #ifdef DEBUG
 static int cred_hits = 0;

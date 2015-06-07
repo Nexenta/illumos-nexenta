@@ -26,8 +26,8 @@
 
 set name=pkg.fmri value=pkg:/compatibility/ucb@$(PKGVERS)
 set name=pkg.description \
-    value="utilities for user interface and source build compatibility with SunOS 4.x"
-set name=pkg.summary value="Source Compatibility"
+    value="utilities for user interface compatibility with SunOS 4.x"
+set name=pkg.summary value="SunOS 4.x Compatibility"
 set name=info.classification value=org.opensolaris.category.2008:System/Core
 set name=variant.arch value=$(ARCH)
 dir path=etc group=sys

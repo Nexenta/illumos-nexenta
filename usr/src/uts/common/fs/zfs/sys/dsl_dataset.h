@@ -23,6 +23,7 @@
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
@@ -166,11 +167,27 @@ typedef struct dsl_dataset {
 	void *ds_owner;
 
 	/*
+	 * NOTE: for pool with special device only
+	 * Last transaction data was moved from special devices
+	 * to other (regular) devices in a pool.
+	 */
+	uint64_t ds_lstxg;
+
+	/*
+	 * NOTE: for pool with special device only
+	 * Level 0 bookmark we remembered when we were interrupted
+	 * during traversal process. Used to resume traversal
+	 * later.
+	 */
+	zbookmark_phys_t ds_lszb;
+
+	/*
 	 * Long holds prevent the ds from being destroyed; they allow the
 	 * ds to remain held even after dropping the dp_config_rwlock.
 	 * Owning counts as a long hold.  See the comments above
 	 * dsl_pool_hold() for details.
 	 */
+
 	refcount_t ds_longholds;
 
 	/* no locking; only for making guesses */
@@ -184,6 +201,9 @@ typedef struct dsl_dataset {
 
 	kmutex_t ds_sendstream_lock;
 	list_t ds_sendstreams;
+
+	/* writecache block header */
+	void	*ds_wrc_blkhdr;
 
 	/* Protected by ds_lock; keep at end of struct for better locality */
 	char ds_snapname[MAXNAMELEN];
@@ -304,6 +324,9 @@ void dsl_dataset_set_refreservation_sync_impl(dsl_dataset_t *ds,
     zprop_source_t source, uint64_t value, dmu_tx_t *tx);
 void dsl_dataset_zapify(dsl_dataset_t *ds, dmu_tx_t *tx);
 int dsl_dataset_rollback(const char *fsname, void *owner, nvlist_t *result);
+int dsl_destroy_inconsistent(const char *dsname, void *arg);
+int dsl_dataset_clean_special(dsl_dataset_t *ds, dmu_tx_t *tx, uint64_t curtxg,
+		hrtime_t scan_start);
 
 #ifdef ZFS_DEBUG
 #define	dprintf_ds(ds, fmt, ...) do { \

@@ -26,6 +26,7 @@
 
 /*
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/timer.h>
@@ -51,7 +52,7 @@ static void timer_close_port(void *, int, pid_t, int);
  * may _only_ be tuned in /etc/system or by patching the kernel binary; it
  * _cannot_ be tuned on a running system.
  */
-int timer_max = _TIMER_MAX;
+volatile int timer_max = _TIMER_MAX;
 
 /*
  * timer_lock() locks the specified interval timer.  It doesn't look at the

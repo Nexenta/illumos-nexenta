@@ -1,0 +1,25 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2014, Nexenta Systems Inc. All rights reserved.
+#
+
+set name=pkg.fmri value=pkg:/system/test/all@$(PKGVERS)
+set name=pkg.description value="STC Test Suites"
+set name=pkg.summary value="All Available STC Tests"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Development/System
+set name=variant.arch value=$(ARCH)
+depend fmri=system/test/comstar type=require
+depend fmri=system/test/lofitest type=require
+depend fmri=system/test/sharefstest type=require
+depend fmri=system/test/zfstest type=require

@@ -19,7 +19,11 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
 
 /*
  * Source file containing the implementation of Driver buffer management
@@ -59,13 +63,10 @@ static ddi_device_acc_attr_t oce_dma_buf_accattr = {
  * return pointer to a oce_dma_buf_t structure handling the map
  *      NULL => failure
  */
-oce_dma_buf_t *
-oce_alloc_dma_buffer(struct oce_dev *dev,
+int
+oce_alloc_dma_buffer(struct oce_dev *dev, oce_dma_buf_t *dbuf,
     uint32_t size, ddi_dma_attr_t *dma_attr, uint32_t flags)
 {
-	oce_dma_buf_t  *dbuf;
-	ddi_dma_cookie_t cookie;
-	uint32_t count;
 	size_t actual_len;
 	int ret = 0;
 
@@ -75,54 +76,49 @@ oce_alloc_dma_buffer(struct oce_dev *dev,
 		dma_attr = &oce_dma_buf_attr;
 	}
 
-	dbuf = kmem_zalloc(sizeof (oce_dma_buf_t), KM_NOSLEEP);
-	if (dbuf == NULL) {
-		return (NULL);
-	}
-
 	/* allocate dma handle */
 	ret = ddi_dma_alloc_handle(dev->dip, dma_attr,
 	    DDI_DMA_DONTWAIT, NULL, &dbuf->dma_handle);
 	if (ret != DDI_SUCCESS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
+		oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
 		    "Failed to allocate DMA handle");
 		goto handle_fail;
 	}
 	/* allocate the DMA-able memory */
 	ret = ddi_dma_mem_alloc(dbuf->dma_handle, size, &oce_dma_buf_accattr,
-	    flags, DDI_DMA_DONTWAIT, NULL, &dbuf->base,
-	    &actual_len, &dbuf->acc_handle);
+	    (flags & DDI_DMA_STREAMING) ?
+	    DDI_DMA_STREAMING : DDI_DMA_CONSISTENT, DDI_DMA_DONTWAIT, NULL,
+	    &dbuf->base, &actual_len, &dbuf->acc_handle);
 	if (ret != DDI_SUCCESS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
-		    "Failed to allocate DMA memory");
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "Failed to allocate DMA memory: 0x%x bytes", size);
 		goto alloc_fail;
 	}
 
 	/* bind handle */
 	ret = ddi_dma_addr_bind_handle(dbuf->dma_handle,
 	    (struct as *)0, dbuf->base, actual_len,
-	    DDI_DMA_RDWR | flags,
-	    DDI_DMA_DONTWAIT, NULL, &cookie, &count);
+	    flags,
+	    DDI_DMA_DONTWAIT, NULL, &dbuf->cookie, &dbuf->ncookies);
 	if (ret != DDI_DMA_MAPPED) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
+		oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
 		    "Failed to bind dma handle");
 		goto bind_fail;
 	}
 	bzero(dbuf->base, actual_len);
-	dbuf->addr = cookie.dmac_laddress;
+	dbuf->addr = dbuf->cookie.dmac_laddress;
 	dbuf->size = actual_len;
 	/* usable length */
 	dbuf->len  = size;
 	dbuf->num_pages = OCE_NUM_PAGES(size);
-	return (dbuf);
+	return (DDI_SUCCESS);
 
 bind_fail:
 	ddi_dma_mem_free(&dbuf->acc_handle);
 alloc_fail:
 	ddi_dma_free_handle(&dbuf->dma_handle);
 handle_fail:
-	kmem_free(dbuf, sizeof (oce_dma_buf_t));
-	return (NULL);
+	return (ret);
 } /* oce_dma_alloc_buffer */
 
 /*
@@ -146,11 +142,12 @@ oce_free_dma_buffer(struct oce_dev *dev, oce_dma_buf_t *dbuf)
 	}
 	if (dbuf->acc_handle != NULL) {
 		ddi_dma_mem_free(&dbuf->acc_handle);
+		dbuf->acc_handle = NULL;
 	}
 	if (dbuf->dma_handle != NULL) {
 		ddi_dma_free_handle(&dbuf->dma_handle);
+		dbuf->dma_handle = NULL;
 	}
-	kmem_free(dbuf, sizeof (oce_dma_buf_t));
 } /* oce_free_dma_buffer */
 
 /*
@@ -164,11 +161,11 @@ oce_free_dma_buffer(struct oce_dev *dev, oce_dma_buf_t *dbuf)
  * return pointer to a ring_buffer structure, NULL on failure
  */
 oce_ring_buffer_t *
-create_ring_buffer(struct oce_dev *dev,
+oce_create_ring_buffer(struct oce_dev *dev,
     uint32_t num_items, uint32_t item_size, uint32_t flags)
 {
 	oce_ring_buffer_t *ring;
-	uint32_t size;
+	int ret;
 
 	/* allocate the ring buffer */
 	ring = kmem_zalloc(sizeof (oce_ring_buffer_t), KM_NOSLEEP);
@@ -177,11 +174,11 @@ create_ring_buffer(struct oce_dev *dev,
 	}
 
 	/* get the dbuf defining the ring */
-	size = num_items * item_size;
-	ring->dbuf = oce_alloc_dma_buffer(dev, size, NULL, flags);
-	if (ring->dbuf  == NULL) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
-		    "Ring buffer allocation failed");
+	ret = oce_alloc_dma_buffer(dev, &ring->dbuf, num_items *item_size,
+	    NULL, flags);
+	if (ret != DDI_SUCCESS) {
+		oce_log(dev, CE_WARN, MOD_CONFIG,
+		    "Ring buffer allocation failed 0x%x", ret);
 		goto dbuf_fail;
 	}
 
@@ -211,8 +208,7 @@ destroy_ring_buffer(struct oce_dev *dev, oce_ring_buffer_t *ring)
 	ASSERT(ring !=  NULL);
 
 	/* free the dbuf associated with the ring */
-	oce_free_dma_buffer(dev, ring->dbuf);
-	ring->dbuf = NULL;
+	oce_free_dma_buffer(dev, &ring->dbuf);
 
 	/* free the ring itself */
 	kmem_free(ring, sizeof (oce_ring_buffer_t));

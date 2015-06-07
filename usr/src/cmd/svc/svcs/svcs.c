@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, Joyent, Inc. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -145,6 +146,7 @@ static char genfmri_filename[MAXPATHLEN] = "";
 static int *opt_columns = NULL;		/* Indices into columns to display. */
 static int opt_cnum = 0;
 static int opt_processes = 0;		/* Print processes? */
+static int opt_scripted = 0;		/* No header, tabs as separators. */
 static int *opt_sort = NULL;		/* Indices into columns to sort. */
 static int opt_snum = 0;
 static int opt_nstate_shown = 0;	/* Will nstate be shown? */
@@ -1000,6 +1002,33 @@ reverse_bytes(char *buf, size_t len)
 		buf[i] = ~buf[i];
 }
 
+static void
+sprint_str(char **buf, const char *str, size_t width)
+{
+	char *newbuf;
+	size_t newsz = (*buf != NULL ? strlen(*buf) : 0) + 2;
+
+	if (opt_scripted)
+		newsz += strlen(str);
+	else
+		newsz += width;
+
+	newbuf = safe_malloc(newsz);
+
+	if (opt_scripted) {
+		(void) snprintf(newbuf, newsz, "%s%s%s",
+		    *buf != NULL ? *buf : "",
+		    *buf != NULL ? "\t" : "",
+		    str);
+	} else {
+		(void) snprintf(newbuf, newsz, "%s%-*s ",
+		    *buf != NULL ? *buf : "", width, str);
+	}
+
+	free(*buf);
+	*buf = newbuf;
+}
+
 /* CTID */
 #define	CTID_COLUMN_WIDTH		6
 #define	CTID_COLUMN_BUFSIZE		20	/* max ctid_t + space + \0 */
@@ -1009,8 +1038,8 @@ sprint_ctid(char **buf, scf_walkinfo_t *wip)
 {
 	int r;
 	uint64_t c;
-	size_t newsize = (*buf ? strlen(*buf) : 0) + CTID_COLUMN_BUFSIZE;
-	char *newbuf = safe_malloc(newsize);
+	char ctid_buf[CTID_COLUMN_BUFSIZE] = { 0 };
+	char *cstr;
 	int restarter_spec;
 
 	/*
@@ -1030,18 +1059,14 @@ sprint_ctid(char **buf, scf_walkinfo_t *wip)
 		}
 	}
 
-	if (r == 0)
-		(void) snprintf(newbuf, newsize, "%s%*lu ",
-		    *buf ? *buf : "", CTID_COLUMN_WIDTH, (ctid_t)c);
-	else if (r == E2BIG)
-		(void) snprintf(newbuf, newsize, "%s%*lu* ",
-		    *buf ? *buf : "", CTID_COLUMN_WIDTH - 1, (ctid_t)c);
-	else
-		(void) snprintf(newbuf, newsize, "%s%*s ",
-		    *buf ? *buf : "", CTID_COLUMN_WIDTH, "-");
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	if (r == 0 || r == E2BIG) {
+		if (r == E2BIG)
+			ctid_buf[CTID_COLUMN_BUFSIZE - 2] = '*';
+		cstr = ulltostr(c, &ctid_buf[CTID_COLUMN_BUFSIZE - 2]);
+		sprint_str(buf, cstr, CTID_COLUMN_WIDTH);
+	} else {
+		sprint_str(buf, "-", CTID_COLUMN_WIDTH);
+	}
 }
 
 #define	CTID_SORTKEY_WIDTH		(sizeof (uint64_t))
@@ -1093,8 +1118,6 @@ static void
 sprint_desc(char **buf, scf_walkinfo_t *wip)
 {
 	char *x;
-	size_t newsize;
-	char *newbuf;
 
 	if (common_name_buf == NULL)
 		common_name_buf = safe_malloc(max_scf_value_length + 1);
@@ -1119,17 +1142,7 @@ sprint_desc(char **buf, scf_walkinfo_t *wip)
 		if (*x == '\n')
 			*x = ' ';
 
-	if (strlen(common_name_buf) > DESC_COLUMN_WIDTH)
-		newsize = (*buf ? strlen(*buf) : 0) +
-		    strlen(common_name_buf) + 1;
-	else
-		newsize = (*buf ? strlen(*buf) : 0) + DESC_COLUMN_WIDTH + 1;
-	newbuf = safe_malloc(newsize);
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    DESC_COLUMN_WIDTH, common_name_buf);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, common_name_buf, DESC_COLUMN_WIDTH);
 }
 
 /* ARGSUSED */
@@ -1219,8 +1232,6 @@ static void
 sprint_state(char **buf, scf_walkinfo_t *wip)
 {
 	char state_name[MAX_SCF_STATE_STRING_SZ + 1];
-	size_t newsize;
-	char *newbuf;
 
 	if (wip->pg == NULL) {
 		get_restarter_string_prop(wip->inst, scf_property_state,
@@ -1239,14 +1250,7 @@ sprint_state(char **buf, scf_walkinfo_t *wip)
 	} else
 		(void) strcpy(state_name, SCF_STATE_STRING_LEGACY);
 
-	newsize = (*buf ? strlen(*buf) : 0) + MAX_SCF_STATE_STRING_SZ + 2;
-	newbuf = safe_malloc(newsize);
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    MAX_SCF_STATE_STRING_SZ + 1, state_name);
-
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, state_name, MAX_SCF_STATE_STRING_SZ);
 }
 
 static void
@@ -1258,10 +1262,8 @@ sortkey_state(char *buf, int reverse, scf_walkinfo_t *wip)
 static void
 sprint_nstate(char **buf, scf_walkinfo_t *wip)
 {
-	char next_state_name[MAX_SCF_STATE_STRING_SZ];
+	char next_state_name[MAX_SCF_STATE_STRING_SZ + 1];
 	boolean_t blank = 0;
-	size_t newsize;
-	char *newbuf;
 
 	if (wip->pg == NULL) {
 		get_restarter_string_prop(wip->inst, scf_property_next_state,
@@ -1271,21 +1273,16 @@ sprint_nstate(char **buf, scf_walkinfo_t *wip)
 		if (next_state_name[0] == '\0' ||
 		    strcmp(next_state_name, SCF_STATE_STRING_NONE) == 0)
 			blank = 1;
-	} else
+	} else {
 		blank = 1;
+	}
 
 	if (blank) {
 		next_state_name[0] = '-';
 		next_state_name[1] = '\0';
 	}
 
-	newsize = (*buf ? strlen(*buf) : 0) + MAX_SCF_STATE_STRING_SZ + 1;
-	newbuf = safe_malloc(newsize);
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    MAX_SCF_STATE_STRING_SZ - 1, next_state_name);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, next_state_name, MAX_SCF_STATE_STRING_SZ);
 }
 
 static void
@@ -1297,10 +1294,8 @@ sortkey_nstate(char *buf, int reverse, scf_walkinfo_t *wip)
 static void
 sprint_s(char **buf, scf_walkinfo_t *wip)
 {
-	char tmp[3];
-	char state_name[MAX_SCF_STATE_STRING_SZ];
-	size_t newsize = (*buf ? strlen(*buf) : 0) + 4;
-	char *newbuf = safe_malloc(newsize);
+	char state_name[MAX_SCF_STATE_STRING_SZ + 1];
+	char tmp[3] = { 0 };
 
 	if (wip->pg == NULL) {
 		get_restarter_string_prop(wip->inst, scf_property_state,
@@ -1316,20 +1311,15 @@ sprint_s(char **buf, scf_walkinfo_t *wip)
 		tmp[1] = ' ';
 	}
 	tmp[2] = ' ';
-	(void) snprintf(newbuf, newsize, "%s%-*s", *buf ? *buf : "",
-	    3, tmp);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+
+	sprint_str(buf, tmp, 2);
 }
 
 static void
 sprint_n(char **buf, scf_walkinfo_t *wip)
 {
-	char tmp[2];
-	size_t newsize = (*buf ? strlen(*buf) : 0) + 3;
-	char *newbuf = safe_malloc(newsize);
-	char nstate_name[MAX_SCF_STATE_STRING_SZ];
+	char nstate_name[MAX_SCF_STATE_STRING_SZ + 1];
+	char tmp[2] = { 0 };
 
 	if (wip->pg == NULL) {
 		get_restarter_string_prop(wip->inst, scf_property_next_state,
@@ -1339,24 +1329,19 @@ sprint_n(char **buf, scf_walkinfo_t *wip)
 			tmp[0] = '-';
 		else
 			tmp[0] = state_to_char(nstate_name);
-	} else
+	} else {
 		tmp[0] = '-';
+	}
 
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    2, tmp);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, tmp, 1);
 }
 
 static void
 sprint_sn(char **buf, scf_walkinfo_t *wip)
 {
-	char tmp[3];
-	size_t newsize = (*buf ? strlen(*buf) : 0) + 4;
-	char *newbuf = safe_malloc(newsize);
-	char nstate_name[MAX_SCF_STATE_STRING_SZ];
-	char state_name[MAX_SCF_STATE_STRING_SZ];
+	char state_name[MAX_SCF_STATE_STRING_SZ + 1];
+	char nstate_name[MAX_SCF_STATE_STRING_SZ + 1];
+	char tmp[3] = { 0 };
 
 	if (wip->pg == NULL) {
 		get_restarter_string_prop(wip->inst, scf_property_state,
@@ -1374,12 +1359,7 @@ sprint_sn(char **buf, scf_walkinfo_t *wip)
 		tmp[1] = '-';
 	}
 
-	tmp[2] = ' ';
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    3, tmp);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, tmp, 2);
 }
 
 /* ARGSUSED */
@@ -1414,50 +1394,40 @@ state_abbrev(const char *state)
 static void
 sprint_sta(char **buf, scf_walkinfo_t *wip)
 {
-	char state_name[MAX_SCF_STATE_STRING_SZ];
-	char sta[5];
-	size_t newsize = (*buf ? strlen(*buf) : 0) + 6;
-	char *newbuf = safe_malloc(newsize);
+	char state_name[MAX_SCF_STATE_STRING_SZ + 1];
+	char sta[5] = { 0 };
 
-	if (wip->pg == NULL)
+	if (wip->pg == NULL) {
 		get_restarter_string_prop(wip->inst, scf_property_state,
 		    state_name, sizeof (state_name));
-	else
+	} else {
 		(void) strcpy(state_name, SCF_STATE_STRING_LEGACY);
+	}
 
 	(void) strcpy(sta, state_abbrev(state_name));
 
 	if (wip->pg == NULL && !opt_nstate_shown && transitioning(wip->inst))
 		(void) strcat(sta, "*");
 
-	(void) snprintf(newbuf, newsize, "%s%-4s ", *buf ? *buf : "", sta);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, sta, 4);
 }
 
 static void
 sprint_nsta(char **buf, scf_walkinfo_t *wip)
 {
-	char state_name[MAX_SCF_STATE_STRING_SZ];
-	size_t newsize = (*buf ? strlen(*buf) : 0) + 6;
-	char *newbuf = safe_malloc(newsize);
+	char state_name[MAX_SCF_STATE_STRING_SZ + 1];
 
-	if (wip->pg == NULL)
+	if (wip->pg == NULL) {
 		get_restarter_string_prop(wip->inst, scf_property_next_state,
 		    state_name, sizeof (state_name));
-	else
+	} else {
 		(void) strcpy(state_name, SCF_STATE_STRING_NONE);
+	}
 
 	if (strcmp(state_name, SCF_STATE_STRING_NONE) == 0)
-		(void) snprintf(newbuf, newsize, "%s%-4s ", *buf ? *buf : "",
-		    "-");
+		sprint_str(buf, "-", 4);
 	else
-		(void) snprintf(newbuf, newsize, "%s%-4s ", *buf ? *buf : "",
-		    state_abbrev(state_name));
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+		sprint_str(buf, state_abbrev(state_name), 4);
 }
 
 /* FMRI */
@@ -1466,8 +1436,6 @@ static void
 sprint_fmri(char **buf, scf_walkinfo_t *wip)
 {
 	char *fmri_buf = safe_malloc(max_scf_fmri_length + 1);
-	size_t newsize;
-	char *newbuf;
 
 	if (wip->pg == NULL) {
 		if (scf_instance_to_fmri(wip->inst, fmri_buf,
@@ -1483,17 +1451,8 @@ sprint_fmri(char **buf, scf_walkinfo_t *wip)
 			(void) strcat(fmri_buf, LEGACY_UNKNOWN);
 	}
 
-	if (strlen(fmri_buf) > FMRI_COLUMN_WIDTH)
-		newsize = (*buf ? strlen(*buf) : 0) + strlen(fmri_buf) + 2;
-	else
-		newsize = (*buf ? strlen(*buf) : 0) + FMRI_COLUMN_WIDTH + 2;
-	newbuf = safe_malloc(newsize);
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    FMRI_COLUMN_WIDTH, fmri_buf);
+	sprint_str(buf, fmri_buf, FMRI_COLUMN_WIDTH);
 	free(fmri_buf);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
 }
 
 static void
@@ -1514,19 +1473,13 @@ static void
 sprint_scope(char **buf, scf_walkinfo_t *wip)
 {
 	char *scope_buf = safe_malloc(max_scf_name_length + 1);
-	size_t newsize = (*buf ? strlen(*buf) : 0) + COMPONENT_COLUMN_WIDTH + 2;
-	char *newbuf = safe_malloc(newsize);
 
 	assert(wip->scope != NULL);
 
 	if (scf_scope_get_name(wip->scope, scope_buf, max_scf_name_length) < 0)
 		scfdie();
 
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    COMPONENT_COLUMN_WIDTH, scope_buf);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, scope_buf, COMPONENT_COLUMN_WIDTH);
 	free(scope_buf);
 }
 
@@ -1546,8 +1499,6 @@ static void
 sprint_service(char **buf, scf_walkinfo_t *wip)
 {
 	char *svc_buf = safe_malloc(max_scf_name_length + 1);
-	char *newbuf;
-	size_t newsize;
 
 	if (wip->pg == NULL) {
 		if (scf_service_get_name(wip->svc, svc_buf,
@@ -1559,19 +1510,8 @@ sprint_service(char **buf, scf_walkinfo_t *wip)
 			(void) strcpy(svc_buf, LEGACY_UNKNOWN);
 	}
 
-
-	if (strlen(svc_buf) > COMPONENT_COLUMN_WIDTH)
-		newsize = (*buf ? strlen(*buf) : 0) + strlen(svc_buf) + 2;
-	else
-		newsize = (*buf ? strlen(*buf) : 0) +
-		    COMPONENT_COLUMN_WIDTH + 2;
-	newbuf = safe_malloc(newsize);
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    COMPONENT_COLUMN_WIDTH, svc_buf);
+	sprint_str(buf, svc_buf, COMPONENT_COLUMN_WIDTH);
 	free(svc_buf);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
 }
 
 static void
@@ -1590,25 +1530,20 @@ sortkey_service(char *buf, int reverse, scf_walkinfo_t *wip)
 static void
 sprint_instance(char **buf, scf_walkinfo_t *wip)
 {
-	char *tmp = safe_malloc(max_scf_name_length + 1);
-	size_t newsize = (*buf ? strlen(*buf) : 0) + COMPONENT_COLUMN_WIDTH + 2;
-	char *newbuf = safe_malloc(newsize);
+	char *inst_buf = safe_malloc(max_scf_name_length + 1);
 
 	if (wip->pg == NULL) {
-		if (scf_instance_get_name(wip->inst, tmp,
+		if (scf_instance_get_name(wip->inst, inst_buf,
 		    max_scf_name_length + 1) < 0)
 			scfdie();
 	} else {
-		tmp[0] = '-';
-		tmp[1] = '\0';
+		inst_buf[0] = '-';
+		inst_buf[1] = '\0';
 	}
 
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    COMPONENT_COLUMN_WIDTH, tmp);
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
-	free(tmp);
+
+	sprint_str(buf, inst_buf, COMPONENT_COLUMN_WIDTH);
+	free(inst_buf);
 }
 
 static void
@@ -1626,8 +1561,8 @@ sortkey_instance(char *buf, int reverse, scf_walkinfo_t *wip)
 /* STIME */
 #define	STIME_COLUMN_WIDTH		8
 #define	FORMAT_TIME			"%k:%M:%S"
-#define	FORMAT_DATE			"%b_%d  "
-#define	FORMAT_YEAR			"%Y    "
+#define	FORMAT_DATE			"%b_%d"
+#define	FORMAT_YEAR			"%Y"
 
 /*
  * sprint_stime() will allocate a new buffer and snprintf the services's
@@ -1642,8 +1577,6 @@ sprint_stime(char **buf, scf_walkinfo_t *wip)
 	time_t then;
 	struct tm *tm;
 	char st_buf[STIME_COLUMN_WIDTH + 1];
-	size_t newsize = (*buf ? strlen(*buf) : 0) + STIME_COLUMN_WIDTH + 2;
-	char *newbuf = safe_malloc(newsize);
 
 	if (wip->pg == NULL) {
 		r = get_restarter_time_prop(wip->inst,
@@ -1658,8 +1591,7 @@ sprint_stime(char **buf, scf_walkinfo_t *wip)
 		 * There's something amiss with our service
 		 * so we'll print a '-' for STIME.
 		 */
-		(void) snprintf(newbuf, newsize, "%s%-*s", *buf ? *buf : "",
-		    STIME_COLUMN_WIDTH + 1, "-");
+		sprint_str(buf, "-", STIME_COLUMN_WIDTH);
 	} else {
 		/* tv should be valid so we'll format it */
 		then = (time_t)tv.tv_sec;
@@ -1680,12 +1612,8 @@ sprint_stime(char **buf, scf_walkinfo_t *wip)
 			(void) strftime(st_buf, sizeof (st_buf),
 			    gettext(FORMAT_YEAR), tm);
 		}
-		(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-		    STIME_COLUMN_WIDTH + 1, st_buf);
+		sprint_str(buf, st_buf, STIME_COLUMN_WIDTH);
 	}
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
 }
 
 #define	STIME_SORTKEY_WIDTH		(sizeof (uint64_t) + sizeof (uint32_t))
@@ -1730,8 +1658,7 @@ sortkey_stime(char *buf, int reverse, scf_walkinfo_t *wip)
 static void
 sprint_zone(char **buf, scf_walkinfo_t *wip)
 {
-	size_t newsize;
-	char *newbuf, *zonename = g_zonename, b[ZONENAME_MAX];
+	char *zonename = g_zonename, b[ZONENAME_MAX];
 
 	if (zonename == NULL) {
 		zoneid_t zoneid = getzoneid();
@@ -1742,18 +1669,7 @@ sprint_zone(char **buf, scf_walkinfo_t *wip)
 		zonename = b;
 	}
 
-	if (strlen(zonename) > ZONE_COLUMN_WIDTH)
-		newsize = (*buf ? strlen(*buf) : 0) + strlen(zonename) + 2;
-	else
-		newsize = (*buf ? strlen(*buf) : 0) + ZONE_COLUMN_WIDTH + 2;
-
-	newbuf = safe_malloc(newsize);
-	(void) snprintf(newbuf, newsize, "%s%-*s ", *buf ? *buf : "",
-	    ZONE_COLUMN_WIDTH, zonename);
-
-	if (*buf)
-		free(*buf);
-	*buf = newbuf;
+	sprint_str(buf, zonename, ZONE_COLUMN_WIDTH);
 }
 
 static void
@@ -1783,7 +1699,7 @@ static const struct column columns[] = {
 		COMPONENT_COLUMN_WIDTH, sortkey_instance },
 	{ "N", 1,  sprint_n, 1, sortkey_nstate },
 	{ "NSTA", 4, sprint_nsta, 1, sortkey_nstate },
-	{ "NSTATE", MAX_SCF_STATE_STRING_SZ - 1, sprint_nstate,
+	{ "NSTATE", MAX_SCF_STATE_STRING_SZ, sprint_nstate,
 		1, sortkey_nstate },
 	{ "S", 2, sprint_s, 1, sortkey_state },
 	{ "SCOPE", COMPONENT_COLUMN_WIDTH, sprint_scope,
@@ -1792,7 +1708,7 @@ static const struct column columns[] = {
 	{ "SVC", COMPONENT_COLUMN_WIDTH, sprint_service,
 		COMPONENT_COLUMN_WIDTH, sortkey_service },
 	{ "STA", 4, sprint_sta, 1, sortkey_state },
-	{ "STATE", MAX_SCF_STATE_STRING_SZ - 1 + 1, sprint_state,
+	{ "STATE", MAX_SCF_STATE_STRING_SZ, sprint_state,
 		1, sortkey_state },
 	{ "STIME", STIME_COLUMN_WIDTH, sprint_stime,
 		STIME_SORTKEY_WIDTH, sortkey_stime },
@@ -1868,14 +1784,13 @@ description_of_column(int c)
 static void
 print_usage(const char *progname, FILE *f, boolean_t do_exit)
 {
-	(void) fprintf(f, gettext(
-	    "Usage: %1$s [-aHpv] [-o col[,col ... ]] [-R restarter] "
-	    "[-sS col] [-Z | -z zone ]\n            [<service> ...]\n"
-	    "       %1$s -d | -D [-Hpv] [-o col[,col ... ]] [-sS col] "
-	    "[-Z | -z zone ]\n            [<service> ...]\n"
-	    "       %1$s [-l | -L] [-Z | -z zone] <service> ...\n"
-	    "       %1$s -x [-v] [-Z | -z zone] [<service> ...]\n"
-	    "       %1$s -?\n"), progname);
+	(void) fprintf(f, gettext("usage:\n"
+	    "%1$s\t[-aHpv?] [-o col[,col]...] [-R FMRI-instance]... "
+	    "[-sS col]...\n\t[-z zone|-Z] [FMRI|pattern]...\n"
+	    "%1$s\t{-d|-D} -Hpv? [-o col[,col]...] [-sS col]... [-z zone|-Z]\n"
+	    "\t[FMRI|pattern]...\n"
+	    "%1$s\t{-l|-L} [-v] [-z zone|-Z] {FMRI|pattern}...\n"
+	    "%1$s\t-x [-v] [-z zone|-Z] [FMRI]...\n"), progname);
 
 	if (do_exit)
 		exit(UU_EXIT_USAGE);
@@ -3453,7 +3368,6 @@ main(int argc, char **argv)
 	void (*errfunc)(const char *, ...);
 
 	int show_all = 0;
-	int show_header = 1;
 	int show_zones = 0;
 
 	const char * const options = "aHpvno:R:s:S:dDlL?xZz:";
@@ -3543,7 +3457,7 @@ main(int argc, char **argv)
 		case 'H':
 			if (opt_mode == 'l' || opt_mode == 'x')
 				argserr(progname);
-			show_header = 0;
+			opt_scripted = 1;
 			break;
 
 		case 'p':
@@ -3919,7 +3833,7 @@ nextzone:
 	if (opt_columns == NULL)
 		return (exit_status);
 
-	if (show_header)
+	if (!opt_scripted)
 		print_header();
 
 	(void) uu_avl_walk(lines, print_line, NULL, 0);

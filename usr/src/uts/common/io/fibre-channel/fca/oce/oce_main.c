@@ -19,7 +19,11 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
 
 
 /*
@@ -31,24 +35,12 @@
 #include <oce_stat.h>
 #include <oce_ioctl.h>
 
-#define	ATTACH_DEV_INIT 	0x1
-#define	ATTACH_FM_INIT		0x2
-#define	ATTACH_PCI_CFG		0x4
-#define	ATTACH_LOCK_INIT	0x8
-#define	ATTACH_PCI_INIT 	0x10
-#define	ATTACH_HW_INIT		0x20
-#define	ATTACH_SETUP_TXRX 	0x40
-#define	ATTACH_SETUP_ADAP	0x80
-#define	ATTACH_SETUP_INTR	0x100
-#define	ATTACH_STAT_INIT	0x200
-#define	ATTACH_MAC_REG		0x400
-
 /* ---[ globals and externs ]-------------------------------------------- */
 const char oce_ident_string[] = OCE_IDENT_STRING;
 const char oce_mod_name[] = OCE_MOD_NAME;
-struct oce_dev *oce_dev_list[MAX_DEVS + 1];	/* Last entry is invalid */
 
 /* driver properties */
+static const char tx_reclaim[]		 = "tx_reclaim";
 static const char flow_control[]	 = "flow_control";
 static const char mtu_prop_name[]	 = "oce_default_mtu";
 static const char tx_ring_size_name[]	 = "tx_ring_size";
@@ -61,8 +53,9 @@ static const char log_level_name[]	 = "oce_log_level";
 static const char lso_capable_name[]	 = "lso_capable";
 static const char rx_pkt_per_intr_name[] = "rx_pkts_per_intr";
 static const char tx_reclaim_threshold_name[] = "tx_reclaim_threshold";
-static const char rx_rings_name[]	 = "max_rx_rings";
-static const char tx_rings_name[]	 = "max_tx_rings";
+static const char rx_rings_name[] = "max_rx_rings";
+static const char rx_group_name[] = "max_rx_rings_per_group";
+static const char tx_rings_name[] = "max_tx_rings";
 
 /* --[ static function prototypes here ]------------------------------- */
 static int oce_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd);
@@ -76,6 +69,11 @@ static void oce_destroy_locks(struct oce_dev *dev);
 static void oce_get_params(struct oce_dev *dev);
 static int oce_get_prop(struct oce_dev *dev, char *propname, int minval,
     int maxval, int defval, uint32_t *values);
+static void oce_reset_wd_timer(struct oce_dev *dev);
+static void oce_wd_timer(void *arg);
+static void oce_set_wd_timer(struct oce_dev *dev);
+int oce_alloc_queues(struct oce_dev *dev);
+void oce_free_queues(struct oce_dev *dev);
 
 static struct cb_ops oce_cb_ops = {
 	nulldev,		/* cb_open */
@@ -123,8 +121,7 @@ static struct modlinkage oce_mod_linkage = {
 	MODREV_1, &oce_drv, NULL
 };
 
-#define	OCE_M_CB_FLAGS	(MC_IOCTL | MC_GETCAPAB | MC_SETPROP | MC_GETPROP | \
-    MC_PROPINFO)
+#define	OCE_M_CB_FLAGS	(MC_IOCTL | MC_GETCAPAB | MC_PROPERTIES)
 static mac_callbacks_t oce_mac_cb = {
 	OCE_M_CB_FLAGS,		/* mc_callbacks */
 	oce_m_stat,		/* mc_getstat */
@@ -132,8 +129,8 @@ static mac_callbacks_t oce_mac_cb = {
 	oce_m_stop,		/* mc_stop */
 	oce_m_promiscuous,	/* mc_setpromisc */
 	oce_m_multicast,	/* mc_multicast */
-	oce_m_unicast,		/* mc_unicast */
-	oce_m_send,		/* mc_tx */
+	NULL,			/* mc_unicast */
+	NULL,			/* mc_tx */
 	NULL,			/* mc_reserve */
 	oce_m_ioctl,		/* mc_ioctl */
 	oce_m_getcap,		/* mc_getcapab */
@@ -144,7 +141,26 @@ static mac_callbacks_t oce_mac_cb = {
 	oce_m_propinfo		/* properties info */
 };
 
-extern char *oce_priv_props[];
+
+/* array of properties supported by this driver */
+char *oce_priv_props[] = {
+	"_tx_rings",
+	"_tx_ring_size",
+	"_tx_bcopy_limit",
+	"_tx_reclaim_threshold",
+	"_rx_rings",
+	"_rx_rings_per_group",
+	"_rx_ring_size",
+	"_rx_bcopy_limit",
+	"_rx_pkts_per_intr",
+	"_log_level",
+	NULL
+};
+
+int oce_irm_enable = -1;
+
+extern int oce_cbfunc(dev_info_t *dip, ddi_cb_action_t cbaction, void *cbarg,
+    void *arg1, void *arg2);
 
 /* Module Init */
 int
@@ -159,7 +175,7 @@ _init(void)
 	int ret = 0;
 
 	/* install the module */
-	mac_init_ops(&oce_dev_ops, "oce");
+	mac_init_ops(&oce_dev_ops, OCE_MOD_NAME);
 
 	ret = mod_install(&oce_mod_linkage);
 	if (ret) {
@@ -174,6 +190,7 @@ int
 _fini(void)
 {
 	int ret = 0;
+
 	/* remove the module */
 	ret = mod_remove(&oce_mod_linkage);
 	if (ret != 0) {
@@ -192,7 +209,6 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	int ret = 0;
 	struct oce_dev *dev = NULL;
 	mac_register_t *mac;
-	uint8_t dev_index = 0;
 
 	switch (cmd) {
 	case DDI_RESUME:
@@ -211,21 +227,6 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	dev->dip = dip;
 	dev->dev_id = ddi_get_instance(dip);
 	dev->suspended = B_FALSE;
-
-	dev->dev_list_index = MAX_DEVS;
-	while (dev_index < MAX_DEVS) {
-		(void) atomic_cas_ptr(&oce_dev_list[dev_index], NULL, dev);
-		if (oce_dev_list[dev_index] == dev) {
-			break;
-		}
-		dev_index++;
-	}
-	if (dev_index == MAX_DEVS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
-		    "Too many oce devices on the system. Failed to attach.");
-		goto attach_fail;
-	}
-	dev->dev_list_index = dev_index;
 
 	/* get the parameters */
 	oce_get_params(dev);
@@ -257,15 +258,6 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto attach_fail;
 	}
 
-	ret = oce_get_bdf(dev);
-	if (ret != DDI_SUCCESS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Failed to read BDF, status = 0x%x", ret);
-		goto attach_fail;
-	}
-	/* Update the dev->rss */
-	oce_dev_rss_ready(dev);
-
 	/* setup PCI bars */
 	ret = oce_pci_init(dev);
 	if (ret != DDI_SUCCESS) {
@@ -275,19 +267,9 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 	dev->attach_state |= ATTACH_PCI_INIT;
 
-	ret = oce_setup_intr(dev);
-	if (ret != DDI_SUCCESS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Interrupt setup failed with %d", ret);
-		goto attach_fail;
-
-	}
-	dev->attach_state |= ATTACH_SETUP_INTR;
-
 	/* initialize locks */
 	oce_init_locks(dev);
 	dev->attach_state |= ATTACH_LOCK_INIT;
-
 
 	/* HW init */
 	ret = oce_hw_init(dev);
@@ -298,22 +280,37 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	}
 	dev->attach_state |= ATTACH_HW_INIT;
 
-	ret = oce_init_txrx(dev);
-	if (ret  != DDI_SUCCESS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
-		    "Failed to init rings");
-		goto attach_fail;
+	/* Register IRM callback handler */
+	if (oce_irm_enable != 0) {
+		ret = ddi_cb_register(dev->dip, DDI_CB_FLAG_INTR, oce_cbfunc,
+		    dev, NULL, &dev->cb_handle);
+		if (ret != 0) {
+			oce_log(dev, CE_NOTE, MOD_CONFIG,
+			    "Unable to register IRM callback: 0x%x", ret);
+			oce_irm_enable = 0;
+		} else {
+			dev->attach_state |= ATTACH_CB_REG;
+			oce_irm_enable = 1;
+		}
 	}
-	dev->attach_state |= ATTACH_SETUP_TXRX;
 
-	ret = oce_setup_adapter(dev);
+	/* Adjusting number of groups and rings */
+	oce_group_rings(dev);
+
+	ret = oce_setup_intr(dev);
 	if (ret != DDI_SUCCESS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
-		    "Failed to setup adapter");
+		oce_log(dev, CE_WARN, MOD_CONFIG,
+		    "Interrupt setup failed with %d", ret);
 		goto attach_fail;
 	}
-	dev->attach_state |=  ATTACH_SETUP_ADAP;
+	dev->attach_state |= ATTACH_SETUP_INTR;
 
+	if (oce_alloc_queues(dev) != DDI_SUCCESS) {
+		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
+		    "Failed to allocate rings");
+		goto attach_fail;
+	}
+	dev->attach_state |= ATTACH_ALLOC_QUEUES;
 
 	ret = oce_stat_init(dev);
 	if (ret != DDI_SUCCESS) {
@@ -322,6 +319,13 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		goto attach_fail;
 	}
 	dev->attach_state |= ATTACH_STAT_INIT;
+
+	if (oce_setup_handlers(dev) != DDI_SUCCESS) {
+		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
+		    "Failed to Setup handlers");
+		goto attach_fail;
+	}
+	dev->attach_state |= ATTACH_REG_INTR_HANDLE;
 
 	/* mac_register_t */
 	oce_log(dev, CE_NOTE, MOD_CONFIG,
@@ -344,6 +348,7 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	mac->m_max_sdu = dev->mtu;
 	mac->m_margin = VTAG_SIZE;
 	mac->m_priv_props = oce_priv_props;
+	mac->m_v12n = MAC_VIRT_LEVEL1;
 
 	oce_log(dev, CE_NOTE, MOD_CONFIG,
 	    "Driver Private structure = 0x%p", (void *)dev);
@@ -357,7 +362,6 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		oce_log(dev, CE_WARN, MOD_CONFIG,
 		    "MAC registration failed :0x%x", ret);
 		goto attach_fail;
-
 	}
 
 	/* correct link status only after start */
@@ -365,7 +369,6 @@ oce_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	mac_link_update(dev->mac_handle, dev->link_status);
 
 	dev->attach_state |= ATTACH_MAC_REG;
-	dev->state |= STATE_INIT;
 
 	oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
 	    "ATTACH SUCCESS");
@@ -381,15 +384,12 @@ static int
 oce_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 {
 	struct oce_dev *dev;
-	int pcnt = 0;
-	int qid;
+	int ret = DDI_SUCCESS;
 
 	dev = ddi_get_driver_private(dip);
 	if (dev == NULL) {
 		return (DDI_FAILURE);
 	}
-	oce_log(dev, CE_NOTE, MOD_CONFIG,
-	    "Detaching driver: cmd = 0x%x", cmd);
 
 	switch (cmd) {
 	default:
@@ -400,13 +400,6 @@ oce_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		break;
 	} /* switch cmd */
 
-	/* Fail detach if MAC unregister is unsuccessfule */
-	if (mac_unregister(dev->mac_handle) != 0) {
-		oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
-		    "Failed to unregister MAC ");
-	}
-	dev->attach_state &= ~ATTACH_MAC_REG;
-
 	/* check if the detach is called with out stopping */
 	DEV_LOCK(dev);
 	if (dev->state & STATE_MAC_STARTED) {
@@ -416,20 +409,8 @@ oce_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 	} else
 		DEV_UNLOCK(dev);
 
-	/*
-	 * Wait for Packets sent up to be freed
-	 */
-	for (qid = 0; qid < dev->rx_rings; qid++) {
-		pcnt = oce_rx_pending(dev, dev->rq[qid], DEFAULT_DRAIN_TIME);
-		if (pcnt != 0) {
-			oce_log(dev, CE_WARN, MOD_CONFIG,
-			    "%d Pending Buffers Detach failed", pcnt);
-			return (DDI_FAILURE);
-		}
-	}
 	oce_unconfigure(dev);
-
-	return (DDI_SUCCESS);
+	return (ret);
 } /* oce_detach */
 
 static int
@@ -445,9 +426,13 @@ oce_quiesce(dev_info_t *dip)
 		return (DDI_SUCCESS);
 	}
 
-	oce_chip_di(dev);
+	if (!LANCER_CHIP(dev)) {
+		oce_chip_di(dev);
 
-	ret = oce_reset_fun(dev);
+		ret = oce_reset_fun(dev);
+	} else {
+		LANCER_IP_RESET;
+	}
 
 	return (ret);
 }
@@ -456,17 +441,29 @@ static int
 oce_suspend(dev_info_t *dip)
 {
 	struct oce_dev *dev = ddi_get_driver_private(dip);
+	int i;
 
 	mutex_enter(&dev->dev_lock);
 	/* Suspend the card */
-	dev->suspended = B_TRUE;
-	/* stop the adapter */
-	if (dev->state & STATE_MAC_STARTED) {
-		oce_stop(dev);
-		oce_unsetup_adapter(dev);
+	if (dev->suspended || (!(dev->state & STATE_MAC_STARTED))) {
+		mutex_exit(&dev->dev_lock);
+		return (DDI_SUCCESS);
 	}
-	dev->state &= ~STATE_MAC_STARTED;
+	dev->suspended = B_TRUE;
+
+	/* stop the groups */
+	for (i = 0; i < dev->num_rx_groups; i++) {
+		mutex_enter(&dev->rx_group[i].grp_lock);
+		oce_suspend_group_rings(&dev->rx_group[i]);
+		oce_stop_group(&dev->rx_group[i], B_FALSE);
+		mutex_exit(&dev->rx_group[i].grp_lock);
+	}
+
+	/* stop the adapter */
+	oce_stop(dev);
+
 	mutex_exit(&dev->dev_lock);
+	oce_disable_wd_timer(dev);
 	return (DDI_SUCCESS);
 } /* oce_suspend */
 
@@ -474,29 +471,39 @@ static int
 oce_resume(dev_info_t *dip)
 {
 	struct oce_dev *dev;
-	int ret;
+	int i, ret = DDI_SUCCESS;
 
 	/* get the dev pointer from dip */
 	dev = ddi_get_driver_private(dip);
+	if (dev == NULL) {
+		return (DDI_FAILURE);
+	}
 	mutex_enter(&dev->dev_lock);
 	if (!dev->suspended) {
 		mutex_exit(&dev->dev_lock);
 		return (DDI_SUCCESS);
 	}
-	if (!(dev->state & STATE_MAC_STARTED)) {
-		ret = oce_setup_adapter(dev);
-		if (ret != DDI_SUCCESS) {
-			mutex_exit(&dev->dev_lock);
-			return (DDI_FAILURE);
+	if (dev->state & STATE_MAC_STARTED) {
+		if ((ret = oce_start(dev)) != DDI_SUCCESS) {
+			goto resume_finish;
 		}
-		ret = oce_start(dev);
-		if (ret != DDI_SUCCESS) {
-			mutex_exit(&dev->dev_lock);
-			return (DDI_FAILURE);
+
+		/* re-start the groups */
+		for (i = 0; i < dev->num_rx_groups; i++) {
+			mutex_enter(&dev->rx_group[i].grp_lock);
+			ret = oce_start_group(&dev->rx_group[i], B_FALSE);
+			if (ret == DDI_SUCCESS) {
+				ret = oce_resume_group_rings(&dev->rx_group[i]);
+			}
+			mutex_exit(&dev->rx_group[i].grp_lock);
+			if (ret != DDI_SUCCESS)
+				goto resume_finish;
 		}
+		oce_enable_wd_timer(dev);
 	}
 	dev->suspended = B_FALSE;
-	dev->state |= STATE_MAC_STARTED;
+
+resume_finish:
 	mutex_exit(&dev->dev_lock);
 	return (ret);
 } /* oce_resume */
@@ -509,6 +516,10 @@ oce_init_locks(struct oce_dev *dev)
 	    DDI_INTR_PRI(dev->intr_pri));
 	mutex_init(&dev->bmbx_lock, NULL, MUTEX_DRIVER,
 	    DDI_INTR_PRI(dev->intr_pri));
+	mutex_init(&dev->wd_lock, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(dev->intr_pri));
+	mutex_init(&dev->stat_lock, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(dev->intr_pri));
 } /* oce_init_locks */
 
 static void
@@ -516,6 +527,8 @@ oce_destroy_locks(struct oce_dev *dev)
 {
 	mutex_destroy(&dev->dev_lock);
 	mutex_destroy(&dev->bmbx_lock);
+	mutex_destroy(&dev->wd_lock);
+	mutex_destroy(&dev->stat_lock);
 } /* oce_destroy_locks */
 
 static void
@@ -526,23 +539,26 @@ oce_unconfigure(struct oce_dev *dev)
 	if (state & ATTACH_MAC_REG) {
 		(void) mac_unregister(dev->mac_handle);
 	}
+	if (state & ATTACH_REG_INTR_HANDLE) {
+		oce_remove_handler(dev);
+	}
 	if (state & ATTACH_STAT_INIT) {
 		oce_stat_fini(dev);
 	}
-	if (state & ATTACH_SETUP_ADAP) {
-		oce_unsetup_adapter(dev);
+	if (state & ATTACH_CB_REG) {
+		(void) ddi_cb_unregister(dev->cb_handle);
 	}
-	if (state & ATTACH_SETUP_TXRX) {
-		oce_fini_txrx(dev);
+	if (state & ATTACH_SETUP_INTR) {
+		(void) oce_teardown_intr(dev);
+	}
+	if (state & ATTACH_ALLOC_QUEUES) {
+		oce_free_queues(dev);
 	}
 	if (state & ATTACH_HW_INIT) {
 		oce_hw_fini(dev);
 	}
 	if (state & ATTACH_LOCK_INIT) {
 		oce_destroy_locks(dev);
-	}
-	if (state & ATTACH_SETUP_INTR) {
-		(void) oce_teardown_intr(dev);
 	}
 	if (state & ATTACH_PCI_INIT) {
 		oce_pci_fini(dev);
@@ -555,7 +571,6 @@ oce_unconfigure(struct oce_dev *dev)
 	}
 	if (state & ATTACH_DEV_INIT) {
 		ddi_set_driver_private(dev->dip, NULL);
-		oce_dev_list[dev->dev_list_index] = NULL;
 		kmem_free(dev, sizeof (struct oce_dev));
 	}
 } /* oce_unconfigure */
@@ -584,8 +599,10 @@ oce_get_params(struct oce_dev *dev)
 	uint32_t fm_caps_values[] = {DDI_FM_NOT_CAPABLE, OCE_FM_CAPABILITY,
 	    END};
 	uint32_t tx_rt_values[] = {END};
+	uint32_t tx_reclaim_values[] = {END};
 	uint32_t rx_ppi_values[] = {END};
 	uint32_t rx_rings_values[] = {END};
+	uint32_t rx_group_values[] = {END};
 	uint32_t tx_rings_values[] = {END};
 	uint32_t log_level_values[] = {END};
 
@@ -625,14 +642,23 @@ oce_get_params(struct oce_dev *dev)
 	    (char *)tx_reclaim_threshold_name, 0, dev->tx_ring_size/2,
 	    OCE_DEFAULT_TX_RECLAIM_THRESHOLD, tx_rt_values);
 
+	dev->tx_reclaim = oce_get_prop(dev, (char *)tx_reclaim, 1,
+	    dev->tx_reclaim_threshold, dev->tx_reclaim_threshold,
+	    tx_reclaim_values);
+
 	dev->rx_pkt_per_intr = oce_get_prop(dev, (char *)rx_pkt_per_intr_name,
-	    0, dev->rx_ring_size/2, OCE_DEFAULT_RX_PKT_PER_INTR, rx_ppi_values);
+	    1, dev->rx_ring_size/2, OCE_DEFAULT_RX_PKTS_PER_INTR,
+	    rx_ppi_values);
 
 	dev->rx_rings = oce_get_prop(dev, (char *)rx_rings_name,
 	    OCE_MIN_RQ, OCE_MAX_RQ, OCE_DEFAULT_RQS, rx_rings_values);
 
+	dev->rx_rings_per_group = oce_get_prop(dev, (char *)rx_group_name,
+	    OCE_MIN_RING_PER_GROUP, OCE_MAX_RING_PER_GROUP,
+	    OCE_DEF_RING_PER_GROUP, rx_group_values);
+
 	dev->tx_rings = oce_get_prop(dev, (char *)tx_rings_name,
-	    OCE_DEFAULT_WQS, OCE_DEFAULT_WQS, OCE_DEFAULT_WQS, tx_rings_values);
+	    OCE_MIN_WQ, OCE_MAX_WQ, OCE_DEFAULT_WQS, tx_rings_values);
 
 	log_level = oce_get_prop(dev, (char *)log_level_name, 0,
 	    OCE_MAX_LOG_SETTINGS, OCE_DEFAULT_LOG_SETTINGS, log_level_values);
@@ -678,4 +704,71 @@ oce_get_prop(struct oce_dev *dev, char *propname, int minval, int maxval,
 	}
 
 	return (value);
+}
+
+
+static void oce_reset_wd_timer(struct oce_dev *dev)
+{
+	mutex_enter(&dev->wd_lock);
+	if (dev->wd_enable) {
+		oce_set_wd_timer(dev);
+	}
+	mutex_exit(&dev->wd_lock);
+}
+
+static void oce_wd_timer(void *arg)
+{
+	struct oce_dev *dev = (struct oce_dev *)arg;
+
+	if (!LANCER_CHIP(dev)) {
+		if (oce_check_ue(dev)) {
+			/* disable the watchdog and clean-up the interrupts */
+			oce_disable_wd_timer(dev);
+			mutex_enter(&dev->dev_lock);
+			(void) oce_di(dev);
+			ddi_fm_service_impact(dev->dip, DDI_SERVICE_LOST);
+			mutex_exit(&dev->dev_lock);
+			return;
+		}
+	}
+
+	if (oce_tx_stall_check(dev)) {
+		oce_log(dev, CE_NOTE, MOD_CONFIG, "Tx Stall Detected at %lu",
+		    ddi_get_lbolt());
+	}
+	/* restart the watch dog timer */
+	oce_reset_wd_timer(dev);
+}
+
+static void
+oce_set_wd_timer(struct oce_dev *dev)
+{
+	dev->wd_id =
+	    timeout(oce_wd_timer, (void *) dev, drv_usectohz(1000000));
+}
+
+void
+oce_enable_wd_timer(struct oce_dev *dev)
+{
+
+	mutex_enter(&dev->wd_lock);
+	if (!dev->wd_enable) {
+		dev->wd_enable = B_TRUE;
+		oce_set_wd_timer(dev);
+	}
+	mutex_exit(&dev->wd_lock);
+}
+
+void
+oce_disable_wd_timer(struct oce_dev *dev)
+{
+	timeout_id_t wd_id;
+	mutex_enter(&dev->wd_lock);
+	dev->wd_enable = B_FALSE;
+	wd_id = dev->wd_id;
+	mutex_exit(&dev->wd_lock);
+	if (wd_id != 0) {
+		(void) untimeout(wd_id);
+		dev->wd_id = 0;
+	}
 }

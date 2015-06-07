@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <sys/types.h>
 #include <sys/systm.h>
@@ -58,8 +61,6 @@
 #include <sys/kstat.h>
 #include <sys/socketvar.h>
 #include <sys/kiconv.h>
-
-extern int moddebug;
 
 extern struct cb_ops no_cb_ops;
 extern struct dev_ops nodev_ops;

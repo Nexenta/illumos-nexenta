@@ -19,7 +19,11 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
 
 /*
  * Header file defining the driver buffer management interface
@@ -69,14 +73,16 @@ typedef struct oce_dma_buf_s {
 	size_t		off;
 	size_t		len;
 	uint32_t	num_pages;
+	uint32_t 	ncookies;
+	ddi_dma_cookie_t cookie;
 }oce_dma_buf_t;
 
-#define	DBUF_PA(obj) (((oce_dma_buf_t *)(obj))->addr)
-#define	DBUF_VA(obj) (((oce_dma_buf_t *)(obj))->base)
-#define	DBUF_DHDL(obj) (((oce_dma_buf_t *)(obj))->dma_handle)
-#define	DBUF_AHDL(obj) (((oce_dma_buf_t *)obj))->acc_handle)
-#define	DBUF_SYNC(obj, flags)	(void) ddi_dma_sync(DBUF_DHDL(obj), 0,\
-			0, (flags))
+#define	DBUF_PA(obj) ((obj).addr)
+#define	DBUF_VA(obj) ((obj).base)
+#define	DBUF_DHDL(obj) ((obj).dma_handle)
+#define	DBUF_AHDL(obj) ((obj).acc_handle)
+#define	DBUF_SYNC(obj, off, len, flags)		\
+	(void) ddi_dma_sync(DBUF_DHDL(obj), off, len, (flags))
 
 typedef struct oce_ring_buffer_s {
 	uint16_t    cidx; 	/* Get ptr */
@@ -84,26 +90,24 @@ typedef struct oce_ring_buffer_s {
 	size_t	item_size;	/* Size */
 	size_t  num_items;	/* count */
 	uint32_t  num_used;
-	oce_dma_buf_t   *dbuf;	/* dma buffer */
+	oce_dma_buf_t   dbuf;	/* dma buffer */
 }oce_ring_buffer_t;
 
 typedef struct oce_rq_bdesc_s {
-	oce_dma_buf_t	*rqb;
+	oce_dma_buf_t	rqb;
 	struct oce_rq	*rq;
 	oce_addr64_t 	frag_addr;
 	mblk_t		*mp;
 	frtn_t		fr_rtn;
-    uint32_t    ref_cnt;
+	uint32_t	ref_cnt;
 }oce_rq_bdesc_t;
 
 typedef struct oce_wq_bdesc_s {
-	OCE_LIST_NODE_T  link;
-	oce_dma_buf_t	*wqb;
+	oce_dma_buf_t	wqb;
 	oce_addr64_t 	frag_addr;
 } oce_wq_bdesc_t;
 
 typedef struct oce_wq_mdesc_s {
-	OCE_LIST_NODE_T  	link;
 	ddi_dma_handle_t	dma_handle;
 } oce_wq_mdesc_t;
 
@@ -120,7 +124,7 @@ typedef struct _oce_handle_s {
 }oce_handle_t;
 
 typedef struct _oce_wqe_desc_s {
-	OCE_LIST_NODE_T  link;
+	list_node_t	link;
 	oce_handle_t	hdesc[OCE_MAX_TX_HDL];
 	struct oce_nic_frag_wqe frag[OCE_TX_MAX_FRAGS];
 	struct oce_wq  *wq;
@@ -140,7 +144,8 @@ typedef struct _oce_rq_buf_hdr_s {
 } oce_rq_buf_hdr_t;
 #pragma pack()
 
-#define	OCE_RQE_BUF_HEADROOM	18
+#define	OCE_RQE_BUF_HEADROOM	10	/* always 2 mod  4 */
+#define	OCE_IP_ALIGN		2	/* Align the IP header */
 #define	MAX_POOL_NAME		32
 
 #define	RING_NUM_PENDING(ring)	ring->num_used

@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SYS_SCSI_SCSI_PKT_H
@@ -106,6 +108,8 @@ struct scsi_pkt {
 
 	/* stage-temporary: iff scsi_pkt_allocated_correctly() */
 	void	*pkt_stmp;		/* temporary for current pkt stage */
+	hrtime_t pkt_start;
+	hrtime_t pkt_stop;
 
 #ifdef	SCSI_SIZE_CLEAN_VERIFY
 	/*
@@ -182,6 +186,10 @@ struct scsi_pkt {
 #define	FLAG_NOQUEUE		0x80000000
 #define	FLAG_PKT_PATH_INSTANCE	0x40000000	/* Tell vhci the path to use */
 #define	FLAG_PKT_COMP_CALLED	0x20000000	/* Set once pkt_comp called */
+
+/* Extended flags. */
+#define	FLAG_PKT_BUSY		0x04000000	/* Reject packet immediately. */
+#define	FLAG_PKT_TIMEOUT	0x08000000	/* Timed-out packet. */
 
 /*
  * Definitions for the pkt_reason field.

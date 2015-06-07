@@ -23,6 +23,7 @@
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SYS_SUNDDI_H
@@ -430,7 +431,7 @@ extern void strfree(char *str);
  * Functions and data references which really should be in <sys/ddi.h>
  */
 
-extern int maxphys;
+extern volatile int maxphys;
 extern void minphys(struct buf *);
 extern int physio(int (*)(struct buf *), struct buf *, dev_t,
 	int, void (*)(struct buf *), struct uio *);

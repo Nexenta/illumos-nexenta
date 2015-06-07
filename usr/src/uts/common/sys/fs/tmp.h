@@ -22,11 +22,12 @@
  * Copyright 2007 Sun Microsystems, Inc.
  * All rights reserved.  Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #ifndef	_SYS_FS_TMP_H
 #define	_SYS_FS_TMP_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #ifdef	__cplusplus
 extern "C" {
@@ -78,7 +79,7 @@ enum dr_op	{ DR_REMOVE, DR_RMDIR, DR_RENAME };	/* dirremove ops */
  */
 #define	TMPMINFREE	2 * 1024 * 1024	/* 2 Megabytes */
 
-extern size_t	tmpfs_minfree;		/* Anonymous memory in pages */
+extern volatile size_t	tmpfs_minfree;	/* Anonymous memory in pages */
 
 /*
  * tmpfs can allocate only a certain percentage of kernel memory,
@@ -89,7 +90,7 @@ extern size_t	tmpfs_minfree;		/* Anonymous memory in pages */
 #define	TMPMAXFRACKMEM	25	/* 1/25 of physical memory */
 
 extern size_t 	tmp_kmemspace;
-extern size_t	tmpfs_maxkmem;	/* Allocatable kernel memory in bytes */
+extern volatile size_t	tmpfs_maxkmem;	/* Allocatable kernel memory in bytes */
 
 extern	void	tmpnode_init(struct tmount *, struct tmpnode *,
 	struct vattr *, struct cred *);

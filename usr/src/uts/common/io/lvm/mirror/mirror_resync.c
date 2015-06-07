@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -87,7 +88,7 @@ int md_mirror_resync_update_intvl = MD_DEF_MIRROR_RESYNC_INTVL;
  * Settable mirror resync buffer size.  Specified in 512 byte
  * blocks.  This is set to MD_DEF_RESYNC_BUF_SIZE by default.
  */
-int md_resync_bufsz = MD_DEF_RESYNC_BUF_SIZE;
+volatile int md_resync_bufsz = MD_DEF_RESYNC_BUF_SIZE;
 
 /*
  * Tunables for dirty region processing when

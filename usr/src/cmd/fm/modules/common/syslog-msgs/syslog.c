@@ -23,6 +23,10 @@
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
+/*
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ */
+
 #include <sys/fm/protocol.h>
 #include <sys/strlog.h>
 #include <sys/log.h>
@@ -314,7 +318,11 @@ syslog_recv(fmd_hdl_t *hdl, fmd_event_t *ep, nvlist_t *nvl, const char *class)
 }
 
 static const fmd_prop_t fmd_props[] = {
+#ifdef DEBUG
 	{ "console", FMD_TYPE_BOOL, "true" },
+#else
+	{ "console", FMD_TYPE_BOOL, "false" },
+#endif
 	{ "facility", FMD_TYPE_STRING, "LOG_DAEMON" },
 	{ "gmt", FMD_TYPE_BOOL, "false" },
 	{ "syslogd", FMD_TYPE_BOOL, "true" },

@@ -22,6 +22,9 @@
  * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
@@ -200,7 +203,7 @@ typedef struct _klwp {
 #define	LWP_SYS		0x02		/* Running in kernel mode */
 
 #if	defined(_KERNEL)
-extern	int	lwp_default_stksize;
+extern	volatile int	lwp_default_stksize;
 extern	int	lwp_reapcnt;
 
 extern	struct _kthread *lwp_deathrow;

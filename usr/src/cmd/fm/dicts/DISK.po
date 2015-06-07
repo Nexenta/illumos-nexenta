@@ -1,6 +1,7 @@
 #
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 # CDDL HEADER START
 #
@@ -104,3 +105,51 @@ msgid "DISK-8000-4Q.impact"
 msgstr "It is likely that continued operation will result in data corruption, which may eventually cause the loss of service or the service degradation.\n"
 msgid "DISK-8000-4Q.action"
 msgstr "Schedule a repair procedure to replace the affected device. Use 'fmadm faulty' to find the affected disk.\n"
+#
+# code: DISK-8000-5C
+# keys: fault.io.disk.attach-failure
+#
+msgid "DISK-8000-5C.type"
+msgstr "Fault"
+msgid "DISK-8000-5C.severity"
+msgstr "Critical"
+msgid "DISK-8000-5C.description"
+msgstr "A disk device failed to attach. Either the device is broken, or it is just taking unusually long to respond. The latter is often the case with battery-backed RAM disk devices when the battery needs to be charged.\n"
+msgid "DISK-8000-5C.response"
+msgstr "None.\n"
+msgid "DISK-8000-5C.impact"
+msgstr "The device will not be usable.\n"
+msgid "DISK-8000-5C.action"
+msgstr "Schedule a repair procedure to replace the affected device. Use 'fmadm faulty' to find the affected disk. If this is a battery-backed RAM disk or similar device, you can also try to reactivate the device using 'fmadm acquit' once the battery is charged\n"
+#
+# code: DISK-8000-6R
+# keys: fault.io.disk.device-errors-exceeded
+#
+msgid "DISK-8000-6R.type"
+msgstr "Fault"
+msgid "DISK-8000-6R.severity"
+msgstr "Critical"
+msgid "DISK-8000-6R.description"
+msgstr "A disk device has experienced too many device errors.\n"
+msgid "DISK-8000-6R.response"
+msgstr "An attempt has been made to take the disk out of service. If the device is part of an active ZFS pool, the device still may be in service.\n"
+msgid "DISK-8000-6R.impact"
+msgstr "Optionally degraded redundancy and performance.\n"
+msgid "DISK-8000-6R.action"
+msgstr "Determine the cause of the fault using fmdump -V -u <EVENT_ID> and schedule a repair service.\n"
+#
+# code: DISK-8000-74
+# keys: fault.io.disk.slow-io
+#
+msgid "DISK-8000-74.type"
+msgstr "Fault"
+msgid "DISK-8000-74.severity"
+msgstr "Critical"
+msgid "DISK-8000-74.description"
+msgstr "A disk device is experiencing too many slows IOs above its configured threshold.\n"
+msgid "DISK-8000-74.response"
+msgstr "Depending on configuration the device may have been retired.\n"
+msgid "DISK-8000-74.impact"
+msgstr "Optionally degraded performance and redundancy.\n"
+msgid "DISK-8000-74.action"
+msgstr "Determine the cause of the fault using fmdump -V -u <EVENT_ID> and schedule a repair service.\n"

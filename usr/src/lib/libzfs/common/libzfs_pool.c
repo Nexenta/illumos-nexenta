@@ -391,7 +391,7 @@ zpool_is_bootable(zpool_handle_t *zhp)
  */
 static nvlist_t *
 zpool_valid_proplist(libzfs_handle_t *hdl, const char *poolname,
-    nvlist_t *props, uint64_t version, prop_flags_t flags, char *errbuf)
+    nvlist_t *props, uint64_t version, prop_flags_t flags, const char *errbuf)
 {
 	nvpair_t *elem;
 	nvlist_t *retprops;
@@ -642,6 +642,58 @@ zpool_set_prop(zpool_handle_t *zhp, const char *propname, const char *propval)
 		nvlist_free(nvl);
 		return (no_memory(zhp->zpool_hdl));
 	}
+
+	version = zpool_get_prop_int(zhp, ZPOOL_PROP_VERSION, NULL);
+	if ((realprops = zpool_valid_proplist(zhp->zpool_hdl,
+	    zhp->zpool_name, nvl, version, flags, errbuf)) == NULL) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	nvlist_free(nvl);
+	nvl = realprops;
+
+	/*
+	 * Execute the corresponding ioctl() to set this property.
+	 */
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+
+	if (zcmd_write_src_nvlist(zhp->zpool_hdl, &zc, nvl) != 0) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	ret = zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_POOL_SET_PROPS, &zc);
+
+	zcmd_free_nvlists(&zc);
+	nvlist_free(nvl);
+
+	if (ret)
+		(void) zpool_standard_error(zhp->zpool_hdl, errno, errbuf);
+	else
+		(void) zpool_props_refresh(zhp);
+
+	return (ret);
+}
+
+/*
+ * Set zpool properties nvlist
+ */
+int
+zpool_set_proplist(zpool_handle_t *zhp, nvlist_t *nvl)
+{
+	zfs_cmd_t zc = { 0 };
+	int ret = -1;
+	char errbuf[1024];
+	nvlist_t *realprops;
+	uint64_t version;
+	prop_flags_t flags = { 0 };
+
+	assert(nvl != NULL);
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot set property for '%s'"),
+	    zhp->zpool_name);
 
 	version = zpool_get_prop_int(zhp, ZPOOL_PROP_VERSION, NULL);
 	if ((realprops = zpool_valid_proplist(zhp->zpool_hdl,
@@ -1326,7 +1378,7 @@ zpool_add(zpool_handle_t *zhp, nvlist_t *nvroot)
  */
 static int
 zpool_export_common(zpool_handle_t *zhp, boolean_t force, boolean_t hardforce,
-    const char *log_str)
+    boolean_t saveconfig, const char *log_str)
 {
 	zfs_cmd_t zc = { 0 };
 	char msg[1024];
@@ -1337,6 +1389,7 @@ zpool_export_common(zpool_handle_t *zhp, boolean_t force, boolean_t hardforce,
 	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
 	zc.zc_cookie = force;
 	zc.zc_guid = hardforce;
+	zc.zc_obj = saveconfig;
 	zc.zc_history = (uint64_t)(uintptr_t)log_str;
 
 	if (zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_POOL_EXPORT, &zc) != 0) {
@@ -1359,15 +1412,17 @@ zpool_export_common(zpool_handle_t *zhp, boolean_t force, boolean_t hardforce,
 }
 
 int
-zpool_export(zpool_handle_t *zhp, boolean_t force, const char *log_str)
+zpool_export(zpool_handle_t *zhp, boolean_t force, boolean_t saveconfig,
+    const char *log_str)
 {
-	return (zpool_export_common(zhp, force, B_FALSE, log_str));
+	return (zpool_export_common(zhp, force, B_FALSE, saveconfig, log_str));
 }
 
 int
-zpool_export_force(zpool_handle_t *zhp, const char *log_str)
+zpool_export_force(zpool_handle_t *zhp, boolean_t saveconfig,
+    const char *log_str)
 {
-	return (zpool_export_common(zhp, B_TRUE, B_TRUE, log_str));
+	return (zpool_export_common(zhp, B_TRUE, B_TRUE, saveconfig, log_str));
 }
 
 static void
@@ -3234,7 +3289,7 @@ path_to_devid(const char *path)
 	ddi_devid_t devid;
 	char *minor, *ret;
 
-	if ((fd = open(path, O_RDONLY)) < 0)
+	if ((fd = open(path, O_RDONLY | O_NDELAY)) < 0)
 		return (NULL);
 
 	minor = NULL;
@@ -3547,6 +3602,21 @@ zpool_log_history(libzfs_handle_t *hdl, const char *message)
 	nvlist_free(args);
 	zcmd_free_nvlists(&zc);
 	return (err);
+}
+
+int
+zpool_stage_history(libzfs_handle_t *hdl, const char *history_str)
+{
+	if (history_str == NULL)
+		return (EINVAL);
+
+	if (hdl->libzfs_log_str != NULL)
+		free(hdl->libzfs_log_str);
+
+	if ((hdl->libzfs_log_str = strdup(history_str)) == NULL)
+		return (no_memory(hdl));
+
+	return (0);
 }
 
 /*
@@ -4023,5 +4093,749 @@ out:
 	if (zhp)
 		zpool_close(zhp);
 	libzfs_fini(hdl);
+	return (ret);
+}
+
+/*
+ * Vdev props
+ */
+static int
+vdev_get_guid(zpool_handle_t *zhp, const char *path, uint64_t *guid)
+{
+	nvlist_t *nvl;
+	boolean_t avail_spare, l2cache, islog;
+
+	if ((nvl = zpool_find_vdev(zhp, path, &avail_spare, &l2cache,
+	    &islog)) == NULL)
+		return (1);
+	verify(nvlist_lookup_uint64(nvl, ZPOOL_CONFIG_GUID, guid) == 0);
+	return (0);
+}
+
+/*
+ * Given an nvlist of vdev properties to be set, validate that they are
+ * correct, and parse any numeric properties (index, boolean, etc) if they are
+ * specified as strings.
+ */
+/*ARGSUSED*/
+static nvlist_t *
+vdev_valid_proplist(libzfs_handle_t *hdl, nvlist_t *props,
+    uint64_t version, prop_flags_t flags, const char *errbuf)
+{
+	nvpair_t *elem;
+	nvlist_t *retprops;
+	vdev_prop_t prop;
+	char *strval;
+	uint64_t intval;
+
+	if (nvlist_alloc(&retprops, NV_UNIQUE_NAME, 0) != 0) {
+		(void) no_memory(hdl);
+		return (NULL);
+	}
+
+	elem = NULL;
+	while ((elem = nvlist_next_nvpair(props, elem)) != NULL) {
+		const char *propname = nvpair_name(elem);
+
+		/*
+		 * Make sure this property is valid and applies to this type.
+		 */
+		if ((prop = vdev_name_to_prop(propname)) == ZPROP_INVAL) {
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "invalid vdev property '%s'"), propname);
+			(void) zfs_error(hdl, EZFS_BADPROP, errbuf);
+			goto error;
+		}
+
+		if (vdev_prop_readonly(prop)) {
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "'%s' "
+			    "is readonly"), propname);
+			(void) zfs_error(hdl, EZFS_PROPREADONLY, errbuf);
+			goto error;
+		}
+
+		if (zprop_parse_value(hdl, elem, prop, ZFS_TYPE_VDEV, retprops,
+		    &strval, &intval, errbuf) != 0)
+			goto error;
+
+		/*
+		 * Perform additional checking for specific properties.
+		 */
+		switch (prop) {
+		case VDEV_PROP_PREFERRED_READ:
+			if (intval > 100) {
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+				    "'%s' must be from 0 to 100"), propname);
+				(void) zfs_error(hdl, EZFS_BADPROP,
+				    errbuf);
+				goto error;
+			}
+			break;
+		case VDEV_PROP_READ_MINACTIVE:
+		case VDEV_PROP_READ_MAXACTIVE:
+		case VDEV_PROP_AREAD_MINACTIVE:
+		case VDEV_PROP_AREAD_MAXACTIVE:
+		case VDEV_PROP_WRITE_MINACTIVE:
+		case VDEV_PROP_WRITE_MAXACTIVE:
+		case VDEV_PROP_AWRITE_MINACTIVE:
+		case VDEV_PROP_AWRITE_MAXACTIVE:
+		case VDEV_PROP_SCRUB_MINACTIVE:
+		case VDEV_PROP_SCRUB_MAXACTIVE:
+			if (intval > 1000) {
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+				    "'%s' must be from 0 to 1000"), propname);
+				(void) zfs_error(hdl, EZFS_BADPROP,
+				    errbuf);
+				goto error;
+			}
+			break;
+		default:
+			break;
+		}
+	}
+
+	return (retprops);
+error:
+	nvlist_free(retprops);
+	return (NULL);
+}
+
+static int
+vdev_get_all_props(zpool_handle_t *zhp, uint64_t vdev_guid, nvlist_t **nvp)
+{
+	zfs_cmd_t zc = { 0 };
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+
+	if (zcmd_alloc_dst_nvlist(hdl, &zc, 0) != 0)
+		return (-1);
+
+	zc.zc_guid = vdev_guid;
+	while (ioctl(hdl->libzfs_fd, ZFS_IOC_VDEV_GET_PROPS, &zc) != 0) {
+		if (errno == ENOMEM) {
+			if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
+				zcmd_free_nvlists(&zc);
+				return (-1);
+			}
+		} else {
+			zcmd_free_nvlists(&zc);
+			(void) zfs_error(hdl, EZFS_BADDEV,
+			    "failed to get vdev properties");
+			return (-1);
+		}
+	}
+
+	if (zcmd_read_dst_nvlist(hdl, &zc, nvp) != 0) {
+		zcmd_free_nvlists(&zc);
+		return (-1);
+	}
+
+	zcmd_free_nvlists(&zc);
+
+	return (0);
+}
+
+int
+vdev_get_prop(zpool_handle_t *zhp,  const char *vdev, vdev_prop_t prop,
+    char *buf, size_t len, nvlist_t **nvp)
+{
+	uint64_t vdev_guid;
+	uint64_t intval;
+	const char *strval;
+	nvlist_t *nvl;
+	char errbuf[1024];
+
+	assert(nvp != NULL);
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot get property for '%s'"),
+	    zhp->zpool_name);
+
+	if (zpool_get_state(zhp) == POOL_STATE_UNAVAIL)
+		return (-1);
+
+	if (vdev_get_guid(zhp, vdev, &vdev_guid) != 0) {
+		(void) zfs_error(zhp->zpool_hdl, EZFS_BADDEV, errbuf);
+		return (-1);
+	}
+
+	if (*nvp == NULL && vdev_get_all_props(zhp, vdev_guid, nvp) != 0)
+		return (-1);
+	nvl = *nvp;
+
+	switch (vdev_prop_get_type(prop)) {
+	case PROP_TYPE_STRING:
+		if (nvlist_lookup_string(nvl, vdev_prop_to_name(prop),
+		    (char **)&strval) != 0)
+			if ((strval = (char *)vdev_prop_default_string(prop))
+			    == NULL)
+				strval = "-";
+
+		(void) strlcpy(buf, strval, len);
+		break;
+
+	case PROP_TYPE_NUMBER:
+		if (nvlist_lookup_uint64(nvl, vdev_prop_to_name(prop),
+		    &intval) != 0)
+			intval = vdev_prop_default_numeric(prop);
+		(void) snprintf(buf, len, "%llu", (u_longlong_t)intval);
+		break;
+
+	case PROP_TYPE_INDEX:
+		if (nvlist_lookup_uint64(nvl, vdev_prop_to_name(prop),
+		    &intval) != 0)
+			intval = vdev_prop_default_numeric(prop);
+		if (vdev_prop_index_to_string(prop, intval, &strval) != 0) {
+			(void) zfs_error(zhp->zpool_hdl, EZFS_BADPROP, errbuf);
+			return (-1);
+		}
+		(void) strlcpy(buf, strval, len);
+		break;
+
+	default:
+		abort();
+	}
+
+	return (0);
+}
+
+/*
+ * Set vdev property : propname=propval.
+ */
+int
+vdev_set_prop(zpool_handle_t *zhp, const char *vdev,
+    const char *propname, const char *propval)
+{
+	zfs_cmd_t zc = { 0 };
+	int ret = -1;
+	char errbuf[1024];
+	nvlist_t *nvl = NULL;
+	nvlist_t *realprops;
+	uint64_t version;
+	uint64_t guid;
+	prop_flags_t flags = { 0 };
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot set property for '%s'"),
+	    zhp->zpool_name);
+
+	if (nvlist_alloc(&nvl, NV_UNIQUE_NAME, 0) != 0)
+		return (no_memory(zhp->zpool_hdl));
+
+	if (nvlist_add_string(nvl, propname, propval) != 0) {
+		nvlist_free(nvl);
+		return (no_memory(zhp->zpool_hdl));
+	}
+
+	if (vdev_get_guid(zhp, vdev, &guid) != 0) {
+		(void) zfs_error(zhp->zpool_hdl, EZFS_BADDEV, errbuf);
+		return (-1);
+	}
+
+	version = zpool_get_prop_int(zhp, ZPOOL_PROP_VERSION, NULL);
+	if ((realprops = vdev_valid_proplist(zhp->zpool_hdl, nvl,
+	    version, flags, errbuf)) == NULL) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	nvlist_free(nvl);
+	nvl = realprops;
+
+	/*
+	 * Execute the corresponding ioctl() to set this property.
+	 */
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+	zc.zc_guid = guid;
+
+	if (zcmd_write_src_nvlist(zhp->zpool_hdl, &zc, nvl) != 0) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	ret = zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_VDEV_SET_PROPS, &zc);
+
+	zcmd_free_nvlists(&zc);
+	nvlist_free(nvl);
+
+	if (ret)
+		(void) zpool_vprop_standard_error(zhp->zpool_hdl,
+		    errno, errbuf);
+
+	return (ret);
+}
+
+/*
+ * Set vdev properties nvlist
+ */
+int
+vdev_set_proplist(zpool_handle_t *zhp, const char *vdev, nvlist_t *nvl)
+{
+	zfs_cmd_t zc = { 0 };
+	int ret = -1;
+	char errbuf[1024];
+	nvlist_t *realprops;
+	uint64_t version;
+	uint64_t guid;
+	prop_flags_t flags = { 0 };
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+
+	assert(nvl != NULL);
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot set property for '%s'"),
+	    zhp->zpool_name);
+
+	if (vdev_get_guid(zhp, vdev, &guid) != 0) {
+		(void) zfs_error(hdl, EZFS_BADDEV, errbuf);
+		return (-1);
+	}
+
+	version = zpool_get_prop_int(zhp, ZPOOL_PROP_VERSION, NULL);
+	if ((realprops = vdev_valid_proplist(zhp->zpool_hdl, nvl,
+	    version, flags, errbuf)) == NULL) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	nvlist_free(nvl);
+	nvl = realprops;
+
+	/*
+	 * Execute the corresponding ioctl() to set this property.
+	 */
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+	zc.zc_guid = guid;
+
+	if (zcmd_write_src_nvlist(hdl, &zc, nvl) != 0) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	ret = zfs_ioctl(hdl, ZFS_IOC_VDEV_SET_PROPS, &zc);
+
+	zcmd_free_nvlists(&zc);
+	nvlist_free(nvl);
+
+	if (ret)
+		(void) zpool_vprop_standard_error(hdl, errno, errbuf);
+
+	return (ret);
+}
+
+typedef struct vdev_cb {
+	zpool_handle_t		*vcb_zhp;
+	char			*vcb_name;
+	uint64_t		vcb_guid;
+	boolean_t		vcb_is_leaf;
+	boolean_t		vcb_success;
+	void			*vcb_data;
+} vdev_cb_t;
+
+typedef int (*vdev_callback_t)(vdev_cb_t *);
+
+/*
+ * Invoke dev_callback for all vdevs in the pool
+ */
+int
+for_each_vdev(zpool_handle_t *zhp, nvlist_t *root,
+    vdev_callback_t vdev_callback, vdev_cb_t *cb)
+{
+	int ret = 0;
+	nvlist_t *config, *nvroot, **child, **child_list;
+	uint32_t children, child_children, c;
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+
+	if (!root) {
+		config = zpool_get_config(zhp, NULL);
+		verify(nvlist_lookup_nvlist(config, ZPOOL_CONFIG_VDEV_TREE,
+		    &nvroot) == 0);
+	} else {
+		nvroot = root;
+	}
+
+	if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_CHILDREN,
+	    &child, &children) != 0) {
+		(void) fprintf(stderr, gettext("Failed to get the vdev "
+		    "children details from the root nvlist\n"));
+		return (-1);
+	}
+
+	cb->vcb_zhp = zhp;
+	for (c = 0; c < children; c++) {
+		cb->vcb_is_leaf = B_TRUE;
+		if (nvlist_lookup_nvlist_array(child[c], ZPOOL_CONFIG_CHILDREN,
+		    &child_list, &child_children) == 0 &&
+		    child_children > 0) {
+			ret = for_each_vdev(zhp, child[c], vdev_callback, cb);
+			if (ret)
+				return (ret);
+			cb->vcb_is_leaf = B_FALSE;
+		}
+
+		cb->vcb_name = zpool_vdev_name(hdl, NULL, child[c], B_TRUE);
+		verify(nvlist_lookup_uint64(child[c], ZPOOL_CONFIG_GUID,
+		    &cb->vcb_guid) == 0);
+
+		ret |= vdev_callback(cb);
+		free(cb->vcb_name);
+		if (ret)
+			return (ret);
+	}
+
+	return (0);
+}
+
+int
+get_vdev_guid_callback(vdev_cb_t *cb)
+{
+	if (!cb->vcb_is_leaf)
+		return (0);
+
+	if (strncmp(cb->vcb_name, (char *)cb->vcb_data,
+	    strlen(cb->vcb_name)) == 0) {
+		cb->vcb_success = B_TRUE;
+	}
+
+	return (0);
+}
+
+/*
+ * Class of Storage (COS)
+ */
+/*ARGSUSED*/
+static nvlist_t *
+cos_valid_proplist(libzfs_handle_t *hdl, nvlist_t *props,
+    uint64_t version, prop_flags_t flags, const char *errbuf)
+{
+	nvpair_t *elem;
+	nvlist_t *retprops;
+	cos_prop_t prop;
+	char *strval;
+	uint64_t intval;
+
+	if (nvlist_alloc(&retprops, NV_UNIQUE_NAME, 0) != 0) {
+		(void) no_memory(hdl);
+		return (NULL);
+	}
+
+	elem = NULL;
+	while ((elem = nvlist_next_nvpair(props, elem)) != NULL) {
+		const char *propname = nvpair_name(elem);
+
+		/*
+		 * Make sure this property is valid and applies to this type.
+		 */
+		if ((prop = cos_name_to_prop(propname)) == ZPROP_INVAL) {
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "invalid cos property '%s'"), propname);
+			(void) zfs_error(hdl, EZFS_BADPROP, errbuf);
+			goto error;
+		}
+
+		if (cos_prop_readonly(prop)) {
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN, "'%s' "
+			    "is readonly"), propname);
+			(void) zfs_error(hdl, EZFS_PROPREADONLY, errbuf);
+			goto error;
+		}
+
+		if (zprop_parse_value(hdl, elem, prop, ZFS_TYPE_COS, retprops,
+		    &strval, &intval, errbuf) != 0)
+			goto error;
+
+		/*
+		 * Perform additional checking for specific properties.
+		 */
+		switch (prop) {
+		case COS_PROP_PREFERRED_READ:
+			if (intval > 100) {
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+				    "'%s' must be from 0 to 100"), propname);
+				(void) zfs_error(hdl, EZFS_BADPROP,
+				    errbuf);
+				goto error;
+			}
+			break;
+		case COS_PROP_READ_MINACTIVE:
+		case COS_PROP_AREAD_MINACTIVE:
+		case COS_PROP_WRITE_MINACTIVE:
+		case COS_PROP_AWRITE_MINACTIVE:
+		case COS_PROP_SCRUB_MINACTIVE:
+		case COS_PROP_READ_MAXACTIVE:
+		case COS_PROP_AREAD_MAXACTIVE:
+		case COS_PROP_WRITE_MAXACTIVE:
+		case COS_PROP_AWRITE_MAXACTIVE:
+		case COS_PROP_SCRUB_MAXACTIVE:
+			if (intval > 1000) {
+				zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+				    "'%s' must be from 0 to 1000"), propname);
+				(void) zfs_error(hdl, EZFS_BADPROP,
+				    errbuf);
+				goto error;
+			}
+			break;
+		default:
+			break;
+		}
+	}
+
+	return (retprops);
+error:
+	nvlist_free(retprops);
+	return (NULL);
+}
+
+int
+cos_alloc(zpool_handle_t *zhp, char *cosname, nvlist_t *nvl)
+{
+	zfs_cmd_t zc = { 0 };
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+	char errbuf[1024];
+	int error = 0;
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot allocate CoS descriptor for '%s'"),
+	    zhp->zpool_name);
+
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+	(void) strlcpy(zc.zc_string, cosname, sizeof (zc.zc_string));
+
+	if (zcmd_write_src_nvlist(zhp->zpool_hdl, &zc, nvl) != 0) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	error = ioctl(hdl->libzfs_fd, ZFS_IOC_COS_ALLOC, &zc);
+
+	if (error)
+		(void) zpool_vprop_standard_error(hdl, errno, errbuf);
+
+	return (error);
+}
+
+int
+cos_free(zpool_handle_t *zhp, char *cosname, uint64_t guid, boolean_t force)
+{
+	zfs_cmd_t zc = { 0 };
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+	char errbuf[1024];
+	int error = 0;
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot free CoS descriptor for '%s'"),
+	    zhp->zpool_name);
+
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+	(void) strlcpy(zc.zc_string, cosname, sizeof (zc.zc_string));
+	zc.zc_guid = guid;
+
+	zc.zc_cookie = (uint64_t)force;
+
+	error = ioctl(hdl->libzfs_fd, ZFS_IOC_COS_FREE, &zc);
+
+	if (error)
+		(void) zpool_vprop_standard_error(hdl, errno, errbuf);
+
+	return (error);
+}
+
+int
+cos_list(zpool_handle_t *zhp, nvlist_t **nvp)
+{
+	zfs_cmd_t zc = { 0 };
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+
+	if (zcmd_alloc_dst_nvlist(hdl, &zc, 0) != 0)
+		return (-1);
+
+	while (ioctl(hdl->libzfs_fd, ZFS_IOC_COS_LIST, &zc) != 0) {
+		if (errno == ENOMEM) {
+			if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
+				zcmd_free_nvlists(&zc);
+				return (-1);
+			}
+		} else {
+			zcmd_free_nvlists(&zc);
+			return (-1);
+		}
+	}
+
+	if (zcmd_read_dst_nvlist(hdl, &zc, nvp) != 0) {
+		zcmd_free_nvlists(&zc);
+		return (-1);
+	}
+
+	zcmd_free_nvlists(&zc);
+
+	return (0);
+}
+
+int
+cos_get_all_props(zpool_handle_t *zhp, const char *cos, nvlist_t **nvp)
+{
+	uint64_t cos_id;
+	zfs_cmd_t zc = { 0 };
+	libzfs_handle_t *hdl = zhp->zpool_hdl;
+	char *endp;
+	char errbuf[1024];
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot set property for '%s'"),
+	    zhp->zpool_name);
+
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+
+	if (zcmd_alloc_dst_nvlist(hdl, &zc, 0) != 0)
+		return (-1);
+
+	cos_id = strtoll(cos, &endp, 10);
+	zc.zc_guid = cos_id;
+	if (cos_id == 0 && cos == endp)
+		(void) strlcpy(zc.zc_string, cos, sizeof (zc.zc_string));
+	else
+		zc.zc_string[0] = '\0';
+
+	while (ioctl(hdl->libzfs_fd, ZFS_IOC_COS_GET_PROPS, &zc) != 0) {
+		if (errno == ENOMEM) {
+			if (zcmd_expand_dst_nvlist(hdl, &zc) != 0) {
+				zcmd_free_nvlists(&zc);
+				return (-1);
+			}
+		} else {
+			zcmd_free_nvlists(&zc);
+			(void) zpool_standard_error(hdl, errno, errbuf);
+			return (-1);
+		}
+	}
+
+	if (zcmd_read_dst_nvlist(hdl, &zc, nvp) != 0) {
+		zcmd_free_nvlists(&zc);
+		return (-1);
+	}
+
+	zcmd_free_nvlists(&zc);
+
+	return (0);
+}
+
+int
+cos_get_prop(zpool_handle_t *zhp,  const char *cos, cos_prop_t prop,
+    char *buf, size_t len, nvlist_t **nvp)
+{
+	uint64_t intval;
+	const char *strval;
+	nvlist_t *nvl;
+	char errbuf[1024];
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot set property for '%s'"),
+	    zhp->zpool_name);
+
+	assert(nvp != NULL);
+
+	if (zpool_get_state(zhp) == POOL_STATE_UNAVAIL)
+		return (-1);
+
+	if (*nvp == NULL && cos_get_all_props(zhp, cos, nvp) != 0)
+		return (-1);
+	nvl = *nvp;
+
+	switch (cos_prop_get_type(prop)) {
+	case PROP_TYPE_STRING:
+		if (nvlist_lookup_string(nvl, cos_prop_to_name(prop),
+		    (char **)&strval) != 0)
+			if ((strval = (char *)cos_prop_default_string(prop))
+			    == NULL)
+				strval = "-";
+
+		(void) strlcpy(buf, strval, len);
+		break;
+
+	case PROP_TYPE_NUMBER:
+		if (nvlist_lookup_uint64(nvl, cos_prop_to_name(prop),
+		    &intval) != 0)
+			intval = cos_prop_default_numeric(prop);
+		(void) snprintf(buf, len, "%llu", (u_longlong_t)intval);
+		break;
+
+	case PROP_TYPE_INDEX:
+		if (nvlist_lookup_uint64(nvl, cos_prop_to_name(prop),
+		    &intval) != 0)
+			intval = cos_prop_default_numeric(prop);
+		if (cos_prop_index_to_string(prop, intval, &strval) != 0) {
+			(void) zfs_error(zhp->zpool_hdl, EZFS_BADPROP, errbuf);
+			return (-1);
+		}
+		(void) strlcpy(buf, strval, len);
+		break;
+
+	default:
+		abort();
+	}
+
+	return (0);
+}
+
+/*
+ * Set cos properties nvlist
+ */
+int
+cos_set_proplist(zpool_handle_t *zhp, const char *cos, nvlist_t *nvl)
+{
+	zfs_cmd_t zc = { 0 };
+	int ret = -1;
+	char errbuf[1024];
+	char *endp;
+	nvlist_t *realprops;
+	uint64_t version;
+	uint64_t cos_id;
+	prop_flags_t flags = { 0 };
+
+	assert(nvl != NULL);
+
+	(void) snprintf(errbuf, sizeof (errbuf),
+	    dgettext(TEXT_DOMAIN, "cannot set property for '%s'"),
+	    zhp->zpool_name);
+
+	version = zpool_get_prop_int(zhp, ZPOOL_PROP_VERSION, NULL);
+	if ((realprops = cos_valid_proplist(zhp->zpool_hdl, nvl,
+	    version, flags, errbuf)) == NULL) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	nvlist_free(nvl);
+	nvl = realprops;
+
+	/*
+	 * Execute the corresponding ioctl() to set this property.
+	 */
+	(void) strlcpy(zc.zc_name, zhp->zpool_name, sizeof (zc.zc_name));
+
+	cos_id = strtoll(cos, &endp, 10);
+	zc.zc_guid = cos_id;
+	if (cos_id == 0 && cos == endp)
+		(void) strlcpy(zc.zc_string, cos, sizeof (zc.zc_string));
+	else
+		zc.zc_string[0] = '\0';
+
+	if (zcmd_write_src_nvlist(zhp->zpool_hdl, &zc, nvl) != 0) {
+		nvlist_free(nvl);
+		return (-1);
+	}
+
+	ret = zfs_ioctl(zhp->zpool_hdl, ZFS_IOC_COS_SET_PROPS, &zc);
+
+	zcmd_free_nvlists(&zc);
+	nvlist_free(nvl);
+
+	if (ret)
+		(void) zpool_vprop_standard_error_fmt(zhp->zpool_hdl,
+		    errno, errbuf);
+
 	return (ret);
 }

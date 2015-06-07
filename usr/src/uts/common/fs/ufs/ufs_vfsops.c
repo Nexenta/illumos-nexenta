@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -812,7 +815,6 @@ mountfs(struct vfs *vfsp, enum whymountroot why, struct vnode *devvp,
 	kmutex_t *ihm;
 	int elapsed;
 	int status;
-	extern	int	maxphys;
 
 	if (args_len == sizeof (struct ufs_args) && raw_argsp)
 		flags = ((struct ufs_args *)raw_argsp)->flags;

@@ -223,9 +223,28 @@ secondary_cache_changed_cb(void *arg, uint64_t newval)
 	 * Inheritance and range checking should have been done by now.
 	 */
 	ASSERT(newval == ZFS_CACHE_ALL || newval == ZFS_CACHE_NONE ||
-	    newval == ZFS_CACHE_METADATA);
+	    newval == ZFS_CACHE_METADATA || newval == ZFS_CACHE_DATA);
 
 	os->os_secondary_cache = newval;
+}
+
+static void
+special_class_changed_cb(void *arg, uint64_t newval)
+{
+	objset_t *os = arg;
+
+	ASSERT(newval == SPA_SPECIALCLASS_ZIL ||
+	    newval == SPA_SPECIALCLASS_META);
+
+	spa_set_specialclass(os->os_spa, os, newval);
+}
+
+static void
+zpl_placement_changed_cb(void *arg, uint64_t newval)
+{
+	objset_t *os = arg;
+
+	os->os_zpl_meta_to_special = newval;
 }
 
 static void
@@ -370,6 +389,12 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 			    zfs_prop_to_name(ZFS_PROP_SECONDARYCACHE),
 			    secondary_cache_changed_cb, os);
 		}
+		if (err == 0)
+			err = dsl_prop_register(ds, "specialclass",
+			    special_class_changed_cb, os);
+		if (err == 0)
+			err = dsl_prop_register(ds, "zpl_to_metadev",
+			    zpl_placement_changed_cb, os);
 		if (!ds->ds_is_snapshot) {
 			if (err == 0) {
 				err = dsl_prop_register(ds,
@@ -430,6 +455,8 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 		os->os_sync = ZFS_SYNC_STANDARD;
 		os->os_primary_cache = ZFS_CACHE_ALL;
 		os->os_secondary_cache = ZFS_CACHE_ALL;
+		spa_set_specialclass(os->os_spa, os, SPA_SPECIALCLASS_META);
+		os->os_zpl_meta_to_special = 0;
 	}
 
 	if (ds == NULL || !ds->ds_is_snapshot)
@@ -640,7 +667,7 @@ dmu_objset_evict_dbufs(objset_t *os)
 			list_insert_after(&os->os_dnodes, dn, &dn_marker);
 			mutex_exit(&os->os_lock);
 
-			dnode_evict_dbufs(dn);
+			dnode_evict_dbufs(dn, DBUF_EVICT_ALL);
 			dnode_rele(dn, FTAG);
 
 			mutex_enter(&os->os_lock);
@@ -653,10 +680,10 @@ dmu_objset_evict_dbufs(objset_t *os)
 	mutex_exit(&os->os_lock);
 
 	if (DMU_USERUSED_DNODE(os) != NULL) {
-		dnode_evict_dbufs(DMU_GROUPUSED_DNODE(os));
-		dnode_evict_dbufs(DMU_USERUSED_DNODE(os));
+		dnode_evict_dbufs(DMU_GROUPUSED_DNODE(os), DBUF_EVICT_ALL);
+		dnode_evict_dbufs(DMU_USERUSED_DNODE(os), DBUF_EVICT_ALL);
 	}
-	dnode_evict_dbufs(DMU_META_DNODE(os));
+	dnode_evict_dbufs(DMU_META_DNODE(os), DBUF_EVICT_ALL);
 }
 
 /*
@@ -713,6 +740,10 @@ dmu_objset_evict(objset_t *os)
 		VERIFY0(dsl_prop_unregister(ds,
 		    zfs_prop_to_name(ZFS_PROP_SECONDARYCACHE),
 		    secondary_cache_changed_cb, os));
+		VERIFY(0 == dsl_prop_unregister(ds, "specialclass",
+		    special_class_changed_cb, os));
+		VERIFY(0 == dsl_prop_unregister(ds, "zpl_to_metadev",
+		    zpl_placement_changed_cb, os));
 	}
 
 	if (os->os_sa)

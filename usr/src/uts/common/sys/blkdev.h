@@ -96,6 +96,11 @@ struct bd_xfer {
 };
 
 #define	BD_XFER_POLL		(1U << 0)	/* no interrupts (dump) */
+#define	BD_XFER_MHD_TKOWN	(1U << 1)
+#define	BD_XFER_MHD_RELEASE	(1U << 2)
+#define	BD_XFER_MHD_STATUS	(1U << 3)
+#define	BD_XFER_MHD_QRESERVE	(1U << 4)
+#define	BD_XFER_MHD_ENFAILFAST	(1U << 5)
 
 struct bd_drive {
 	uint32_t		d_qsize;
@@ -139,6 +144,7 @@ struct bd_ops {
 	int	(*o_sync_cache)(void *, bd_xfer_t *);
 	int	(*o_read)(void *, bd_xfer_t *);
 	int	(*o_write)(void *, bd_xfer_t *);
+	int	(*o_reserve)(void *, bd_xfer_t *);
 };
 
 #define	BD_OPS_VERSION_0		0

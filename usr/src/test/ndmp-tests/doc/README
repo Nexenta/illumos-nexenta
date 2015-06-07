@@ -1,0 +1,269 @@
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+#
+# BSD 3 Clause License
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#       - Redistributions of source code must retain the above copyright
+#         notice, this list of conditions and the following disclaimer.
+#
+#       - Redistributions in binary form must reproduce the above copyright
+#         notice, this list of conditions and the following disclaimer in
+#         the documentation and/or other materials provided with the
+#         distribution.
+#
+#       - Neither the name of Sun Microsystems, Inc. nor the
+#         names of its contributors may be used to endorse or promote products
+#         derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY SUN MICROSYSTEMS, INC. "AS IS" AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL SUN MICROSYSTEMS, INC. BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+#
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+#
+
+DESCRIPTION
+===========
+This is the NDMP (Network Data Management Protocol) Protocol test suite.
+It automates protocol testing of NDMP server.
+
+
+PREREQUISITES
+=============
+1. A tape library is required. 
+2. The CTI-TET test harness lite package SUNWstc-tetlite is required.
+   You can find the package on the OpenSolaris Test Consolidation:
+   http://www.opensolaris.org/os/community/testing/testsuites/ctifortet/
+
+
+CTI-TET INSTALLATION
+====================
+In the majority of cases, the CTI-TET lite harness can be installed
+from packages.  Installation is via the standard Solaris package 
+installation tool, pkgadd(1M).  The package is named SUNWstc-tetlite
+and it installs into "/opt" by default.
+
+To install SUNWstc-tetlite, enter the following command: 
+
+    root# pkgadd -d <package_location> SUNWstc-tetlite
+
+where <package_location> is the path containing the SUNWstc-tetlite
+package directory.  'root#' indicates that this command must be run
+as root.
+
+o It is recommended that SUNWstc-tetlite be installed from scratch,
+  rather than on top of an existing installation.  Thus, if a copy
+  of SUNWstc-tetlite is already installed, remove it:
+
+    root# pkgrm SUNWstc-tetlite
+
+
+TEST SUITE INSTALLATION
+=======================
+In the majority of cases, the test suite can be installed from packages.
+The package is called SUNWstc-storage-ndmp-protocol and it installs into
+"/opt" by default.  Installation is via the standard Solaris package
+installation tool, pkgadd(1M).  To install SUNWstc-storage-ndmp-protocol,
+enter the following command:
+
+    root# pkgadd -d <package_location> SUNWstc-storage-ndmp-protocol
+
+where <package_location> is the path containing the ndmp-protocol test
+suite package directory.
+
+It is recommended that the test suite package be installed from scratch,
+rather than on top of an existing installation.  Thus, if a version of
+the test suite package is already installed, first remove it:
+
+    root# pkgrm SUNWstc-storage-ndmp-protocol
+
+It is acceptable to use an NFS-accessible installation of the test suite.
+
+ALTERNATIVELY, the test suite souce code can be installed and the test
+suite package can be built from source.  This is optional.  Instructions
+for building the test suite are provided in the section titled "BUILDING
+TEST SUITE (OPTIONAL)".
+
+
+TEST SUITE CONFIGURATION
+========================
+Test suite configuration must be performed as 'root'.
+
+1. Set the following environment variables
+
+	export TET_ROOT=/opt/SUNWstc-tetlite
+	export CTI_ROOT=$TET_ROOT/contrib/ctitools
+	export PATH=$PATH:$CTI_ROOT/bin
+	export TET_SUITE_ROOT=/opt/SUNWstc-storage-ndmp-protocol
+
+The values used above for the different variables are for example only.
+Make sure to substitute the correct directory paths based on the actual
+install locations of SUNWstc-tetlite and SUNWstc-storage-ndmp-protocol
+
+2. To configure the test suite
+
+a. run the following command with the option to configure the test suite 
+
+	root# run_test -v NDMP_SERVER_IP=<ip-address> \
+		-v NDMP_USER=<User Name> -v NDMP_PASSWORD=<password> \
+		-v NDMP_AUTH=NDMP_AUTH_TEXT -v NDMP_TAPE_DEV=<tape dev> \
+		-v NDMP_ROBOT=<tape changer> ndmp/protocol configure \
+		-v NDMP_FS=<NDMP server File system to backup>
+	
+	Example: run_test -v NDMP_SERVER_IP=10.12.178.122 -v NDMP_USER=admin 
+		  -v NDMP_PASSWORD=admin -v NDMP_AUTH=NDMP_AUTH_TEXT 
+		  -v NDMP_TAPE_DEV=/dev/rmt/0n 
+		  -v NDMP_ROBOT=/dev/scsi/changer/c1t210000E08B86CCAFd2
+		  -v NDMP_FS=/var/log/
+		  ndmp/protocol configure
+
+3. Configuration the NDMP server machine.
+
+a. Create an NDMP admin user on the ndmp server:
+	root# ndmpadm enable -a <auth-type> <-u username>
+
+   For example
+	root# ndmpadm enable -a cleartext -u admin
+
+   A password will be required; please enter 'admin' as password. 
+
+b. Configure a tape library on the NDMP server machine.
+
+   Get the device mappings on the NDMP server by issuing:
+	root# ndmpadm show-devices
+
+Make sure that tape-device has a tape loaded in the drive and is not busy.
+The following command displays the status of the magnetic tape drive
+
+	root# mt -f <device-name> status
+
+
+TEST SUITE EXECUTION
+====================
+The test suite must be executed as root.
+
+If not already done, from the configuration phase, do the following to 
+set the environmental variables:
+
+Using NDMP Protocol test suite  package:
+	export TET_ROOT=/opt/SUNWstc-tetlite
+	export CTI_ROOT=$TET_ROOT/contrib/ctitools
+	export PATH=$PATH:$CTI_ROOT/bin
+	export TET_SUITE_ROOT=/opt/SUNWstc-storage-ndmp-protocol
+
+Once again, the values used above are for example only.  Please make
+sure to set the correct values based on the actual install location
+of SUNWstc-tetlite and SUNWstc-storage-ndmp-protocol
+
+To run the entire test suite do the following:
+
+    root# run_test ndmp/protocol 
+
+To run all the test purposes:
+
+    root# run_test ndmp/protocol all
+
+To execute individual scenarios, run:
+    root# run_test ndmp/protocol <scenario>
+For example:
+    root# run_test ndmp/protocol MOVER
+
+To execute a Test Purpose within a scenario, run:
+    root# run_test ndmp/protocol \
+			<scenario>/<test case dir>:<test purpose number>
+For example:
+    root# run_test ndmp/protocol MOVER/tp_MOVER_ABORT_ISE
+
+Test case directories are CONFIG, DATA, POST, SCSI, MOVER and TAPE.
+The log file will be located in /var/tmp/tests directory.
+
+
+Note: You can define customized test scenarios by adding entries to 
+the test scenario file: $TET_SUITE_ROOT/ndmp/protocol/tet_scen.
+
+For how to edit the test scenario file, refer to the TET user guide at: 
+        http://tetworks.opengroup.org/tet/
+
+TEST SUITE UNCONFIGURATION
+==========================
+The test suite must be unconfigured as root.
+    root# run_test ndmp/protocol unconfigure
+
+BUILDING THE TEST SUITE (OPTIONAL)
+=================================
+The following pre-requisites must be satisfied before the test
+suite can be successfully built from source.
+
+. Sun Solaris 10 and above Operating System is required.
+. Sun Studio 11 should be installed
+. Perl 5.8.4 should be installed
+. /usr/ccs/bin/make should be used for making
+
+Executing tests using precompiled test suite packages is the method we
+strongly recommend.  However, if, for some reason, you need to build
+test suite binaries from source, simply do the following:
+
+1. Install SUNWstc-tetlite (see instructions earlier in this file)
+2. Obtain the ndmp protocol test suite source
+3. Build Test Suite Binaries
+
+(a)  Install SUNWstc-tetlite
+
+Install the precompiled SUNWstc-tetlite package.  Detailed instructions
+are provided earlier in this file.
+
+(b) Obtain the ndmp-protocol test suite source
+
+Obtain the test suite source code from your source code repository
+which will contain the following directory structure
+        <WS_ROOT>/usr/src/suites/storage/ndmp/protocol
+
+where <WS_ROOT> is the root of the workspace under which the
+ndmp-protocol test suite resides.
+
+(c) Build Test Suite Binaries
+
+Building test suite binaries does not need 'root' permissions.
+
+	user$ export TET_ROOT=/opt/SUNWstc-tetlite
+	user$ export CTI_ROOT=$TET_ROOT/contrib/ctitools
+	user$ export PATH=$PATH:$CTI_ROOT/bin
+	user$ export TET_SUITE_ROOT=<WS_ROOT>/usr/src/suites/storage/
+	user$ cd <WS_ROOT>/usr/src/suites/storage/ndmp/protocol
+
+where <WS_ROOT> is the root of the workspace under which the 
+ndmp-protocol test suite resides.  Use 'make' to compile the source:
+
+	user$ make
+	...
+	... (many lines of 'make' and shell output ensue)
+	...
+
+The above command, if successful, will build the test suite 'proto'
+directory.  After a successful build, the proto area can be used to 
+construct the test suite package:
+
+	user$ make package
+
+This will build the package supported by the current machine's system
+architecure (e.g., if building on an x64 system, packages relevant to
+the "i386" architecture will be built.)
+
+Once the test suite package has been built, install the package as
+instructed in the section "TEST SUITE INSTALLATION" in order to 
+install the test suite.
+

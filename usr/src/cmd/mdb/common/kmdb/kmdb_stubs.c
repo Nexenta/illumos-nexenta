@@ -20,6 +20,7 @@
  */
 /*
  * Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -62,6 +63,15 @@ pid_t
 getpid(void)
 {
 	return (1);
+}
+
+void
+__assert(const char *statement, const char *file, int line)
+{
+	(void) mdb_printf("ASSERT at %s, File: %s, Line: %d\n",
+	    statement ? statement : "<empty>",
+	    file ? file : "<empty>", line);
+	exit(1);
 }
 
 /*

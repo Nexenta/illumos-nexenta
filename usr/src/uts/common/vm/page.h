@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1986, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -674,7 +675,7 @@ extern	pgcnt_t	total_pages;		/* total pages in the system */
 /*
  * Variables controlling locking of physical memory.
  */
-extern	pgcnt_t	pages_pp_maximum;	/* tuning: lock + claim <= max */
+extern	volatile pgcnt_t pages_pp_maximum; /* tuning: lock + claim <= max */
 extern	void init_pages_pp_maximum(void);
 
 struct lgrp;

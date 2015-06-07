@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /* Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T */
@@ -1582,7 +1583,7 @@ extern struct nfs4_callback_globals	*nfs4_get_callback_globals(void);
 
 extern struct nfs4_server nfs4_server_lst;
 
-extern clock_t nfs_write_error_interval;
+extern volatile clock_t nfs_write_error_interval;
 
 #endif /* _KERNEL */
 

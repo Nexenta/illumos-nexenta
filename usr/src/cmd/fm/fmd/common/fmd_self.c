@@ -202,8 +202,8 @@ self_init(fmd_hdl_t *hdl)
 	 * which all change when it restarts, so don't bother w/ checkpointing.
 	 */
 	(void) pthread_mutex_lock(&mp->mod_stats_lock);
-	mp->mod_stats->ms_ckpt_save.fmds_value.bool = FMD_B_FALSE;
-	mp->mod_stats->ms_ckpt_restore.fmds_value.bool = FMD_B_FALSE;
+	mp->mod_stats->ms_ckpt_save.fmds_value.b = FMD_B_FALSE;
+	mp->mod_stats->ms_ckpt_restore.fmds_value.b = FMD_B_FALSE;
 	(void) pthread_mutex_unlock(&mp->mod_stats_lock);
 
 	if (fmd_hdl_register(hdl, FMD_API_VERSION, &info) != 0)

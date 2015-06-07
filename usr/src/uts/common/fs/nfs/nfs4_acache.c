@@ -23,8 +23,9 @@
  * Copyright 2004 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <nfs/nfs.h>
 #include <nfs/nfs4.h>
@@ -36,7 +37,8 @@
  * Access cache
  */
 static acache4_hash_t *acache4;
-static long nacache;    /* used strictly to size the number of hash queues */
+extern volatile long nacache;	/* used strictly to size the number of hash */
+				/* queues */
 
 static int acache4size;
 static int acache4mask;

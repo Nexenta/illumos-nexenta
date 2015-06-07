@@ -24,7 +24,7 @@
  */
 /* Copyright (c) 2013 by Saso Kiselkov. All rights reserved. */
 /* Copyright (c) 2013, Joyent, Inc. All rights reserved. */
-/* Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2015 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/dmu.h>
 #include <sys/dmu_impl.h>
@@ -45,11 +45,13 @@
 #include <sys/zio_checksum.h>
 #include <sys/zio_compress.h>
 #include <sys/sa.h>
+#include <sys/spa_impl.h>
 #include <sys/zfeature.h>
 #ifdef _KERNEL
 #include <sys/vmsystm.h>
 #include <sys/zfs_znode.h>
 #endif
+#include <sys/special.h>
 
 /*
  * Enable/disable nopwrite feature.
@@ -110,7 +112,9 @@ const dmu_object_type_info_t dmu_ot[DMU_OT_NUMTYPES] = {
 	{	DMU_BSWAP_ZAP,		TRUE,	"DSL deadlist map"	},
 	{	DMU_BSWAP_UINT64,	TRUE,	"DSL deadlist map hdr"	},
 	{	DMU_BSWAP_ZAP,		TRUE,	"DSL dir clones"	},
-	{	DMU_BSWAP_UINT64,	TRUE,	"bpobj subobj"		}
+	{	DMU_BSWAP_UINT64,	TRUE,	"bpobj subobj"		},
+	{	DMU_BSWAP_UINT8,	TRUE,	"cos props"		},
+	{	DMU_BSWAP_UINT64,	TRUE,	"cos props size"	},
 };
 
 const dmu_object_byteswap_info_t dmu_ot_byteswap[DMU_BSWAP_NUMFUNCS] = {
@@ -647,6 +651,9 @@ dmu_free_long_range_impl(objset_t *os, dnode_t *dn, uint64_t offset,
 
 	if (offset >= object_size)
 		return (0);
+
+	if (length == DMU_OBJECT_END && offset == 0)
+		dnode_evict_dbufs(dn, 0);
 
 	if (length == DMU_OBJECT_END || offset + length > object_size)
 		length = object_size - offset;
@@ -1525,6 +1532,12 @@ dmu_sync_late_arrival(zio_t *pio, objset_t *os, dmu_sync_cb_t *done, zgd_t *zgd,
  *		the error will be reported to the done callback and
  *		propagated to pio from zio_done().
  */
+
+/*
+ * Tunable: when syncing to disk in wrcache mode, write to special class vdevs
+ */
+boolean_t dmu_write_to_special = 1;
+
 int
 dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 {
@@ -1537,6 +1550,7 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	zbookmark_phys_t zb;
 	zio_prop_t zp;
 	dnode_t *dn;
+	int flags = 0;
 
 	ASSERT(pio != NULL);
 	ASSERT(txg != 0);
@@ -1544,9 +1558,13 @@ dmu_sync(zio_t *pio, uint64_t txg, dmu_sync_cb_t *done, zgd_t *zgd)
 	SET_BOOKMARK(&zb, ds->ds_object,
 	    db->db.db_object, db->db_level, db->db_blkid);
 
+	/* write to special only if proper conditions hold */
+	if (dmu_write_to_special && spa_write_data_to_special(os->os_spa, os)) {
+		WP_SET_SPECIALCLASS(flags, B_TRUE);
+	}
 	DB_DNODE_ENTER(db);
 	dn = DB_DNODE(db);
-	dmu_write_policy(os, dn, db->db_level, WP_DMU_SYNC, &zp);
+	dmu_write_policy(os, dn, db->db_level, flags | WP_DMU_SYNC, &zp);
 	DB_DNODE_EXIT(db);
 
 	/*
@@ -1729,6 +1747,7 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 	boolean_t nopwrite = B_FALSE;
 	boolean_t dedup_verify = os->os_dedup_verify;
 	int copies = os->os_copies;
+	spa_t *spa = os->os_spa;
 
 	/*
 	 * We maintain different write policies for each of the following
@@ -1810,14 +1829,27 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp, zio_prop_t *zp)
 		    compress != ZIO_COMPRESS_OFF && zfs_nopwrite_enabled);
 	}
 
+	zp->zp_usesc = WP_GET_SPECIALCLASS(wp);
 	zp->zp_checksum = checksum;
+	zp->zp_os_checksum = os->os_checksum;
 	zp->zp_compress = compress;
 	zp->zp_type = (wp & WP_SPILL) ? dn->dn_bonustype : type;
 	zp->zp_level = level;
 	zp->zp_copies = MIN(copies, spa_max_replication(os->os_spa));
 	zp->zp_dedup = dedup;
 	zp->zp_dedup_verify = dedup && dedup_verify;
+	zp->zp_metadata = ismd;
 	zp->zp_nopwrite = nopwrite;
+	zp->zp_specflags = spa_specialclass_flags(os);
+	zp->zp_zpl_meta_to_special = os->os_zpl_meta_to_special;
+
+	/* explicitly control the number for copies for DDT */
+	if (DMU_OT_IS_DDT_META(type) && (spa->spa_ddt_meta_copies > 0))
+		zp->zp_copies =
+		    MIN(spa->spa_ddt_meta_copies, spa_max_replication(spa));
+
+	DTRACE_PROBE2(dmu_wp, boolean_t, zp->zp_metadata,
+	    boolean_t, zp->zp_usesc);
 }
 
 int

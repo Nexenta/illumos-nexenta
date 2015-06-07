@@ -23,11 +23,12 @@
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #ifndef	_SYS_CLOCK_TICK_H
 #define	_SYS_CLOCK_TICK_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include <sys/types.h>
 #include <sys/mutex.h>
@@ -108,7 +109,7 @@ extern void		sync_softint(cpuset_t);
 extern void		clock_tick(kthread_t *, int);
 extern void		membar_sync(void);
 
-extern int		hires_tick;
+extern volatile int	hires_tick;
 #endif	/* _KERNEL */
 
 #ifdef	__cplusplus

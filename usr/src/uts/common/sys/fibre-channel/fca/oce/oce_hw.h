@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Header file containing the command structures for Hardware
@@ -33,22 +38,41 @@ extern "C" {
 #endif
 
 #include <sys/types.h>
+#include "oce_sli4.h"
 
 #pragma pack(1)
 
 #define	OC_CNA_GEN2			0x2
 #define	OC_CNA_GEN3			0x3
+enum {
+	ASIC_REV_A0 = 0x0,
+	ASIC_REV_A1 = 0x1,
+	ASIC_REV_A2 = 0x2
+};
+#define	BE3_ASIC_REV_A0	((OC_CNA_GEN3<<8)| ASIC_REV_A0)
+#define	BE3_ASIC_REV_A1	((OC_CNA_GEN3<<8)| ASIC_REV_A1)
+#define	BE3_ASIC_REV_A2	((OC_CNA_GEN3<<8)| ASIC_REV_A2)
+
+#define	BE3_A1(dev)	(dev->asic_revision == BE3_ASIC_REV_A0 ||\
+    dev->asic_revision == BE3_ASIC_REV_A1)
+
 #define	DEVID_TIGERSHARK		0x700
 #define	DEVID_TOMCAT			0x710
+#define	DEVID_LANCER			0xe220
+
+#define	LANCER_CHIP(device)		(device->device_id == DEVID_LANCER)
+
 
 /* PCI CSR offsets */
-#define	PCICFG_F1_CSR			0x0 /* F1 for NIC */
-#define	PCICFG_SEMAPHORE		0xbc
-#define	PCICFG_SOFT_RESET		0x5c
-#define	PCICFG_UE_STATUS_HI_MASK	0xac
-#define	PCICFG_UE_STATUS_LO_MASK	0xa8
-#define	PCICFG_ONLINE0			0xb0
-#define	PCICFG_ONLINE1			0xb4
+#define	PCICFG_F1_CSR		0x0 /* F1 for NIC */
+#define	PCICFG_SEMAPHORE	0xbc
+#define	PCICFG_SOFT_RESET	0x5c
+#define	PCICFG_UE_STATUS_LO	0xA0	/* UE status low offset  */
+#define	PCICFG_UE_STATUS_HI	0xA4	/* UE status high offset */
+#define	PCICFG_UE_STATUS_LO_MASK	0xa8 /* Error mask - low */
+#define	PCICFG_UE_STATUS_HI_MASK	0xac /* Error mask - high */
+#define	PCICFG_ONLINE0		0xb0
+#define	PCICFG_ONLINE1		0xb4
 #define	INTR_EN				0x20000000
 #define	IMAGE_TRANSFER_SIZE		(32 * 1024) /* 32K at a time */
 
@@ -59,6 +83,20 @@ extern "C" {
 #define	HOSTINTR_MASK			(1 << 29)
 #define	HOSTINTR_PFUNC_SHIFT		26
 #define	HOSTINTR_PFUNC_MASK		7
+
+/*  Link Status CSR */
+#define	PCICFG_PCIE_LINK_STATUS_OFFSET			0xd0
+#define	PCIE_LINK_STATUS_SPEED_MASK				0xFF
+#define	PCIE_LINK_STATUS_SPEED_SHIFT			16
+#define	PCIE_LINK_STATUS_NEG_WIDTH_MASK			0x3F
+#define	PCIE_LINK_STATUS_NEG_WIDTH_SHIFT		20
+
+/*  Link Capability CSR */
+#define	PCICFG_PCIE_LINK_CAP_OFFSET				0xcc
+#define	PCIE_LINK_CAP_MAX_SPEED_MASK			0xFF
+#define	PCIE_LINK_CAP_MAX_SPEED_SHIFT			0
+#define	PCIE_LINK_CAP_MAX_WIDTH_MASK			0x3F
+#define	PCIE_LINK_CAP_MAX_WIDTH_SHIFT			4
 
 /* POST status reg struct */
 #define	POST_STAGE_POWER_ON_RESET	0x00
@@ -125,6 +163,7 @@ extern "C" {
 #define	MBX_RX_IFACE_FLAGS_MCAST_PROMISCUOUS	0x200
 #define	MBX_RX_IFACE_FLAGS_PASS_L2	0x400
 #define	MBX_RX_IFACE_FLAGS_PASS_L3L4	0x800
+#define	MBX_RX_IFACE_FLAGS_MCAST	0x1000
 
 #define	MQ_RING_CONTEXT_SIZE_16		0x5 /* (16 entries) */
 #define	MQ_RING_CONTEXT_SIZE_32		0x6 /* (32 entries) */
@@ -134,12 +173,35 @@ extern "C" {
 
 #define	MBX_DB_READY_BIT		0x1
 #define	MBX_DB_HI_BIT			0x2
-#define	ASYNC_EVENT_CODE_LINK_STATE	0x1
-#define	ASYNC_EVENT_LINK_UP		0x1
-#define	ASYNC_EVENT_LINK_DOWN		0x0
+/* Event bit map registered with mq */
+enum {
+	ASYNC_EVENT_CODE_LINK_STATE = 0x1,
+	ASYNC_EVENT_CODE_FCOE_FIP = 0x2,
+	ASYNC_EVENT_CODE_DCBX = 0x3,
+	ASYNC_EVENT_CODE_ISCSI = 0x4,
+	ASYNC_EVENT_CODE_GRP_5 = 0x5,
+	ASYNC_EVENT_CODE_DEBUG = 0x6
+};
 
-/* port link_status */
-#define	ASYNC_EVENT_LOGICAL		0x02
+/* Link events */
+enum {
+	ASYNC_EVENT_LINK_DOWN	= 0x0,
+	ASYNC_EVENT_LINK_UP	= 0x1,
+	ASYNC_EVENT_LOGICAL	= 0x02
+};
+
+/* GRP5 Events */
+enum {
+	ASYNC_EVENT_QOS_SPEED	=	0x1,
+	ASYNC_EVENT_COS_PRIORITY =	0x2,
+	ASYNC_EVENT_PVID_STATE	 =	0x3
+};
+
+/* Event Mask */
+#define	ASYNC_TRAILER_EVENT_CODE_SHIFT  8
+#define	ASYNC_TRAILER_EVENT_TYPE_SHIFT  16
+#define	ASYNC_TRAILER_EVENT_CODE_MASK   0xFF
+#define	ASYNC_TRAILER_EVENT_TYPE_MASK   0xFF
 
 /* Logical Link Status */
 #define	NTWK_LOGICAL_LINK_DOWN		0
@@ -151,8 +213,33 @@ extern "C" {
 #define	NTWK_RX_FILTER_UDP_CKSUM	0x4
 #define	NTWK_RX_FILTER_STRIP_CRC	0x8
 
+/* driver_function_capabilities */
+#define	DRVFN_CAPAB_SW_TIMESTAMPS	0x2
+#define	DRVFN_CAPAB_BE3_NATIVE		0x4
+
+/* Function Capabilities */
+#define	BE_FUNCTION_CAPS_UNCLASSIFIED_STATS	0x1
+#define	BE_FUNCTION_CAPS_RSS			0x2
+#define	BE_FUNCTION_CAPS_PROMISCUOUS		0x4
+#define	BE_FUNCTION_CAPS_LEGACY_MODE		0x8
+
 /* max SGE per mbx */
 #define	MAX_MBX_SGE			19
+
+/* max RSS rings */
+#define	MAX_RING_PER_GROUP_LEGACY	5
+#define	MAX_RING_PER_GROUP_NATIVE	16
+
+/* MCCQ LEN */
+#define	MCC_Q_LEN 128
+#define	MCC_CQ_LEN 256
+
+/* RSS PARAMETERS */
+#define	MAX_TBL_SIZE		64
+#define	MAX_HKEY_SIZE		40
+
+/* ULP */
+#define	BE_ULP1_NUM			1
 
 /* physical address structure to be used in MBX */
 struct phys_addr {
@@ -362,13 +449,13 @@ typedef union cq_db_u {
 		uint32_t rsvd1:2;
 		uint32_t rearm:1;
 		uint32_t num_popped:13;
-		uint32_t rsvd0:5;
+		uint32_t eq_cq_extid:5;
 		uint32_t event:1;
 		uint32_t qid:10;
 #else
 		uint32_t qid:10;
 		uint32_t event:1;
-		uint32_t rsvd0:5;
+		uint32_t eq_cq_extid:5;
 		uint32_t num_popped:13;
 		uint32_t rearm:1;
 		uint32_t rsvd1:2;
@@ -384,7 +471,7 @@ typedef union eq_db_u {
 		uint32_t rsvd1:2;
 		uint32_t rearm:1;
 		uint32_t num_popped:13;
-		uint32_t rsvd0:5;
+		uint32_t eq_cq_extid:5;
 		uint32_t event:1;
 		uint32_t clrint:1;
 		uint32_t qid:9;
@@ -392,7 +479,7 @@ typedef union eq_db_u {
 		uint32_t qid:9;
 		uint32_t clrint:1;
 		uint32_t event:1;
-		uint32_t rsvd0:5;
+		uint32_t eq_cq_extid:5;
 		uint32_t num_popped:13;
 		uint32_t rearm:1;
 		uint32_t rsvd1:2;
@@ -506,6 +593,23 @@ struct oce_mbx {
 	struct oce_mbx_payload payload;
 };
 
+#define	MQ_CQE_VALID_MASK	(1 << 31)
+#define	MQ_CQE_ASYNC_MASK	(1 << 30)
+#define	MQ_CQE_COMPLETED_MASK	(1 << 28)
+#define	MQ_CQE_CONSUMED_MASK	(1 << 27)
+#define	MQ_CQE_VALID(_cqe)	(_cqe->u0.dw[3])
+#define	MQ_CQE_INVALIDATE(_cqe)	(_cqe->u0.dw[3] = 0)
+
+/* Macros for handling extra bytes in EQ-CQ IDs */
+#define	DB_CQ_RING_ID_EXT_MASK		0x7C00  /* bits 10-14 */
+#define	DB_CQ_RING_ID_EXT_MASK_SHIFT	(1)
+						/*
+						 * qid bits 10-14
+						 * placing at 11-15
+						 */
+#define	DB_EQ_RING_ID_EXT_MASK		0x3e00  /* bits 9-13 */
+#define	DB_EQ_RING_ID_EXT_MASK_SHIFT    (2) /* qid bits 9-13 placing at 11-15 */
+
 /* completion queue entry for MQ */
 struct oce_mq_cqe {
 	union {
@@ -519,7 +623,7 @@ struct oce_mq_cqe {
 			/* dw3 */
 			uint32_t valid:1;
 			uint32_t async_event:1;
-			uint32_t hpi_buffer_cmpl:1;
+			uint32_t rsvd:1;
 			uint32_t completed:1;
 			uint32_t consumed:1;
 			uint32_t rsvd0:27;
@@ -533,7 +637,7 @@ struct oce_mq_cqe {
 			uint32_t rsvd0:27;
 			uint32_t consumed:1;
 			uint32_t completed:1;
-			uint32_t hpi_buffer_cmpl:1;
+			uint32_t rsvd:1;
 			uint32_t async_event:1;
 			uint32_t valid:1;
 #endif
@@ -542,21 +646,10 @@ struct oce_mq_cqe {
 	}u0;
 };
 
-struct oce_async_cqe_link_state {
+struct oce_async_event_trailer {
 	union {
 		struct {
 #ifdef _BIG_ENDIAN
-			/* dw0 */
-			uint8_t speed;
-			uint8_t duplex;
-			uint8_t link_status;
-			uint8_t phy_port;
-			/* dw1 */
-			uint8_t rsvd0[3];
-			uint8_t fault;
-			/* dw2 */
-			uint32_t event_tag;
-			/* dw3 */
 			uint32_t valid:1;
 			uint32_t async_event:1;
 			uint32_t rsvd2:6;
@@ -564,17 +657,6 @@ struct oce_async_cqe_link_state {
 			uint32_t event_code:8;
 			uint32_t rsvd1:8;
 #else
-			/* dw0 */
-			uint8_t phy_port;
-			uint8_t link_status;
-			uint8_t duplex;
-			uint8_t speed;
-			/* dw1 */
-			uint8_t fault;
-			uint8_t rsvd0[3];
-			/* dw2 */
-			uint32_t event_tag;
-			/* dw3 */
 			uint32_t rsvd1:8;
 			uint32_t event_code:8;
 			uint32_t event_type:8;
@@ -582,10 +664,78 @@ struct oce_async_cqe_link_state {
 			uint32_t async_event:1;
 			uint32_t valid:1;
 #endif
-		}s;
-		uint32_t dw[4];
-	}u0;
+		} bits;
+		uint32_t code;
+	} u0;
 };
+
+
+/* Async Debug Event Types */
+#define	ASYNC_DEBUG_EVENT_TYPE_QNQ	1
+
+struct async_event_qnq {
+	uint8_t enabled;
+	uint8_t rsvd0;
+	uint16_t vlan_tag;
+	uint32_t event_tag;
+	uint32_t rsvd1[1];
+	struct oce_async_event_trailer trailer;
+};
+
+
+struct oce_async_cqe_link_state {
+	uint8_t phy_port;
+	uint8_t link_status;
+	uint8_t duplex;
+	uint8_t speed;
+	uint8_t fault;
+	uint8_t reason;
+	uint16_t qos_link_speed;
+	uint32_t event_tag;
+	struct oce_async_event_trailer trailer;
+};
+
+struct oce_async_event_grp5_qos_link_speed {
+	uint8_t physical_port;
+	uint8_t rsvd[5];
+	uint16_t qos_link_speed;
+	uint32_t event_tag;
+	struct oce_async_event_trailer trailer;
+};
+
+
+struct oce_async_event_grp5_cos_priority {
+	uint8_t physical_port;
+	uint8_t available_priority_bmap;
+	uint8_t reco_default_priority;
+	uint8_t valid;
+	uint8_t rsvd0;
+	uint32_t event_tag;
+	struct oce_async_event_trailer trailer;
+};
+
+struct oce_async_event_grp5_pvid_state {
+	uint8_t enabled;
+	uint8_t rsvd0;
+	uint16_t tag;
+	uint32_t event_tag;
+	uint32_t rsvd1;
+	struct oce_async_event_trailer trailer;
+};
+
+struct oce_event_grp_5_priority_class_queue_map {
+	uint8_t priority0_classq;
+	uint8_t priority1_classq;
+	uint8_t priority2_classq;
+	uint8_t priority3_classq;
+	uint8_t priority4_classq;
+	uint8_t priority5_classq;
+	uint8_t priority6_classq;
+	uint8_t priority7_classq;
+	uint32_t	event_tag;
+	struct oce_async_event_trailer trailer;
+};
+
 
 /* MQ mailbox structure */
 struct oce_bmbx {
@@ -619,7 +769,7 @@ enum {
 	OPCODE_QUERY_COMMON_IFACE_MAC = 1,
 	OPCODE_SET_COMMON_IFACE_MAC = 2,
 	OPCODE_SET_COMMON_IFACE_MULTICAST = 3,
-	OPCODE_CONFIG_COMMON_IFACE_VLAN	= 4,
+	OPCODE_COMMON_NTWK_VLAN_CONFIG	= 4,
 	OPCODE_QUERY_COMMON_LINK_STATUS = 5,
 	OPCODE_READ_COMMON_FLASHROM = 6,
 	OPCODE_WRITE_COMMON_FLASHROM = 7,
@@ -666,7 +816,28 @@ enum {
 	OPCODE_ADD_COMMON_IFACE_MAC = 59,
 	OPCODE_DEL_COMMON_IFACE_MAC = 60,
 	OPCODE_COMMON_FUNCTION_RESET = 61,
-	OPCODE_COMMON_FUNCTION_LINK_CONFIG = 80
+	OPCODE_COMMON_FUNCTION_LINK_CONFIG = 80,
+	OPCODE_CREATE_COMMON_MQ_EXT = 90,
+	OPCODE_COMMON_SET_DRIVER_FUNCTION_CAPABILITIES = 103
+};
+
+/* Management status error code in Response header */
+enum {
+	MGMT_STATUS_SUCCESS	= 0, /* The IOCTL completed without errors. */
+	MGMT_STATUS_FAILED	= 1,	/*	Generic error status */
+	MGMT_STATUS_ILLEGAL_REQUEST	= 2, /* Invalid IOCTL opcode. */
+	MGMT_STATUS_ILLEGAL_FIELD	= 3, /* Invalid param in IOCTL pyld */
+	MGMT_STATUS_INSUFFICIENT_BUFFER	= 4, /* Insufficient buf for response */
+	MGMT_STATUS_UNAUTHORIZED_REQUEST = 5 /* Domain invalid access rights */
+};
+
+/* Additional status error codes */
+enum {
+	MGMT_ADDI_STATUS_NO_STATUS = 0, /* IOCTL completed successfully */
+    MGMT_ADDI_STATUS_INVALID_SUBSYSTEM = 29, /* Invalid subsystem id */
+    MGMT_ADDI_STATUS_INVALID_OPCODE = 30, /* Opcode Invalid */
+    MGMT_ADDI_STATUS_INVALID_DOMAIN = 35, /* Invalid domain id */
+    MGMT_ADDI_STATUS_INVALID_EXTENDED_TIMEOUT = 64 /* Invalid timeout */
 };
 
 /* common ioctl header */
@@ -678,15 +849,20 @@ struct mbx_hdr {
 			uint8_t port_number;
 			uint8_t subsystem;
 			uint8_t opcode;
+			uint32_t timeout;
+			uint32_t request_length;
+			uint8_t rsvd0[3];
+			uint8_t version;
 #else
 			uint8_t opcode;
 			uint8_t subsystem;
 			uint8_t port_number;
 			uint8_t domain;
-#endif
 			uint32_t timeout;
 			uint32_t request_length;
-			uint32_t rsvd0;
+			uint8_t  version;
+			uint8_t  rsvd0[3];
+#endif
 		}req;
 
 		struct {
@@ -708,8 +884,9 @@ struct mbx_hdr {
 };
 #define	OCE_BMBX_RHDR_SZ 20
 #define	OCE_MBX_RRHDR_SZ sizeof (struct mbx_hdr)
-#define	OCE_MBX_ADDL_STATUS(_MHDR) ((_MHDR)->u0.rsp.additional_status)
-#define	OCE_MBX_STATUS(_MHDR) ((_MHDR)->u0.rsp.status)
+#define	OCE_MBX_ADDL_STATUS(_MHDR) \
+		(((struct mbx_hdr *)_MHDR)->u0.rsp.additional_status)
+#define	OCE_MBX_STATUS(_MHDR) (((struct mbx_hdr *)_MHDR)->u0.rsp.status)
 
 /* [05] OPCODE_QUERY_COMMON_LINK_STATUS */
 struct mbx_query_common_link_status {
@@ -899,6 +1076,30 @@ struct mbx_destroy_common_iface {
 	}params;
 };
 
+struct mbx_set_common_iface_rx_filter {
+	struct mbx_hdr hdr;
+	union {
+		struct {
+			uint32_t gflags_mask;
+			uint32_t gflags;
+			uint32_t if_flags_mask;
+			uint32_t if_flags;
+			uint32_t if_id;
+			uint32_t multicast_num;
+			struct ether_addr mac[32];
+		}req;
+		struct {
+			uint32_t gflags_mask;
+			uint32_t gflags;
+			uint32_t if_flags_mask;
+			uint32_t if_flags;
+			uint32_t if_id;
+			uint32_t multicast_num;
+			struct ether_addr mac[32];
+		}rsp;
+	}params;
+};
+
 /* event queue context structure */
 struct   oce_eq_ctx {
 #ifdef _BIG_ENDIAN
@@ -965,7 +1166,7 @@ struct   oce_eq_ctx {
 };
 
 /* [13] OPCODE_CREATE_COMMON_EQ */
-	struct mbx_create_common_eq {
+struct mbx_create_common_eq {
 	struct mbx_hdr hdr;
 	union {
 		struct {
@@ -1007,7 +1208,7 @@ struct mbx_destroy_common_eq {
 	}params;
 };
 
-struct oce_cq_ctx {
+struct oce_cq_ctx_v0 {
 #ifdef _BIG_ENDIAN
 	/* dw0 */
 	uint32_t eventable:1;
@@ -1062,8 +1263,8 @@ struct oce_cq_ctx {
 	uint32_t rsvd5;
 };
 
-/* [12] OPCODE_CREATE_COMMON_CQ */
-struct mbx_create_common_cq {
+/* [12] OPCODE_CREATE_COMMON_CQ V0 */
+struct mbx_create_common_cq_v0 {
 	struct mbx_hdr hdr;
 	union {
 		struct {
@@ -1074,8 +1275,78 @@ struct mbx_create_common_cq {
 			uint16_t num_pages;
 			uint16_t rsvd0;
 #endif
-			struct oce_cq_ctx cq_ctx;
+			struct oce_cq_ctx_v0 cq_ctx;
 			struct phys_addr pages[4];
+		}req;
+
+		struct {
+			uint16_t cq_id;
+			uint16_t rsvd0;
+		}rsp;
+	}params;
+};
+
+struct oce_cq_ctx_v2 {
+#ifdef _BIG_ENDIAN
+	/* dw0 */
+	uint32_t eventable:1;
+	uint32_t rsvd2:1;
+	uint32_t valid:1;
+	uint32_t count:2;
+	uint32_t rsvd1:11;
+	uint32_t auto_valid:1;
+	uint32_t nodelay:1;
+	uint32_t coalesce_wm:2;
+	uint32_t rsvd0:12;
+
+	/* dw1 */
+	uint32_t armed:1;
+	uint32_t rsvd3:15;
+	uint32_t eq_id:16;
+
+	/* dw2 */
+	uint32_t rsvd4:16;
+	uint32_t cqe_count:16;
+#else
+	/* dw0 */
+	uint32_t rsvd0:12;
+	uint32_t coalesce_wm:2;
+	uint32_t nodelay:1;
+	uint32_t auto_valid:1;
+	uint32_t rsvd1:11;
+	uint32_t count:2;
+	uint32_t valid:1;
+	uint32_t rsvd2:1;
+	uint32_t eventable:1;
+
+	/* dw1 */
+	uint32_t eq_id:16;
+	uint32_t rsvd3:15;
+	uint32_t armed:1;
+
+	/* dw2 */
+	uint32_t cqe_count:16;
+	uint32_t rsvd4:16;
+#endif
+	uint32_t rsvd5;
+};
+
+/* [12] OPCODE_CREATE_COMMON_CQ V2 */
+struct mbx_create_common_cq_v2 {
+	struct mbx_hdr hdr;
+	union {
+		struct {
+#ifdef _BIG_ENDIAN
+			uint8_t rsvd0;
+			uint8_t page_size;
+			uint16_t num_pages;
+#else
+			uint16_t num_pages;
+			uint8_t page_size;
+			uint8_t rsvd0;
+#endif
+			struct oce_cq_ctx_v2 cq_ctx;
+			struct phys_addr pages[8];
 		}req;
 
 		struct {
@@ -1105,7 +1376,7 @@ struct mbx_destroy_common_cq {
 	}params;
 };
 
-struct mq_ring_ctx {
+struct mq_ring_ctx_v0 {
 	union {
 		struct {
 #ifdef _BIG_ENDIAN
@@ -1154,7 +1425,7 @@ struct mq_ring_ctx {
 	}u0;
 };
 
-/* [21] OPCODE_CREATE_COMMON_MQ */
+/* [21] OPCODE_CREATE_COMMON_MQ V0 */
 struct mbx_create_common_mq {
 	struct mbx_hdr hdr;
 	union {
@@ -1166,7 +1437,92 @@ struct mbx_create_common_mq {
 			uint16_t num_pages;
 			uint16_t rsvd0;
 #endif
-			struct mq_ring_ctx context;
+			struct mq_ring_ctx_v0 context;
+			struct phys_addr pages[8];
+		}req;
+
+		struct {
+			uint32_t mq_id:16;
+			uint32_t rsvd0:16;
+		}rsp;
+	}params;
+};
+
+/* [90] OPCODE_COMMON_MCC_CREATE_EXT V0 */
+struct mbx_create_common_mq_ext_v0 {
+	struct mbx_hdr hdr;
+	union {
+		struct {
+#ifdef _BIG_ENDIAN
+			uint16_t rsvd0;
+			uint16_t num_pages;
+#else
+			uint16_t num_pages;
+			uint16_t rsvd0;
+#endif
+			uint32_t async_event_bitmap[1];
+			struct mq_ring_ctx_v0 context;
+			struct phys_addr pages[8];
+		}req;
+
+		struct {
+			uint32_t mq_id:16;
+			uint32_t rsvd0:16;
+		}rsp;
+	}params;
+};
+
+struct mq_ring_ctx_v1 {
+	union {
+		struct {
+#ifdef _BIG_ENDIAN
+			/* dw 0 */
+			uint32_t rsrvd0:12;
+			uint32_t ring_size:4;
+			uint32_t async_cq_id:16;
+
+			/* dw1 */
+			uint32_t valid:1;
+			uint32_t rsrvd1:31;
+
+			/* dw 2 */
+			uint32_t rsvd2:31;
+			uint32_t async_cq_valid:1;
+#else
+			/* dw 0 */
+			uint32_t async_cq_id:16;
+			uint32_t ring_size:4;
+			uint32_t rsrvd0:12;
+
+			/* dw1 */
+			uint32_t rsrvd1:31;
+			uint32_t valid:1;
+
+			/* dw 2 */
+			uint32_t async_cq_valid:1;
+			uint32_t rsvd2:31;
+#endif
+			/* dw3 */
+			uint32_t rsvd3;
+		}s;
+		uint32_t dw[4];
+	}u0;
+};
+
+/* [90] OPCODE_COMMON_MCC_CREATE_EXT V1 */
+struct mbx_create_common_mq_ext_v1 {
+	struct mbx_hdr hdr;
+	union {
+		struct {
+#ifdef _BIG_ENDIAN
+			uint16_t cq_id;
+			uint16_t num_pages;
+#else
+			uint16_t num_pages;
+			uint16_t cq_id;
+#endif
+			uint32_t async_event_bitmap[1];
+			struct mq_ring_ctx_v1 context;
 			struct phys_addr pages[8];
 		}req;
 
@@ -1429,6 +1785,23 @@ struct mbx_common_func_link_cfg {
 		struct {
 			uint32_t rsvd0;
 		}rsp;
+	} params;
+};
+
+/* [103] OPCODE_COMMON_SET_DRIVER_FUNCTION_CAPABILITIES */
+struct mbx_common_set_drvfn_capab {
+	struct mbx_hdr hdr;
+	union {
+		struct {
+			uint32_t valid_capability_flags;
+			uint32_t capability_flags;
+			uint8_t sbz[212];
+		} request;
+		struct {
+			uint32_t valid_capability_flags;
+			uint32_t capability_flags;
+			uint8_t sbz[212];
+		} response;
 	} params;
 };
 

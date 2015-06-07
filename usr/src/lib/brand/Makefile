@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
 #
 # lib/brand/Makefile
 #
@@ -31,7 +32,7 @@ include ../../Makefile.master
 .PARALLEL:
 
 SUBDIRS= shared .WAIT sn1 solaris10 ipkg labeled $($(MACH)_SUBDIRS)
-MSGSUBDIRS= solaris10 shared $($(MACH)_MSGSUBDIRS)
+MSGSUBDIRS= solaris10 ipkg shared $($(MACH)_MSGSUBDIRS)
 
 all :=		TARGET= all
 install :=	TARGET= install

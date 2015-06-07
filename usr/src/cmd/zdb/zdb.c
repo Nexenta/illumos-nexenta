@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -934,7 +935,8 @@ dump_ddt(ddt_t *ddt, enum ddt_type type, enum ddt_class class)
 		return;
 	ASSERT(error == 0);
 
-	if ((count = ddt_object_count(ddt, type, class)) == 0)
+	(void) ddt_object_count(ddt, type, class, &count);
+	if (count == 0)
 		return;
 
 	dspace = doi.doi_physical_blocks_512 << 9;
@@ -1784,6 +1786,8 @@ static object_viewer_t *object_viewer[DMU_OT_NUMTYPES + 1] = {
 	dump_none,		/* deadlist hdr			*/
 	dump_zap,		/* dsl clones			*/
 	dump_bpobj_subobjs,	/* bpobj subobjs		*/
+	dump_none,		/* cos props			*/
+	dump_packed_nvlist,	/* cos props size		*/
 	dump_unknown,		/* Unknown type, must be last	*/
 };
 
@@ -2336,19 +2340,21 @@ zdb_count_block(zdb_cb_t *zcb, zilog_t *zilog, const blkptr_t *bp,
 		ddt_entry_t *dde;
 
 		ddt = ddt_select(zcb->zcb_spa, bp);
-		ddt_enter(ddt);
 		dde = ddt_lookup(ddt, bp, B_FALSE);
 
 		if (dde == NULL) {
 			refcnt = 0;
 		} else {
 			ddt_phys_t *ddp = ddt_phys_select(dde, bp);
+
+			/* no other competitors for dde */
+			dde_exit(dde);
+
 			ddt_phys_decref(ddp);
 			refcnt = ddp->ddp_refcnt;
 			if (ddt_phys_total_refcnt(dde) == 0)
 				ddt_remove(ddt, dde);
 		}
-		ddt_exit(ddt);
 	}
 
 	VERIFY3U(zio_wait(zio_claim(NULL, zcb->zcb_spa,
@@ -2423,7 +2429,7 @@ zdb_blkptr_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	zdb_count_block(zcb, zilog, bp,
 	    (type & DMU_OT_NEWTYPE) ? ZDB_OT_OTHER : type);
 
-	is_metadata = (BP_GET_LEVEL(bp) != 0 || DMU_OT_IS_METADATA(type));
+	is_metadata = BP_IS_METADATA(bp);
 
 	if (!BP_IS_EMBEDDED(bp) &&
 	    (dump_opt['c'] > 1 || (dump_opt['c'] && is_metadata))) {
@@ -2522,9 +2528,9 @@ zdb_ddt_leak_init(spa_t *spa, zdb_cb_t *zcb)
 		}
 		if (!dump_opt['L']) {
 			ddt_t *ddt = spa->spa_ddt[ddb.ddb_checksum];
-			ddt_enter(ddt);
-			VERIFY(ddt_lookup(ddt, &blk, B_TRUE) != NULL);
-			ddt_exit(ddt);
+			ddt_entry_t *dde;
+			VERIFY((dde = ddt_lookup(ddt, &blk, B_TRUE)) != NULL);
+			dde_exit(dde);
 		}
 	}
 
@@ -2639,7 +2645,7 @@ dump_block_stats(spa_t *spa)
 {
 	zdb_cb_t zcb = { 0 };
 	zdb_blkstats_t *zb, *tzb;
-	uint64_t norm_alloc, norm_space, total_alloc, total_found;
+	uint64_t norm_alloc, spec_alloc, norm_space, total_alloc, total_found;
 	int flags = TRAVERSE_PRE | TRAVERSE_PREFETCH_METADATA | TRAVERSE_HARD;
 	boolean_t leaks = B_FALSE;
 
@@ -2715,8 +2721,10 @@ dump_block_stats(spa_t *spa)
 	tzb = &zcb.zcb_type[ZB_TOTAL][ZDB_OT_TOTAL];
 
 	norm_alloc = metaslab_class_get_alloc(spa_normal_class(spa));
+	spec_alloc = metaslab_class_get_alloc(spa_special_class(spa));
 	norm_space = metaslab_class_get_space(spa_normal_class(spa));
 
+	norm_alloc += spec_alloc;
 	total_alloc = norm_alloc + metaslab_class_get_alloc(spa_log_class(spa));
 	total_found = tzb->zb_asize - zcb.zcb_dedup_asize;
 
@@ -2760,6 +2768,10 @@ dump_block_stats(spa_t *spa)
 	    (u_longlong_t)zcb.zcb_dedup_asize,
 	    (u_longlong_t)zcb.zcb_dedup_blocks,
 	    (double)zcb.zcb_dedup_asize / tzb->zb_asize + 1.0);
+	if (spec_alloc != 0) {
+		(void) printf("\tspecial allocated: %10llu\n",
+		    (u_longlong_t)spec_alloc);
+	}
 	(void) printf("\tSPA allocated: %10llu     used: %5.2f%%\n",
 	    (u_longlong_t)norm_alloc, 100.0 * norm_alloc / norm_space);
 
@@ -2904,7 +2916,7 @@ zdb_ddt_add_cb(spa_t *spa, zilog_t *zilog, const blkptr_t *bp,
 	}
 
 	if (BP_IS_HOLE(bp) || BP_GET_CHECKSUM(bp) == ZIO_CHECKSUM_OFF ||
-	    BP_GET_LEVEL(bp) > 0 || DMU_OT_IS_METADATA(BP_GET_TYPE(bp)))
+	    BP_IS_METADATA(bp))
 		return (0);
 
 	ddt_key_fill(&zdde_search.zdde_key, bp);

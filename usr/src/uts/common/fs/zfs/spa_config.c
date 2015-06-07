@@ -21,8 +21,8 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -420,6 +420,9 @@ spa_config_generate(spa_t *spa, vdev_t *vd, uint64_t txg, int getstats)
 		if (vd->vdev_isspare)
 			VERIFY(nvlist_add_uint64(config, ZPOOL_CONFIG_IS_SPARE,
 			    1ULL) == 0);
+		if (vd->vdev_isspecial)
+			VERIFY(nvlist_add_uint64(config,
+			    ZPOOL_CONFIG_IS_SPECIAL, 1ULL) == 0);
 		if (vd->vdev_islog)
 			VERIFY(nvlist_add_uint64(config, ZPOOL_CONFIG_IS_LOG,
 			    1ULL) == 0);

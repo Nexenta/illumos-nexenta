@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMBSRV_SMB_DOOR_H
@@ -48,6 +48,8 @@ extern "C" {
  *
  * SMB_DR_ASYNC_RESPONSE delivers the response part of an asynchronous
  * request and must be processed as a synchronous request.
+ *
+ * See also: smb_doorhdr_opname()
  */
 typedef enum smb_dopcode {
 	SMB_DR_NULL = 0,
@@ -67,7 +69,8 @@ typedef enum smb_dopcode {
 	SMB_DR_QUOTA_SET,
 	SMB_DR_DFS_GET_REFERRALS,
 	SMB_DR_SHR_HOSTACCESS,
-	SMB_DR_SHR_EXEC
+	SMB_DR_SHR_EXEC,
+	SMB_DR_NOTIFY_DC_CHANGED
 } smb_dopcode_t;
 
 struct smb_event;

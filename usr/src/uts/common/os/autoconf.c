@@ -21,6 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -74,6 +75,8 @@ static void create_devinfo_tree(void);
 char *bootpath_prop = NULL;
 char *fstype_prop = NULL;
 #endif
+
+char *aoepath_prop = NULL;
 
 /*
  * Setup the DDI but don't necessarily init the DDI.  This will happen
@@ -189,6 +192,40 @@ impl_create_root_class(void)
 	 * be needed).
 	 */
 	(void) BOP_GETPROP(bootops, "impl-arch-name", platform);
+
+	/*
+	 * If boot-aoepath is defined, assume it's AoE boot and set bootpath to
+	 * aoeblk/blkdev device corresponding to specified shelf.slot numbers.
+	 */
+	size = (size_t)BOP_GETPROPLEN(bootops, "boot-aoepath");
+	if (size != -1) {
+		char	aoedev[MAXPATHLEN];
+		char	*delim;
+		int	shelf, slot;
+
+		aoepath_prop = kmem_zalloc(size, KM_SLEEP);
+		(void) BOP_GETPROP(bootops, "boot-aoepath", aoepath_prop);
+		/*
+		 * If boot-aoepath is set to "auto", device will be
+		 * configured later during AoE autoconfiguration.
+		 */
+		if (strcmp(aoepath_prop, "auto") != 0) {
+			if ((delim = strchr(aoepath_prop, '.')) != NULL)
+				*delim++ = '\0';
+			if (ddi_strtol(aoepath_prop, (char **)NULL, 10,
+			    (long *)&shelf) != 0)
+				shelf = 0;
+			if (delim == NULL ||
+			    ddi_strtol(delim, (char **)NULL, 10,
+			    (long *)&slot) != 0)
+				slot = 0;
+			/* FIXME aoeblk@0,0 ?! */
+			(void) snprintf(aoedev, MAXPATHLEN,
+			    "/aoe/aoeblk@0,0/blkdev@%d,%d",
+			    shelf, slot);
+			setbootpath(aoedev);
+		}
+	}
 
 #if defined(__x86)
 	/*

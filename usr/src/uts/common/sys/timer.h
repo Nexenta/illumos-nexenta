@@ -23,6 +23,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #ifndef	_SYS_TIMER_H
 #define	_SYS_TIMER_H
@@ -38,7 +41,7 @@ extern "C" {
 #ifdef	_KERNEL
 
 #define	_TIMER_MAX	32
-extern	int	timer_max;		/* patchable via /etc/system */
+extern	volatile int	timer_max;	/* patchable via /etc/system */
 
 /*
  * Bit values for the it_lock field.

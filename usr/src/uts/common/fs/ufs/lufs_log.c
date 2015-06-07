@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <sys/systm.h>
 #include <sys/types.h>
@@ -39,8 +42,8 @@
 #include <sys/fs/ufs_log.h>
 #include <sys/fs/ufs_bio.h>
 #include <sys/atomic.h>
+#include <sys/sunddi.h>
 
-extern int		maxphys;
 extern uint_t		bypass_snapshot_throttle_key;
 
 extern struct kmem_cache	*lufs_sv;

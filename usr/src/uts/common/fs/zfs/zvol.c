@@ -23,9 +23,9 @@
  *
  * Portions Copyright 2010 Robert Milkowski
  *
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -87,6 +87,7 @@
 #include <sys/dmu_tx.h>
 #include <sys/zfeature.h>
 #include <sys/zio_checksum.h>
+#include <sys/dkioc_free_util.h>
 
 #include "zfs_namecheck.h"
 
@@ -1120,7 +1121,7 @@ zvol_dumpio_vdev(vdev_t *vd, void *addr, uint64_t offset, uint64_t origoffset,
     uint64_t size, boolean_t doread, boolean_t isdump)
 {
 	vdev_disk_t *dvd;
-	int c;
+	int c, rc;
 	int numerrors = 0;
 
 	if (vd->vdev_ops == &vdev_mirror_ops ||
@@ -1152,20 +1153,38 @@ zvol_dumpio_vdev(vdev_t *vd, void *addr, uint64_t offset, uint64_t origoffset,
 
 	offset += VDEV_LABEL_START_SIZE;
 
+	rw_enter(&vd->vdev_tsd_lock, RW_READER);
+	dvd = vd->vdev_tsd;
 	if (ddi_in_panic() || isdump) {
 		ASSERT(!doread);
-		if (doread)
+		if (doread) {
+			rw_exit(&vd->vdev_tsd_lock);
 			return (SET_ERROR(EIO));
-		dvd = vd->vdev_tsd;
+		}
+		/* We assume here dvd is not NULL */
 		ASSERT3P(dvd, !=, NULL);
-		return (ldi_dump(dvd->vd_lh, addr, lbtodb(offset),
-		    lbtodb(size)));
+
+		/* If our assumption is wrong, we do not want to crash */
+		if (dvd != NULL && dvd->vd_lh != NULL) {
+			rc = ldi_dump(dvd->vd_lh, addr, lbtodb(offset),
+			    lbtodb(size));
+		} else {
+			rc = SET_ERROR(ENXIO);
+		}
 	} else {
-		dvd = vd->vdev_tsd;
+		/* We assume here dvd is not NULL */
 		ASSERT3P(dvd, !=, NULL);
-		return (vdev_disk_ldi_physio(dvd->vd_lh, addr, size,
-		    offset, doread ? B_READ : B_WRITE));
+
+		/* If our assumption is wrong, we do not want to crash */
+		if (dvd != NULL && dvd->vd_lh != NULL) {
+			rc = vdev_disk_ldi_physio(dvd->vd_lh, addr, size,
+			    offset, doread ? B_READ : B_WRITE);
+		} else {
+			rc = SET_ERROR(ENXIO);
+		}
 	}
+	rw_exit(&vd->vdev_tsd_lock);
+	return (rc);
 }
 
 static int
@@ -1772,43 +1791,60 @@ zvol_ioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cr, int *rvalp)
 
 	case DKIOCFREE:
 	{
-		dkioc_free_t df;
+		dkioc_free_list_t *dfl;
 		dmu_tx_t *tx;
+
+		mutex_exit(&zfsdev_state_lock);
 
 		if (!zvol_unmap_enabled)
 			break;
 
-		if (ddi_copyin((void *)arg, &df, sizeof (df), flag)) {
-			error = SET_ERROR(EFAULT);
-			break;
-		}
-
-		/*
-		 * Apply Postel's Law to length-checking.  If they overshoot,
-		 * just blank out until the end, if there's a need to blank
-		 * out anything.
-		 */
-		if (df.df_start >= zv->zv_volsize)
-			break;	/* No need to do anything... */
-
-		mutex_exit(&zfsdev_state_lock);
-
-		rl = zfs_range_lock(&zv->zv_znode, df.df_start, df.df_length,
-		    RL_WRITER);
-		tx = dmu_tx_create(zv->zv_objset);
-		dmu_tx_mark_netfree(tx);
-		error = dmu_tx_assign(tx, TXG_WAIT);
-		if (error != 0) {
-			dmu_tx_abort(tx);
+		if (!(flag & FKIOCTL)) {
+			dfl = dfl_copyin((void *)arg, flag, KM_SLEEP);
+			if (dfl == NULL) {
+				error = SET_ERROR(EFAULT);
+				break;
+			}
 		} else {
-			zvol_log_truncate(zv, tx, df.df_start,
-			    df.df_length, B_TRUE);
-			dmu_tx_commit(tx);
-			error = dmu_free_long_range(zv->zv_objset, ZVOL_OBJ,
-			    df.df_start, df.df_length);
+			dfl = (dkioc_free_list_t *)arg;
 		}
 
-		zfs_range_unlock(rl);
+		for (int i = 0; i < dfl->dfl_num_exts; i++) {
+			uint64_t start = dfl->dfl_exts[i].dfle_start,
+			    length = dfl->dfl_exts[i].dfle_length,
+			    end = start + length;
+
+			/*
+			 * Apply Postel's Law to length-checking.  If they
+			 * overshoot, just blank out until the end, if there's
+			 * a need to blank out anything.
+			 */
+			if (start >= zv->zv_volsize)
+				continue;	/* No need to do anything... */
+			if (end > zv->zv_volsize) {
+				end = DMU_OBJECT_END;
+				length = end - start;
+			}
+
+			rl = zfs_range_lock(&zv->zv_znode, start, length,
+			    RL_WRITER);
+			tx = dmu_tx_create(zv->zv_objset);
+			error = dmu_tx_assign(tx, TXG_WAIT);
+			if (error != 0) {
+				dmu_tx_abort(tx);
+			} else {
+				zvol_log_truncate(zv, tx, start, length,
+				    B_TRUE);
+				dmu_tx_commit(tx);
+				error = dmu_free_long_range(zv->zv_objset,
+				    ZVOL_OBJ, start, length);
+			}
+
+			zfs_range_unlock(rl);
+
+			if (error != 0)
+				break;
+		}
 
 		if (error == 0) {
 			/*
@@ -1825,11 +1861,15 @@ zvol_ioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cr, int *rvalp)
 			 * can't wait for them, don't return until the write
 			 * is done.
 			 */
-			if (df.df_flags & DF_WAIT_SYNC) {
-				txg_wait_synced(
-				    dmu_objset_pool(zv->zv_objset), 0);
+			if (dfl->dfl_flags & DF_WAIT_SYNC) {
+				txg_wait_synced(dmu_objset_pool(zv->zv_objset),
+				    0);
 			}
 		}
+
+		if (!(flag & FKIOCTL))
+			dfl_free(dfl);
+
 		return (error);
 	}
 

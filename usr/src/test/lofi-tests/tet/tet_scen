@@ -1,0 +1,70 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# ident	"@(#)tet_scen	1.2	08/12/19 SMI"
+#
+
+all
+	^non_compression
+	^compression
+
+compression
+	^compression_static
+	^compression_dynamic
+
+non_compression
+	^getsysinfo
+	^add
+	^delete
+	^fs_dynamic
+	^zones_named
+
+add
+	^add_dynamic
+	^add_static
+
+add_dynamic
+	/tests/add_dynamic/tc_add_dynamic{}
+
+add_static
+	/tests/add_static/tc_add_static{}
+
+compression_dynamic
+	/tests/compression_dynamic/tc_compression_dynamic{}
+
+compression_static
+	/tests/compression_static/tc_compression_static{}
+
+delete
+	/tests/delete/tc_delete{}
+
+fs_dynamic
+	/tests/fs_dynamic/tc_fs_dynamic{}
+
+getsysinfo
+	/tests/getsysinfo/tc_getsysinfo{}
+
+zones_named
+	/tests/zones_named/tc_zones_named{}

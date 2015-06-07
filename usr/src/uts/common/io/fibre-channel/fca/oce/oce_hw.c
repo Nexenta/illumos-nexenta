@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Source file containing the implementation of the Hardware specific
@@ -38,7 +43,7 @@ static ddi_device_acc_attr_t reg_accattr = {
 };
 
 extern int oce_destroy_q(struct oce_dev *dev, struct oce_mbx *mbx,
-    size_t req_size, enum qtype qtype);
+    size_t req_size, enum qtype qtype, uint32_t mode);
 
 static int
 oce_map_regs(struct oce_dev *dev)
@@ -53,8 +58,29 @@ oce_map_regs(struct oce_dev *dev)
 	ret = ddi_dev_nregs(dev->dip, &dev->num_bars);
 	if (ret != DDI_SUCCESS) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "%d: could not retrieve num_bars", MOD_CONFIG);
+		    "Could not retrieve num_bars, ret =0x%x", ret);
 		return (DDI_FAILURE);
+	}
+
+	if (LANCER_CHIP(dev)) {
+		/* Doorbells */
+		ret = ddi_dev_regsize(dev->dip, OCE_PCI_LANCER_DB_BAR,
+		    &bar_size);
+		if (ret != DDI_SUCCESS) {
+			oce_log(dev, CE_WARN, MOD_CONFIG,
+			    "%d Could not get sizeof BAR %d",
+			    ret, OCE_PCI_LANCER_DB_BAR);
+			return (DDI_FAILURE);
+		}
+
+		ret = ddi_regs_map_setup(dev->dip, OCE_PCI_LANCER_DB_BAR,
+		    &dev->db_addr, 0, 0, &reg_accattr, &dev->db_handle);
+		if (ret != DDI_SUCCESS) {
+			oce_log(dev, CE_WARN, MOD_CONFIG,
+			    "Could not map bar %d", OCE_PCI_LANCER_DB_BAR);
+			return (DDI_FAILURE);
+		}
+		return (DDI_SUCCESS);
 	}
 
 	/* verify each bar and map it accordingly */
@@ -127,13 +153,52 @@ oce_unmap_regs(struct oce_dev *dev)
 	ASSERT(NULL != dev->dip);
 
 	ddi_regs_map_free(&dev->db_handle);
-	ddi_regs_map_free(&dev->csr_handle);
-	ddi_regs_map_free(&dev->dev_cfg_handle);
+	if (!LANCER_CHIP(dev)) {
+		ddi_regs_map_free(&dev->csr_handle);
+		ddi_regs_map_free(&dev->dev_cfg_handle);
+	}
 
 }
 
 
+static void
+oce_check_slot(struct oce_dev *dev)
+{
+	uint32_t curr = 0;
+	uint32_t max = 0;
+	uint32_t width = 0;
+	uint32_t max_width = 0;
+	uint32_t speed = 0;
+	uint32_t max_speed = 0;
 
+	curr = OCE_CFG_READ32(dev, PCICFG_PCIE_LINK_STATUS_OFFSET);
+
+	width = (curr >> PCIE_LINK_STATUS_NEG_WIDTH_SHIFT) &
+	    PCIE_LINK_STATUS_NEG_WIDTH_MASK;
+	speed = (curr >> PCIE_LINK_STATUS_SPEED_SHIFT) &
+	    PCIE_LINK_STATUS_SPEED_MASK;
+
+	oce_log(dev, CE_NOTE, MOD_CONFIG, "Reg value %x"
+	    " width %d speed %d\n", curr, width,  speed);
+	max = OCE_CFG_READ32(dev, PCICFG_PCIE_LINK_CAP_OFFSET);
+
+	max_width = (max >> PCIE_LINK_CAP_MAX_WIDTH_SHIFT) &
+	    PCIE_LINK_CAP_MAX_WIDTH_MASK;
+	max_speed = (max >> PCIE_LINK_CAP_MAX_SPEED_SHIFT) &
+	    PCIE_LINK_CAP_MAX_SPEED_MASK;
+	oce_log(dev, CE_NOTE, MOD_CONFIG, "Reg value %x"
+	    " max_width %d max_speed %d\n",
+	    max, max_width,  max_speed);
+
+	if (width < max_width || speed < max_speed) {
+			oce_log(dev, CE_NOTE, MOD_CONFIG,
+			    "Found CNA device in a Gen%s x%d PCIe Slot."
+			    "It is recommended to be in a Gen2 x%d slot"
+			    "for best performance\n",
+			    speed < max_speed ? "1" : "2",
+			    width, max_width);
+	}
+}
 
 
 /*
@@ -152,15 +217,22 @@ oce_pci_init(struct oce_dev *dev)
 	if (ret != DDI_SUCCESS) {
 		return (DDI_FAILURE);
 	}
-	dev->fn =  OCE_PCI_FUNC(dev);
-	if (oce_fm_check_acc_handle(dev, dev->dev_cfg_handle) != DDI_FM_OK) {
-		ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
+
+	if (!LANCER_CHIP(dev)) {
+		dev->fn =  OCE_PCI_FUNC(dev);
+		if (oce_fm_check_acc_handle(dev, dev->dev_cfg_handle) !=
+		    DDI_FM_OK) {
+			ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
+		}
 	}
 
 	if (ret != DDI_FM_OK) {
 		oce_pci_fini(dev);
 		return (DDI_FAILURE);
 	}
+
+	if (!LANCER_CHIP(dev))
+		oce_check_slot(dev);
 
 	return (DDI_SUCCESS);
 } /* oce_pci_init */
@@ -177,47 +249,12 @@ oce_pci_fini(struct oce_dev *dev)
 	oce_unmap_regs(dev);
 } /* oce_pci_fini */
 
-/*
- * function to read the PCI Bus, Device, and function numbers for the
- * device instance.
- *
- * dev - handle to device private data
- */
-int
-oce_get_bdf(struct oce_dev *dev)
-{
-	pci_regspec_t *pci_rp;
-	uint32_t length;
-	int rc;
-
-	/* Get "reg" property */
-	rc = ddi_prop_lookup_int_array(DDI_DEV_T_ANY, dev->dip,
-	    0, "reg", (int **)&pci_rp, (uint_t *)&length);
-
-	if ((rc != DDI_SUCCESS) ||
-	    (length < (sizeof (pci_regspec_t) / sizeof (int)))) {
-		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Failed to read \"reg\" property, Status = 0x%x", rc);
-		return (rc);
-	}
-
-	dev->pci_bus = PCI_REG_BUS_G(pci_rp->pci_phys_hi);
-	dev->pci_device = PCI_REG_DEV_G(pci_rp->pci_phys_hi);
-	dev->pci_function = PCI_REG_FUNC_G(pci_rp->pci_phys_hi);
-
-	oce_log(dev, CE_NOTE, MOD_CONFIG,
-	    "\"reg\" property num=%d, Bus=%d, Device=%d, Function=%d",
-	    length, dev->pci_bus, dev->pci_device, dev->pci_function);
-
-	/* Free the memory allocated by ddi_prop_lookup_int_array() */
-	ddi_prop_free(pci_rp);
-	return (rc);
-}
 
 int
 oce_identify_hw(struct oce_dev *dev)
 {
 	int ret = DDI_SUCCESS;
+	uint32_t if_type = 0, sli_intf = 0;
 
 	dev->vendor_id = pci_config_get16(dev->pci_cfg_handle,
 	    PCI_CONF_VENID);
@@ -232,10 +269,32 @@ oce_identify_hw(struct oce_dev *dev)
 
 	case DEVID_TIGERSHARK:
 		dev->chip_rev = OC_CNA_GEN2;
+		/* BE2 hardware properly supports single tx ring */
+		dev->tx_rings = 1;
 		break;
 	case DEVID_TOMCAT:
 		dev->chip_rev = OC_CNA_GEN3;
 		break;
+	case DEVID_LANCER:
+		sli_intf = pci_config_get32(dev->pci_cfg_handle,
+		    SLI_INTF_REG_OFFSET);
+
+		if_type = (sli_intf & SLI_INTF_IF_TYPE_MASK) >>
+		    SLI_INTF_IF_TYPE_SHIFT;
+
+		if (((sli_intf & SLI_INTF_VALID_MASK) != SLI_INTF_VALID) ||
+		    if_type != 0x02) {
+			oce_log(dev, CE_WARN, MOD_CONFIG, "%s",
+			    "SLI I/F not Valid or different interface type\n");
+			ret = DDI_FAILURE;
+			break;
+		}
+		dev->sli_family = ((sli_intf & SLI_INTF_FAMILY_MASK) >>
+		    SLI_INTF_FAMILY_SHIFT);
+
+		dev->chip_rev = 0;
+		break;
+
 	default:
 		dev->chip_rev = 0;
 		ret = DDI_FAILURE;
@@ -313,14 +372,126 @@ oce_pci_soft_reset(struct oce_dev *dev)
 
 	return (oce_POST(dev));
 } /* oce_pci_soft_reset */
+
+
+static int lancer_wait_ready(struct oce_dev *dev)
+{
+	uint32_t sliport_status;
+	int status = 0, i;
+
+	for (i = 0; i < SLIPORT_READY_TIMEOUT; i++) {
+		sliport_status = OCE_DB_READ32(dev, SLIPORT_STATUS_OFFSET);
+			if (oce_fm_check_acc_handle(dev, dev->db_handle) !=
+			    DDI_FM_OK) {
+				ddi_fm_service_impact(dev->dip,
+				    DDI_SERVICE_DEGRADED);
+				return (EIO);
+			}
+		if (sliport_status & SLIPORT_STATUS_RDY_MASK)
+			break;
+		drv_usecwait(20000);
+	}
+
+	if (i == SLIPORT_READY_TIMEOUT)
+		status = DDI_FAILURE;
+
+	return (status);
+}
+
+static int lancer_test_and_set_rdy_state(struct oce_dev *dev)
+{
+	int status;
+	uint32_t sliport_status, err, reset_needed;
+	status = lancer_wait_ready(dev);
+	if (!status) {
+		sliport_status = OCE_DB_READ32(dev, SLIPORT_STATUS_OFFSET);
+		if (oce_fm_check_acc_handle(dev, dev->db_handle) != DDI_FM_OK) {
+			ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
+			return (EIO);
+		}
+		err = sliport_status & SLIPORT_STATUS_ERR_MASK;
+		reset_needed = sliport_status & SLIPORT_STATUS_RN_MASK;
+		if (err && reset_needed) {
+			OCE_DB_WRITE32(dev, SLIPORT_CONTROL_OFFSET,
+			    SLI_PORT_CONTROL_IP_MASK);
+			if (oce_fm_check_acc_handle(dev, dev->db_handle) !=
+			    DDI_FM_OK) {
+				ddi_fm_service_impact(dev->dip,
+				    DDI_SERVICE_DEGRADED);
+				return (EIO);
+			}
+			/* check adapter has corrected the error */
+			status = lancer_wait_ready(dev);
+			sliport_status = OCE_DB_READ32(dev,
+			    SLIPORT_STATUS_OFFSET);
+			if (oce_fm_check_acc_handle(dev, dev->db_handle) !=
+			    DDI_FM_OK) {
+				ddi_fm_service_impact(dev->dip,
+				    DDI_SERVICE_DEGRADED);
+				return (EIO);
+			}
+			sliport_status &= (SLIPORT_STATUS_ERR_MASK |
+			    SLIPORT_STATUS_RN_MASK);
+			if (status || sliport_status)
+				status = -1;
+		} else if (err || reset_needed) {
+			status = DDI_FAILURE;
+		}
+	}
+	return (status);
+}
+
 /*
- * function to trigger a POST on the device
+ * function to trigger a POST on the Lancer device
  *
  * dev - software handle to the device
  *
  */
 int
-oce_POST(struct oce_dev *dev)
+oce_lancer_POST(struct oce_dev *dev)
+{
+	int status = 0;
+	int sem = 0;
+	int stage = 0;
+	int timeout = 0;
+
+	status = lancer_test_and_set_rdy_state(dev);
+	if (status != 0)
+		return (DDI_FAILURE);
+
+	do {
+		sem = OCE_DB_READ32(dev, MPU_EP_SEMAPHORE_IF_TYPE2_OFFSET);
+		if (oce_fm_check_acc_handle(dev, dev->db_handle) != DDI_FM_OK) {
+			ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
+			return (EIO);
+		}
+		stage = sem & EP_SEMAPHORE_POST_STAGE_MASK;
+
+		if ((sem >> EP_SEMAPHORE_POST_ERR_SHIFT) &
+		    EP_SEMAPHORE_POST_ERR_MASK) {
+			oce_log(dev, CE_WARN, MOD_CONFIG,
+			    "POST error; stage=0x%x\n", stage);
+			return (DDI_FAILURE);
+		} else if (stage != POST_STAGE_ARMFW_READY) {
+			drv_usecwait(1000);
+		} else {
+			return (0);
+		}
+	} while (timeout++ < 1000);
+	oce_log(dev, CE_WARN, MOD_CONFIG,
+	    "POST timeout; stage=0x%x\n", stage);
+	return (DDI_FAILURE);
+
+} /* oce_lancer_POST */
+
+/*
+ * function to trigger a POST on the BE device
+ *
+ * dev - software handle to the device
+ *
+ */
+int
+oce_be_POST(struct oce_dev *dev)
 {
 	mpu_ep_semaphore_t post_status;
 	clock_t tmo;
@@ -368,7 +539,28 @@ oce_POST(struct oce_dev *dev)
 		drv_usecwait(100);
 	}
 	return (DDI_FAILURE);
-} /* oce_POST */
+} /* oce_be_POST */
+
+/*
+ * function to trigger a POST on the device
+ *
+ * dev - software handle to the device
+ *
+ */
+int
+oce_POST(struct oce_dev *dev)
+{
+	int ret = 0;
+
+	if (LANCER_CHIP(dev)) {
+		ret = oce_lancer_POST(dev);
+	} else {
+		ret = oce_be_POST(dev);
+	}
+
+	return (ret);
+}
+
 /*
  * function to modify register access attributes corresponding to the
  * FM capabilities configured by the user
@@ -390,141 +582,99 @@ oce_set_reg_fma_flags(int fm_caps)
 
 
 int
-oce_create_nw_interface(struct oce_dev *dev)
+oce_create_nw_interface(struct oce_dev *dev, oce_group_t *grp, uint32_t mode)
 {
 	int ret;
-	uint32_t capab_flags = OCE_CAPAB_FLAGS;
-	uint32_t capab_en_flags = OCE_CAPAB_ENABLE;
+	uint32_t cap_flags, en_flags;
 
-	if (dev->rss_enable) {
-		capab_flags |= MBX_RX_IFACE_FLAGS_RSS;
-		capab_en_flags |= MBX_RX_IFACE_FLAGS_RSS;
+	cap_flags = MBX_RX_IFACE_FLAGS_UNTAGGED;
+	en_flags = MBX_RX_IFACE_FLAGS_UNTAGGED;
+
+	/* first/default group receives broadcast and mcast pkts */
+	if (grp->grp_num == 0) {
+		cap_flags |= MBX_RX_IFACE_FLAGS_BROADCAST |
+		    MBX_RX_IFACE_FLAGS_MCAST_PROMISCUOUS |
+		    MBX_RX_IFACE_FLAGS_PROMISCUOUS |
+		    MBX_RX_IFACE_FLAGS_VLAN_PROMISCUOUS |
+		    MBX_RX_IFACE_FLAGS_MCAST;
+
+		en_flags |= MBX_RX_IFACE_FLAGS_BROADCAST |
+		    MBX_RX_IFACE_FLAGS_MCAST;
+
+
+		cap_flags |= MBX_RX_IFACE_FLAGS_PASS_L3L4;
+		en_flags  |= MBX_RX_IFACE_FLAGS_PASS_L3L4;
+		if (grp->rss_enable) {
+			cap_flags |= MBX_RX_IFACE_FLAGS_RSS;
+			en_flags |= MBX_RX_IFACE_FLAGS_RSS;
+		}
 	}
 
-	/* create an interface for the device with out mac */
-	ret = oce_if_create(dev, capab_flags, capab_en_flags,
-	    0, &dev->mac_addr[0], (uint32_t *)&dev->if_id);
+	if (grp->grp_num == 0) {
+		ret = oce_if_create(dev, cap_flags, en_flags,
+		    0, NULL,
+		    (uint32_t *)&grp->if_id, mode);
+		/* copy default if_id into dev */
+		dev->if_id = grp->if_id;
+
+	} else {
+		ret = oce_if_create(dev, cap_flags, en_flags,
+		    0, NULL, (uint32_t *)&grp->if_id, mode);
+	}
 	if (ret != 0) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Interface creation failed: 0x%x", ret);
+		    "Interface creation failed for group "
+		    "instance %d: 0x%x", grp->grp_num, ret);
 		return (ret);
 	}
-	atomic_inc_32(&dev->nifs);
-
-	dev->if_cap_flags = capab_en_flags;
 
 	/* Enable VLAN Promisc on HW */
-	ret = oce_config_vlan(dev, (uint8_t)dev->if_id, NULL, 0,
-	    B_TRUE, B_TRUE);
+	ret = oce_config_vlan(dev, (uint8_t)grp->if_id,
+	    NULL, 0, B_TRUE, B_TRUE, mode);
 	if (ret != 0) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Config vlan failed: %d", ret);
-		oce_delete_nw_interface(dev);
+		    "Config vlan failed: 0x%x", ret);
+		oce_delete_nw_interface(dev, grp, mode);
 		return (ret);
-
 	}
-
-	/* set default flow control */
-	ret = oce_set_flow_control(dev, dev->flow_control);
-	if (ret != 0) {
-		oce_log(dev, CE_NOTE, MOD_CONFIG,
-		    "Set flow control failed: %d", ret);
-	}
-	ret = oce_set_promiscuous(dev, dev->promisc);
-
-	if (ret != 0) {
-		oce_log(dev, CE_NOTE, MOD_CONFIG,
-		    "Set Promisc failed: %d", ret);
-	}
-
 	return (0);
 }
 
 void
-oce_delete_nw_interface(struct oce_dev *dev) {
-
-	/* currently only single interface is implmeneted */
-	if (dev->nifs > 0) {
-		(void) oce_if_del(dev, dev->if_id);
-		atomic_dec_32(&dev->nifs);
-	}
-}
-
-static void
-oce_create_itbl(struct oce_dev *dev, char *itbl)
+oce_delete_nw_interface(struct oce_dev *dev, oce_group_t *grp, uint32_t mode)
 {
-	int i;
-	struct oce_rq **rss_queuep = &dev->rq[1];
-	int nrss  = dev->nrqs - 1;
-	/* fill the indirection table rq 0 is default queue */
-	for (i = 0; i < OCE_ITBL_SIZE; i++) {
-		itbl[i] = rss_queuep[i % nrss]->rss_cpuid;
-	}
-}
+	char itbl[OCE_ITBL_SIZE] = {0};
+	char hkey[OCE_HKEY_SIZE] = {0};
+	int ret = 0;
 
-int
-oce_setup_adapter(struct oce_dev *dev)
-{
-	int ret;
-	char itbl[OCE_ITBL_SIZE];
-	char hkey[OCE_HKEY_SIZE];
+	if (grp->rss_enable) {
+		ret = oce_config_rss(dev, grp->if_id, hkey,
+		    itbl, OCE_ITBL_SIZE, RSS_ENABLE_NONE, B_FALSE, mode);
 
-	/* disable the interrupts here and enable in start */
-	oce_chip_di(dev);
-
-	ret = oce_create_nw_interface(dev);
-	if (ret != DDI_SUCCESS) {
-		return (DDI_FAILURE);
-	}
-	ret = oce_create_queues(dev);
-	if (ret != DDI_SUCCESS) {
-		oce_delete_nw_interface(dev);
-		return (DDI_FAILURE);
-	}
-	if (dev->rss_enable) {
-		(void) oce_create_itbl(dev, itbl);
-		(void) oce_gen_hkey(hkey, OCE_HKEY_SIZE);
-		ret = oce_config_rss(dev, dev->if_id, hkey, itbl, OCE_ITBL_SIZE,
-		    OCE_DEFAULT_RSS_TYPE, B_TRUE);
 		if (ret != DDI_SUCCESS) {
-			oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
-			    "Failed to Configure RSS");
-			oce_delete_queues(dev);
-			oce_delete_nw_interface(dev);
-			return (ret);
+			oce_log(dev, CE_NOTE, MOD_CONFIG,
+			    "Failed to Disable RSS if_id=%d, ret=0x%x",
+			    grp->if_id, ret);
 		}
 	}
-	ret = oce_setup_handlers(dev);
-	if (ret != DDI_SUCCESS) {
-		oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
-		    "Failed to Setup handlers");
-		oce_delete_queues(dev);
-		oce_delete_nw_interface(dev);
-		return (ret);
-	}
-	return (DDI_SUCCESS);
+	ret = oce_if_del(dev, (uint8_t)grp->if_id, mode);
+	if (ret != DDI_SUCCESS)
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "Failed to delete nw i/f gidx =%d if_id = 0x%x ret=0x%x",
+		    grp->grp_num, grp->if_id, ret);
 }
 
 void
-oce_unsetup_adapter(struct oce_dev *dev)
+oce_group_create_itbl(oce_group_t *grp, char *itbl)
 {
-	oce_remove_handler(dev);
-	if (dev->rss_enable) {
-		char itbl[OCE_ITBL_SIZE] = {0};
-		char hkey[OCE_HKEY_SIZE] = {0};
-		int ret = 0;
-
-		ret = oce_config_rss(dev, dev->if_id, hkey, itbl, OCE_ITBL_SIZE,
-		    RSS_ENABLE_NONE, B_TRUE);
-
-		if (ret != DDI_SUCCESS) {
-			oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
-			    "Failed to Disable RSS");
-		}
+	int i;
+	oce_ring_t *rss_queuep = &grp->ring[1];
+	/* fill the indirection table rq 0 is default queue */
+	for (i = 0; i < OCE_ITBL_SIZE; i++) {
+		itbl[i] = rss_queuep[i % (grp->num_rings - 1)].rx->rss_cpuid;
 	}
-	oce_delete_queues(dev);
-	oce_delete_nw_interface(dev);
 }
+
 
 int
 oce_hw_init(struct oce_dev *dev)
@@ -540,12 +690,11 @@ oce_hw_init(struct oce_dev *dev)
 		return (DDI_FAILURE);
 	}
 	/* create bootstrap mailbox */
-	dev->bmbx = oce_alloc_dma_buffer(dev,
-	    sizeof (struct oce_bmbx), NULL, DDI_DMA_CONSISTENT);
-	if (dev->bmbx == NULL) {
+	ret = oce_alloc_dma_buffer(dev, &dev->bmbx,
+	    sizeof (struct oce_bmbx), NULL, DDI_DMA_CONSISTENT|DDI_DMA_RDWR);
+	if (ret != DDI_SUCCESS) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Failed to allocate bmbx: size = %u",
-		    (uint32_t)sizeof (struct oce_bmbx));
+		    "Failed to allocate bmbx: 0x%x", ret);
 		return (DDI_FAILURE);
 	}
 
@@ -560,20 +709,20 @@ oce_hw_init(struct oce_dev *dev)
 	ret = oce_mbox_init(dev);
 	if (ret != 0) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Mailbox initialization2 Failed with %d", ret);
+		    "Mailbox initialization failed with 0x%x", ret);
 		goto init_fail;
 	}
 
 	/* read the firmware version */
-	ret = oce_get_fw_version(dev);
+	ret = oce_get_fw_version(dev, MBX_BOOTSTRAP);
 	if (ret != 0) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Firmaware version read failed with %d", ret);
+		    "Firmaware version read failed with 0x%x", ret);
 		goto init_fail;
 	}
 
 	/* read the fw config */
-	ret = oce_get_fw_config(dev);
+	ret = oce_get_fw_config(dev, MBX_BOOTSTRAP);
 	if (ret != 0) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
 		    "Firmware configuration read failed with %d", ret);
@@ -582,13 +731,20 @@ oce_hw_init(struct oce_dev *dev)
 
 	/* read the Factory MAC address */
 	ret = oce_read_mac_addr(dev, 0, 1,
-	    MAC_ADDRESS_TYPE_NETWORK, &mac_addr);
+	    MAC_ADDRESS_TYPE_NETWORK, &mac_addr, MBX_BOOTSTRAP);
 	if (ret != 0) {
 		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "MAC address read failed with %d", ret);
+		    "MAC address read failed with 0x%x", ret);
 		goto init_fail;
 	}
 	bcopy(&mac_addr.mac_addr[0], &dev->mac_addr[0], ETHERADDRL);
+
+	if (!LANCER_CHIP(dev)) {
+		/* cache the ue mask registers for ue detection */
+		dev->ue_mask_lo = OCE_CFG_READ32(dev, PCICFG_UE_STATUS_LO_MASK);
+		dev->ue_mask_hi = OCE_CFG_READ32(dev, PCICFG_UE_STATUS_HI_MASK);
+	}
+
 	return (DDI_SUCCESS);
 init_fail:
 	oce_hw_fini(dev);
@@ -597,8 +753,33 @@ init_fail:
 void
 oce_hw_fini(struct oce_dev *dev)
 {
-	if (dev->bmbx != NULL) {
-		oce_free_dma_buffer(dev, dev->bmbx);
-		dev->bmbx = NULL;
+	(void) oce_mbox_fini(dev);
+	oce_free_dma_buffer(dev, &dev->bmbx);
+}
+
+boolean_t
+oce_check_ue(struct oce_dev *dev)
+{
+	uint32_t ue_lo;
+	uint32_t ue_hi;
+
+	/* check for  the Hardware unexpected error */
+	ue_lo = OCE_CFG_READ32(dev, PCICFG_UE_STATUS_LO);
+	ue_hi = OCE_CFG_READ32(dev, PCICFG_UE_STATUS_HI);
+
+	if ((~dev->ue_mask_lo & ue_lo) ||
+	    (~dev->ue_mask_hi & ue_hi)) {
+		/* Unrecoverable error detected */
+		oce_log(dev, CE_WARN, MOD_CONFIG,
+		    "Hardware UE Detected: "
+		    "UE_LOW:%08x"
+		    "UE_HI:%08x "
+		    "UE_MASK_LO:%08x "
+		    "UE_MASK_HI:%08x",
+		    ue_lo, ue_hi,
+		    dev->ue_mask_lo,
+		    dev->ue_mask_hi);
+		return (B_TRUE);
 	}
+	return (B_FALSE);
 }

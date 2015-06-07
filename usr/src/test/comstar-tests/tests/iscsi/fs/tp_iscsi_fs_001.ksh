@@ -1,0 +1,136 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+#
+# A test purpose file to test functionality of backing storage
+#
+
+# __stc_assertion_start
+#
+# ID: iscsi_fs_001
+#
+# DESCRIPTION:
+#	Running I/O data validation on UFS backing storage 
+#
+# STRATEGY:
+#	Setup:
+#		MPXIO is enable on initiator host
+#		ufs LUs (specified by VOL_MAX variable in configuration) are
+#		    created in iSCSI target host 
+#		Map all the LUs can be accessed by all the target and host groups
+#		    by stmfadm add-view option
+#		Create one target portal group 1 with all the portals included
+#		Create one target node with tpgt 1
+#		Modify initiator target-param to allow all the initiator portals
+#		    to create one session individually to support mutlti-pathing 
+#		    with each target node
+#		Setup initiator node to enable "SendTarget" method
+#		Setup SendTarget with discovery address on initiator host
+#	Test:
+#		Start diskomizer on the initiator host
+#		Running I/O for 5 minutes
+#			
+#	Cleanup:
+#		Stop the diskomizer
+#		Delete the target portal group
+#		Delete the target node
+#		Delete the configuration information in initiator and target
+#
+#	STRATEGY_NOTES:
+#
+# TESTABILITY: explicit
+#
+# AUTHOR: john.gu@sun.com
+#
+# REVIEWERS:
+#
+# ASSERTION_SOURCE:
+#
+# TEST_AUTOMATION_LEVEL: automated
+#
+# STATUS: IN_PROGRESS
+#
+# COMMENTS:
+#
+# __stc_assertion_end
+#
+function iscsi_fs_001
+{
+	cti_pass
+
+        tc_id="iscsi_fs_001"
+	tc_desc="verify I/O data validation can pass UFS backing store"
+	print_test_case $tc_id - $tc_desc
+
+	msgfile_mark $ISCSI_IHOST START $tc_id
+	msgfile_mark $ISCSI_THOST START $tc_id
+
+	stmsboot_enable_mpxio $ISCSI_IHOST
+
+	build_fs ufs
+
+	typeset vol_num=0
+	while [ $vol_num -lt $VOL_MAX ]
+	do
+		typeset vol_id=`/usr/bin/printf "%03s" $vol_num`
+		typeset vol_name=vol${vol_id}
+
+		touch $MP/$vol_name
+		sbdadm_create_lu POS -s ${VOL_SIZE} $MP/$vol_name
+		(( vol_num+=1 ))
+	done
+
+	build_full_mapping
+
+	build_tpgt_portals $ISCSI_THOST 1
+
+	itadm_create POS target -t 1
+
+	iscsiadm_modify POS $ISCSI_IHOST discovery -t disable
+        iscsiadm_add POS $ISCSI_IHOST discovery-address $ISCSI_THOST
+        iscsiadm_modify POS $ISCSI_IHOST discovery -t enable
+
+	start_disko $ISCSI_IHOST
+
+	sleep $FS_SECONDS
+
+	stop_disko $ISCSI_IHOST
+	verify_disko $ISCSI_IHOST
+	ret=$?
+	echo Done verify_disko
+
+	msgfile_mark $ISCSI_IHOST STOP $tc_id
+	msgfile_extract $ISCSI_IHOST $tc_id
+	msgfile_mark $ISCSI_THOST STOP $tc_id
+	msgfile_extract $ISCSI_THOST $tc_id
+
+	host_reboot $ISCSI_IHOST
+	tp_cleanup
+        clean_fs ufs
+	initiator_cleanup $ISCSI_IHOST
+	[[ $ret -eq 0 ]] && cti_pass "tp_iscsi_fs_001: PASS"
+}
+

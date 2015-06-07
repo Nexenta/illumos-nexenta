@@ -78,6 +78,8 @@
 #include <sys/sata/sata_defs.h>
 #include <sys/scsi/generic/sas.h>
 #include <sys/scsi/impl/scsi_sas.h>
+#include <sys/sdt.h>
+#include <sys/mdi_impldefs.h>
 
 #pragma pack(1)
 #include <sys/scsi/adapters/mpt_sas/mpi/mpi2_type.h>
@@ -463,6 +465,13 @@ extern dev_info_t	*scsi_vhci_dip;
  * By default the value is 30 seconds.
  */
 int mptsas_inq83_retry_timeout = 30;
+
+/*
+ * Tunable for default SCSI pkt timeout. Defaults to 5 seconds, which should
+ * be plenty for INQUIRY and REPORT_LUNS, which are the only commands currently
+ * issued by mptsas directly.
+ */
+int mptsas_scsi_pkt_time = 5;
 
 /*
  * This is used to allocate memory for message frame storage, not for
@@ -1335,6 +1344,10 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	cv_init(&mpt->m_fw_diag_cv, NULL, CV_DRIVER, NULL);
 	mutex_init_done++;
 
+#ifdef MPTSAS_FAULTINJECTION
+	TAILQ_INIT(&mpt->m_fminj_cmdq);
+#endif
+
 	mutex_enter(&mpt->m_mutex);
 	/*
 	 * Initialize power management component
@@ -2023,6 +2036,10 @@ mptsas_do_detach(dev_info_t *dip)
 	cv_destroy(&mpt->m_fw_cv);
 	cv_destroy(&mpt->m_config_cv);
 	cv_destroy(&mpt->m_fw_diag_cv);
+
+#ifdef MPTSAS_FAULTINJECTION
+	ASSERT(TAILQ_EMPTY(&mpt->m_fminj_cmdq));
+#endif
 
 
 	mptsas_smp_teardown(mpt);
@@ -3379,6 +3396,117 @@ mptsas_accept_txwq_and_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	return (rval);
 }
 
+#ifdef MPTSAS_FAULTINJECTION
+static void
+mptsas_fminj_move_cmd_to_doneq(mptsas_t *mpt, mptsas_cmd_t *cmd,
+    uchar_t reason, uint_t stat)
+{
+	struct scsi_pkt *pkt = cmd->cmd_pkt;
+
+	TAILQ_REMOVE(&mpt->m_fminj_cmdq, cmd, cmd_active_link);
+
+	/* Setup reason/statistics. */
+	pkt->pkt_reason = reason;
+	pkt->pkt_statistics = stat;
+
+	cmd->cmd_active_expiration = 0;
+
+	/* Move command to doneque. */
+	cmd->cmd_linkp = NULL;
+	cmd->cmd_flags |= CFLAG_FINISHED;
+	cmd->cmd_flags &= ~CFLAG_IN_TRANSPORT;
+
+	*mpt->m_donetail = cmd;
+	mpt->m_donetail = &cmd->cmd_linkp;
+	mpt->m_doneq_len++;
+}
+
+static void
+mptsas_fminj_move_tgt_to_doneq(mptsas_t *mpt, ushort_t target,
+    uchar_t reason, uint_t stat)
+{
+	mptsas_cmd_t *cmd;
+
+	ASSERT(mutex_owned(&mpt->m_mutex));
+
+	if (!TAILQ_EMPTY(&mpt->m_fminj_cmdq)) {
+		cmd = TAILQ_FIRST(&mpt->m_fminj_cmdq);
+		ASSERT(cmd != NULL);
+
+		while (cmd != NULL) {
+			mptsas_cmd_t *next = TAILQ_NEXT(cmd, cmd_active_link);
+
+			if (Tgt(cmd) == target) {
+				mptsas_fminj_move_cmd_to_doneq(mpt, cmd,
+				    reason, stat);
+			}
+			cmd = next;
+		}
+	}
+}
+
+static void
+mptsas_fminj_watchsubr(mptsas_t *mpt,
+    struct mptsas_active_cmdq *expired)
+{
+	mptsas_cmd_t *cmd;
+
+	ASSERT(mutex_owned(&mpt->m_mutex));
+
+	if (!TAILQ_EMPTY(&mpt->m_fminj_cmdq)) {
+		hrtime_t timestamp = gethrtime();
+
+		cmd = TAILQ_FIRST(&mpt->m_fminj_cmdq);
+		ASSERT(cmd != NULL);
+
+		while (cmd != NULL) {
+			mptsas_cmd_t *next = TAILQ_NEXT(cmd, cmd_active_link);
+
+			if (cmd->cmd_active_expiration <= timestamp) {
+				struct scsi_pkt *pkt = cmd->cmd_pkt;
+
+				DTRACE_PROBE1(mptsas__command__timeout,
+				    struct scsi_pkt *, pkt);
+
+				/* Setup proper flags. */
+				pkt->pkt_reason = CMD_TIMEOUT;
+				pkt->pkt_statistics = (STAT_TIMEOUT |
+				    STAT_DEV_RESET);
+				cmd->cmd_active_expiration = 0;
+
+				TAILQ_REMOVE(&mpt->m_fminj_cmdq, cmd,
+				    cmd_active_link);
+				TAILQ_INSERT_TAIL(expired, cmd,
+				    cmd_active_link);
+			}
+			cmd = next;
+		}
+	}
+}
+
+static int
+mptsas_fminject(mptsas_t *mpt, mptsas_cmd_t *cmd)
+{
+	struct scsi_pkt *pkt = cmd->cmd_pkt;
+
+	ASSERT(mutex_owned(&mpt->m_mutex));
+
+	if (pkt->pkt_flags & FLAG_PKT_TIMEOUT) {
+		if (((pkt->pkt_flags & FLAG_NOINTR) == 0) &&
+		    (pkt->pkt_comp != NULL)) {
+			pkt->pkt_state = (STATE_GOT_BUS|STATE_GOT_TARGET|
+			    STATE_SENT_CMD);
+			cmd->cmd_active_expiration =
+			    gethrtime() + (hrtime_t)pkt->pkt_time * NANOSEC;
+			TAILQ_INSERT_TAIL(&mpt->m_fminj_cmdq,
+			    cmd, cmd_active_link);
+			return (0);
+		}
+	}
+	return (-1);
+}
+#endif /* MPTSAS_FAULTINJECTION */
+
 static int
 mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 {
@@ -3444,6 +3572,17 @@ mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 			return (TRAN_FATAL_ERROR);
 		}
 	}
+
+	/*
+	 * Do fault injecttion before transmitting command.
+	 * FLAG_NOINTR commands are skipped.
+	 */
+#ifdef MPTSAS_FAULTINJECTION
+	if (!mptsas_fminject(mpt, cmd)) {
+		return (TRAN_ACCEPT);
+	}
+#endif
+
 	/*
 	 * The first case is the normal case.  mpt gets a command from the
 	 * target driver and starts it.
@@ -3556,6 +3695,13 @@ mptsas_prepare_pkt(mptsas_cmd_t *cmd)
 	struct scsi_pkt	*pkt = CMD2PKT(cmd);
 
 	NDBG1(("mptsas_prepare_pkt: cmd=0x%p", (void *)cmd));
+
+#ifdef MPTSAS_FAULTINJECTION
+	/* Check for fault flags prior to perform actual initialization. */
+	if (pkt->pkt_flags & FLAG_PKT_BUSY) {
+		return (TRAN_BUSY);
+	}
+#endif
 
 	/*
 	 * Reinitialize some fields that need it; the packet may
@@ -3691,6 +3837,8 @@ mptsas_scsi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 
 	} else {
 		cmd = PKT2CMD(pkt);
+		pkt->pkt_start = 0;
+		pkt->pkt_stop = 0;
 		new_cmd = NULL;
 	}
 
@@ -5149,6 +5297,8 @@ mptsas_handle_scsi_io_success(mptsas_t *mpt,
 	}
 
 	pkt = CMD2PKT(cmd);
+	ASSERT(pkt->pkt_start != 0);
+	pkt->pkt_stop = gethrtime();
 	pkt->pkt_state |= (STATE_GOT_BUS | STATE_GOT_TARGET | STATE_SENT_CMD |
 	    STATE_GOT_STATUS);
 	if (cmd->cmd_flags & CFLAG_DMAVALID) {
@@ -5459,6 +5609,8 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 	    scsi_status, ioc_status, scsi_state));
 
 	pkt = CMD2PKT(cmd);
+	ASSERT(pkt->pkt_start != 0);
+	pkt->pkt_stop = gethrtime();
 	*(pkt->pkt_scbp) = scsi_status;
 
 	if (loginfo == 0x31170000) {
@@ -8490,6 +8642,7 @@ mptsas_start_cmd(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	(void) ddi_dma_sync(dma_hdl, 0, 0, DDI_DMA_SYNC_FORDEV);
 	(void) ddi_dma_sync(mpt->m_dma_req_sense_hdl, 0, 0,
 	    DDI_DMA_SYNC_FORDEV);
+	pkt->pkt_start = gethrtime();
 
 	/*
 	 * Build request descriptor and write it to the request desc post reg.
@@ -8501,8 +8654,9 @@ mptsas_start_cmd(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	/*
 	 * Start timeout.
 	 */
-	cmd->cmd_active_expiration =
-	    gethrtime() + (hrtime_t)pkt->pkt_time * NANOSEC;
+	cmd->cmd_active_expiration = pkt->pkt_start +
+	    (hrtime_t)pkt->pkt_time * (hrtime_t)NANOSEC;
+
 #ifdef MPTSAS_TEST
 	/*
 	 * Force timeouts to happen immediately.
@@ -9176,6 +9330,10 @@ mptsas_flush_target(mptsas_t *mpt, ushort_t target, int lun, uint8_t tasktype)
 		    tasktype);
 		break;
 	}
+
+#ifdef MPTSAS_FAULTINJECTION
+	mptsas_fminj_move_tgt_to_doneq(mpt, target, reason, stat);
+#endif
 }
 
 /*
@@ -9460,6 +9618,17 @@ mptsas_do_scsi_abort(mptsas_t *mpt, int target, int lun, struct scsi_pkt *pkt)
 	if (pkt != NULL) {
 		/* abort the specified packet */
 		sp = PKT2CMD(pkt);
+
+#ifdef MPTSAS_FAULTINJECTION
+	/* Command already on the list. */
+	if (((pkt->pkt_flags & FLAG_PKT_TIMEOUT) != 0) &&
+	    (sp->cmd_active_expiration != 0)) {
+		mptsas_fminj_move_cmd_to_doneq(mpt, sp, CMD_ABORTED,
+		    STAT_ABORTED);
+		rval = TRUE;
+		goto done;
+	}
+#endif
 
 		if (sp->cmd_queued) {
 			NDBG23(("mptsas_do_scsi_abort: queued sp=0x%p aborted",
@@ -9822,6 +9991,12 @@ mptsas_watch(void *arg)
 	mptsas_t	*mpt;
 	uint32_t	doorbell;
 
+#ifdef MPTSAS_FAULTINJECTION
+	struct mptsas_active_cmdq finj_cmds;
+
+	TAILQ_INIT(&finj_cmds);
+#endif
+
 	NDBG30(("mptsas_watch"));
 
 	rw_enter(&mptsas_global_rwlock, RW_READER);
@@ -9865,6 +10040,10 @@ mptsas_watch(void *arg)
 			(void) pm_idle_component(mpt->m_dip, 0);
 		}
 
+#ifdef MPTSAS_FAULTINJECTION
+		mptsas_fminj_watchsubr(mpt, &finj_cmds);
+#endif
+
 		mutex_exit(&mpt->m_mutex);
 	}
 	rw_exit(&mptsas_global_rwlock);
@@ -9873,6 +10052,22 @@ mptsas_watch(void *arg)
 	if (mptsas_timeouts_enabled)
 		mptsas_timeout_id = timeout(mptsas_watch, NULL, mptsas_tick);
 	mutex_exit(&mptsas_global_mutex);
+
+#ifdef MPTSAS_FAULTINJECTION
+	/* Complete all completed commands. */
+	if (!TAILQ_EMPTY(&finj_cmds)) {
+		mptsas_cmd_t *cmd;
+
+		while ((cmd = TAILQ_FIRST(&finj_cmds)) != NULL) {
+			TAILQ_REMOVE(&finj_cmds, cmd, cmd_active_link);
+			struct scsi_pkt *pkt = cmd->cmd_pkt;
+
+			if (pkt->pkt_comp != NULL) {
+				(*pkt->pkt_comp)(pkt);
+			}
+		}
+	}
+#endif
 }
 
 static void
@@ -10884,6 +11079,7 @@ mptsas_do_passthru(mptsas_t *mpt, uint8_t *request, uint8_t *reply,
 	pkt->pkt_ha_private	= (opaque_t)&pt;
 	pkt->pkt_flags		= FLAG_HEAD;
 	pkt->pkt_time		= timeout;
+	pkt->pkt_start          = gethrtime();
 	cmd->cmd_pkt		= pkt;
 	cmd->cmd_flags		= CFLAG_CMDIOC | CFLAG_PASSTHRU;
 
@@ -13722,6 +13918,7 @@ mptsas_send_scsi_cmd(mptsas_t *mpt, struct scsi_address *ap,
 	}
 	bcopy(cdb, pktp->pkt_cdbp, cdblen);
 	pktp->pkt_flags = FLAG_NOPARITY;
+	pktp->pkt_time = mptsas_scsi_pkt_time;
 	if (scsi_poll(pktp) < 0) {
 		goto out;
 	}
@@ -15067,7 +15264,8 @@ mptsas_create_virt_lun(dev_info_t *pdip, struct scsi_inquiry *inq, char *guid,
 						return (DDI_FAILURE);
 					}
 				}
-				if (mdi_pi_free(*pip, 0) != MDI_SUCCESS) {
+				if (mdi_pi_free(*pip,
+				    MDI_CLIENT_FLAGS_NO_EVENT) != MDI_SUCCESS) {
 					mptsas_log(mpt, CE_WARN, "path:target:"
 					    "%x, lun:%x free failed!", target,
 					    lun);
@@ -15298,7 +15496,7 @@ mptsas_create_virt_lun(dev_info_t *pdip, struct scsi_inquiry *inq, char *guid,
 		}
 virt_create_done:
 		if (*pip && mdi_rtn != MDI_SUCCESS) {
-			(void) mdi_pi_free(*pip, 0);
+			(void) mdi_pi_free(*pip, MDI_CLIENT_FLAGS_NO_EVENT);
 			*pip = NULL;
 			*lun_dip = NULL;
 		}

@@ -27,6 +27,7 @@
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 
 include ../Makefile.master
+include $(NZA_MAKEDEFS)
 
 #
 #	Note that the commands 'lp', and 'perl' are first in
@@ -58,6 +59,9 @@ COMMON_SUBDIRS=		\
 	adbgen		\
 	acct		\
 	acctadm		\
+	acpitools	\
+	aoeadm		\
+	aoesvc		\
 	arch		\
 	asa		\
 	ast		\
@@ -126,6 +130,8 @@ COMMON_SUBDIRS=		\
 	dis		\
 	diskmgtd	\
 	dispadmin	\
+	disk-dmc	\
+	diskfltinj	\
 	dladm		\
 	dlstat		\
 	dmesg		\
@@ -284,6 +290,7 @@ COMMON_SUBDIRS=		\
 	nohup		\
 	nsadmin		\
 	nscd		\
+	nsstest		\
 	oamuser		\
 	oawk		\
 	od		\
@@ -468,6 +475,8 @@ COMMON_SUBDIRS=		\
 	zstreamdump	\
 	ztest
 
+$(NZA_KMODS)COMMON_SUBDIRS += $(NZA_CLOSED_CMD)
+
 i386_SUBDIRS=		\
 	acpihpd		\
 	addbadsec	\
@@ -503,6 +512,7 @@ MSGSUBDIRS=		\
 	abi		\
 	acctadm		\
 	allocate	\
+	aoeadm		\
 	asa		\
 	audio		\
 	audit		\
@@ -555,6 +565,7 @@ MSGSUBDIRS=		\
 	dfs.cmds	\
 	diff		\
 	diffmk		\
+	disk-dmc	\
 	dladm		\
 	dlstat		\
 	du		\

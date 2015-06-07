@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
@@ -57,6 +58,8 @@ int traverse_dataset(struct dsl_dataset *ds,
 int traverse_dataset_destroyed(spa_t *spa, blkptr_t *blkptr,
     uint64_t txg_start, zbookmark_phys_t *resume, int flags,
     blkptr_cb_t func, void *arg);
+int traverse_dataset_resume(struct dsl_dataset *ds, uint64_t txg_start,
+    zbookmark_phys_t *resume, int flags, blkptr_cb_t func, void *arg);
 int traverse_pool(spa_t *spa,
     uint64_t txg_start, int flags, blkptr_cb_t func, void *arg);
 

@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <sys/systm.h>
 #include <sys/types.h>
@@ -78,7 +81,6 @@ uint_t bypass_snapshot_throttle_key;
  */
 extern kmutex_t		ml_scan;
 extern kcondvar_t	ml_scan_cv;
-extern int		maxphys;
 
 static void
 trans_roll_wait(mt_map_t *logmap, callb_cpr_t *cprinfop)

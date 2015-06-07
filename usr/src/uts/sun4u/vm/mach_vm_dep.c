@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /* Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T */
 /*	All Rights Reserved   */
@@ -54,7 +57,7 @@ caddr_t errata57_limit;
 uint_t page_colors = 0;
 uint_t page_colors_mask = 0;
 uint_t page_coloring_shift = 0;
-int consistent_coloring;
+volatile int consistent_coloring;
 int update_proc_pgcolorbase_after_fork = 0;
 
 uint_t mmu_page_sizes = DEFAULT_MMU_PAGE_SIZES;

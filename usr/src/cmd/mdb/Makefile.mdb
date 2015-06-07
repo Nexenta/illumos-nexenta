@@ -24,7 +24,7 @@
 #
 
 #
-# Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2011, 2015 Nexenta Systems, Inc.  All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright (c) 2012 Joyent, Inc. All rights reserved.
 #
@@ -34,6 +34,7 @@
 
 SRCS += \
 	ffs.c \
+	list.c \
 	mdb.c \
 	mdb_addrvec.c \
 	mdb_argvec.c \
@@ -169,6 +170,10 @@ ffs.o ffs.ln := CPPFLAGS += -Dffs=mdb_ffs
 	$(COMPILE.c) $<
 	$(CTFCONVERT_O)
 
+%.o: $(SRC)/common/list/%.c
+	$(COMPILE.c) $<
+	$(CTFCONVERT_O)
+
 %.o: $(SRC)/common/net/util/%.c
 	$(COMPILE.c) $<
 	$(CTFCONVERT_O)
@@ -194,6 +199,9 @@ clobber: clean clean.lint
 	$(LINT.c) -c $<
 
 %.ln: %.c
+	$(LINT.c) -c $<
+
+%.ln: $(SRC)/common/list/%.c
 	$(LINT.c) -c $<
 
 %.ln: $(SRC)/common/net/util/%.c

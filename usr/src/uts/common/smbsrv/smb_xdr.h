@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SMBSRV_SMB_XDR_H
@@ -53,28 +53,37 @@ extern "C" {
 #include <stddef.h>	/* offsetof */
 #endif /* _KERNEL */
 
-/* null-terminated string */
+/*
+ * null-terminated string
+ * See also: smb_string_xdr()
+ */
 typedef struct smb_string {
 	char *buf;
 } smb_string_t;
 
 struct smb_buf32;
 
-#define	SMB_OPIPE_HDR_MAGIC	0x4F484452	/* OHDR */
-#define	SMB_OPIPE_DOOR_BUFSIZE	(30 * 1024)
+/*
+ * Initial message on server named pipes.
+ * Followed by smb_netuserinfo
+ */
+typedef struct smb_pipehdr {
+	uint32_t ph_magic;
+	uint32_t ph_uilen;
+} smb_pipehdr_t;
+
+#define	SMB_PIPE_HDR_MAGIC	0x50495045	/* PIPE */
 
 /*
- * Door operations for opipes.
+ * Maximum message size for SMB named pipes.
+ * Should be less than PIPE_BUF (5120).
+ * Use the same value Windows does.
  */
-typedef enum {
-	SMB_OPIPE_NULL = 0,
-	SMB_OPIPE_LOOKUP,
-	SMB_OPIPE_OPEN,
-	SMB_OPIPE_CLOSE,
-	SMB_OPIPE_READ,
-	SMB_OPIPE_WRITE,
-	SMB_OPIPE_EXEC
-} smb_opipe_op_t;
+#define	SMB_PIPE_MAX_MSGSIZE	4280
+
+/*
+ * Door up-call stuff shared with smbd
+ */
 
 #define	SMB_DOOR_HDR_MAGIC	0x444F4F52	/* DOOR */
 
@@ -97,6 +106,8 @@ typedef enum {
  * resid	For opipe: the number of bytes remaining in the server.
  * door_rc	Return code provided by the door server.
  * status	A pass-through status provided by the door operation.
+ *
+ * See also: smb_doorhdr_xdr()
  */
 typedef struct smb_doorhdr {
 	uint32_t dh_magic;
@@ -110,6 +121,11 @@ typedef struct smb_doorhdr {
 	uint32_t dh_status;
 } smb_doorhdr_t;
 
+/*
+ * Information about the client of a named pipe, provided by smbsrv
+ * to the server side of the named pipe (the RPC service).
+ * See also: smb_netuserinfo_xdr()
+ */
 typedef struct smb_netuserinfo {
 	uint64_t	ui_session_id;
 	uint16_t	ui_smb_uid;
@@ -135,6 +151,10 @@ typedef struct smb_opennum {
 	char		qualifier[MAXNAMELEN];
 } smb_opennum_t;
 
+/*
+ * SMB (internal) representation of a tree connection (etc.)
+ * See also: smb_netconnectinfo_xdr()
+ */
 typedef struct smb_netconnectinfo {
 	uint32_t	ci_id;
 	uint32_t	ci_type;
@@ -147,6 +167,10 @@ typedef struct smb_netconnectinfo {
 	char		*ci_share;
 } smb_netconnectinfo_t;
 
+/*
+ * SMB (internal) representation of an open file.
+ * See also: smb_netfileinfo_xdr()
+ */
 typedef struct smb_netfileinfo {
 	uint16_t	fi_fid;
 	uint32_t	fi_uniqid;
@@ -214,13 +238,25 @@ bool_t lsa_account_xdr(XDR *, lsa_account_t *);
  */
 #define	SMB_VSS_GMT_SIZE sizeof ("@GMT-yyyy.mm.dd-hh.mm.ss")
 
+/*
+ * Args for enumerating "previous versions".
+ * See also: smb_gmttoken_query_xdr()
+ */
 typedef struct smb_gmttoken_query {
 	uint32_t	gtq_count;
 	char		*gtq_path;
 } smb_gmttoken_query_t;
 
+/*
+ * Part of response for enumerating "previous versions".
+ * See also: smb_gmttoken_xdr()
+ */
 typedef char *smb_gmttoken_t;
 
+/*
+ * Response for enumerating "previous versions".
+ * See also: smb_gmttoken_response_xdr()
+ */
 typedef struct smb_gmttoken_response {
 	uint32_t gtr_count;
 	struct {
@@ -229,9 +265,14 @@ typedef struct smb_gmttoken_response {
 	} gtr_gmttokens;
 } smb_gmttoken_response_t;
 
+/*
+ * Args to lookup "previous versions" during open.
+ * See also: smb_gmttoken_snapname_xdr()
+ */
 typedef struct smb_gmttoken_snapname {
 	char	*gts_path;
 	char	*gts_gmttoken;
+	uint64_t gts_toktime; /* seconds */
 } smb_gmttoken_snapname_t;
 
 bool_t smb_gmttoken_query_xdr(XDR *, smb_gmttoken_query_t *);
@@ -246,6 +287,10 @@ bool_t smb_gmttoken_snapname_xdr(XDR *, smb_gmttoken_snapname_t *);
  */
 #define	SMB_QUOTA_UNLIMITED		0xFFFFFFFFFFFFFFFF
 
+/*
+ * SMB (internal) representation of a quota response
+ * See also: smb_quota_xdr()
+ */
 typedef struct smb_quota {
 	list_node_t q_list_node;
 	char q_sidstr[SMB_SID_STRSZ];
@@ -256,6 +301,10 @@ typedef struct smb_quota {
 	avl_node_t q_avl_node;
 } smb_quota_t;
 
+/*
+ * Part of a quota response
+ * See also: smb_quota_sid_xdr()
+ */
 typedef struct smb_quota_sid {
 	list_node_t qs_list_node;
 	char qs_sidstr[SMB_SID_STRSZ];
@@ -268,6 +317,10 @@ typedef enum {
 	SMB_QUOTA_QUERY_ALL
 } smb_quota_query_op_t;
 
+/*
+ * SMB (internal) form of a quota lookup
+ * See also: smb_quota_query_xdr()
+ */
 typedef struct smb_quota_query {
 	char *qq_root_path;
 	uint32_t qq_query_op;	/* smb_quota_query_op_t */
@@ -277,11 +330,19 @@ typedef struct smb_quota_query {
 	list_t qq_sid_list;	/* list of smb_quota_sid_t */
 } smb_quota_query_t;
 
+/*
+ * The get quota response (list of quota records)
+ * See also: smb_quota_response_xdr()
+ */
 typedef struct smb_quota_response {
 	uint32_t qr_status;
 	list_t qr_quota_list;	/* list of smb_quota_t */
 } smb_quota_response_t;
 
+/*
+ * The set quota request (list of quota records)
+ * See also: smb_quota_set_xdr()
+ */
 typedef struct smb_quota_set {
 	char *qs_root_path;
 	list_t qs_quota_list;	/* list of smb_quota_t */

@@ -128,7 +128,7 @@ typedef enum acpidev_class_id {
 #ifdef	_KERNEL
 
 /* Common ACPI object names. */
-#define	ACPIDEV_OBJECT_NAME_SB		ACPI_NS_SYSTEM_BUS
+#define	ACPIDEV_OBJECT_NAME_SB		"_SB_"
 #define	ACPIDEV_OBJECT_NAME_PR		"_PR_"
 
 /* Common ACPI method names. */

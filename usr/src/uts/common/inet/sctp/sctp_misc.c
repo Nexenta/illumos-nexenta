@@ -21,9 +21,11 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
+#include <sys/vmsystm.h>
 #include <inet/common.h>
 #include "sctp_impl.h"
 
@@ -154,7 +156,6 @@ sctp_reclaim_timer(void *arg)
 	sctp_stack_t *sctps = (sctp_stack_t *)arg;
 	int64_t tot_assoc = 0;
 	int i;
-	extern pgcnt_t lotsfree, needfree;
 
 	for (i = 0; i < sctps->sctps_sc_cnt; i++)
 		tot_assoc += sctps->sctps_sc[i]->sctp_sc_assoc_cnt;
@@ -195,7 +196,6 @@ sctp_conn_reclaim(void *arg)
 	netstack_handle_t nh;
 	netstack_t *ns;
 	sctp_stack_t *sctps;
-	extern pgcnt_t lotsfree, needfree;
 
 	if (!sctp_do_reclaim)
 		return;

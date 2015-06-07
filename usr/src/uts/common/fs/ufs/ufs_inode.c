@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1983, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -134,8 +135,8 @@ ulong_t	ufs_inode_max;	/* hard limit of allowable idle inodes */
  */
 #define	UFS_HW_DEFAULT	(16 * 1024 * 1024)
 #define	UFS_LW_DEFAULT	(8 * 1024 * 1024)
-int	ufs_HW = UFS_HW_DEFAULT;
-int	ufs_LW = UFS_LW_DEFAULT;
+volatile int	ufs_HW = UFS_HW_DEFAULT;
+volatile int	ufs_LW = UFS_LW_DEFAULT;
 
 static void ihinit(void);
 extern int hash2ints(int, int);

@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Driver Version
@@ -32,15 +37,7 @@
 extern "C" {
 #endif
 
-#define	OCE_MAJOR_VERSION	"1"
-#define	OCE_MINOR_VERSION	"2"
-#define	OCE_RELEASE_NUM		"0"
-#define	OCE_PROTO_LEVEL		"e"
-
-#define	OCE_VERSION		OCE_MAJOR_VERSION "." \
-				OCE_MINOR_VERSION \
-				OCE_RELEASE_NUM \
-				OCE_PROTO_LEVEL
+#define	OCE_VERSION	"4.1.450.0"
 
 #define	OCE_REVISION		" Version " OCE_VERSION
 
@@ -49,7 +46,7 @@ extern "C" {
 #define	OCE_DESC_STRING	\
 	"Emulex OneConnect 10 GBit Ethernet Adapter Driver"
 
-#define	OCE_IDENT_STRING	"ELX 10G Ethernet GLDv3 v" OCE_VERSION
+#define	OCE_IDENT_STRING	"ELX 10G NIC GLDv3 " OCE_VERSION
 
 #ifdef	__cplusplus
 }

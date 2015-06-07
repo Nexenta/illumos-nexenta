@@ -50,7 +50,7 @@ that contain that pattern.  It uses a compact non-deterministic algorithm.
 Be careful using the characters \fB$\fR, \fB*\fR, \fB[\fR, \fB^\fR, \fB|\fR,
 \fB(\fR, \fB)\fR, and \fB\e\fR in the \fIpattern_list\fR because they are also
 meaningful to the shell. It is safest to enclose the entire \fIpattern_list\fR
-in single quotes \fBa\'\fR\&...\fBa\'\fR\&.
+in single quotes \fB\'\fR\&...\fB\'\fR\&.
 .sp
 .LP
 If no files are specified, \fBgrep\fR assumes standard input. Normally, each
@@ -205,6 +205,44 @@ Searches for the expression as a word as if surrounded by \fB\e<\fR and
 .sp
 .LP
 The following options are supported for \fB/usr/xpg4/bin/grep\fR only:
+.sp
+.ne 2
+.na
+\fB\fB-A\fR \fInumber\fR\fR
+.ad
+.RS 19n
+Prints \fInumber\fR input lines of context after each matching line. If there
+are multiple matching lines, their context lines are separated by a \fB--\fR
+delimiter line.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-B\fR \fInumber\fR\fR
+.ad
+.RS 19n
+Prints \fInumber\fR input lines of context before each matching line. If there
+are multiple matching lines, their context lines are separated by a \fB--\fR
+delimiter line.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fB-\fR\fInumber\fR\fR
+.ad
+.br
+.na
+\fB\fB-C\fR \fInumber\fR\fR
+.ad
+.RS 19n
+Prints \fInumber\fR input lines of context before and \fInumber\fR input lines
+of context after each matching line. If there are multiple matching lines,
+their context lines are separated by a \fB--\fR delimiter line.
+.RE
+
+
 .sp
 .ne 2
 .na

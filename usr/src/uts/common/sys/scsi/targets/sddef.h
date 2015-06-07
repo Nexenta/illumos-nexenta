@@ -23,7 +23,7 @@
  */
 /*
  * Copyright 2011 cyril.galibern@opensvc.com
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SYS_SCSI_TARGETS_SDDEF_H
@@ -214,6 +214,46 @@ struct sd_mapblocksize_info {
 
 _NOTE(SCHEME_PROTECTS_DATA("unshared data", sd_mapblocksize_info))
 
+/* Thin-provisioning (UNMAP) flags for un_thin_flags. */
+enum {
+	SD_THIN_PROV_ENABLED =		1 << 0,	/* UNMAP available */
+	SD_THIN_PROV_READ_ZEROS =	1 << 1	/* unmapped blk = zeros */
+};
+
+/*
+ * Device limits as read from the Block Limits VPD page (0xB0). If the page
+ * is unavailable, will be filled with some defaults.
+ */
+typedef struct sd_blk_limits_s {
+	uint16_t	lim_opt_xfer_len_gran;
+	uint32_t	lim_max_xfer_len;
+	uint32_t	lim_opt_xfer_len;
+	uint32_t	lim_max_pfetch_len;
+	uint32_t	lim_max_unmap_lba_cnt;
+	uint32_t	lim_max_unmap_descr_cnt;
+	uint32_t	lim_opt_unmap_gran;
+	uint32_t	lim_unmap_gran_align;
+	uint64_t	lim_max_write_same_len;
+} sd_blk_limits_t;
+/*
+ * Latency is tracked in usec and is quantized by power of two starting at
+ * offset SD_LAT_MIN_USEC_SHIFT. Values below that offset will go in the first
+ * (0th) bucket. Similar, values above SD_LAT_MAX_USEC_SHIFT go in the
+ * (SD_LAT_MAX_USEC_SHIFT - 1) bucket.
+ *
+ * From observations, using SAS SSDs and rotational drives these values are
+ * sufficient for now.
+ */
+
+#define	SD_LAT_MIN_USEC_SHIFT 4
+#define	SD_LAT_MAX_USEC_SHIFT 24
+#define	SD_LAT_BUCKET_MAX (SD_LAT_MAX_USEC_SHIFT - SD_LAT_MIN_USEC_SHIFT)
+
+typedef struct un_lat_stat {
+	hrtime_t l_sum;					/* total latency  */
+	uint64_t l_nrequest;				/* number of requests */
+	uint64_t l_histogram[SD_LAT_BUCKET_MAX]; 	/* latency histogram */
+} un_lat_stat_t;
 
 /*
  * sd_lun: The main data structure for a scsi logical unit.
@@ -357,6 +397,8 @@ struct sd_lun {
 	struct	kstat	*un_pstats[NSDMAP];	/* partition statistics */
 	struct	kstat	*un_stats;		/* disk statistics */
 	kstat_t		*un_errstats;		/* for error statistics */
+	kstat_t 	*un_lat_ksp;		/* pointer to the raw kstat */
+	un_lat_stat_t	*un_lat_stats;		/* data from the above kstat */
 	uint64_t	un_exclopen;		/* exclusive open bitmask */
 	ddi_devid_t	un_devid;		/* device id */
 	uint_t		un_vpd_page_mask;	/* Supported VPD pages */
@@ -464,7 +506,8 @@ struct sd_lun {
 						/* NOTIFICATION for polling */
 	    un_f_enable_rmw		:1,	/* Force RMW in sd driver */
 	    un_f_expnevent		:1,
-	    un_f_reserved		:3;
+	    un_f_cache_mode_changeable	:1,	/* can change cache mode */
+	    un_f_reserved		:2;
 
 	/* Ptr to table of strings for ASC/ASCQ error message printing */
 	struct scsi_asq_key_strings	*un_additional_codes;
@@ -506,6 +549,12 @@ struct sd_lun {
 	uint64_t	un_rmw_incre_count;	/* count I/O */
 	timeout_id_t	un_rmw_msg_timeid;	/* for RMW message control */
 
+	/* Thin provisioning support (see SD_THIN_PROV_*) */
+	uint64_t	un_thin_flags;
+
+	/* Block limits (0xB0 VPD page) */
+	sd_blk_limits_t	un_blk_lim;
+
 	/* For timeout callback to issue a START STOP UNIT command */
 	timeout_id_t	un_startstop_timeid;
 
@@ -526,6 +575,7 @@ struct sd_lun {
 	 * sense code.
 	 */
 	uint_t		un_sonoma_failure_count;
+	hrtime_t 	un_slow_io_threshold;
 
 	/*
 	 * Support for failfast operation.
@@ -551,6 +601,7 @@ struct sd_lun {
 	struct sd_fi_xb		*sd_fi_fifo_xb[SD_FI_MAX_ERROR];
 	struct sd_fi_un		*sd_fi_fifo_un[SD_FI_MAX_ERROR];
 	struct sd_fi_arq	*sd_fi_fifo_arq[SD_FI_MAX_ERROR];
+	struct sd_fi_tran	*sd_fi_fifo_tran[SD_FI_MAX_ERROR];
 	uint_t				sd_fi_fifo_start;
 	uint_t				sd_fi_fifo_end;
 	uint_t				sd_injection_mask;
@@ -1047,6 +1098,8 @@ _NOTE(SCHEME_PROTECTS_DATA("Unshared data", sd_prout))
  * sd_fi_arq replicates the variables that are
  *           exposed for Auto-Reqeust-Sense
  *
+ * sd_fi_tran HBA-level fault injection.
+ *
  */
 struct sd_fi_pkt {
 	uint_t  pkt_flags;			/* flags */
@@ -1097,6 +1150,15 @@ struct sd_fi_arq {
 	struct scsi_extended_sense	sts_sensedata;
 };
 
+enum sd_fi_tran_cmd {
+	SD_FLTINJ_CMD_BUSY, /* Reject command instead of sending it to HW */
+	SD_FLTINJ_CMD_TIMEOUT /* Time-out command. */
+};
+
+struct sd_fi_tran {
+	enum sd_fi_tran_cmd tran_cmd;
+};
+
 /*
  * Conditional set def
  */
@@ -1120,6 +1182,7 @@ struct sd_fi_arq {
 #define	SDIOCPUSH		(SDIOC|7)
 #define	SDIOCRETRIEVE	(SDIOC|8)
 #define	SDIOCRUN		(SDIOC|9)
+#define	SDIOCINSERTTRAN	(SDIOC|0xA)
 #endif
 
 #else
@@ -1172,6 +1235,8 @@ struct sd_fi_arq {
 #define	SD_STATE_DUMPING	3
 #define	SD_STATE_SUSPENDED	4
 #define	SD_STATE_PM_CHANGING	5
+#define	SD_STATE_ATTACHING	6
+#define	SD_STATE_ATTACH_FAILED	7
 
 /*
  * The table is to be interpreted as follows: The rows lists all the states
@@ -1703,10 +1768,10 @@ struct sd_fm_internal {
 
 
 /*
- * 60 seconds is a *very* reasonable amount of time for most slow CD
- * operations.
+ * 15 seconds is a *very* reasonable amount of time for any device with retries.
+ * Doubled for slow CD operations.
  */
-#define	SD_IO_TIME			60
+#define	SD_IO_TIME			15
 
 /*
  * 2 hours is an excessively reasonable amount of time for format operations.
@@ -1765,7 +1830,7 @@ struct sd_fm_internal {
 /*
  * Number of times we will retry for unit attention.
  */
-#define	SD_UA_RETRY_COUNT		600
+#define	SD_UA_RETRY_COUNT		25
 
 #define	SD_VICTIM_RETRY_COUNT(un)	(un->un_victim_retry_count)
 #define	CD_NOT_READY_RETRY_COUNT(un)	(un->un_retry_count * 2)
@@ -2379,7 +2444,8 @@ typedef struct disk_power_attr_pc {
 #define	SD_VPD_ASCII_OP_PG	0x08	/* 0x82 - ASCII Op Defs */
 #define	SD_VPD_DEVID_WWN_PG	0x10	/* 0x83 - Device Identification */
 #define	SD_VPD_EXTENDED_DATA_PG	0x80	/* 0x86 - Extended data about the lun */
-#define	SD_VPD_DEV_CHARACTER_PG	0x400	/* 0xB1 - Device Characteristics */
+#define	SD_VPD_BLK_LIMITS_PG	0x400	/* 0xB0 - Block Limits */
+#define	SD_VPD_DEV_CHARACTER_PG	0x800	/* 0xB1 - Device Characteristics */
 
 /*
  * Non-volatile cache support

@@ -1,0 +1,330 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# ident	"@(#)README	1.7	09/08/23 SMI"
+#
+
+
+DESCRIPTION:
+============
+This test suite is designed to test the functionality of the sharemgr and
+sharectl, they are file system share configuration utilities.
+
+
+PREREQUISITES:
+==============
+1. You must be root in global zone to run this test suite, because ordinary
+   user does not have permission to do share, and share in non-global zone
+   is not supported at present. Moreover, tests in sharemgr/zones subdir
+   require to create zones, it cannot be done in non-global zone.
+
+2. The CTI-TET test harness lite package (SUNWstc-tetlite) is required, because
+    this test suite is implemented based on CTI-TET test harness.
+
+3. The STC genutils tool package (SUNWstc-genutils) is required, because this
+   test suite uses some functions defined in the libraries of this tool.
+
+4. Your TESTDIR must have 2G free space at least to test sharemgr functionality,
+   because zone tests need create zone for testing. If there is no enough free
+   space in the default test directory(/SHARE_tests), please provide an
+   alternative directory by setting TESTDIR before configuration:
+
+   For example:
+
+	root# export TESTDIR=<your_alternative_dir>
+	root# run_test -L /var/tmp/share share configure
+
+   or define TESTDIR in run_test command line directly:
+
+	root# run_test -L /var/tmp/share -v TESTDIR=<your_alternative_dir> \
+							share configure
+
+5. SHR_TMPDIR is the variable used by this test suite for temporary files
+   and test results, its default value is /var/tmp/share. If you want to
+   use alternative path, please set this variable before configuration:
+
+   For example:
+
+	root# export SHR_TMPDIR=<your_alternative_dir>
+	root# run_test -L $SHR_TMPDIR share configure
+
+   or define SHR_TMPDIR in run_test command line directly, and you can also
+   specify alternative path for test results if you want to save them in
+   different directory other than $SHR_TMPDIR:
+
+	root# run_test -v SHR_TMPDIR=<your_alternative_dir1> \
+				-L <your_alternative_dir2> share configure
+
+   NOTE: without "-L <logdir>" in run_test command line, all test results will
+         be saved under /var/tmp directory by default. But in this test suite,
+         once you specify log directory at configure phase, all test results
+         will be saved to that directory automatically even if you do not have
+         "-L <logdir>" in other run_test commands for later execute and
+         unconfigure phases. However, if you really want to save results of
+         different phases to different paths, you can always execute run_test
+         with "-L <any_logdir_you_want>" certainly.
+
+6. For the reboot test in sharemgr/oneoff subdir, it requires you to run
+   'reboot' scenario for two times, otherwise, you cannot get the final
+   result, on the other hand, the imcomplete run may cause chaos to your
+   test system and therefore affect the results of other tests.
+
+	root# run_test -F $SHR_TMPDIR/test_config share reboot
+	root# <wait for system comes back>
+	root# run_test -F $SHR_TMPDIR/test_config share reboot
+
+
+CTI-TET INSTALLATION:
+=====================
+In the majority of cases, the CTI-TET lite test harness can be installed
+from packages. The package is called SUNWstc-tetlite and installs into
+"/opt" by default.  Installation is via the standard Solaris package
+installation tool pkgadd(1M).
+
+To install SUNWstc-tetlite, enter the following command line:
+
+	root# pkgadd -d <package location> SUNWstc-tetlite
+
+Where <package location> is the path containing the SUNWstc-tetlite
+package directory.  'root#' indicates that this command must be run
+as root.
+
+o It is recommended that SUNWstc-tetlite be installed from scratch,
+  rather than on top of an existing installation.  Thus, if a copy
+  of SUNWstc-tetlite is already installed, remove it:
+
+	root# pkgrm SUNWstc-tetlite
+
+It is also acceptable to use an NFS-accessible version of the
+SUNWstc-tetlite package.
+
+
+STC GENUTILS INSTALLATION:
+==========================
+See "Installation" section of the README of STC genutils tool.
+
+
+TEST SUITE INSTALLATION:
+========================
+In the majority of cases, the test suite can be installed from packages.
+The test suite package is called SUNWstc-fs-share and it installs into
+"/opt" by default.  Installation is via the standard Solaris package
+installation tool, pkgadd(1M).  To install SUNWstc-fs-share, enter the
+following command:
+
+	root# pkgadd -d <package location> SUNWstc-fs-share
+
+Where <package location> is the path containing the SUNWstc-fs-share
+package directory.
+
+ o It is recommended that the test suite package be installed from
+   scratch, rather than on top of an existing installation.  Thus,
+   if a version of SUNWstc-fs-share is already installed, first
+   remove it:
+
+	root# pkgrm SUNWstc-fs-share
+
+It is also acceptable to use an NFS-accessible version of the
+SUNWstc-fs-share package.
+
+ALTERNATIVELY, the test suite source can be installed locally, built in
+the source directory tree and run from that location.  This is optional.
+
+To build the test suite from source, first install the test suite
+source, and then do the following: ('user$' indicates that these
+commands need not be run as root):
+
+    user$ TET_ROOT=/opt/SUNWstc-tetlite
+    user$ export TET_ROOT
+    user$ CTI_ROOT=$TET_ROOT/contrib/ctitools
+    user$ export CTI_ROOT
+    user$ TET_SUITE_ROOT=/export/STC/usr/src/suites/fs (example location)
+    user$ export TET_SUITE_ROOT
+    user$ cd $TET_SUITE_ROOT/share
+    user$ /usr/ccs/bin/make
+
+The build can also install into a 'proto' directory below the workspace
+root directory.  The workspace root is the directory below which the
+'usr/src/suites/fs' directory resides (in the example above, the
+workspace root is "/export/STC").  To install binaries into the proto
+directory, do:
+
+    user$ /usr/ccs/bin/make install
+
+In addition, test suite binary packages can be constructed using the
+contents of the proto directory.  To build the test suite packages, do:
+
+    user$ /usr/ccs/bin/make package
+
+This can be done instead of, or in addition to 'make install'.  The
+packages thus constructed will be stored in the 'packages' directory
+under the workspace root.
+
+
+TEST SUITE CONFIGURATION:
+=========================
+Test configuration is required to be done as root.
+
+1. Set the following environment variables
+export TET_ROOT=/opt/SUNWstc-tetlite
+export CTI_ROOT=$TET_ROOT/contrib/ctitools
+export TET_SUITE_ROOT=/opt/SUNWstc-fs-share (installation path of suite)
+PATH=$PATH:$CTI_ROOT/bin:/opt/SUNWstc-genutils/bin
+export PATH
+
+2. To configure the test suite :
+
+root# run_test -L <logdir> [-v TESTDIR=<your_alternative_dir>] \
+		[-v setup_once=FALSE] share configure
+
+where setup_once variable is used to indicate when the needed test file
+systems will be created, ie. by default(setup_once=TRUE), test file systems
+are created only once at configure phase, and removed at unconfigure phase,
+this makes the test suite execute faster; otherwise, test file systems will
+be created/removed at execution phase by each subdir before/after their tests
+run, which makes the test suite run with "Clean Slate" in the case of failure
+propagation.
+
+2G free space is required for the test suite to operate on.  The TESTDIR do
+not need to have filesystems created in them.  The test suite will
+create the appropriate filesystem types in the specified test dir, based
+on the fs type of TESTDIR.  This also means that any data in the TESTDIR
+given will be destroyed.
+
+The 'configure' will always configure a mix of ufs and zfs filesystems, ie.
+half ufs and half zfs.
+
+
+TEST SUITE EXECUTION:
+=====================
+The test suite executions is required to be done as root.
+
+If not already available from the configuration phase, set the
+following environment variables:
+
+export TET_ROOT=/opt/SUNWstc-tetlite
+export CTI_ROOT=$TET_ROOT/contrib/ctitools
+export TET_SUITE_ROOT=/opt/SUNWstc-fs-share (installation path of suite)
+PATH=$PATH:$CTI_ROOT/bin:/opt/SUNWstc-genutils/bin
+export PATH
+
+To run all tests expect those in oneoff subdir, just do the following:
+
+	(make sure to expand SHR_TMPDIR with your real path, or have it
+         defined in your environment, otherwise, run_test will fail)
+	root# run_test -F $SHR_TMPDIR/test_config share
+
+NOTE: The following usage of the run_test command is supported:
+
+	root# run_test -F $SHR_TMPDIR/test_config \
+					share [<scenario>|tc_dir:[tp_list]]
+
+For example:
+
+	root# run_test -F $SHR_TMPDIR/test_config share create
+	(run only the 'create' test scenario, see 'SCENARIO DEFINITION'
+         section below for more definitions of scenarios)
+
+	root# run_test -F $SHR_TMPDIR/test_config share sharemgr/create:3
+	(run only the sharemgr/create:3 test)
+
+
+TEST SUITE UNCONFIGURE:
+=======================
+The unconfiguration of the test suite mainly takes out:
+- the zfs pool created by configure
+- the test file systems if setup_once=TRUE
+- the configuration file
+from the current host, so that an NFS-mounted point for execution
+can be used.  More important, it does NOT unconfigure any shares that
+might have been left around due to test suite failure.
+
+To unconfigure the test suite, run:
+
+	root# run_test -F $SHR_TMPDIR/test_config share unconfigure
+
+
+SCENARIO DEFINITION:
+====================
+The tet_scen file defines main scenarios that this test suite contains, you can
+choose any scenario to run according to your specific test requirement. The
+following matrix illustrates which scenario covers what tests.
+
++--------------+----------------------------------------+----------------------+
+| Scenario     | Involved                               | Comment              |
+| Name         | Tests                                  |                      |
++--------------+----------------------------------------+----------------------+
+| all          | all sharemgr and sharectl tests except | it is the default    |
+|              | tests in 'oneoff' subdir               | scenario             |
++--------------+----------------------------------------+----------------------+
+| sharemgr     | all functional tests for sharemgr      | it includes tests in |
+|              |                                        | many subdirs         |
++--------------+----------------------------------------+----------------------+
+| sharectl     | all functional tests for sharectl      | tests in one subdir  |
++--------------+----------------------------------------+----------------------+
+| short        | equivalent to 'all' scenario, but      | create zone takes    |
+|              | without 'zone' tests                   | more time            |
++--------------+----------------------------------------+----------------------+
+| add          | test "sharemgr add-share" subcommand   |                      |
++--------------+----------------------------------------+----------------------+
+| create       | test "sharemgr create" subcommand      |                      |
++--------------+----------------------------------------+----------------------+
+| delete       | test "sharemgr delete" subcommand      |                      |
++--------------+----------------------------------------+----------------------+
+| disable      | test "sharemgr disable|enable"         |                      |
+|              | subcommands                            |                      |
++--------------+----------------------------------------+----------------------+
+| move         | test "sharemgr move-share" subcommand  |                      |
++--------------+----------------------------------------+----------------------+
+| remove       | test "sharemgr remove-share" subcommand|                      |
++--------------+----------------------------------------+----------------------+
+| set_         | test "sharemgr set" subcommand         |                      |
++--------------+----------------------------------------+----------------------+
+| set_security | test "sharemgr set|unset" subcommands  |                      |
+|              | with different security properties     |                      |
++--------------+----------------------------------------+----------------------+
+| set_share    | test "sharemgr set-share" subcommand   |                      |
++--------------+----------------------------------------+----------------------+
+| show         | test "sharemgr show" subcommand        |                      |
++--------------+----------------------------------------+----------------------+
+| unset_       | test "sharemgr unset" subcommand       |                      |
++--------------+----------------------------------------+----------------------+
+| usage        | check if usage presents correct info   |                      |
++--------------+----------------------------------------+----------------------+
+| zfs          | test interaction of "sharemgr" and     | interoperability     |
+|              | "zfs set sharenfs"                     |                      |
++--------------+----------------------------------------+----------------------+
+| zones        | negative tests in non-global zone      | zone will be created |
++--------------+----------------------------------------+----------------------+
+| oneoff       | one test to check sharemgr behavior if | for bug verify only  |
+|              | mountd is killed                       |                      |
++--------------+----------------------------------------+----------------------+
+| reboot       | one test to check if shares and groups | for bug verify only  |
+|              | can survive system reboot              |                      |
++--------------+----------------------------------------+----------------------+
+| configure    | for test suite configuration only      | not a test           |
++--------------+----------------------------------------+----------------------+
+| unconfigure  | for test suite unconfiguration only    | not a test           |
++--------------+----------------------------------------+----------------------+

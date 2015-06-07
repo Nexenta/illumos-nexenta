@@ -138,6 +138,8 @@ MANFILES=	acctcom.1			\
 	 	fmtmsg.1			\
 	 	fold.1				\
 	 	ftp.1				\
+	 	ftpcount.1			\
+	 	ftpwho.1			\
 	 	gcore.1				\
 	 	gencat.1			\
 	 	genmsg.1			\
@@ -551,6 +553,8 @@ whatis.1	:= LINKSRC = apropos.1
 unalias.1	:= LINKSRC = alias.1
 
 batch.1		:= LINKSRC = at.1
+
+whatis.1	:= LINKSRC = apropos.1
 
 dirname.1	:= LINKSRC = basename.1
 

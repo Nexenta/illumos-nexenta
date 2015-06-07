@@ -23,6 +23,9 @@
  * Copyright 1999 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -39,8 +42,6 @@
 
 #ifndef	_SYS_FS_UFS_QUOTA_H
 #define	_SYS_FS_UFS_QUOTA_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #ifdef	__cplusplus
 extern "C" {
@@ -142,7 +143,7 @@ struct	dqhead {
 extern struct dqhead dqhead[NDQHASH];
 
 extern struct dquot *dquot, *dquotNDQUOT;
-extern int ndquot;
+extern volatile int ndquot;
 extern krwlock_t dq_rwlock;		/* quota sub-system init lock */
 extern int quotas_initialized;		/* quota sub-system init flag */
 

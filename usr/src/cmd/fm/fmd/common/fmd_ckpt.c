@@ -777,7 +777,7 @@ fmd_ckpt_save(fmd_module_t *mp)
 	 * If checkpointing is disabled for the module, just return.  We must
 	 * commit the module state anyway to transition pending log events.
 	 */
-	if (mp->mod_stats->ms_ckpt_save.fmds_value.bool == FMD_B_FALSE) {
+	if (mp->mod_stats->ms_ckpt_save.fmds_value.b == FMD_B_FALSE) {
 		fmd_module_commit(mp);
 		return;
 	}
@@ -1154,7 +1154,7 @@ fmd_ckpt_restore(fmd_module_t *mp)
 {
 	fmd_ckpt_t ckp;
 
-	if (mp->mod_stats->ms_ckpt_restore.fmds_value.bool == FMD_B_FALSE)
+	if (mp->mod_stats->ms_ckpt_restore.fmds_value.b == FMD_B_FALSE)
 		return; /* never restore checkpoints for this module */
 
 	TRACE((FMD_DBG_CKPT, "ckpt restore begin %s", mp->mod_name));

@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/param.h>
@@ -73,7 +73,8 @@ static const int days_in_month[] = {
 int
 smb_ascii_or_unicode_strlen(struct smb_request *sr, char *str)
 {
-	if (sr->smb_flg2 & SMB_FLAGS2_UNICODE)
+	if (sr->session->dialect >= SMB_VERS_2_BASE ||
+	    (sr->smb_flg2 & SMB_FLAGS2_UNICODE) != 0)
 		return (smb_wcequiv_strlen(str));
 	return (strlen(str));
 }
@@ -81,7 +82,8 @@ smb_ascii_or_unicode_strlen(struct smb_request *sr, char *str)
 int
 smb_ascii_or_unicode_strlen_null(struct smb_request *sr, char *str)
 {
-	if (sr->smb_flg2 & SMB_FLAGS2_UNICODE)
+	if (sr->session->dialect >= SMB_VERS_2_BASE ||
+	    (sr->smb_flg2 & SMB_FLAGS2_UNICODE) != 0)
 		return (smb_wcequiv_strlen(str) + 2);
 	return (strlen(str) + 1);
 }
@@ -89,7 +91,8 @@ smb_ascii_or_unicode_strlen_null(struct smb_request *sr, char *str)
 int
 smb_ascii_or_unicode_null_len(struct smb_request *sr)
 {
-	if (sr->smb_flg2 & SMB_FLAGS2_UNICODE)
+	if (sr->session->dialect >= SMB_VERS_2_BASE ||
+	    (sr->smb_flg2 & SMB_FLAGS2_UNICODE) != 0)
 		return (2);
 	return (1);
 }
@@ -180,18 +183,17 @@ smb_sattr_check(uint16_t dosattr, uint16_t sattr)
 	return (B_TRUE);
 }
 
-int
-microtime(timestruc_t *tvp)
+time_t
+smb_get_boottime(void)
 {
-	tvp->tv_sec = gethrestime_sec();
-	tvp->tv_nsec = 0;
-	return (0);
-}
+	extern time_t	boot_time;
+	zone_t *z = curzone;
 
-int32_t
-clock_get_milli_uptime()
-{
-	return (TICK_TO_MSEC(ddi_get_lbolt()));
+	/* Unfortunately, the GZ doesn't set zone_boot_time. */
+	if (z->zone_id == GLOBAL_ZONEID)
+		return (boot_time);
+
+	return (z->zone_boot_time);
 }
 
 /*
@@ -917,6 +919,18 @@ smb_time_nt_to_unix(uint64_t nt_time, timestruc_t *unix_time)
 	if ((nt_time == 0) || (nt_time == -1)) {
 		unix_time->tv_sec = 0;
 		unix_time->tv_nsec = 0;
+		return;
+	}
+
+	/*
+	 * Can't represent times less than or equal NT_TIME_BIAS,
+	 * so convert them to the oldest date we can store.
+	 * Note that time zero is "special" being converted
+	 * both directions as 0:0 (unix-to-nt, nt-to-unix).
+	 */
+	if (nt_time <= NT_TIME_BIAS) {
+		unix_time->tv_sec = 0;
+		unix_time->tv_nsec = 100;
 		return;
 	}
 

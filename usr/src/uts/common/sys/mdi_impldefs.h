@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #ifndef	_SYS_MDI_IMPLDEFS_H
 #define	_SYS_MDI_IMPLDEFS_H
@@ -585,6 +588,7 @@ typedef struct mdi_client {
 #define	MDI_CLIENT_FLAGS_ASYNC_FREE		0x00000080
 #define	MDI_CLIENT_FLAGS_DEV_NOT_SUPPORTED	0x00000100
 #define	MDI_CLIENT_FLAGS_POWER_TRANSITION	0x00000200
+#define	MDI_CLIENT_FLAGS_NO_EVENT		0x10000000
 
 #define	MDI_CLIENT_SET_OFFLINE(ct)					{\
 	    ASSERT(MDI_CLIENT_LOCKED(ct));				\

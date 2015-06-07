@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
@@ -243,7 +243,7 @@ enum nfsftype {
  */
 #ifdef _KERNEL
 
-extern bool_t		nfs_allow_preepoch_time;
+extern volatile bool_t	nfs_allow_preepoch_time;
 
 #ifdef _LP64
 
@@ -615,13 +615,25 @@ struct nfsrddirargs {
 };
 
 /*
+ * Entry structure
+ */
+struct nfsentry {
+	uint32_t fileid;
+	char *name;
+	uint32_t cookie;
+	struct nfsentry *nextentry;
+};
+
+/*
  * NFS_OK part of readdir result
  */
 struct nfsrdok {
+	struct nfsentry *rdok_entries;	/* variable number of entries */
+	bool_t rdok_eof;		/* true if last entry is in result */
+
 	uint32_t rdok_offset;		/* next offset (opaque) */
 	uint32_t rdok_size;		/* size in bytes of entries */
-	bool_t	rdok_eof;		/* true if last entry is in result */
-	struct dirent64 *rdok_entries;	/* variable number of entries */
+	struct dirent64 *rdok_dirents;	/* variable number of entries */
 };
 
 /*
@@ -629,16 +641,17 @@ struct nfsrdok {
  */
 struct nfsrddirres {
 	nfsstat	rd_status;
-	uint_t		rd_bufsize;	/* client request size (not xdr'ed) */
 	union {
 		struct nfsrdok rd_rdok_u;
 	} rd_u;
 };
 #define	rd_rdok		rd_u.rd_rdok_u
+#define	rd_entries	rd_u.rd_rdok_u.rdok_entries
+#define	rd_eof		rd_u.rd_rdok_u.rdok_eof
+
 #define	rd_offset	rd_u.rd_rdok_u.rdok_offset
 #define	rd_size		rd_u.rd_rdok_u.rdok_size
-#define	rd_eof		rd_u.rd_rdok_u.rdok_eof
-#define	rd_entries	rd_u.rd_rdok_u.rdok_entries
+#define	rd_dirents	rd_u.rd_rdok_u.rdok_dirents
 
 
 /*
@@ -1821,10 +1834,6 @@ struct READDIR3resok {
 	post_op_attr dir_attributes;
 	cookieverf3 cookieverf;
 	dirlist3 reply;
-	uint_t size;
-	uint_t count;
-	uint_t freecount;
-	cookie3 cookie;
 };
 typedef struct READDIR3resok READDIR3resok;
 
@@ -1881,21 +1890,10 @@ struct dirlistplus3 {
 };
 typedef struct dirlistplus3 dirlistplus3;
 
-struct entryplus3_info {
-	post_op_attr attr;
-	post_op_fh3 fh;
-	uint_t namelen;
-};
-typedef struct entryplus3_info entryplus3_info;
-
 struct READDIRPLUS3resok {
 	post_op_attr dir_attributes;
 	cookieverf3 cookieverf;
 	dirlistplus3 reply;
-	uint_t size;
-	uint_t count;
-	uint_t maxcount;
-	entryplus3_info *infop;
 };
 typedef struct READDIRPLUS3resok READDIRPLUS3resok;
 
@@ -2278,6 +2276,8 @@ extern int	rfs_publicfh_mclookup(char *, vnode_t *, cred_t *, vnode_t **,
     struct exportinfo **, struct sec_ol *);
 extern int	rfs_pathname(char *, vnode_t **, vnode_t **, vnode_t *,
     cred_t *, int);
+extern int	rfs_cross_mnt(vnode_t **, struct exportinfo **);
+extern int	rfs_climb_crossmnt(vnode_t **, struct exportinfo **, cred_t *);
 
 extern vtype_t		nf3_to_vt[];
 extern kstat_named_t	*rfsproccnt_v3_ptr;
@@ -2291,7 +2291,7 @@ extern const struct fs_operation_def nfs3_vnodeops_template[];
  * with these broken servers, the nfs_disable_rddir_cache
  * parameter can be used to disable readdir response caching.
  */
-extern int		nfs_disable_rddir_cache;
+extern volatile int	nfs_disable_rddir_cache;
 
 /*
  * External functions called by the v2/v3 code into the v4 code
@@ -2314,6 +2314,8 @@ extern void	rfs4_hold_deleg_policy(void);
 extern void	rfs4_rele_deleg_policy(void);
 
 extern int	do_xattr_exists_check(vnode_t *, ulong_t *, cred_t *);
+
+extern int protect_zfs_mntpt(vnode_t *);
 
 extern ts_label_t *nfs_getflabel(vnode_t *, struct exportinfo *);
 extern boolean_t do_rfs_label_check(bslabel_t *, vnode_t *, int,

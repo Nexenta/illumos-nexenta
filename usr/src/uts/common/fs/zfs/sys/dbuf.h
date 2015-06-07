@@ -23,6 +23,7 @@
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_DBUF_H
@@ -53,6 +54,8 @@ extern "C" {
 #define	DB_RF_NOPREFETCH	(1 << 3)
 #define	DB_RF_NEVERWAIT		(1 << 4)
 #define	DB_RF_CACHED		(1 << 5)
+
+#define	DBUF_EVICT_ALL		-1
 
 /*
  * The simplified state transition diagram for dbufs looks like:
@@ -120,6 +123,9 @@ typedef struct dbuf_dirty_record {
 
 	/* How much space was changed to dsl_pool_dirty_space() for this? */
 	unsigned int dr_accounted;
+
+	/* use special class of dirty entry */
+	boolean_t dr_usesc;
 
 	union dirty_types {
 		struct dirty_indirect {
@@ -237,12 +243,20 @@ typedef struct dmu_buf_impl {
 } dmu_buf_impl_t;
 
 /* Note: the dbuf hash table is exposed only for the mdb module */
-#define	DBUF_MUTEXES 256
-#define	DBUF_HASH_MUTEX(h, idx) (&(h)->hash_mutexes[(idx) & (DBUF_MUTEXES-1)])
+#define	DBUF_MUTEXES	256
+#define	DBUF_LOCK_PAD	64
+typedef struct {
+	kmutex_t mtx;
+#ifdef _KERNEL
+	unsigned char pad[(DBUF_LOCK_PAD - sizeof (kmutex_t))];
+#endif
+} dbuf_mutex_t;
+#define	DBUF_HASH_MUTEX(h, idx)	\
+	(&((h)->hash_mutexes[(idx) & (DBUF_MUTEXES-1)].mtx))
 typedef struct dbuf_hash_table {
 	uint64_t hash_table_mask;
 	dmu_buf_impl_t **hash_table;
-	kmutex_t hash_mutexes[DBUF_MUTEXES];
+	dbuf_mutex_t hash_mutexes[DBUF_MUTEXES];
 } dbuf_hash_table_t;
 
 
@@ -280,6 +294,8 @@ void dmu_buf_will_fill(dmu_buf_t *db, dmu_tx_t *tx);
 void dmu_buf_fill_done(dmu_buf_t *db, dmu_tx_t *tx);
 void dbuf_assign_arcbuf(dmu_buf_impl_t *db, arc_buf_t *buf, dmu_tx_t *tx);
 dbuf_dirty_record_t *dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx);
+dbuf_dirty_record_t *dbuf_dirty_sc(dmu_buf_impl_t *db, dmu_tx_t *tx,
+    boolean_t usesc);
 arc_buf_t *dbuf_loan_arcbuf(dmu_buf_impl_t *db);
 void dmu_buf_write_embedded(dmu_buf_t *dbuf, void *data,
     bp_embedded_type_t etype, enum zio_compress comp,
@@ -308,19 +324,36 @@ void dbuf_init(void);
 void dbuf_fini(void);
 
 boolean_t dbuf_is_metadata(dmu_buf_impl_t *db);
+boolean_t dbuf_is_ddt(dmu_buf_impl_t *db);
+boolean_t dbuf_ddt_is_l2cacheable(dmu_buf_impl_t *db);
+boolean_t dbuf_meta_is_l2cacheable(dmu_buf_impl_t *db);
 
 #define	DBUF_GET_BUFC_TYPE(_db)	\
-	(dbuf_is_metadata(_db) ? ARC_BUFC_METADATA : ARC_BUFC_DATA)
+	(dbuf_is_ddt(_db) ? ARC_BUFC_DDT :\
+	(dbuf_is_metadata(_db) ? ARC_BUFC_METADATA : ARC_BUFC_DATA))
 
 #define	DBUF_IS_CACHEABLE(_db)						\
 	((_db)->db_objset->os_primary_cache == ZFS_CACHE_ALL ||		\
 	(dbuf_is_metadata(_db) &&					\
 	((_db)->db_objset->os_primary_cache == ZFS_CACHE_METADATA)))
 
+
+/*
+ * Checks whether we need to cache dbuf in l2arc.
+ * Metadata is l2cacheable if it is not placed on special device
+ * or it is placed on special device in "dual" mode. We need to check
+ * for ddt in ZFS_CACHE_ALL and ZFS_CACHE_METADATA because it is in MOS.
+ * ZFS_CACHE_DATA mode actually means to cache both data and cacheable
+ * metadata.
+ */
 #define	DBUF_IS_L2CACHEABLE(_db)					\
-	((_db)->db_objset->os_secondary_cache == ZFS_CACHE_ALL ||	\
-	(dbuf_is_metadata(_db) &&					\
-	((_db)->db_objset->os_secondary_cache == ZFS_CACHE_METADATA)))
+	(((_db)->db_objset->os_secondary_cache == ZFS_CACHE_ALL &&	\
+	(dbuf_ddt_is_l2cacheable(_db) == B_TRUE)) ||			\
+	((_db)->db_objset->os_secondary_cache == ZFS_CACHE_METADATA &&  \
+	(dbuf_is_metadata(_db)) &&					\
+	(dbuf_ddt_is_l2cacheable(_db) == B_TRUE)) ||			\
+	((dbuf_meta_is_l2cacheable(_db) == B_TRUE) &&			\
+	((_db)->db_objset->os_secondary_cache == ZFS_CACHE_DATA)))
 
 #define	DBUF_IS_L2COMPRESSIBLE(_db)					\
 	((_db)->db_objset->os_compress != ZIO_COMPRESS_OFF ||		\

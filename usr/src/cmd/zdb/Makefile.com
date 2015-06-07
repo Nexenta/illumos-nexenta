@@ -23,11 +23,15 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2013 Nexenta Systems, Inc. All rights reserved.
 #
 
 PROG:sh=	cd ..; basename `pwd`
 SRCS= ../$(PROG).c ../zdb_il.c
 OBJS= $(PROG).o zdb_il.o
+
+
+include $(NZA_MAKEDEFS)
 
 include ../../Makefile.cmd
 include ../../Makefile.ctf
@@ -35,6 +39,7 @@ include ../../Makefile.ctf
 INCS += -I../../../lib/libzpool/common 
 INCS +=	-I../../../uts/common/fs/zfs
 INCS +=	-I../../../common/zfs
+INCS += $(NZA_ZFSPLUSBASE_FLAGS)
 
 LDLIBS += -lzpool -lumem -lnvpair -lzfs -lavl
 

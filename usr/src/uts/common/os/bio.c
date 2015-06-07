@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -156,8 +159,8 @@ static int 		bio_incore(dev_t, daddr_t);
 #define	BIO_HEADER	0x01
 #define	BIO_MEM		0x02
 
-extern	int bufhwm;		/* User tunable - high water mark for mem  */
-extern	int bufhwm_pct;		/* ditto - given in % of physmem  */
+extern volatile int bufhwm;	/* User tunable - high water mark for mem  */
+extern volatile int bufhwm_pct;	/* ditto - given in % of physmem  */
 
 /*
  * The following routines allocate and free

@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * header file containing the data structure definitions for the NIC
@@ -51,6 +56,8 @@ extern "C" {
 #define	NIC_WQ_TYPE_STANDARD		0x02
 #define	NIC_WQ_TYPE_LOW_LATENCY		0x04
 
+#define	INVALID_PMAC_ID		0xffffffff
+
 #pragma pack(1)
 enum {
 	OPCODE_CONFIG_NIC_RSS = 1,
@@ -66,7 +73,8 @@ enum {
 	OPCODE_SET_RSS_EQ_MSI = 13,
 	OPCODE_CREATE_NIC_HDS_RQ = 14,
 	OPCODE_DELETE_NIC_HDS_RQ = 15,
-	OPCODE_CONFIG_NIC_RSS_ADVANCED = 16
+	OPCODE_CONFIG_NIC_RSS_ADVANCED = 16,
+	OPCODE_NIC_GET_PPORT_STATS = 18
 };
 
 enum {
@@ -233,6 +241,82 @@ struct oce_nic_rx_cqe {
 #ifdef _BIG_ENDIAN
 			/* dw 0 */
 			uint32_t ip_options:1;
+			uint32_t vlan_tag_present:1;
+			uint32_t pkt_size:14;
+			uint32_t vlan_tag:16;
+
+			/* dw 1 */
+			uint32_t num_fragments:3;
+			uint32_t switched:1;
+			uint32_t ct:2;
+			uint32_t frag_index:10;
+			uint32_t rsvd0:1;
+			uint32_t mac_dst:7;
+			uint32_t ip_ver:1;
+			uint32_t l4_cksum_pass:1;
+			uint32_t ip_cksum_pass:1;
+			uint32_t udpframe:1;
+			uint32_t tcpframe:1;
+			uint32_t ipframe:1;
+			uint32_t rss_hp:1;
+			uint32_t error:1;
+
+			/* dw 2 */
+			uint32_t valid:1;
+			uint32_t rsvd2:13;
+			uint32_t hds_type:2;
+			uint32_t hds_hdr_size:8;
+			uint32_t vntagp:1;
+			uint32_t port:2;
+			uint32_t rss_bank:1;
+			uint32_t qnq:1;
+			uint32_t pkt_type:2;
+			uint32_t rss_flush:1;
+
+			/* dw 3 */
+			uint32_t rss_hash_value;
+#else
+			/* dw 0 */
+			uint32_t vlan_tag:16;
+			uint32_t pkt_size:14;
+			uint32_t vlan_tag_present:1;
+			uint32_t ip_options:1;
+			/* dw 1 */
+			uint32_t error:1;
+			uint32_t rss_hp:1;
+			uint32_t ipframe:1;
+			uint32_t tcpframe:1;
+			uint32_t udpframe:1;
+			uint32_t ip_cksum_pass:1;
+			uint32_t l4_cksum_pass:1;
+			uint32_t ip_ver:1;
+			uint32_t mac_dst:7;
+			uint32_t rsvd0:1;
+			uint32_t frag_index:10;
+			uint32_t ct:2;
+			uint32_t switched:1;
+			uint32_t num_fragments:3;
+
+			/* dw 2 */
+			uint32_t rss_flush:1;
+			uint32_t pkt_type:2;
+			uint32_t qnq:1;
+			uint32_t rss_bank:1;
+			uint32_t port:2;
+			uint32_t vntagp:1;
+			uint32_t hds_hdr_size:8;
+			uint32_t hds_type:2;
+			uint32_t rsvd2:13;
+			uint32_t valid:1;
+
+			/* dw 3 */
+			uint32_t rss_hash_value;
+#endif
+		}s;	/* native mode(BE3) */
+		struct {
+#ifdef _BIG_ENDIAN
+			/* dw 0 */
+			uint32_t ip_options:1;
 			uint32_t port:1;
 			uint32_t pkt_size:14;
 			uint32_t vlan_tag:16;
@@ -256,11 +340,9 @@ struct oce_nic_rx_cqe {
 
 			/* dw 2 */
 			uint32_t valid:1;
-			uint32_t hds_type:2;
+			uint32_t rsvd2:2;
 			uint32_t lro_pkt:1;
-			uint32_t rsvd4:1;
-			uint32_t hds_hdr_size:12;
-			uint32_t hds_hdr_frag_index:10;
+			uint32_t rsvd1:23;
 			uint32_t rss_bank:1;
 			uint32_t qnq:1;
 			uint32_t pkt_type:2;
@@ -296,16 +378,14 @@ struct oce_nic_rx_cqe {
 			uint32_t pkt_type:2;
 			uint32_t qnq:1;
 			uint32_t rss_bank:1;
-			uint32_t hds_hdr_frag_index:10;
-			uint32_t hds_hdr_size:12;
-			uint32_t rsvd4:1;
+			uint32_t rsvd1:23;
 			uint32_t lro_pkt:1;
-			uint32_t hds_type:2;
+			uint32_t rsvd2:2;
 			uint32_t valid:1;
 			/* dw 3 */
 			uint32_t rss_hash_value;
 #endif
-		}s;
+		}v0;	/* Legacy(BE2) */
 		uint32_t dw[4];
 	}u0;
 };
@@ -334,6 +414,54 @@ struct mbx_config_nic_promiscuous {
 	}params;
 };
 
+struct oce_tx_ctx {
+#ifdef _BIG_ENDIAN
+	/* dw0 */
+	uint32_t rsvd0:12;
+	uint32_t wq_size:4;
+	uint32_t if_id:16;
+	/* dw1 */
+	uint32_t valid:1;
+	uint32_t pd_id:9;
+	uint32_t pci_function_id:8;
+	uint32_t rsvd1:14;
+	/* dw2 */
+	uint32_t rsvd2_1:1;
+	uint32_t no_rem_allowed:1;
+	uint32_t rsvd2:14;
+	uint32_t cq_id:16;
+	/* dw3 */
+	uint32_t rsvd3;
+	/* dw4 */
+	uint32_t rsvd4_1:10;
+	uint32_t cofe:1;
+	uint32_t rsvd4:21;
+#else
+	/* dw0 */
+	uint32_t if_id:16;
+	uint32_t wq_size:4;
+	uint32_t rsvd0:12;
+	/* dw1 */
+	uint32_t rsvd1:14;
+	uint32_t pci_function_id:8;
+	uint32_t pd_id:9;
+	uint32_t valid:1;
+	/* dw2 */
+	uint32_t cq_id:16;
+	uint32_t rsvd2:14;
+	uint32_t no_rem_allowed:1;
+	uint32_t rsvd2_1:1;
+	/*  dw3 */
+	uint32_t rsvd3;
+	/* dw4 */
+	uint32_t rsvd4:21;
+	uint32_t cofe:1;
+	uint32_t rsvd4_1:10;
+#endif
+	/* dw5 - dw15 */
+	uint32_t rsvd5[11];
+};
+
 /* [07] OPCODE_CREATE_NIC_WQ */
 struct mbx_create_nic_wq {
 
@@ -343,49 +471,19 @@ struct mbx_create_nic_wq {
 		struct {
 #ifdef _BIG_ENDIAN
 			/* dw4 */
-			uint8_t	rsvd1;
-			uint8_t	nic_wq_type;
-			uint8_t	rsvd0;
+			uint8_t	port;
+			uint8_t	type;
+			uint8_t	ulp_num;
 			uint8_t	num_pages;
-
-			/* dw5 */
-			uint32_t rsvd3:12;
-			uint32_t wq_size:4;
-			uint32_t rsvd2:16;
-
-			/* dw6 */
-			uint32_t valid:1;
-			uint32_t pd_id:9;
-			uint32_t pci_function_id:8;
-			uint32_t rsvd4:14;
-
-			/* dw7 */
-			uint32_t rsvd5:16;
-			uint32_t cq_id:16;
 #else
 			/* dw4 */
 			uint8_t	num_pages;
-			uint8_t	rsvd0;
-			uint8_t	nic_wq_type;
-			uint8_t	rsvd1;
-
-			/* dw5 */
-			uint32_t rsvd2:16;
-			uint32_t wq_size:4;
-			uint32_t rsvd3:12;
-
-			/* dw6 */
-			uint32_t rsvd4:14;
-			uint32_t pci_function_id:8;
-			uint32_t pd_id:9;
-			uint32_t valid:1;
-
-			/* dw7 */
-			uint32_t cq_id:16;
-			uint32_t rsvd5:16;
+			uint8_t	ulp_num;
+			uint8_t	type;
+			uint8_t	port;
 #endif
-			/* dw8 - dw20 */
-			uint32_t rsvd6[13];
+			/* dw5 - dw20 */
+			struct oce_tx_ctx ctx;
 			/* dw21 - dw36 */
 			struct phys_addr	pages[8];
 		}req;
@@ -491,7 +589,7 @@ struct mbx_delete_nic_rq {
 	}params;
 };
 
-struct rx_port_stats {
+struct rx_port_stats_v0 {
 	uint32_t rx_bytes_lsd;
 	uint32_t rx_bytes_msd;
 	uint32_t rx_total_frames;
@@ -560,10 +658,83 @@ struct rx_port_stats {
 	uint32_t rx_input_fifo_overflow;
 };
 
-struct rx_stats {
-	/* dw 0-131 --2 X 66 */
-	struct rx_port_stats port[2];
-	/* dw 132-147 --16 */
+
+struct rx_port_stats_v1 {
+	uint32_t rx_bytes_lsd;
+	uint32_t rx_bytes_msd;
+	uint32_t rx_ipv4_bytes_lsd;
+	uint32_t rx_ipv4_bytes_msd;
+	uint32_t rx_ipv6_bytes_lsd;
+	uint32_t rx_ipv6_bytes_msd;
+	uint32_t tx_bytes_lsd;
+	uint32_t tx_bytes_msd;
+	uint32_t rx_total_frames;
+	uint32_t rx_non_switched_unicast_frames;
+	uint32_t rx_non_switched_multicast_frames;
+	uint32_t rx_non_switched_broadcast_frames;
+	uint32_t rx_crc_errors;
+	uint32_t rx_alignment_symbol_errors;
+	uint32_t rx_pause_frames;
+	uint32_t rx_priority_pause_frames;
+	uint32_t rx_control_frames;
+	uint32_t rx_in_range_errors;
+	uint32_t rx_out_range_errors;
+	uint32_t rx_frame_too_long;
+	uint32_t rx_address_match_errors;
+	uint32_t rx_dropped_too_small;
+	uint32_t rx_dropped_too_short;
+	uint32_t rx_dropped_header_too_small;
+	uint32_t rx_dropped_tcp_length;
+	uint32_t rx_dropped_runt;
+	uint32_t rx_64_byte_packets;
+	uint32_t rx_65_127_byte_packets;
+	uint32_t rx_128_256_byte_packets;
+	uint32_t rx_256_511_byte_packets;
+	uint32_t rx_512_1023_byte_packets;
+	uint32_t rx_1024_1518_byte_packets;
+	uint32_t rx_1519_2047_byte_packets;
+	uint32_t rx_2048_4095_byte_packets;
+	uint32_t rx_4096_8191_byte_packets;
+	uint32_t rx_8192_9216_byte_packets;
+	uint32_t rx_ip_checksum_errs;
+	uint32_t rx_tcp_checksum_errs;
+	uint32_t rx_udp_checksum_errs;
+	uint32_t rx_non_rss_packets;
+	uint32_t rx_ipv4_packets;
+	uint32_t rx_ipv6_packets;
+	uint32_t rx_chute1_packets;
+	uint32_t rx_chute2_packets;
+	uint32_t rx_chute3_packets;
+	uint32_t rx_management_packets;
+	uint32_t rx_switched_unicast_packets;
+	uint32_t rx_switched_multicast_packets;
+	uint32_t rx_switched_broadcast_packets;
+	uint32_t tx_unicast_frames;
+	uint32_t tx_multicast_frames;
+	uint32_t tx_broadcast_frames;
+	uint32_t tx_pause_frames;
+	uint32_t tx_priority_pause_frames;
+	uint32_t tx_control_frames;
+	uint32_t tx_64_byte_packets;
+	uint32_t tx_65_127_byte_packets;
+	uint32_t tx_128_256_byte_packets;
+	uint32_t tx_256_511_byte_packets;
+	uint32_t tx_512_1023_byte_packets;
+	uint32_t tx_1024_1518_byte_packets;
+	uint32_t tx_1519_2047_byte_packets;
+	uint32_t tx_2048_4095_byte_packets;
+	uint32_t tx_4096_8191_byte_packets;
+	uint32_t tx_8192_9216_byte_packets;
+	uint32_t rxpp_fifo_overflow_drop;
+	uint32_t rx_input_fifo_overflow_drop;
+	uint32_t pmem_fifo_overflow_drop;
+	uint32_t jabber_events;
+	uint32_t rsvd2[3];
+};
+
+
+struct rx_stats_v0 {
+	struct rx_port_stats_v0 port[2];
 	uint32_t rx_drops_no_pbuf;
 	uint32_t rx_drops_no_txpb;
 	uint32_t rx_drops_no_erx_descr;
@@ -580,8 +751,30 @@ struct rx_stats {
 	uint32_t rx_drops_invalid_ring;
 	uint32_t forwarded_packets;
 	uint32_t rx_drops_mtu;
-	/* fcoe is not relevent */
-	uint32_t rsvd[15];
+	uint32_t rsvd0[7];		/* fcoe is not relevent */
+	uint32_t port0_jabber_events;
+	uint32_t port1_jabber_events;
+	uint32_t rsvd1[6];
+};
+
+struct rx_stats_v1 {
+	struct rx_port_stats_v1 port[4];
+	uint32_t rsvd0[2];
+	uint32_t rx_drops_no_pbuf;
+	uint32_t rx_drops_no_txpb;
+	uint32_t rx_drops_no_erx_descr;
+	uint32_t rx_drops_no_tpre_descr;
+	uint32_t management_rx_port_packets;
+	uint32_t management_rx_port_pause_frames;
+	uint32_t management_rx_port_errors;
+	uint32_t management_tx_port_packets;
+	uint32_t management_tx_port_pause;
+	uint32_t management_rx_port_rxfifo_overflow;
+	uint32_t rx_drops_too_many_frags;
+	uint32_t rx_drops_invalid_ring;
+	uint32_t forwarded_packets;
+	uint32_t rx_drops_mtu;
+	uint32_t rsvd1[14];	/* fcoe is not relevent */
 };
 
 struct tx_counter {
@@ -609,8 +802,16 @@ struct tx_stats {
 	struct tx_counter ct2pt1_rexmt_ipv6_ctrs;
 };
 
-struct rx_err_stats {
+struct rx_err_stats_v0 {
 	uint32_t rx_drops_no_fragments[44];
+	uint32_t debug_wdma_sent_hold;
+	uint32_t debug_wdma_pbfree_sent_hold;
+	uint32_t debug_wdma_zerobyte_pbfree_sent_hold;
+	uint32_t debug_pmem_pbuf_dealloc;
+};
+
+struct rx_err_stats_v1 {
+	uint32_t rx_drops_no_fragments[68];
 	uint32_t debug_wdma_sent_hold;
 	uint32_t debug_wdma_pbfree_sent_hold;
 	uint32_t debug_wdma_zerobyte_pbfree_sent_hold;
@@ -622,7 +823,26 @@ struct mem_stats {
 	uint32_t lro_red_drops;
 	uint32_t ulp0_red_drops;
 	uint32_t ulp1_red_drops;
+	uint32_t rsvd;
+	uint32_t global_red_drops;
 };
+
+
+struct be_hw_stats_v0 {
+	struct rx_stats_v0 rx;
+	struct tx_stats tx;
+	struct rx_err_stats_v0 err_rx;
+	struct mem_stats mem;
+};
+
+struct be_hw_stats_v1 {
+	struct rx_stats_v1 rx;
+	struct tx_stats tx;
+	struct rx_err_stats_v1 err_rx;
+	struct mem_stats mem;
+	uint32_t rsvd1[18];
+};
+
 
 /* [04] OPCODE_GET_NIC_STATS */
 struct mbx_get_nic_stats {
@@ -633,11 +853,198 @@ struct mbx_get_nic_stats {
 			uint32_t rsvd0;
 		}req;
 
+		union {
+			struct be_hw_stats_v0 v0;
+			struct be_hw_stats_v1 v1;
+		}rsp;
+	}params;
+};
+
+/* Lancer Stats */
+struct lancer_cmd_pport_stats {
+	uint32_t tx_packets_lo;
+	uint32_t tx_packets_hi;
+	uint32_t tx_unicast_packets_lo;
+	uint32_t tx_unicast_packets_hi;
+	uint32_t tx_multicast_packets_lo;
+	uint32_t tx_multicast_packets_hi;
+	uint32_t tx_broadcast_packets_lo;
+	uint32_t tx_broadcast_packets_hi;
+	uint32_t tx_bytes_lo;
+	uint32_t tx_bytes_hi;
+	uint32_t tx_unicast_bytes_lo;
+	uint32_t tx_unicast_bytes_hi;
+	uint32_t tx_multicast_bytes_lo;
+	uint32_t tx_multicast_bytes_hi;
+	uint32_t tx_broadcast_bytes_lo;
+	uint32_t tx_broadcast_bytes_hi;
+	uint32_t tx_discards_lo;
+	uint32_t tx_discards_hi;
+	uint32_t tx_errors_lo;
+	uint32_t tx_errors_hi;
+	uint32_t tx_pause_frames_lo;
+	uint32_t tx_pause_frames_hi;
+	uint32_t tx_pause_on_frames_lo;
+	uint32_t tx_pause_on_frames_hi;
+	uint32_t tx_pause_off_frames_lo;
+	uint32_t tx_pause_off_frames_hi;
+	uint32_t tx_internal_mac_errors_lo;
+	uint32_t tx_internal_mac_errors_hi;
+	uint32_t tx_control_frames_lo;
+	uint32_t tx_control_frames_hi;
+	uint32_t tx_packets_64_bytes_lo;
+	uint32_t tx_packets_64_bytes_hi;
+	uint32_t tx_packets_65_to_127_bytes_lo;
+	uint32_t tx_packets_65_to_127_bytes_hi;
+	uint32_t tx_packets_128_to_255_bytes_lo;
+	uint32_t tx_packets_128_to_255_bytes_hi;
+	uint32_t tx_packets_256_to_511_bytes_lo;
+	uint32_t tx_packets_256_to_511_bytes_hi;
+	uint32_t tx_packets_512_to_1023_bytes_lo;
+	uint32_t tx_packets_512_to_1023_bytes_hi;
+	uint32_t tx_packets_1024_to_1518_bytes_lo;
+	uint32_t tx_packets_1024_to_1518_bytes_hi;
+	uint32_t tx_packets_1519_to_2047_bytes_lo;
+	uint32_t tx_packets_1519_to_2047_bytes_hi;
+	uint32_t tx_packets_2048_to_4095_bytes_lo;
+	uint32_t tx_packets_2048_to_4095_bytes_hi;
+	uint32_t tx_packets_4096_to_8191_bytes_lo;
+	uint32_t tx_packets_4096_to_8191_bytes_hi;
+	uint32_t tx_packets_8192_to_9216_bytes_lo;
+	uint32_t tx_packets_8192_to_9216_bytes_hi;
+	uint32_t tx_lso_packets_lo;
+	uint32_t tx_lso_packets_hi;
+	uint32_t rx_packets_lo;
+	uint32_t rx_packets_hi;
+	uint32_t rx_unicast_packets_lo;
+	uint32_t rx_unicast_packets_hi;
+	uint32_t rx_multicast_packets_lo;
+	uint32_t rx_multicast_packets_hi;
+	uint32_t rx_broadcast_packets_lo;
+	uint32_t rx_broadcast_packets_hi;
+	uint32_t rx_bytes_lo;
+	uint32_t rx_bytes_hi;
+	uint32_t rx_unicast_bytes_lo;
+	uint32_t rx_unicast_bytes_hi;
+	uint32_t rx_multicast_bytes_lo;
+	uint32_t rx_multicast_bytes_hi;
+	uint32_t rx_broadcast_bytes_lo;
+	uint32_t rx_broadcast_bytes_hi;
+	uint32_t rx_unknown_protos;
+	uint32_t rsvd_69;
+	uint32_t rx_discards_lo;
+	uint32_t rx_discards_hi;
+	uint32_t rx_errors_lo;
+	uint32_t rx_errors_hi;
+	uint32_t rx_crc_errors_lo;
+	uint32_t rx_crc_errors_hi;
+	uint32_t rx_alignment_errors_lo;
+	uint32_t rx_alignment_errors_hi;
+	uint32_t rx_symbol_errors_lo;
+	uint32_t rx_symbol_errors_hi;
+	uint32_t rx_pause_frames_lo;
+	uint32_t rx_pause_frames_hi;
+	uint32_t rx_pause_on_frames_lo;
+	uint32_t rx_pause_on_frames_hi;
+	uint32_t rx_pause_off_frames_lo;
+	uint32_t rx_pause_off_frames_hi;
+	uint32_t rx_frames_too_long_lo;
+	uint32_t rx_frames_too_long_hi;
+	uint32_t rx_internal_mac_errors_lo;
+	uint32_t rx_internal_mac_errors_hi;
+	uint32_t rx_undersize_packets;
+	uint32_t rx_oversize_packets;
+	uint32_t rx_fragment_packets;
+	uint32_t rx_jabbers;
+	uint32_t rx_control_frames_lo;
+	uint32_t rx_control_frames_hi;
+	uint32_t rx_control_frames_unknown_opcode_lo;
+	uint32_t rx_control_frames_unknown_opcode_hi;
+	uint32_t rx_in_range_errors;
+	uint32_t rx_out_of_range_errors;
+	uint32_t rx_address_match_errors;
+	uint32_t rx_vlan_mismatch_errors;
+	uint32_t rx_dropped_too_small;
+	uint32_t rx_dropped_too_short;
+	uint32_t rx_dropped_header_too_small;
+	uint32_t rx_dropped_invalid_tcp_length;
+	uint32_t rx_dropped_runt;
+	uint32_t rx_ip_checksum_errors;
+	uint32_t rx_tcp_checksum_errors;
+	uint32_t rx_udp_checksum_errors;
+	uint32_t rx_non_rss_packets;
+	uint32_t rsvd_111;
+	uint32_t rx_ipv4_packets_lo;
+	uint32_t rx_ipv4_packets_hi;
+	uint32_t rx_ipv6_packets_lo;
+	uint32_t rx_ipv6_packets_hi;
+	uint32_t rx_ipv4_bytes_lo;
+	uint32_t rx_ipv4_bytes_hi;
+	uint32_t rx_ipv6_bytes_lo;
+	uint32_t rx_ipv6_bytes_hi;
+	uint32_t rx_nic_packets_lo;
+	uint32_t rx_nic_packets_hi;
+	uint32_t rx_tcp_packets_lo;
+	uint32_t rx_tcp_packets_hi;
+	uint32_t rx_iscsi_packets_lo;
+	uint32_t rx_iscsi_packets_hi;
+	uint32_t rx_management_packets_lo;
+	uint32_t rx_management_packets_hi;
+	uint32_t rx_switched_unicast_packets_lo;
+	uint32_t rx_switched_unicast_packets_hi;
+	uint32_t rx_switched_multicast_packets_lo;
+	uint32_t rx_switched_multicast_packets_hi;
+	uint32_t rx_switched_broadcast_packets_lo;
+	uint32_t rx_switched_broadcast_packets_hi;
+	uint32_t num_forwards_lo;
+	uint32_t num_forwards_hi;
+	uint32_t rx_fifo_overflow;
+	uint32_t rx_input_fifo_overflow;
+	uint32_t rx_drops_too_many_frags_lo;
+	uint32_t rx_drops_too_many_frags_hi;
+	uint32_t rx_drops_invalid_queue;
+	uint32_t rsvd_141;
+	uint32_t rx_drops_mtu_lo;
+	uint32_t rx_drops_mtu_hi;
+	uint32_t rx_packets_64_bytes_lo;
+	uint32_t rx_packets_64_bytes_hi;
+	uint32_t rx_packets_65_to_127_bytes_lo;
+	uint32_t rx_packets_65_to_127_bytes_hi;
+	uint32_t rx_packets_128_to_255_bytes_lo;
+	uint32_t rx_packets_128_to_255_bytes_hi;
+	uint32_t rx_packets_256_to_511_bytes_lo;
+	uint32_t rx_packets_256_to_511_bytes_hi;
+	uint32_t rx_packets_512_to_1023_bytes_lo;
+	uint32_t rx_packets_512_to_1023_bytes_hi;
+	uint32_t rx_packets_1024_to_1518_bytes_lo;
+	uint32_t rx_packets_1024_to_1518_bytes_hi;
+	uint32_t rx_packets_1519_to_2047_bytes_lo;
+	uint32_t rx_packets_1519_to_2047_bytes_hi;
+	uint32_t rx_packets_2048_to_4095_bytes_lo;
+	uint32_t rx_packets_2048_to_4095_bytes_hi;
+	uint32_t rx_packets_4096_to_8191_bytes_lo;
+	uint32_t rx_packets_4096_to_8191_bytes_hi;
+	uint32_t rx_packets_8192_to_9216_bytes_lo;
+	uint32_t rx_packets_8192_to_9216_bytes_hi;
+};
+
+struct pport_stats_params {
+	uint16_t pport_num;
+	uint8_t rsvd;
+	uint8_t reset_stats;
+};
+
+/* [18] OPCODE_NIC_GET_PPORT_STATS */
+struct mbx_get_pport_stats {
+	/* dw0 - dw3 */
+	struct mbx_hdr hdr;
+	union {
 		struct {
-			struct rx_stats rx;
-			struct tx_stats tx;
-			struct rx_err_stats err_rx;
-			struct mem_stats mem;
+			struct pport_stats_params arg;
+		}req;
+
+		struct {
+			struct lancer_cmd_pport_stats pport_stats;
 		}rsp;
 	}params;
 };

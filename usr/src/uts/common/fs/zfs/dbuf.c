@@ -20,11 +20,11 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -37,6 +37,7 @@
 #include <sys/dsl_dir.h>
 #include <sys/dmu_tx.h>
 #include <sys/spa.h>
+#include <sys/spa_impl.h>
 #include <sys/zio.h>
 #include <sys/dmu_zfetch.h>
 #include <sys/sa.h>
@@ -93,6 +94,7 @@ dbuf_dest(void *vdb, void *unused)
 /*
  * dbuf hash table routines
  */
+#pragma align 64(dbuf_hash_table)
 static dbuf_hash_table_t dbuf_hash_table;
 
 static uint64_t dbuf_hash_count;
@@ -322,6 +324,19 @@ dbuf_is_metadata(dmu_buf_impl_t *db)
 	}
 }
 
+boolean_t
+dbuf_is_ddt(dmu_buf_impl_t *db)
+{
+	boolean_t is_ddt;
+
+	DB_DNODE_ENTER(db);
+	is_ddt = (DB_DNODE(db)->dn_type == DMU_OT_DDT_ZAP) ||
+	    (DB_DNODE(db)->dn_type == DMU_OT_DDT_STATS);
+	DB_DNODE_EXIT(db);
+
+	return (is_ddt);
+}
+
 void
 dbuf_evict(dmu_buf_impl_t *db)
 {
@@ -363,7 +378,7 @@ retry:
 	    0, dbuf_cons, dbuf_dest, NULL, NULL, NULL, 0);
 
 	for (i = 0; i < DBUF_MUTEXES; i++)
-		mutex_init(&h->hash_mutexes[i], NULL, MUTEX_DEFAULT, NULL);
+		mutex_init(DBUF_HASH_MUTEX(h, i), NULL, MUTEX_DEFAULT, NULL);
 
 	/*
 	 * All entries are queued via taskq_dispatch_ent(), so min/maxalloc
@@ -379,7 +394,7 @@ dbuf_fini(void)
 	int i;
 
 	for (i = 0; i < DBUF_MUTEXES; i++)
-		mutex_destroy(&h->hash_mutexes[i]);
+		mutex_destroy(DBUF_HASH_MUTEX(h, i));
 	kmem_free(h->hash_table, (h->hash_table_mask + 1) * sizeof (void *));
 	kmem_cache_destroy(dbuf_cache);
 	taskq_destroy(dbu_evict_taskq);
@@ -1098,7 +1113,7 @@ dbuf_release_bp(dmu_buf_impl_t *db)
 }
 
 dbuf_dirty_record_t *
-dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
+dbuf_dirty_sc(dmu_buf_impl_t *db, dmu_tx_t *tx, boolean_t usesc)
 {
 	dnode_t *dn;
 	objset_t *os;
@@ -1179,6 +1194,12 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 			    db->db_state != DB_NOFILL)
 				arc_buf_thaw(db->db_buf);
 		}
+
+		/*
+		 * Special class usage of dirty dbuf could be changed,
+		 * update the dirty entry.
+		 */
+		dr->dr_usesc = usesc;
 		mutex_exit(&db->db_mtx);
 		return (dr);
 	}
@@ -1264,6 +1285,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	dr->dr_dbuf = db;
 	dr->dr_txg = tx->tx_txg;
 	dr->dr_next = *drp;
+	dr->dr_usesc = usesc;
 	*drp = dr;
 
 	/*
@@ -1297,7 +1319,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		ASSERT(!list_link_active(&dr->dr_dirty_node));
 		list_insert_tail(&dn->dn_dirty_records[txgoff], dr);
 		mutex_exit(&dn->dn_mtx);
-		dnode_setdirty(dn, tx);
+		dnode_setdirty_sc(dn, tx, usesc);
 		DB_DNODE_EXIT(db);
 		return (dr);
 	} else if (do_free_accounting) {
@@ -1322,7 +1344,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 	}
 
 	if (db->db_level == 0) {
-		dnode_new_blkid(dn, db->db_blkid, tx, drop_struct_lock);
+		dnode_new_blkid(dn, db->db_blkid, tx, usesc, drop_struct_lock);
 		ASSERT(dn->dn_maxblkid >= db->db_blkid);
 	}
 
@@ -1342,7 +1364,7 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 		if (drop_struct_lock)
 			rw_exit(&dn->dn_struct_rwlock);
 		ASSERT3U(db->db_level+1, ==, parent->db_level);
-		di = dbuf_dirty(parent, tx);
+		di = dbuf_dirty_sc(parent, tx, usesc);
 		if (parent_held)
 			dbuf_rele(parent, FTAG);
 
@@ -1360,6 +1382,12 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 			mutex_exit(&di->dt.di.dr_mtx);
 			dr->dr_parent = di;
 		}
+
+		/*
+		 * Special class usage of dirty dbuf could be changed,
+		 * update the dirty entry.
+		 */
+		dr->dr_usesc = usesc;
 		mutex_exit(&db->db_mtx);
 	} else {
 		ASSERT(db->db_level+1 == dn->dn_nlevels);
@@ -1373,9 +1401,20 @@ dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 			rw_exit(&dn->dn_struct_rwlock);
 	}
 
-	dnode_setdirty(dn, tx);
+	dnode_setdirty_sc(dn, tx, usesc);
 	DB_DNODE_EXIT(db);
 	return (dr);
+}
+
+dbuf_dirty_record_t *
+dbuf_dirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
+{
+	spa_t *spa;
+
+	ASSERT(db->db_objset != NULL);
+	spa = db->db_objset->os_spa;
+
+	return (dbuf_dirty_sc(db, tx, spa->spa_usesc));
 }
 
 /*
@@ -1474,6 +1513,12 @@ dbuf_undirty(dmu_buf_impl_t *db, dmu_tx_t *tx)
 void
 dmu_buf_will_dirty(dmu_buf_t *db_fake, dmu_tx_t *tx)
 {
+	dmu_buf_will_dirty_sc(db_fake, tx, B_TRUE);
+}
+
+void
+dmu_buf_will_dirty_sc(dmu_buf_t *db_fake, dmu_tx_t *tx, boolean_t usesc)
+{
 	dmu_buf_impl_t *db = (dmu_buf_impl_t *)db_fake;
 	int rf = DB_RF_MUST_SUCCEED | DB_RF_NOPREFETCH;
 
@@ -1485,8 +1530,9 @@ dmu_buf_will_dirty(dmu_buf_t *db_fake, dmu_tx_t *tx)
 		rf |= DB_RF_HAVESTRUCT;
 	DB_DNODE_EXIT(db);
 	(void) dbuf_read(db, NULL, rf);
-	(void) dbuf_dirty(db, tx);
+	(void) dbuf_dirty_sc(db, tx, usesc);
 }
+
 
 void
 dmu_buf_will_not_fill(dmu_buf_t *db_fake, dmu_tx_t *tx)
@@ -2954,6 +3000,7 @@ dbuf_write(dbuf_dirty_record_t *dr, arc_buf_t *data, dmu_tx_t *tx)
 	if (db->db_blkid == DMU_SPILL_BLKID)
 		wp_flag = WP_SPILL;
 	wp_flag |= (db->db_state == DB_NOFILL) ? WP_NOFILL : 0;
+	WP_SET_SPECIALCLASS(wp_flag, dr->dr_usesc);
 
 	dmu_write_policy(os, dn, db->db_level, wp_flag, &zp);
 	DB_DNODE_EXIT(db);

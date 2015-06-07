@@ -18,8 +18,10 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -1976,9 +1978,9 @@ iscsid_add_pg_list_to_cache(iscsi_hba_t *ihp,
  * set_initiator_name - set default initiator name and alias.
  *
  * This sets the default initiator name and alias.  The
- * initiator name is composed of sun's reverse domain name
- * and registration followed and a unique classifier.  This
- * classifier is the mac address of the first NIC in the
+ * initiator name is composed of vendor's reverse domain name
+ * and registration date followed by a unique classifier.
+ * This classifier is the mac address of the first NIC in the
  * host and a timestamp to make sure the classifier is
  * unique if the NIC is moved between hosts.  The alias
  * is just the hostname.
@@ -1998,9 +2000,8 @@ iscsid_set_default_initiator_node_settings(iscsi_hba_t *ihp, boolean_t minimal)
 		    (const char *)iscsiboot_prop->boot_init.ini_name,
 		    ISCSI_MAX_NAME_LEN);
 	} else {
-		(void) snprintf((char *)ihp->hba_name,
-		    ISCSI_MAX_NAME_LEN,
-		    "iqn.1986-03.com.sun:01:");
+		(void) snprintf((char *)ihp->hba_name, ISCSI_MAX_NAME_LEN,
+		    "iqn.2005-07.com.nexenta:01:");
 
 		(void) localetheraddr(NULL, &eaddr);
 		for (i = 0; i <  ETHERADDRL; i++) {

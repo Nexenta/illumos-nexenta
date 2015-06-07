@@ -20,6 +20,7 @@
  */
 
 /*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
@@ -37,6 +38,10 @@ extern "C" {
 
 int libzfs_core_init(void);
 void libzfs_core_fini(void);
+
+int lzc_pool_configs(uint64_t *, nvlist_t **);
+int lzc_pool_get_props(const char *, nvlist_t **);
+int lzc_pool_stats(const char *, nvlist_t **);
 
 int lzc_snapshot(nvlist_t *, nvlist_t *, nvlist_t **);
 int lzc_create(const char *, dmu_objset_type_t, nvlist_t *);
@@ -61,8 +66,13 @@ int lzc_send(const char *, const char *, int, enum lzc_send_flags);
 int lzc_receive(const char *, nvlist_t *, const char *, boolean_t, int);
 int lzc_send_space(const char *, const char *, uint64_t *);
 
-boolean_t lzc_exists(const char *);
+int lzc_snapshot_list_next(const char *, uint64_t *, char **, nvlist_t **,
+    nvlist_t **);
+int lzc_objset_stats(const char *, dmu_objset_type_t *, nvlist_t **,
+    nvlist_t **);
 
+boolean_t lzc_exists(const char *);
+boolean_t lzc_has_snaps(const char *);
 int lzc_rollback(const char *, char *, int);
 
 #ifdef	__cplusplus

@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Nexenta Systemc, Inc.  All rights reserved.
  */
 
 #include <libdevinfo.h>
@@ -29,6 +30,9 @@
 #include <string.h>
 #include <librcm.h>
 #include <dlfcn.h>
+#include <sys/scsi/scsi_address.h>
+#include <limits.h>
+#include <errno.h>
 
 #undef	NDEBUG
 #include <assert.h>
@@ -666,10 +670,9 @@ out:
 	return (rp->rcm_retcode);
 }
 
-
 /*ARGSUSED*/
-int
-di_retire_device(char *devpath, di_retire_t *dp, int flags)
+static int
+do_di_retire_device(char *devpath, di_retire_t *dp, int flags)
 {
 	char path[PATH_MAX];
 	struct stat sb;
@@ -830,8 +833,8 @@ out:
 }
 
 /*ARGSUSED*/
-int
-di_unretire_device(char *devpath, di_retire_t *dp)
+static int
+do_di_unretire_device(char *devpath, di_retire_t *dp)
 {
 	if (dp == NULL || dp->rt_debug == NULL || dp->rt_hdl == NULL)
 		return (EINVAL);
@@ -860,4 +863,152 @@ di_unretire_device(char *devpath, di_retire_t *dp)
 	    devpath);
 
 	return (0);
+}
+
+/* Structure that holds physical path instance. */
+struct retire_mpath_info {
+	char *pathname;
+	struct retire_mpath_info *next;
+	char nodename[PATH_MAX];
+};
+
+static int
+retire_walk_nodes(di_node_t node, void *arg)
+{
+	char *dn = NULL;
+	struct retire_mpath_info **mpinfo = (struct retire_mpath_info **)arg;
+	di_node_t pnode;
+	char *baddr;
+	di_path_t path;
+
+	if (node == NULL || ((baddr = di_bus_addr(node)) == NULL) ||
+	    baddr[0] == '\0') {
+		return (DI_WALK_CONTINUE);
+	}
+
+	if (((dn = strstr((*mpinfo)->pathname, baddr)) == NULL) ||
+	    /* Make sure bus address matches completely. */
+	    (strlen(dn) != strlen(baddr))) {
+		return (DI_WALK_CONTINUE);
+	}
+
+	if ((path = di_path_client_next_path(node, DI_PATH_NIL)) == NULL) {
+		return (DI_WALK_CONTINUE);
+	}
+
+	for (; path != NULL; path = di_path_client_next_path(node, path)) {
+		struct retire_mpath_info *ri, *prev;
+		char *port_id = NULL;
+		char *p;
+
+		if ((pnode = di_path_phci_node(path)) == DI_NODE_NIL) {
+			continue;
+		}
+
+		if ((p = di_devfs_path(pnode)) == NULL) {
+			continue;
+		}
+
+		if (di_path_prop_lookup_strings(path,
+		    SCSI_ADDR_PROP_TARGET_PORT, &port_id) == 1) {
+
+			ri = malloc(sizeof (*ri) + PATH_MAX);
+			if (ri != NULL) {
+				prev = *mpinfo;
+
+				ri->next = prev;
+
+				/* Preserve nodename */
+				ri->pathname = prev->pathname;
+				(void) snprintf(&ri->nodename[0], PATH_MAX,
+				    "%s/disk@%s,0", p, port_id);
+
+				*mpinfo = ri;
+			}
+		}
+
+		di_devfs_path_free(p);
+	}
+
+	return (DI_WALK_CONTINUE);
+}
+
+int
+do_di_retire_device_mp(char *devpath, di_retire_t *dp, int flags,
+    boolean_t retire)
+{
+	int err = 0;
+	struct retire_mpath_info mpinfo, *pmpinfo, *pcurr;
+	char *path;
+	di_node_t root_node;
+
+	/* First, retire the device itself. */
+	err = retire ?
+	    do_di_retire_device(devpath, dp, flags) :
+	    do_di_unretire_device(devpath, dp);
+
+	if (err != 0) {
+		dp->rt_debug(dp->rt_hdl, "di_%sretire_device failed to"
+		    " %sretire device: %d %s", retire ? "" : "un",
+		    retire ? "" : "un", err, devpath);
+		return (err);
+	}
+
+	/* Next, try to retire all physical paths, if possible. */
+	root_node = di_init("/", DINFOCPYALL | DINFOPATH | DINFOLYR);
+	if (root_node == DI_NODE_NIL) {
+		dp->rt_debug(dp->rt_hdl, "di_%sretire_device can't access"
+		    " device tree, MPxIO checks ignored for %s",
+		    retire ? "" : "un", devpath);
+		return (0);
+	}
+
+	/* Obtain multipath information. */
+	(void) memset(&mpinfo, 0, sizeof (mpinfo));
+	mpinfo.pathname = devpath;
+
+	pmpinfo = &mpinfo;
+
+	(void) di_walk_node(root_node, DI_WALK_CLDFIRST, &pmpinfo,
+	    retire_walk_nodes);
+
+	/* Next, retire all possible physical paths. */
+	for (; err == 0 && pmpinfo != &mpinfo; ) {
+		pcurr = pmpinfo;
+		pmpinfo = pmpinfo->next;
+
+		path = &pcurr->nodename[0];
+
+		dp->rt_debug(dp->rt_hdl,
+		    "di_%sretire_device %sretiring physical path %s\n",
+		    retire ? "" : "un", retire ? "" : "un", path);
+
+		err = retire ?
+		    do_di_retire_device(path, dp, flags) :
+		    do_di_unretire_device(path, dp);
+
+		if (err != 0)
+			dp->rt_debug(dp->rt_hdl,
+			    "di_%sretire_device failed to %sretire physical"
+			    " path %s, %d\n", retire ? "" : "un",
+			    retire ? "" : "un", path, err);
+
+		free(pcurr);
+	}
+
+	return (0);
+}
+
+/*ARGSUSED*/
+int
+di_retire_device(char *devpath, di_retire_t *dp, int flags)
+{
+	return (do_di_retire_device_mp(devpath, dp, flags, B_TRUE));
+}
+
+/*ARGSUSED*/
+int
+di_unretire_device(char *devpath, di_retire_t *dp)
+{
+	return (do_di_retire_device_mp(devpath, dp, 0, B_FALSE));
 }

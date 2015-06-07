@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  */
 
@@ -633,7 +634,7 @@ dnode_reallocate(dnode_t *dn, dmu_object_type_t ot, int blocksize,
 	ASSERT3U(bonuslen, <=, DN_MAX_BONUSLEN);
 
 	/* clean up any unreferenced dbufs */
-	dnode_evict_dbufs(dn);
+	dnode_evict_dbufs(dn, DBUF_EVICT_ALL);
 
 	dn->dn_id_flags = 0;
 
@@ -1266,6 +1267,12 @@ dnode_rele_and_unlock(dnode_t *dn, void *tag)
 void
 dnode_setdirty(dnode_t *dn, dmu_tx_t *tx)
 {
+	dnode_setdirty_sc(dn, tx, B_TRUE);
+}
+
+void
+dnode_setdirty_sc(dnode_t *dn, dmu_tx_t *tx, boolean_t usesc)
+{
 	objset_t *os = dn->dn_objset;
 	uint64_t txg = tx->tx_txg;
 
@@ -1327,8 +1334,7 @@ dnode_setdirty(dnode_t *dn, dmu_tx_t *tx)
 	 */
 	VERIFY(dnode_add_ref(dn, (void *)(uintptr_t)tx->tx_txg));
 
-	(void) dbuf_dirty(dn->dn_dbuf, tx);
-
+	(void) dbuf_dirty_sc(dn->dn_dbuf, tx, usesc);
 	dsl_dataset_dirty(os->os_dsl_dataset, tx);
 }
 
@@ -1435,7 +1441,8 @@ fail:
 
 /* read-holding callers must not rely on the lock being continuously held */
 void
-dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx, boolean_t have_read)
+dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx,
+    boolean_t usesc, boolean_t have_read)
 {
 	uint64_t txgoff = tx->tx_txg & TXG_MASK;
 	int epbs, new_nlevels;
@@ -1489,7 +1496,7 @@ dnode_new_blkid(dnode_t *dn, uint64_t blkid, dmu_tx_t *tx, boolean_t have_read)
 		/* dirty the left indirects */
 		db = dbuf_hold_level(dn, old_nlevels, 0, FTAG);
 		ASSERT(db != NULL);
-		new = dbuf_dirty(db, tx);
+		new = dbuf_dirty_sc(db, tx, usesc);
 		dbuf_rele(db, FTAG);
 
 		/* transfer the dirty records to the new indirect */

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
@@ -588,6 +589,14 @@ traverse_dataset_destroyed(spa_t *spa, blkptr_t *blkptr,
 {
 	return (traverse_impl(spa, NULL, ZB_DESTROYED_OBJSET,
 	    blkptr, txg_start, resume, flags, func, arg));
+}
+
+int
+traverse_dataset_resume(dsl_dataset_t *ds, uint64_t txg_start,
+    zbookmark_phys_t *resume, int flags, blkptr_cb_t func, void *arg)
+{
+	return (traverse_impl(ds->ds_dir->dd_pool->dp_spa, ds, ds->ds_object,
+	    &dsl_dataset_phys(ds)->ds_bp, txg_start, resume, flags, func, arg));
 }
 
 /*

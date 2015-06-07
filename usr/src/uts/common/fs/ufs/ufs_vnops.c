@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1984, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  */
 
@@ -395,9 +396,9 @@ out:
 	return (error);
 }
 
-extern	int	ufs_HW;		/* high water mark */
-extern	int	ufs_LW;		/* low water mark */
-int	ufs_WRITES = 1;		/* XXX - enable/disable */
+extern	volatile int	ufs_HW;	/* high water mark */
+extern	volatile int	ufs_LW;	/* low water mark */
+volatile int	ufs_WRITES = 1;	/* XXX - enable/disable */
 int	ufs_throttles = 0;	/* throttling count */
 int	ufs_allow_shared_writes = 1;	/* directio shared writes */
 
@@ -662,8 +663,8 @@ int stickyhack = 1;
  * XXX - need to pass the information down to writedone() in a flag like B_SEQ
  * or B_FREE_IF_TIGHT_ON_MEMORY.
  */
-int	freebehind = 1;
-int	smallfile = 0;
+volatile int	freebehind = 1;
+volatile int	smallfile = 0;
 u_offset_t smallfile64 = 32 * 1024;
 
 /*
@@ -1561,7 +1562,6 @@ ufs_ioctl(
 	struct fs	*fs;
 	struct ulockfs	*ulp;
 	offset_t	off;
-	extern int	maxphys;
 	int		error;
 	int		issync;
 	int		trans_size;
@@ -1893,7 +1893,8 @@ ufs_ioctl(
 			return (0);
 
 		case _FIOGETMAXPHYS:
-			if (copyout(&maxphys, (void *)arg, sizeof (maxphys)))
+			if (copyout((void *)&maxphys, (void *)arg,
+			    sizeof (maxphys)))
 				return (EFAULT);
 			return (0);
 

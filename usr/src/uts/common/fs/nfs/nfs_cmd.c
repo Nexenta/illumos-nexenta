@@ -22,6 +22,9 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -256,10 +259,10 @@ nfscmd_insert_charmap(struct exportinfo *exi, struct sockaddr *sp, char *name)
 
 	if (charset == NULL)
 		return (NULL);
-	if (name != NULL) {
-		charset->inbound = kiconv_open("UTF-8", name);
-		charset->outbound = kiconv_open(name, "UTF-8");
-	}
+
+	charset->inbound = kiconv_open("UTF-8", name);
+	charset->outbound = kiconv_open(name, "UTF-8");
+
 	charset->client_addr = *sp;
 	mutex_enter(&exi->exi_lock);
 	charset->next = exi->exi_charset;
@@ -334,8 +337,8 @@ nfscmd_convname(struct sockaddr *ca, struct exportinfo *exi, char *name,
 
 	charset = nfscmd_findmap(exi, ca);
 	if (charset == NULL ||
-	    (charset->inbound == NULL && inbound) ||
-	    (charset->outbound == NULL && !inbound))
+	    (charset->inbound == (kiconv_t)-1 && inbound) ||
+	    (charset->outbound == (kiconv_t)-1 && !inbound))
 		return (name);
 
 	/* make sure we have more than enough space */
@@ -355,180 +358,4 @@ nfscmd_convname(struct sockaddr *ca, struct exportinfo *exi, char *name,
 	}
 
 	return (newname);
-}
-
-/*
- * nfscmd_convdirent()
- *
- * There is only one entry in the data.  Convert to new charset, if
- * required and only return a success if it fits.
- */
-char *
-nfscmd_convdirent(struct sockaddr *ca, struct exportinfo *exi, char *data,
-    size_t size, enum nfsstat3 *error)
-{
-	char *newdata;
-	size_t ret;
-	size_t nsize;
-	size_t count;
-	int err = 0;
-	char *iname;
-	char *oname;
-	struct charset_cache *charset;
-
-	charset = nfscmd_findmap(exi, ca);
-	if (charset == NULL || charset->outbound == (void *)~0)
-		return (data);
-
-	newdata = kmem_zalloc(size, KM_SLEEP);
-
-	nsize = strlen(((struct dirent64 *)data)->d_name);
-	count = size;
-	bcopy(data, newdata, sizeof (struct dirent64));
-
-	iname = ((struct dirent64 *)data)->d_name;
-	oname = ((struct dirent64 *)newdata)->d_name;
-
-	ret = kiconv(charset->outbound, &iname, &nsize, &oname, &count, &err);
-	if (ret == (size_t)-1) {
-		kmem_free(newdata, size);
-		newdata = NULL;
-		if (err == E2BIG) {
-			if (error != NULL)
-				*error = NFS3ERR_NAMETOOLONG;
-		} else {
-			newdata = data;
-		}
-	} else {
-		ret = strlen(((struct dirent64 *)newdata)->d_name);
-		((struct dirent64 *)newdata)->d_reclen =
-		    DIRENT64_RECLEN(ret + 1);
-	}
-	return (newdata);
-}
-
-/*
- * nfscmd_convdirplus(addr, export, data, nents, maxsize, ndata)
- *
- * Convert the dirents in data into a new list of dirents in ndata.
- */
-
-size_t
-nfscmd_convdirplus(struct sockaddr *ca, struct exportinfo *exi, char *data,
-    size_t nents, size_t maxsize, char **ndata)
-{
-	char *newdata;
-	size_t nsize;
-	struct dirent64 *dp;
-	struct dirent64 *ndp;
-	size_t i;
-	size_t ret;
-	char *iname;
-	char *oname;
-	size_t ilen;
-	size_t olen;
-	int err;
-	size_t skipped;
-	struct charset_cache *charset;
-	*ndata = data;	/* return the data if no changes to make */
-
-	charset = nfscmd_findmap(exi, ca);
-
-	if (charset == NULL || charset->outbound == (void *)~0)
-		return (0);
-
-	newdata = kmem_zalloc(maxsize, KM_SLEEP);
-	nsize = 0;
-
-	dp = (struct dirent64 *)data;
-	ndp = (struct dirent64 *)newdata;
-
-	for (skipped = 0, i = 0; i < nents; i++) {
-		/*
-		 * Copy the dp information if it fits. Then copy and
-		 * convert the name in the entry.
-		 */
-		if ((maxsize - nsize) < dp->d_reclen)
-			/* doesn't fit */
-			break;
-		*ndp = *dp;
-		iname = dp->d_name;
-		ilen = strlen(iname);
-		oname = ndp->d_name;
-		olen = MIN(MAXNAMELEN, maxsize - nsize);
-		ret = kiconv(charset->outbound, &iname, &ilen, &oname,
-		    &olen, &err);
-
-		if (ret == (size_t)-1) {
-			switch (err) {
-			default:
-			case E2BIG:
-				break;
-			case EILSEQ:
-				skipped++;
-				dp = nextdp(dp);
-				continue;
-			}
-		}
-		ilen = MIN(MAXNAMELEN, maxsize - nsize) - olen;
-		ndp->d_name[ilen] = '\0';
-		/*
-		 * What to do with other errors?
-		 * For now, we return the unconverted string.
-		 */
-		ndp->d_reclen = DIRENT64_RECLEN(strlen(ndp->d_name) + 1);
-		nsize += ndp->d_reclen;
-		dp = nextdp(dp);
-		ndp = nextdp(ndp);
-	}
-
-	*ndata = newdata;
-	return (nents - (i + skipped));
-}
-
-/*
- * nfscmd_countents(data, len)
- *
- * How many dirents are there in the data buffer?
- */
-
-size_t
-nfscmd_countents(char *data, size_t len)
-{
-	struct dirent64 *dp = (struct dirent64 *)data;
-	size_t curlen;
-	size_t reclen;
-	size_t nents;
-
-	for (nents = 0, curlen = 0; curlen < len; curlen += reclen, nents++) {
-		reclen = dp->d_reclen;
-		dp = nextdp(dp);
-	}
-	return (nents);
-}
-
-/*
- * nfscmd_dropped_entrysize(dir, drop, nents)
- *
- * We need to drop "drop" entries from dir in order to fit in the
- * buffer.  How much do we reduce the overall size by?
- */
-
-size_t
-nfscmd_dropped_entrysize(struct dirent64 *dir, size_t drop, size_t nents)
-{
-	size_t size;
-	size_t i;
-
-	for (i = nents - drop; i > 0 && dir != NULL; i--)
-		dir = nextdp(dir);
-
-	if (dir == NULL)
-		return (0);
-
-	for (size = 0, i = 0; i < drop && dir != NULL; i++) {
-		size += dir->d_reclen;
-		dir = nextdp(dir);
-	}
-	return (size);
 }

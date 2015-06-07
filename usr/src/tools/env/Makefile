@@ -19,9 +19,11 @@
 # CDDL HEADER END
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
 #
 
 ENVFILES= \
+	nza \
 	developer \
 	gatekeeper \
 	illumos

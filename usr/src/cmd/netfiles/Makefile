@@ -20,7 +20,7 @@
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
-#
+# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 
 TXTS= nsswitch.conf netconfig hosts services
 DEFAULTFILES= nss.dfl
@@ -56,6 +56,9 @@ $(TICLTS)/% $(TICOTS)/% $(TICOTSORD)/% $(ROOTETC)/%: %
 
 all: $(TXTS)
 
+nsswitch.conf : nsswitch.dns
+	$(CP) nsswitch.dns $@
+
 install: all $(ROOTDIRS) $(ITICLTSFILES) $(ITICOTSFILES) $(ITICOTSORDFILES) \
 			$(IETCFILES) $(ROOTETCDEFAULTFILES)
 
@@ -65,4 +68,4 @@ $(ROOTDIRS):
 FRC:
 
 clean clobber lint:
-
+	$(RM) nsswitch.conf

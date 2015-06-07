@@ -19,7 +19,11 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
 
 
 /*
@@ -28,6 +32,8 @@
  */
 
 #include <oce_impl.h>
+
+extern int pow10[];
 
 static ddi_dma_attr_t oce_sgl_dma_attr = {
 	DMA_ATTR_V0,		/* version number */
@@ -44,11 +50,13 @@ static ddi_dma_attr_t oce_sgl_dma_attr = {
 	0			/* DMA flags */
 };
 
-static ddi_device_acc_attr_t oce_sgl_buf_accattr = {
-	DDI_DEVICE_ATTR_V0,
-	DDI_NEVERSWAP_ACC,
-	DDI_STRICTORDER_ACC,
-};
+static int oce_mbox_issue_bootstrap(struct oce_dev *dev, struct oce_mbx *mbx,
+    uint32_t tmo_sec);
+static uint32_t oce_enqueue_mq_mbox(struct oce_dev *dev, struct oce_mbx *mbx,
+    uint32_t tmo_sec);
+static struct oce_mbx_ctx *oce_init_mq_ctx(struct oce_dev *dev,
+    struct oce_mbx *mbx);
+static void oce_destroy_mq_ctx(struct oce_mbx_ctx *mbctx);
 
 /*
  * common inline function to fill an ioctl request header
@@ -66,7 +74,7 @@ void
 mbx_common_req_hdr_init(struct mbx_hdr *hdr,
     uint8_t dom, uint8_t port,
     uint8_t subsys, uint8_t opcode,
-    uint32_t timeout, uint32_t pyld_len)
+    uint32_t timeout, uint32_t pyld_len, uint8_t version)
 {
 	ASSERT(hdr != NULL);
 
@@ -77,7 +85,7 @@ mbx_common_req_hdr_init(struct mbx_hdr *hdr,
 
 	hdr->u0.req.timeout = timeout;
 	hdr->u0.req.request_length = pyld_len - sizeof (struct mbx_hdr);
-	hdr->u0.req.rsvd0 = 0;
+	hdr->u0.req.version = version;
 } /* mbx_common_req_hdr_init */
 
 /*
@@ -100,23 +108,59 @@ oce_mbox_init(struct oce_dev *dev)
 	ptr = (uint8_t *)&mbx->mbx;
 
 	/* Endian Signature */
-	*ptr++ = 0xff;
+	*ptr++ = 0xFF;
 	*ptr++ = 0x12;
 	*ptr++ = 0x34;
-	*ptr++ = 0xff;
-	*ptr++ = 0xff;
+	*ptr++ = 0xFF;
+	*ptr++ = 0xFF;
 	*ptr++ = 0x56;
 	*ptr++ = 0x78;
-	*ptr   = 0xff;
+	*ptr   = 0xFF;
 
 	ret = oce_mbox_dispatch(dev, 0);
-
 	if (ret != 0)
 		oce_log(dev, CE_NOTE, MOD_CONFIG,
-		    "Failed to set endian %d", ret);
+		    "Failed to set endianess %d", ret);
 
 	return (ret);
 } /* oce_mbox_init */
+
+/*
+ * function to reset the hw with host endian information
+ *
+ * dev - software handle to the device
+ *
+ * return 0 on success, ETIMEDOUT on failure
+ */
+int
+oce_mbox_fini(struct oce_dev *dev)
+{
+	struct oce_bmbx *mbx;
+	uint8_t *ptr;
+	int ret = 0;
+
+	ASSERT(dev != NULL);
+
+	mbx = (struct oce_bmbx *)DBUF_VA(dev->bmbx);
+	ptr = (uint8_t *)&mbx->mbx;
+
+	/* Endian Signature */
+	*ptr++ = 0xFF;
+	*ptr++ = 0xAA;
+	*ptr++ = 0xBB;
+	*ptr++ = 0xFF;
+	*ptr++ = 0xFF;
+	*ptr++ = 0xCC;
+	*ptr++ = 0xDD;
+	*ptr   = 0xFF;
+
+	ret = oce_mbox_dispatch(dev, 0);
+	if (ret != 0)
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "Failed to reset endianess %d", ret);
+
+	return (ret);
+} /* oce_mbox_fini */
 
 /*
  * function to wait till we get a mbox ready after writing to the
@@ -151,6 +195,7 @@ oce_mbox_wait(struct oce_dev *dev, uint32_t tmo_sec)
 		if (oce_fm_check_acc_handle(dev, dev->db_handle) != DDI_FM_OK) {
 			ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
 			oce_fm_ereport(dev, DDI_FM_DEVICE_INVAL_STATE);
+			return (EIO);
 		}
 
 		if (mbox_db.bits.ready) {
@@ -177,7 +222,7 @@ oce_mbox_dispatch(struct oce_dev *dev, uint32_t tmo_sec)
 	int ret;
 
 	/* sync the bmbx */
-	(void) DBUF_SYNC(dev->bmbx, DDI_DMA_SYNC_FORDEV);
+	DBUF_SYNC(dev->bmbx, 0, 0, DDI_DMA_SYNC_FORDEV);
 
 	/* write 30 bits of address hi dword */
 	pa = (uint32_t)(DBUF_PA(dev->bmbx) >> 34);
@@ -197,6 +242,7 @@ oce_mbox_dispatch(struct oce_dev *dev, uint32_t tmo_sec)
 
 	if (oce_fm_check_acc_handle(dev, dev->db_handle) != DDI_FM_OK) {
 		ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
+		return (EIO);
 	}
 
 	/* wait for mbox ready */
@@ -220,13 +266,20 @@ oce_mbox_dispatch(struct oce_dev *dev, uint32_t tmo_sec)
 	OCE_DB_WRITE32(dev, PD_MPU_MBOX_DB, mbox_db.dw0);
 	if (oce_fm_check_acc_handle(dev, dev->db_handle) != DDI_FM_OK) {
 		ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
+		return (EIO);
 	}
 
 	/* wait for mbox ready */
 	ret = oce_mbox_wait(dev, tmo_sec);
+
+	if (ret != 0) {
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "BMBX TIMED OUT PROGRAMMING LO ADDR: %d", ret);
+		return (ret);
+	}
+
 	/* sync */
-	(void) ddi_dma_sync(DBUF_DHDL(dev->bmbx), 0, 0,
-	    DDI_DMA_SYNC_FORKERNEL);
+	DBUF_SYNC(dev->bmbx, 0, 0, DDI_DMA_SYNC_FORKERNEL);
 	if (oce_fm_check_dma_handle(dev, DBUF_DHDL(dev->bmbx)) != DDI_FM_OK) {
 		ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
 		return (EIO);
@@ -235,32 +288,27 @@ oce_mbox_dispatch(struct oce_dev *dev, uint32_t tmo_sec)
 } /* oce_mbox_dispatch */
 
 /*
- * function to post a MBX to the mbox
+ * function to post a MBX to the bootstrap mbox
  *
  * dev - software handle to the device
  * mbx - pointer to the MBX to send
- * mbxctx - pointer to the mbx context structure
+ * tmo - timeout in seconds
  *
  * return 0 on success, ETIMEDOUT on failure
  */
 int
-oce_mbox_post(struct oce_dev *dev, struct oce_mbx *mbx,
-    struct oce_mbx_ctx *mbxctx)
+oce_mbox_issue_bootstrap(struct oce_dev *dev, struct oce_mbx *mbx,
+	uint32_t tmo)
 {
 	struct oce_mbx *mb_mbx = NULL;
 	struct oce_mq_cqe *mb_cqe = NULL;
 	struct oce_bmbx *mb = NULL;
 	int ret = 0;
-	uint32_t tmo = 0;
+	uint32_t status = 0;
 
 	mutex_enter(&dev->bmbx_lock);
-
 	mb = (struct oce_bmbx *)DBUF_VA(dev->bmbx);
 	mb_mbx = &mb->mbx;
-
-	/* get the tmo */
-	tmo = mbx->tag[0];
-	mbx->tag[0] = 0;
 
 	/* copy mbx into mbox */
 	bcopy(mbx, mb_mbx, sizeof (struct oce_mbx));
@@ -273,9 +321,7 @@ oce_mbox_post(struct oce_dev *dev, struct oce_mbx *mbx,
 	}
 
 	/* sync */
-
-	(void) ddi_dma_sync(DBUF_DHDL(dev->bmbx), 0, 0,
-	    DDI_DMA_SYNC_FORKERNEL);
+	DBUF_SYNC(dev->bmbx, 0, 0, DDI_DMA_SYNC_FORKERNEL);
 	ret = oce_fm_check_dma_handle(dev, DBUF_DHDL(dev->bmbx));
 	if (ret != DDI_FM_OK) {
 		ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
@@ -294,30 +340,11 @@ oce_mbox_post(struct oce_dev *dev, struct oce_mbx *mbx,
 	bcopy(mb_mbx, mbx, sizeof (struct oce_mbx));
 
 	/* check mbox status */
-	if (mb_cqe->u0.s.completion_status != 0) {
-		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "MBOX Command Failed with Status: %d %d",
-		    mb_cqe->u0.s.completion_status,
-		    mb_cqe->u0.s.extended_status);
-		mutex_exit(&dev->bmbx_lock);
-		return (EIO);
-	}
-
-	/*
-	 * store the mbx context in the cqe tag section so that
-	 * the upper layer handling the cqe can associate the mbx
-	 * with the response
-	 */
-	if (mbxctx) {
-		/* save context */
-		mbxctx->mbx = mb_mbx;
-		bcopy(&mbxctx, mb_cqe->u0.s.mq_tag,
-		    sizeof (struct oce_mbx_ctx *));
-	}
-
+	status  = mb_cqe->u0.s.completion_status << 16 |
+	    mb_cqe->u0.s.extended_status;
 	mutex_exit(&dev->bmbx_lock);
-	return (0);
-} /* oce_mbox_post */
+	return (status);
+} /* oce_mbox_issue_bootstrap */
 
 /*
  * function to get the firmware version
@@ -327,7 +354,7 @@ oce_mbox_post(struct oce_dev *dev, struct oce_mbx *mbx,
  * return 0 on success, EIO on failure
  */
 int
-oce_get_fw_version(struct oce_dev *dev)
+oce_get_fw_version(struct oce_dev *dev, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_get_common_fw_version *fwcmd;
@@ -341,7 +368,7 @@ oce_get_fw_version(struct oce_dev *dev)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_GET_COMMON_FW_VERSION,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_get_common_fw_version));
+	    sizeof (struct mbx_get_common_fw_version), 0);
 
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
@@ -349,11 +376,11 @@ oce_get_fw_version(struct oce_dev *dev)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* now post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
-
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 	if (ret != 0) {
 		return (ret);
 	}
+
 	bcopy(fwcmd->params.rsp.fw_ver_str, dev->fw_version, 32);
 
 	oce_log(dev, CE_NOTE, MOD_CONFIG, "%s %s",
@@ -388,7 +415,7 @@ oce_reset_fun(struct oce_dev *dev)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_COMMON_FUNCTION_RESET,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct ioctl_common_function_reset));
+	    sizeof (struct ioctl_common_function_reset), 0);
 
 	/* fill rest of mbx */
 	mbx->u0.s.embedded = 1;
@@ -413,7 +440,7 @@ oce_reset_fun(struct oce_dev *dev)
  */
 int
 oce_read_mac_addr(struct oce_dev *dev, uint32_t if_id, uint8_t perm,
-    uint8_t type, struct mac_address_format *mac)
+    uint8_t type, struct mac_address_format *mac, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_query_common_iface_mac *fwcmd;
@@ -426,7 +453,7 @@ oce_read_mac_addr(struct oce_dev *dev, uint32_t if_id, uint8_t perm,
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_QUERY_COMMON_IFACE_MAC,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_query_common_iface_mac));
+	    sizeof (struct mbx_query_common_iface_mac), 0);
 
 	/* fill the command */
 	fwcmd->params.req.permanent = perm;
@@ -442,7 +469,7 @@ oce_read_mac_addr(struct oce_dev *dev, uint32_t if_id, uint8_t perm,
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* now post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 	if (ret != 0) {
 		return (ret);
 	}
@@ -485,7 +512,7 @@ oce_read_mac_addr(struct oce_dev *dev, uint32_t if_id, uint8_t perm,
 int
 oce_if_create(struct oce_dev *dev, uint32_t cap_flags, uint32_t en_flags,
     uint16_t vlan_tag, uint8_t *mac_addr,
-    uint32_t *if_id)
+    uint32_t *if_id, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_create_common_iface *fwcmd;
@@ -499,7 +526,7 @@ oce_if_create(struct oce_dev *dev, uint32_t cap_flags, uint32_t en_flags,
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_CREATE_COMMON_IFACE,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_create_common_iface));
+	    sizeof (struct mbx_create_common_iface), 0);
 	DW_SWAP(u32ptr(&fwcmd->hdr), sizeof (struct mbx_hdr));
 
 	/* fill the command */
@@ -521,12 +548,10 @@ oce_if_create(struct oce_dev *dev, uint32_t cap_flags, uint32_t en_flags,
 	DW_SWAP(u32ptr(&mbx), OCE_BMBX_RHDR_SZ);
 
 	/* now post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 	if (ret != 0) {
 		return (ret);
 	}
-
-
 
 	/* get response */
 	*if_id = LE_32(fwcmd->params.rsp.if_id);
@@ -551,7 +576,7 @@ oce_if_create(struct oce_dev *dev, uint32_t cap_flags, uint32_t en_flags,
  * return 0 on success, EIO on failure
  */
 int
-oce_if_del(struct oce_dev *dev, uint32_t if_id)
+oce_if_del(struct oce_dev *dev, uint32_t if_id, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_destroy_common_iface *fwcmd;
@@ -564,7 +589,7 @@ oce_if_del(struct oce_dev *dev, uint32_t if_id)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_DESTROY_COMMON_IFACE,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_destroy_common_iface));
+	    sizeof (struct mbx_destroy_common_iface), 0);
 
 	/* fill the command */
 	fwcmd->params.req.if_id = if_id;
@@ -575,7 +600,7 @@ oce_if_del(struct oce_dev *dev, uint32_t if_id)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 	return (ret);
 } /* oce_if_del */
 
@@ -588,7 +613,8 @@ oce_if_del(struct oce_dev *dev, uint32_t if_id)
  * return 0 on success, EIO on failure
  */
 int
-oce_get_link_status(struct oce_dev *dev, struct link_status *link)
+oce_get_link_status(struct oce_dev *dev, link_state_t *link_status,
+    int32_t *link_speed, uint8_t *link_duplex, uint8_t cmd_ver, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_query_common_link_status *fwcmd;
@@ -602,7 +628,7 @@ oce_get_link_status(struct oce_dev *dev, struct link_status *link)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_QUERY_COMMON_LINK_STATUS,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_query_common_link_status));
+	    sizeof (struct mbx_query_common_link_status), cmd_ver);
 
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
@@ -610,16 +636,20 @@ oce_get_link_status(struct oce_dev *dev, struct link_status *link)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
-
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 	if (ret != 0) {
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "Failed to query link status: 0x%x", ret);
 		return (ret);
 	}
 
 	/* interpret response */
-	bcopy(&fwcmd->params.rsp, link, sizeof (struct link_status));
-	link->logical_link_status = LE_32(link->logical_link_status);
-	link->qos_link_speed = LE_16(link->qos_link_speed);
+	*link_status  = (LE_32(fwcmd->params.rsp.logical_link_status) ==
+	    NTWK_LOGICAL_LINK_UP) ? LINK_STATE_UP : LINK_STATE_DOWN;
+	*link_speed = (fwcmd->params.rsp.qos_link_speed != 0) ?
+	    LE_16(fwcmd->params.rsp.qos_link_speed) * 10:
+	    pow10[fwcmd->params.rsp.mac_speed];
+	*link_duplex = fwcmd->params.rsp.mac_duplex;
 
 	return (0);
 } /* oce_get_link_status */
@@ -634,7 +664,7 @@ oce_get_link_status(struct oce_dev *dev, struct link_status *link)
  */
 int
 oce_set_rx_filter(struct oce_dev *dev,
-    struct mbx_set_common_ntwk_rx_filter *filter)
+    struct mbx_set_common_ntwk_rx_filter *filter, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_set_common_ntwk_rx_filter *fwcmd;
@@ -650,7 +680,7 @@ oce_set_rx_filter(struct oce_dev *dev,
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_COMMON_NTWK_RX_FILTER,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_set_common_ntwk_rx_filter));
+	    sizeof (struct mbx_set_common_ntwk_rx_filter), 0);
 
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
@@ -658,7 +688,11 @@ oce_set_rx_filter(struct oce_dev *dev,
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
+	if (ret != 0) {
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "Set RX filter failed: 0x%x", ret);
+	}
 
 	return (ret);
 } /* oce_set_rx_filter */
@@ -675,7 +709,8 @@ oce_set_rx_filter(struct oce_dev *dev,
  */
 int
 oce_set_multicast_table(struct oce_dev *dev, uint32_t if_id,
-struct ether_addr *mca_table, uint16_t mca_cnt, boolean_t promisc)
+    struct ether_addr *mca_table, uint16_t mca_cnt, boolean_t promisc,
+    uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct  mbx_set_common_iface_multicast *fwcmd;
@@ -689,7 +724,7 @@ struct ether_addr *mca_table, uint16_t mca_cnt, boolean_t promisc)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_SET_COMMON_IFACE_MULTICAST,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_set_common_iface_multicast));
+	    sizeof (struct mbx_set_common_iface_multicast), 0);
 
 	/* fill the command */
 	fwcmd->params.req.if_id = (uint8_t)if_id;
@@ -707,7 +742,7 @@ struct ether_addr *mca_table, uint16_t mca_cnt, boolean_t promisc)
 	DW_SWAP(u32ptr(&mbx), (OCE_BMBX_RHDR_SZ + OCE_MBX_RRHDR_SZ));
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	return (ret);
 } /* oce_set_multicast_table */
@@ -720,10 +755,11 @@ struct ether_addr *mca_table, uint16_t mca_cnt, boolean_t promisc)
  * return 0 on success, EIO on failure
  */
 int
-oce_get_fw_config(struct oce_dev *dev)
+oce_get_fw_config(struct oce_dev *dev, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_common_query_fw_config *fwcmd;
+	struct mbx_common_set_drvfn_capab *capab;
 	int ret = 0;
 
 	bzero(&mbx, sizeof (struct oce_mbx));
@@ -733,7 +769,7 @@ oce_get_fw_config(struct oce_dev *dev)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_QUERY_COMMON_FIRMWARE_CONFIG,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_common_query_fw_config));
+	    sizeof (struct mbx_common_query_fw_config), 0);
 
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
@@ -741,9 +777,11 @@ oce_get_fw_config(struct oce_dev *dev)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* now post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	if (ret != 0) {
+		oce_log(dev, CE_WARN, MOD_CONFIG,
+		    "Failed to query fw config: 0x%x", ret);
 		return (ret);
 	}
 
@@ -764,6 +802,59 @@ oce_get_fw_config(struct oce_dev *dev)
 		dev->max_rx_rings = fwcmd->params.rsp.ulp[1].rq_count;
 	}
 	dev->function_caps = fwcmd->params.rsp.function_caps;
+
+	if (!LANCER_CHIP(dev)) {
+		bzero(&mbx, sizeof (struct oce_mbx));
+		/* initialize the ioctl header */
+		capab = (struct mbx_common_set_drvfn_capab *)&mbx.payload;
+		mbx_common_req_hdr_init(&fwcmd->hdr, 0, 0,
+		    MBX_SUBSYSTEM_COMMON,
+		    OPCODE_COMMON_SET_DRIVER_FUNCTION_CAPABILITIES,
+		    MBX_TIMEOUT_SEC,
+		    sizeof (struct mbx_common_set_drvfn_capab), 0);
+
+		/* fill rest of mbx */
+		mbx.u0.s.embedded = 1;
+		mbx.payload_length =
+		    sizeof (struct mbx_common_set_drvfn_capab);
+
+		capab->params.request.valid_capability_flags =
+		    DRVFN_CAPAB_BE3_NATIVE;
+		capab->params.request.capability_flags = DRVFN_CAPAB_BE3_NATIVE;
+
+		DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
+
+		/* now post the command */
+		ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
+
+		if (ret != 0) {
+			if ((OCE_MBX_STATUS(fwcmd) ==
+			    MGMT_STATUS_ILLEGAL_REQUEST) &&
+			    OCE_MBX_ADDL_STATUS(fwcmd) ==
+			    MGMT_ADDI_STATUS_INVALID_OPCODE) {
+				/*
+				 * run in legacy mode
+				 */
+				dev->rx_rings_per_group =
+				    min(dev->rx_rings_per_group,
+				    MAX_RING_PER_GROUP_LEGACY);
+			} else {
+				return (ret);
+			}
+		} else {
+			/* swap and copy into buffer */
+			dev->drvfn_caps =
+			    LE_32(capab->params.response.capability_flags);
+		}
+
+		if (!(dev->drvfn_caps & DRVFN_CAPAB_BE3_NATIVE))
+			dev->rx_rings_per_group = min(dev->rx_rings_per_group,
+			    MAX_RING_PER_GROUP_LEGACY);
+	}
+	oce_log(dev, CE_NOTE, MOD_CONFIG,
+	    "drvfn_caps = 0x%x, function_caps = 0x%x",
+	    dev->drvfn_caps, dev->function_caps);
+
 	return (0);
 } /* oce_get_fw_config */
 
@@ -775,19 +866,25 @@ oce_get_fw_config(struct oce_dev *dev)
  * return 0 on success, EIO on failure
  */
 int
-oce_get_hw_stats(struct oce_dev *dev)
+oce_get_hw_stats(struct oce_dev *dev, uint32_t mode)
 {
 	struct oce_mbx mbx;
-	struct mbx_get_nic_stats *fwcmd = dev->hw_stats;
+	struct mbx_get_nic_stats *fwcmd =
+	    (struct mbx_get_nic_stats *)DBUF_VA(dev->stats_dbuf);
 	int ret = 0;
 
 	bzero(&mbx, sizeof (struct oce_mbx));
+	bzero(fwcmd, sizeof (struct mbx_get_nic_stats));
+
 	/* initialize the ioctl header */
 	mbx_common_req_hdr_init(&fwcmd->hdr, 0, 0,
 	    MBX_SUBSYSTEM_NIC,
 	    OPCODE_GET_NIC_STATS,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_get_nic_stats));
+	    sizeof (struct mbx_get_nic_stats), 0);
+
+	if (dev->chip_rev == OC_CNA_GEN3)
+		fwcmd->hdr.u0.req.version = 1;
 	DW_SWAP(u32ptr(fwcmd), sizeof (struct mbx_get_nic_stats));
 
 	/* fill rest of mbx */
@@ -801,24 +898,82 @@ oce_get_hw_stats(struct oce_dev *dev)
 
 	DW_SWAP(u32ptr(&mbx), sizeof (struct oce_mq_sge) + OCE_BMBX_RHDR_SZ);
 
-	bzero(&dev->hw_stats->params, sizeof (dev->hw_stats->params));
-
 	/* sync for device */
-	(void) DBUF_SYNC(dev->stats_dbuf, DDI_DMA_SYNC_FORDEV);
+	DBUF_SYNC(dev->stats_dbuf, 0, 0, DDI_DMA_SYNC_FORDEV);
 
 	/* now post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 	/* sync the stats */
-	(void) DBUF_SYNC(dev->stats_dbuf, DDI_DMA_SYNC_FORKERNEL);
+	DBUF_SYNC(dev->stats_dbuf, 0, 0, DDI_DMA_SYNC_FORKERNEL);
+
+	/* Check the mailbox status and command completion status */
+	if (ret != 0) {
+		oce_log(dev, CE_WARN, MOD_CONFIG,
+		    "Failed to get stats: 0x%x", ret);
+		return (ret);
+	}
+
+	DW_SWAP(u32ptr(&fwcmd->params.rsp), sizeof (struct mbx_get_nic_stats));
+	return (0);
+} /* oce_get_hw_stats */
+
+/*
+ * function to retrieve statistic counters from Lancer hardware
+ *
+ * dev - software handle to the device
+ *
+ * return 0 on success, EIO on failure
+ */
+int
+oce_get_pport_stats(struct oce_dev *dev, uint32_t mode)
+{
+	struct oce_mbx mbx;
+	struct mbx_get_pport_stats *fwcmd;
+	int ret = 0;
+
+	bzero(&mbx, sizeof (struct oce_mbx));
+	/* initialize the ioctl header */
+
+	fwcmd = (struct mbx_get_pport_stats *)DBUF_VA(dev->stats_dbuf);
+
+	bzero(&fwcmd->params, sizeof (fwcmd->params));
+
+	mbx_common_req_hdr_init(&fwcmd->hdr, 0, 0,
+	    MBX_SUBSYSTEM_NIC,
+	    OPCODE_NIC_GET_PPORT_STATS,
+	    MBX_TIMEOUT_SEC,
+	    sizeof (struct mbx_get_nic_stats), 0);
+	fwcmd->params.req.arg.pport_num = dev->port_id;
+	DW_SWAP(u32ptr(fwcmd), sizeof (struct mbx_get_pport_stats));
+
+	/* fill rest of mbx */
+	mbx.payload.u0.u1.sgl[0].pa_lo = ADDR_LO(DBUF_PA(dev->stats_dbuf));
+	mbx.payload.u0.u1.sgl[0].pa_hi = ADDR_HI(DBUF_PA(dev->stats_dbuf));
+	mbx.payload.u0.u1.sgl[0].length = sizeof (struct mbx_get_nic_stats);
+	mbx.payload_length = sizeof (struct mbx_get_pport_stats);
+
+	mbx.u0.s.embedded = 0;
+	mbx.u0.s.sge_count = 1;
+
+	DW_SWAP(u32ptr(&mbx), sizeof (struct oce_mq_sge) + OCE_BMBX_RHDR_SZ);
+
+
+	/* sync for device */
+	DBUF_SYNC(dev->stats_dbuf, 0, 0, DDI_DMA_SYNC_FORDEV);
+
+	/* now post the command */
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
+	/* sync the stats */
+	DBUF_SYNC(dev->stats_dbuf, 0, 0, DDI_DMA_SYNC_FORKERNEL);
 
 	/* Check the mailbox status and command completion status */
 	if (ret != 0) {
 		return (ret);
 	}
 
-	DW_SWAP(u32ptr(dev->hw_stats), sizeof (struct mbx_get_nic_stats));
+	DW_SWAP(u32ptr(&fwcmd->params.rsp), sizeof (struct mbx_get_nic_stats));
 	return (0);
-} /* oce_get_hw_stats */
+} /* oce_get_pport_stats */
 
 /*
  * function to set the number of vectors with the cev
@@ -829,7 +984,8 @@ oce_get_hw_stats(struct oce_dev *dev)
  * return 0 on success, EIO on failure
  */
 int
-oce_num_intr_vectors_set(struct oce_dev *dev, uint32_t num_vectors)
+oce_num_intr_vectors_set(struct oce_dev *dev, uint32_t num_vectors,
+    uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_common_cev_modify_msi_messages *fwcmd;
@@ -842,7 +998,7 @@ oce_num_intr_vectors_set(struct oce_dev *dev, uint32_t num_vectors)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_COMMON_CEV_MODIFY_MSI_MESSAGES,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_common_cev_modify_msi_messages));
+	    sizeof (struct mbx_common_cev_modify_msi_messages), 0);
 
 	/* fill the command */
 	fwcmd->params.req.num_msi_msgs = LE_32(num_vectors);
@@ -854,7 +1010,7 @@ oce_num_intr_vectors_set(struct oce_dev *dev, uint32_t num_vectors)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	return (ret);
 } /* oce_num_intr_vectors_set */
@@ -868,7 +1024,7 @@ oce_num_intr_vectors_set(struct oce_dev *dev, uint32_t num_vectors)
  * return 0 on success, EIO on failure
  */
 int
-oce_set_flow_control(struct oce_dev *dev, uint32_t flow_control)
+oce_set_flow_control(struct oce_dev *dev, uint32_t flow_control, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_common_get_set_flow_control *fwcmd =
@@ -881,7 +1037,7 @@ oce_set_flow_control(struct oce_dev *dev, uint32_t flow_control)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_SET_COMMON_FLOW_CONTROL,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_common_get_set_flow_control));
+	    sizeof (struct mbx_common_get_set_flow_control), 0);
 
 	/* fill command */
 	if (flow_control & OCE_FC_TX)
@@ -896,7 +1052,11 @@ oce_set_flow_control(struct oce_dev *dev, uint32_t flow_control)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
+	if (ret != 0) {
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "Set flow control failed: 0x%x", ret);
+	}
 
 	return (ret);
 } /* oce_set_flow_control */
@@ -911,7 +1071,7 @@ oce_set_flow_control(struct oce_dev *dev, uint32_t flow_control)
  * return 0 on success, EIO on failure
  */
 int
-oce_get_flow_control(struct oce_dev *dev, uint32_t *flow_control)
+oce_get_flow_control(struct oce_dev *dev, uint32_t *flow_control, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_common_get_set_flow_control *fwcmd;
@@ -932,7 +1092,7 @@ oce_get_flow_control(struct oce_dev *dev, uint32_t *flow_control)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_GET_COMMON_FLOW_CONTROL,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_common_get_set_flow_control));
+	    sizeof (struct mbx_common_get_set_flow_control), 0);
 
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
@@ -940,7 +1100,7 @@ oce_get_flow_control(struct oce_dev *dev, uint32_t *flow_control)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	if (ret != 0) {
 		return (ret);
@@ -968,36 +1128,39 @@ oce_get_flow_control(struct oce_dev *dev, uint32_t *flow_control)
  * return 0 on success, EIO on failure
  */
 int
-oce_set_promiscuous(struct oce_dev *dev, boolean_t enable)
+oce_set_promiscuous(struct oce_dev *dev, boolean_t enable, uint32_t mode)
 {
 	struct oce_mbx mbx;
-	struct mbx_config_nic_promiscuous *fwcmd;
-	int ret;
+	struct mbx_set_common_iface_rx_filter *fwcmd;
+	int ret = 0;
 
 	bzero(&mbx, sizeof (struct oce_mbx));
 
-	fwcmd = (struct mbx_config_nic_promiscuous *)&mbx.payload;
-
-	if (dev->port_id == 0) {
-		fwcmd->params.req.port0_promisc = (uint8_t)enable;
-
-	} else {
-		fwcmd->params.req.port1_promisc = (uint8_t)enable;
-	}
+	fwcmd = (struct mbx_set_common_iface_rx_filter *)&mbx.payload;
 
 	/* initialize the ioctl header */
 	mbx_common_req_hdr_init(&fwcmd->hdr, 0, 0,
-	    MBX_SUBSYSTEM_NIC,
-	    OPCODE_CONFIG_NIC_PROMISCUOUS,
+	    MBX_SUBSYSTEM_COMMON,
+	    OPCODE_COMMON_NTWK_RX_FILTER,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_config_nic_promiscuous));
+	    sizeof (struct mbx_set_common_iface_rx_filter), 0);
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
-	mbx.payload_length = sizeof (struct mbx_config_nic_promiscuous);
+	mbx.payload_length = sizeof (struct mbx_set_common_iface_rx_filter);
+
+	fwcmd->params.req.if_id = dev->if_id;
+	/*
+	 * Not setting VLAN promiscuous as the
+	 * interface is always in  VLAN VLAN prmoiscuous
+	 */
+	fwcmd->params.req.if_flags_mask = MBX_RX_IFACE_FLAGS_PROMISCUOUS;
+	if (enable)
+		fwcmd->params.req.if_flags = MBX_RX_IFACE_FLAGS_PROMISCUOUS;
+
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	return (ret);
 }
@@ -1012,7 +1175,7 @@ oce_set_promiscuous(struct oce_dev *dev, boolean_t enable)
  */
 int
 oce_add_mac(struct oce_dev *dev, uint32_t if_id,
-			const uint8_t *mac, uint32_t *pmac_id)
+    const uint8_t *mac, uint32_t *pmac_id, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_add_common_iface_mac *fwcmd;
@@ -1028,7 +1191,7 @@ oce_add_mac(struct oce_dev *dev, uint32_t if_id,
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_ADD_COMMON_IFACE_MAC,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_add_common_iface_mac));
+	    sizeof (struct mbx_add_common_iface_mac), 0);
 
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
@@ -1036,7 +1199,7 @@ oce_add_mac(struct oce_dev *dev, uint32_t if_id,
 	DW_SWAP(u32ptr(&mbx), OCE_BMBX_RHDR_SZ + OCE_MBX_RRHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	if (ret != 0) {
 		return (ret);
@@ -1055,7 +1218,8 @@ oce_add_mac(struct oce_dev *dev, uint32_t if_id,
  * return 0 on success, EIO on failure
  */
 int
-oce_del_mac(struct oce_dev *dev,  uint32_t if_id, uint32_t *pmac_id)
+oce_del_mac(struct oce_dev *dev,  uint32_t if_id, uint32_t *pmac_id,
+    uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_del_common_iface_mac *fwcmd;
@@ -1071,7 +1235,7 @@ oce_del_mac(struct oce_dev *dev,  uint32_t if_id, uint32_t *pmac_id)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_DEL_COMMON_IFACE_MAC,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_add_common_iface_mac));
+	    sizeof (struct mbx_add_common_iface_mac), 0);
 
 	/* fill rest of mbx */
 	mbx.u0.s.embedded = 1;
@@ -1079,7 +1243,7 @@ oce_del_mac(struct oce_dev *dev,  uint32_t if_id, uint32_t *pmac_id)
 	DW_SWAP(u32ptr(&mbx), mbx.payload_length + OCE_BMBX_RHDR_SZ);
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	return (ret);
 }
@@ -1099,7 +1263,7 @@ oce_del_mac(struct oce_dev *dev,  uint32_t if_id, uint32_t *pmac_id)
 int
 oce_config_vlan(struct oce_dev *dev, uint32_t if_id,
     struct normal_vlan *vtag_arr, uint8_t vtag_cnt,
-    boolean_t untagged, boolean_t enable_promisc)
+    boolean_t untagged, boolean_t enable_promisc, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct  mbx_common_config_vlan *fwcmd;
@@ -1111,9 +1275,9 @@ oce_config_vlan(struct oce_dev *dev, uint32_t if_id,
 	/* initialize the ioctl header */
 	mbx_common_req_hdr_init(&fwcmd->hdr, 0, 0,
 	    MBX_SUBSYSTEM_COMMON,
-	    OPCODE_CONFIG_COMMON_IFACE_VLAN,
+	    OPCODE_COMMON_NTWK_VLAN_CONFIG,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_common_config_vlan));
+	    sizeof (struct mbx_common_config_vlan), 0);
 
 	fwcmd->params.req.if_id	= (uint8_t)if_id;
 	fwcmd->params.req.promisc = (uint8_t)enable_promisc;
@@ -1132,7 +1296,7 @@ oce_config_vlan(struct oce_dev *dev, uint32_t if_id,
 	DW_SWAP(u32ptr(&mbx), (OCE_BMBX_RHDR_SZ + mbx.payload_length));
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	return (ret);
 } /* oce_config_vlan */
@@ -1149,7 +1313,7 @@ oce_config_vlan(struct oce_dev *dev, uint32_t if_id,
  * return 0 on success, EIO on failure
  */
 int
-oce_config_link(struct oce_dev *dev, boolean_t enable)
+oce_config_link(struct oce_dev *dev, boolean_t enable, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct  mbx_common_func_link_cfg *fwcmd;
@@ -1163,7 +1327,7 @@ oce_config_link(struct oce_dev *dev, boolean_t enable)
 	    MBX_SUBSYSTEM_COMMON,
 	    OPCODE_COMMON_FUNCTION_LINK_CONFIG,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_common_config_vlan));
+	    sizeof (struct mbx_common_func_link_cfg), 0);
 
 	fwcmd->params.req.enable = enable;
 
@@ -1173,14 +1337,14 @@ oce_config_link(struct oce_dev *dev, boolean_t enable)
 	DW_SWAP(u32ptr(&mbx), (OCE_BMBX_RHDR_SZ + mbx.payload_length));
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	return (ret);
 } /* oce_config_link */
 
 int
 oce_config_rss(struct oce_dev *dev, uint16_t if_id, char *hkey, char *itbl,
-    int  tbl_sz, uint16_t rss_type, uint8_t flush)
+    int  tbl_sz, uint16_t rss_type, uint8_t flush, uint32_t mode)
 {
 	struct oce_mbx mbx;
 	struct mbx_config_nic_rss *fwcmd;
@@ -1195,7 +1359,7 @@ oce_config_rss(struct oce_dev *dev, uint16_t if_id, char *hkey, char *itbl,
 	    MBX_SUBSYSTEM_NIC,
 	    OPCODE_CONFIG_NIC_RSS,
 	    MBX_TIMEOUT_SEC,
-	    sizeof (struct mbx_config_nic_rss));
+	    sizeof (struct mbx_config_nic_rss), 0);
 	fwcmd->params.req.enable_rss = LE_16(rss_type);
 	fwcmd->params.req.flush = flush;
 	fwcmd->params.req.if_id = LE_32(if_id);
@@ -1218,9 +1382,105 @@ oce_config_rss(struct oce_dev *dev, uint16_t if_id, char *hkey, char *itbl,
 	DW_SWAP(u32ptr(&mbx), (OCE_BMBX_RHDR_SZ + OCE_MBX_RRHDR_SZ));
 
 	/* post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
+	ret = oce_issue_mbox_cmd(dev, &mbx, MBX_TIMEOUT_SEC, mode);
 
 	return (ret);
+}
+
+/*
+ * function to post a MBX to the mbox
+ *
+ * dev - software handle to the device
+ * mbx - pointer to the MBX to send
+ *
+ * return 0 on success, error value on failure
+ */
+int
+oce_issue_mbox_cmd(struct oce_dev *dev, struct oce_mbx *mbx,
+    uint32_t tmo_sec, uint32_t flag)
+{
+
+	struct oce_mq *mq;
+	if (dev == NULL) {
+		oce_log(dev, CE_WARN, MOD_CONFIG,
+		    "dev is null 0x%p", (void *)dev);
+		return (EINVAL);
+	}
+	mq = dev->mq;
+
+	if ((dev->mq == NULL) || (mq->qstate != QCREATED) ||
+	    !(dev->state & STATE_INTR_ENABLED)) {
+		/* Force bootstrap mode if MQ is not created or intr disabled */
+		if (flag == MBX_ASYNC_MQ) {
+			oce_log(dev, CE_NOTE, MOD_CONFIG,
+			    "Forcing bootstrap mode DEV STATE %x\n",
+			    dev->state);
+			flag = MBX_BOOTSTRAP;
+
+		}
+	}
+	/* invoke appropriate functions depending on flag */
+	switch (flag) {
+	case MBX_BOOTSTRAP:
+		return (oce_mbox_issue_bootstrap(dev, mbx, tmo_sec));
+	case MBX_ASYNC_MQ:
+		return (oce_enqueue_mq_mbox(dev, mbx, tmo_sec));
+	default:
+		return (EINVAL);
+	}
+
+}
+
+static struct oce_mbx_ctx *
+oce_init_mq_ctx(struct oce_dev *dev, struct oce_mbx *mbx)
+{
+	struct oce_mbx_ctx *mbctx;
+	mbctx = kmem_zalloc(sizeof (struct oce_mbx_ctx), KM_SLEEP);
+
+	mbctx->mbx = mbx;
+	cv_init(&mbctx->cond_var, NULL, CV_DRIVER, NULL);
+	mutex_init(&mbctx->cv_lock, NULL, MUTEX_DRIVER,
+	    DDI_INTR_PRI(dev->intr_pri));
+	mbx->tag[0] = ADDR_LO((uintptr_t)mbctx);
+	mbx->tag[1] = ADDR_HI((uint64_t)(uintptr_t)mbctx);
+	return (mbctx);
+}
+
+static void
+oce_destroy_mq_ctx(struct oce_mbx_ctx *mbctx)
+{
+	cv_destroy(&mbctx->cond_var);
+	mutex_destroy(&mbctx->cv_lock);
+	kmem_free(mbctx, sizeof (struct oce_mbx_ctx));
+}
+
+static uint32_t
+oce_enqueue_mq_mbox(struct oce_dev *dev, struct oce_mbx *mbx, uint32_t tmo_sec)
+{
+	struct oce_mbx_ctx *mbctx;
+	uint32_t status;
+
+	_NOTE(ARGUNUSED(tmo_sec));
+
+	mbctx = oce_init_mq_ctx(dev, mbx);
+
+	if (mbctx == NULL) {
+		return (EIO);
+	}
+	mutex_enter(&mbctx->cv_lock);
+	mbctx->mbx_status = MBX_BUSY;
+	if (oce_issue_mq_mbox(dev, mbx) != MBX_SUCCESS) {
+		mutex_exit(&mbctx->cv_lock);
+		oce_destroy_mq_ctx(mbctx);
+		return (EIO);
+	}
+	while (mbctx->mbx_status & MBX_BUSY) {
+		cv_wait(&mbctx->cond_var, &mbctx->cv_lock);
+	}
+	status = mbctx->compl_status;
+	mutex_exit(&mbctx->cv_lock);
+	oce_destroy_mq_ctx(mbctx);
+	return (status);
 }
 
 /*
@@ -1233,226 +1493,134 @@ oce_config_rss(struct oce_dev *dev, uint16_t if_id, char *hkey, char *itbl,
  * return 0 on Success
  */
 int
-oce_issue_mbox(struct oce_dev *dev, queue_t *wq, mblk_t *mp,
-    uint32_t *payload_len)
+oce_issue_mbox_passthru(struct oce_dev *dev, queue_t *wq, mblk_t *mp,
+    uint32_t *rsp_len)
 {
-	int ret;
+	int ret = 0;
 	struct oce_mbx mbx;
-	struct mbx_hdr hdr;
-	ddi_dma_handle_t dma_handle;
+	struct mbx_hdr hdr = {0};
+	struct mbx_hdr *rsp_hdr = NULL;
 	boolean_t is_embedded = B_FALSE;
-	uint32_t payload_length;
-	int num_buf = 0;
-	int alloc_len;
-	caddr_t sg_va;
-	ddi_acc_handle_t acc_handle;
-	size_t actual_len;
+	int32_t payload_length = 0;
+	int offset = 0;
+	mblk_t *tmp = NULL;
+	uint32_t tmo;
+	oce_dma_buf_t dbuf = {0};
 
 	_NOTE(ARGUNUSED(wq));
 
 	bzero(&mbx, sizeof (struct oce_mbx));
 
+	/* initialize the response len */
+	*rsp_len = 0;
+
+	/* copy and swap the request header */
 	bcopy(mp->b_cont->b_rptr, &hdr, sizeof (struct mbx_hdr));
 	DW_SWAP(u32ptr(&hdr), sizeof (struct mbx_hdr));
 
 	payload_length = hdr.u0.req.request_length +
 	    sizeof (struct mbx_hdr);
-
 	is_embedded = (payload_length <= sizeof (struct oce_mbx_payload));
 
-	alloc_len = msgdsize(mp->b_cont);
-
-	oce_log(dev, CE_NOTE, MOD_CONFIG, "Mailbox: "
-	    "DW[0] 0x%x DW[1] 0x%x DW[2]0x%x DW[3]0x%x,"
-	    "MBLKL(%lu)  ALLOCLEN(%d)",
-	    hdr.u0.dw[0], hdr.u0.dw[1],
-	    hdr.u0.dw[2], hdr.u0.dw[3],
-	    MBLKL(mp->b_cont), alloc_len);
-
 	/* get the timeout from the command header */
-	mbx.tag[0] = hdr.u0.req.timeout;
+	tmo = hdr.u0.req.timeout;
 
-	if (hdr.u0.req.opcode == OPCODE_WRITE_COMMON_FLASHROM) {
-		struct mbx_common_read_write_flashrom *fwcmd =
-		    (struct mbx_common_read_write_flashrom *)
-		    mp->b_cont->b_rptr;
-
-		if (dev->cookie != 0 && dev->cookie != hdr.u0.req.rsvd0)
-			return (EINVAL);
-
-		if (dev->cookie == 0)
-			dev->cookie = hdr.u0.req.rsvd0;
-		hdr.u0.req.rsvd0 = 0;
-
-		oce_log(dev, CE_NOTE, MOD_CONFIG, "Mailbox params:"
-		    "OPCODE(%d) OPTYPE = %d  SIZE = %d  OFFSET = %d",
-		    fwcmd->flash_op_code, fwcmd->flash_op_type,
-		    fwcmd->data_buffer_size, fwcmd->data_offset);
-	}
+	oce_log(dev, CE_NOTE, MOD_CONFIG,
+	    "Mailbox command: opcode=%d, subsystem=%d, timeout=%d",
+	    hdr.u0.req.opcode, hdr.u0.req.subsystem, tmo);
 
 	if (!is_embedded) {
-		mblk_t *tmp = NULL;
 		ddi_dma_cookie_t cookie;
-		uint32_t count = 0;
-		int offset = 0;
+		int alloc_len = 0;
+		int num_buf = 0;
 
-		/* allocate dma handle */
-		ret = ddi_dma_alloc_handle(dev->dip,
-		    &oce_sgl_dma_attr, DDI_DMA_DONTWAIT, NULL,
-		    &dma_handle);
-		if (ret != DDI_SUCCESS) {
-			oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
-			    "Failed to alloc DMA handle");
-			ret = ENOMEM;
-			goto fail;
-		}
+		/* Calculate memory size to alloc */
+		alloc_len = msgdsize(mp->b_cont);
 
-		/* allocate the DMA-able memory */
-		ret = ddi_dma_mem_alloc(dma_handle, alloc_len,
-		    &oce_sgl_buf_accattr,
-		    DDI_DMA_RDWR | DDI_DMA_CONSISTENT,
-		    DDI_DMA_DONTWAIT,
-		    NULL, &sg_va, &actual_len, &acc_handle);
+		/* allocate the DMA memory */
+		ret = oce_alloc_dma_buffer(dev, &dbuf, alloc_len,
+		    &oce_sgl_dma_attr, DDI_DMA_CONSISTENT|DDI_DMA_RDWR);
 		if (ret != DDI_SUCCESS) {
-			oce_log(dev, CE_NOTE, MOD_CONFIG, "%s",
-			    "Failed to alloc DMA memory");
-			ret = ENOMEM;
-			goto dma_alloc_fail;
+			return (ENOMEM);
 		}
 
 		for (tmp = mp->b_cont; tmp != NULL; tmp = tmp->b_cont) {
-			bcopy((caddr_t)tmp->b_rptr, sg_va + offset, MBLKL(tmp));
+			bcopy((caddr_t)tmp->b_rptr, DBUF_VA(dbuf) + offset,
+			    MBLKL(tmp));
 			offset += MBLKL(tmp);
 		}
 
-		/* bind mblk mem to handle */
-		ret = ddi_dma_addr_bind_handle(
-		    dma_handle,
-		    (struct as *)0, sg_va,
-		    alloc_len,
-		    DDI_DMA_RDWR | DDI_DMA_CONSISTENT,
-		    DDI_DMA_DONTWAIT, NULL, &cookie, &count);
-		if (ret != DDI_DMA_MAPPED) {
-			ret = ENOMEM;
-			oce_log(dev, CE_NOTE, MOD_CONFIG,
-			    "Failed to bind DMA handle ret code: %d",
-			    ret);
-			goto dma_bind_fail;
-		}
-
-		for (num_buf = 0; num_buf < count; num_buf++) {
+		cookie = dbuf.cookie;
+		for (num_buf = 0; num_buf < dbuf.ncookies; num_buf++) {
 			/* fill the mbx sglist */
 			mbx.payload.u0.u1.sgl[num_buf].pa_lo =
-			    ADDR_LO(cookie.dmac_laddress);
+			    LE_32(ADDR_LO(cookie.dmac_laddress));
 			mbx.payload.u0.u1.sgl[num_buf].pa_hi =
-			    ADDR_HI(cookie.dmac_laddress);
+			    LE_32(ADDR_HI(cookie.dmac_laddress));
 			mbx.payload.u0.u1.sgl[num_buf].length =
-			    (uint32_t)cookie.dmac_size;
-			mbx.payload_length +=
-			    mbx.payload.u0.u1.sgl[num_buf].length;
-			mbx.u0.s.sge_count++;
+			    LE_32((uint32_t)cookie.dmac_size);
 
-			if (count > 1)
-				(void) ddi_dma_nextcookie(dma_handle, &cookie);
+			if (dbuf.ncookies > 1) {
+				(void) ddi_dma_nextcookie(DBUF_DHDL(dbuf),
+				    &cookie);
+			}
 		}
 		mbx.u0.s.embedded = 0;
+		mbx.payload_length = alloc_len;
+		mbx.u0.s.sge_count = dbuf.ncookies;
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "sg count %d, payload_length = %d",
+		    dbuf.ncookies, alloc_len);
 
-		DW_SWAP(u32ptr(&mbx), OCE_BMBX_RHDR_SZ +
-		    (sizeof (struct oce_mq_sge) * count));
 	} else {
 		/* fill rest of mbx */
 		mbx.u0.s.embedded = 1;
 		mbx.payload_length = payload_length;
 		bcopy(mp->b_cont->b_rptr, &mbx.payload, payload_length);
-
-		DW_SWAP(u32ptr(&mbx), OCE_BMBX_RHDR_SZ);
 	}
+
+	/* swap the bootstrap header only */
+	OCE_DW_SWAP(u32ptr(&mbx), OCE_BMBX_RHDR_SZ);
 
 	/* now post the command */
-	ret = oce_mbox_post(dev, &mbx, NULL);
-
-	bcopy(mp->b_cont->b_rptr, &hdr, sizeof (struct mbx_hdr));
-	DW_SWAP(u32ptr(&hdr), sizeof (struct mbx_hdr));
+	ret = oce_issue_mbox_cmd(dev, &mbx, tmo, MBX_ASYNC_MQ);
 
 	if (ret != DDI_SUCCESS) {
-		oce_log(dev, CE_WARN, MOD_CONFIG,
-		    "Failed to post the mailbox: %d", ret);
-
-		*payload_len = hdr.u0.rsp.rsp_length +
-		    sizeof (struct mbx_hdr);
-		if (is_embedded) {
-			bcopy(&mbx.payload, mp->b_cont->b_rptr,
-			    MBLKL(mp->b_cont));
-			goto fail;
-		} else {
-			(void) ddi_dma_sync(dma_handle, 0, 0,
-			    DDI_DMA_SYNC_FORKERNEL);
-
-			if (oce_fm_check_dma_handle(dev, dma_handle) !=
-			    DDI_FM_OK) {
-				ddi_fm_service_impact(dev->dip,
-				    DDI_SERVICE_DEGRADED);
-			}
-			bcopy(sg_va, mp->b_cont->b_rptr,
-			    sizeof (struct mbx_hdr));
-			goto post_fail;
-		}
+		goto fail;
 	}
-
-	if (hdr.u0.req.opcode == OPCODE_WRITE_COMMON_FLASHROM) {
-		struct mbx_common_read_write_flashrom *fwcmd =
-		    (struct mbx_common_read_write_flashrom *)
-		    mp->b_cont->b_rptr;
-
-		if (LE_32(fwcmd->flash_op_code) == MGMT_FLASHROM_OPCODE_FLASH)
-			dev->cookie = 0;
-	}
-
-	payload_length = hdr.u0.rsp.rsp_length + sizeof (struct mbx_hdr);
 
 	/* Copy the response back only if this is an embedded mbx cmd */
 	if (is_embedded) {
-		bcopy(&mbx.payload, mp->b_cont->b_rptr,
-		    min(payload_length, MBLKL(mp->b_cont)));
+		rsp_hdr = (struct mbx_hdr *)&mbx.payload;
 	} else {
-		mblk_t *tmp = NULL;
-		int offset = 0;
 		/* sync */
-		(void) ddi_dma_sync(dma_handle, 0, 0,
+		(void) ddi_dma_sync(DBUF_DHDL(dbuf), 0, 0,
 		    DDI_DMA_SYNC_FORKERNEL);
-		if (oce_fm_check_dma_handle(dev, dma_handle) != DDI_FM_OK) {
+		if (oce_fm_check_dma_handle(dev, DBUF_DHDL(dbuf)) !=
+		    DDI_FM_OK) {
 			ddi_fm_service_impact(dev->dip, DDI_SERVICE_DEGRADED);
+			ret = EIO;
+			goto fail;
 		}
 
-		/* copy back from kernel allocated buffer to user buffer  */
-		for (tmp = mp->b_cont; tmp != NULL; tmp = tmp->b_cont) {
-			bcopy(sg_va + offset, tmp->b_rptr, MBLKL(tmp));
-			offset += MBLKL(tmp);
-		}
-
-		/* unbind and free dma handles */
-		(void) ddi_dma_unbind_handle(dma_handle);
-		ddi_dma_mem_free(&acc_handle);
-		ddi_dma_free_handle(&dma_handle);
+		/* Get the mailbox header from SG list */
+		rsp_hdr = (struct mbx_hdr *)DBUF_VA(dbuf);
 	}
+	payload_length = LE_32(rsp_hdr->u0.rsp.actual_rsp_length)
+	    + sizeof (struct mbx_hdr);
+	*rsp_len = payload_length;
 
-	*payload_len = payload_length;
+	oce_log(dev, CE_NOTE, MOD_CONFIG,
+	    "Response Len %d status=0x%x, addnl_status=0x%x", payload_length,
+	    rsp_hdr->u0.rsp.status, rsp_hdr->u0.rsp.additional_status);
 
-	return (0);
-
-post_fail:
-	(void) ddi_dma_unbind_handle(dma_handle);
-
-dma_bind_fail:
-	ddi_dma_mem_free(&acc_handle);
-
-dma_alloc_fail:
-	ddi_dma_free_handle(&dma_handle);
-
+	for (tmp = mp->b_cont, offset = 0; tmp != NULL && payload_length > 0;
+	    tmp = tmp->b_cont) {
+		bcopy((caddr_t)rsp_hdr + offset, tmp->b_rptr, MBLKL(tmp));
+		offset += MBLKL(tmp);
+		payload_length -= MBLKL(tmp);
+	}
 fail:
-alloc_err:
-	if (hdr.u0.req.opcode == OPCODE_WRITE_COMMON_FLASHROM) {
-		dev->cookie = 0;
-	}
+	oce_free_dma_buffer(dev, &dbuf);
 	return (ret);
 }

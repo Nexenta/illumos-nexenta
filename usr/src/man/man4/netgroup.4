@@ -1,4 +1,5 @@
 '\" te
+.\" Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
 .\" Copyright (C) 2003, Sun Microsystems, Inc. All Rights Reserved
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
 .\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
@@ -20,14 +21,15 @@ A \fBnetgroup\fR defines a network-wide group of hosts and users. Use a
 restrict remote login and shell access.
 .sp
 .LP
-Network groups are stored in a network information services, such as
-\fBLDAP\fR, \fBNIS\fR, or NIS+, not in a local file.
+Network groups are usually stored in network information services,
+such as \fBLDAP\fR, or \fBNIS\fR, but may alternatively be stored in
+the local \fB/etc/netgroup\fR file.  The \fBnetgroup\fR line of the
+\fBnsswitch.conf\fR(4) file determines which of those sources are used.
 .sp
 .LP
 This manual page describes the format for a file that is used to supply input
-to a program such as \fBldapaddent\fR(1M) for LDAP, \fBmakedbm\fR(1M) for NIS,
-or \fBnisaddent\fR(1M) for NIS+. These programs build maps or tables used by
-their corresponding network information services.
+to a program such as \fBldapaddent\fR(1M) for LDAP, or \fBmakedbm\fR(1M) for
+NIS.  The same file format is used in the local \fB/etc/netgroup\fR file.
 .sp
 .LP
 Each line of the file defines the name and membership of a network group. The
@@ -132,26 +134,20 @@ basis of host and user membership in separate netgroups.
 .RS 17n
 Used by a network information service's utility to construct a map or table
 that contains \fBnetgroup\fR information. For example, \fBldapaddent\fR(1M)
-uses \fB/etc/netgroup\fR to construct an LDAP container.
+uses \fB/etc/netgroup\fR to construct an LDAP container.  Alternatively,
+the \fB/etc/netgroup\fR file may be used directly if the \fBfiles\fR
+source is specified in \fBnsswitch.conf\fR(4) for the \fBnetgroup\fR
+database.
+
 .RE
 
-.sp
-.LP
-Note that the netgroup information must always be stored in a network
-information service, such as \fBLDAP\fR, \fBNIS\fR, or NIS+. The local file is
-only used to construct a map or table for the network information service. It
-is never consulted directly.
 .SH SEE ALSO
 .sp
 .LP
-\fBNIS+\fR(1), \fBldapaddent\fR(1M), \fBmakedbm\fR(1M), \fBnisaddent\fR(1M),
+\fBldapaddent\fR(1M), \fBmakedbm\fR(1M), \fBnisaddent\fR(1M),
 \fBshare_nfs\fR(1M), \fBinnetgr\fR(3C), \fBhosts\fR(4), \fBhosts.equiv\fR(4),
 \fBnsswitch.conf\fR(4), \fBpasswd\fR(4), \fBshadow\fR(4)
 .SH NOTES
-.sp
-.LP
-\fBnetgroup\fR requires a network information service such as \fBLDAP\fR,
-\fBNIS\fR, or NIS+.
 .sp
 .LP
 Applications may make general membership tests using the \fBinnetgr()\fR

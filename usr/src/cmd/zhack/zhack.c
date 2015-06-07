@@ -91,7 +91,7 @@ fatal(spa_t *spa, void *tag, const char *fmt, ...)
 
 	if (spa != NULL) {
 		spa_close(spa, tag);
-		(void) spa_export(g_pool, NULL, B_TRUE, B_FALSE);
+		(void) spa_export(g_pool, NULL, B_TRUE, B_FALSE, B_FALSE);
 	}
 
 	va_start(ap, fmt);
@@ -559,7 +559,8 @@ main(int argc, char **argv)
 		usage();
 	}
 
-	if (!g_readonly && spa_export(g_pool, NULL, B_TRUE, B_FALSE) != 0) {
+	if (!g_readonly &&
+	    spa_export(g_pool, NULL, B_TRUE, B_TRUE, B_FALSE) != 0) {
 		fatal(NULL, FTAG, "pool export failed; "
 		    "changes may not be committed to disk\n");
 	}

@@ -22,11 +22,12 @@
  * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #ifndef	_SYS_RCTL_IMPL_H
 #define	_SYS_RCTL_IMPL_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include <sys/rctl.h>
 #include <sys/time.h>
@@ -59,8 +60,8 @@ typedef struct rctl_opaque {
 	hrtime_t	rcq_firing_time;
 } rctl_opaque_t;
 
-extern uint_t rlim_fd_cur;
-extern uint_t rlim_fd_max;
+extern volatile uint_t rlim_fd_cur;
+extern volatile uint_t rlim_fd_max;
 
 /* Given an array of rctlblk_t calculate the address of the n'th element */
 #define	RCTLBLK_INC(blk, n)	(rctlblk_t *)(((char *)blk) \

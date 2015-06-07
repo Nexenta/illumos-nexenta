@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T
@@ -468,7 +471,7 @@ static const struct rpc_cots_client {
 	atomic_inc_64(&(p)->x.value.ui64)
 
 #define	CLNT_MAX_CONNS	1	/* concurrent connections between clnt/srvr */
-int clnt_max_conns = CLNT_MAX_CONNS;
+volatile int clnt_max_conns = CLNT_MAX_CONNS;
 
 #define	CLNT_MIN_TIMEOUT	10	/* seconds to wait after we get a */
 					/* connection reset */

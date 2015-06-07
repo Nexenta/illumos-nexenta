@@ -21,10 +21,12 @@
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
 
-
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -219,7 +221,7 @@ int run_queues = 0;
  * choose a large number as the default value. For potential
  * performance gain, this value is tunable in /etc/system.
  */
-int sq_max_size = 10000;
+volatile int sq_max_size = 10000;
 
 /*
  * The number of ciputctrl structures per syncq and stream we create when

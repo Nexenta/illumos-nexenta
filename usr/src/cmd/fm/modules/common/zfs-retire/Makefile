@@ -22,6 +22,8 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+#
 
 MODULE = zfs-retire
 CLASS = common
@@ -29,5 +31,5 @@ SRCS = zfs_retire.c
 
 include ../../Makefile.plugin
 
-LDLIBS += -lzfs -L$(ROOTLIB)/fm -ltopo
+LDLIBS += -lzfs -ldevid -ldevinfo -L$(ROOTLIB)/fm -ltopo
 LDFLAGS += -R/usr/lib/fm

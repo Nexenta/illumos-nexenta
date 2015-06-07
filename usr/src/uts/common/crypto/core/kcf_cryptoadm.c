@@ -100,7 +100,7 @@ kcf_soft_config_init(void)
 	 * # /etc/crypto/kcf.conf
 	 * des:supportedlist=CKM_DES_CBC,CKM_DES_ECB,CKM_DES3_CBC,CKM_DES3_ECB
 	 * aes:supportedlist=CKM_AES_ECB,CKM_AES_CBC,CKM_AES_CTR,CKM_AES_CCM,\
-	 * CKM_AES_GCM,CKM_AES_GMAC
+	 * CKM_AES_GCM,CKM_AES_GMAC,CKM_AES_CMAC
 	 * arcfour:supportedlist=CKM_RC4
 	 * blowfish:supportedlist=CKM_BLOWFISH_ECB,CKM_BLOWFISH_CBC
 	 * ecc:supportedlist=CKM_EC_KEY_PAIR_GEN,CKM_ECDH1_DERIVE,CKM_ECDSA,\
@@ -134,7 +134,7 @@ kcf_soft_config_init(void)
 	    "CKM_DES_CBC", "CKM_DES_ECB", "CKM_DES3_CBC", "CKM_DES3_ECB", ""};
 	static crypto_mech_name_t	aes_mechs[] = {
 	    "CKM_AES_ECB", "CKM_AES_CBC", "CKM_AES_CTR", "CKM_AES_CCM",
-	    "CKM_AES_GCM", "CKM_AES_GMAC", ""};
+	    "CKM_AES_GCM", "CKM_AES_GMAC", "CKM_AES_CMAC", ""};
 	static crypto_mech_name_t	arcfour_mechs[] = {
 	    "CKM_RC4", ""};
 	static crypto_mech_name_t	blowfish_mechs[] = {

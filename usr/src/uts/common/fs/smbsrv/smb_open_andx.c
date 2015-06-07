@@ -244,6 +244,7 @@ smb_com_open(smb_request_t *sr)
 	struct open_param *op = &sr->arg.open;
 	smb_ofile_t *of;
 	smb_attr_t attr;
+	uint32_t status;
 	uint16_t file_attr;
 	int rc;
 
@@ -271,8 +272,11 @@ smb_com_open(smb_request_t *sr)
 		return (SDRC_ERROR);
 	}
 
-	if (smb_common_open(sr) != NT_STATUS_SUCCESS)
+	status = smb_common_open(sr);
+	if (status != NT_STATUS_SUCCESS) {
+		smbsr_status(sr, status, 0, 0);
 		return (SDRC_ERROR);
+	}
 
 	/*
 	 * NB: after the above smb_common_open() success,
@@ -369,6 +373,7 @@ smb_com_open_andx(smb_request_t *sr)
 {
 	struct open_param	*op = &sr->arg.open;
 	smb_ofile_t		*of;
+	uint32_t		status;
 	uint16_t		file_attr;
 	smb_attr_t		attr;
 	int rc;
@@ -393,8 +398,11 @@ smb_com_open_andx(smb_request_t *sr)
 		return (SDRC_ERROR);
 	}
 
-	if (smb_common_open(sr) != NT_STATUS_SUCCESS)
+	status = smb_common_open(sr);
+	if (status != NT_STATUS_SUCCESS) {
+		smbsr_status(sr, status, 0, 0);
 		return (SDRC_ERROR);
+	}
 
 	/*
 	 * NB: after the above smb_common_open() success,
@@ -472,6 +480,7 @@ smb_com_trans2_open2(smb_request_t *sr, smb_xa_t *xa)
 	uint32_t	alloc_size;
 	uint16_t	flags;
 	uint16_t	file_attr;
+	uint32_t	status;
 	int		rc;
 
 	bzero(op, sizeof (sr->arg.open));
@@ -511,8 +520,11 @@ smb_com_trans2_open2(smb_request_t *sr, smb_xa_t *xa)
 	}
 	op->op_oplock_levelII = B_FALSE;
 
-	if (smb_common_open(sr) != NT_STATUS_SUCCESS)
+	status = smb_common_open(sr);
+	if (status != NT_STATUS_SUCCESS) {
+		smbsr_status(sr, status, 0, 0);
 		return (SDRC_ERROR);
+	}
 
 	if (op->op_oplock_level != SMB_OPLOCK_NONE)
 		op->action_taken |= SMB_OACT_LOCK;

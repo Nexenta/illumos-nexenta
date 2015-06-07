@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright (c) 2015, Nexenta Systems, Inc. All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -70,7 +71,7 @@ log_must $MOUNT /dev/zvol/dsk/$TESTPOOL/$TESTVOL $TESTDIR
 typeset -i fn=0
 typeset -i retval=0
 
-while (( 1 )); do
+while (( fn < 100 )); do
         $FILE_WRITE -o create -f $TESTDIR/testfile$$.$fn \
             -b $BLOCKSZ -c $NUM_WRITES
         retval=$?

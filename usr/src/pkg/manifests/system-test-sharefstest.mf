@@ -1,0 +1,254 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2014, Nexenta Systems Inc. All rights reserved.
+#
+
+set name=pkg.fmri value=pkg:/system/test/sharefstest@$(PKGVERS)
+set name=pkg.description value="sharefs Test Suite"
+set name=pkg.summary value="sharefs Functional and Stress Tests"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Development/System
+set name=variant.arch value=$(ARCH)
+dir path=opt/sharefs-tests
+dir path=opt/sharefs-tests/bin
+dir path=opt/sharefs-tests/config
+dir path=opt/sharefs-tests/include
+dir path=opt/sharefs-tests/lib
+dir path=opt/sharefs-tests/tests
+dir path=opt/sharefs-tests/tests/configure
+dir path=opt/sharefs-tests/tests/sharectl
+dir path=opt/sharefs-tests/tests/sharemgr
+dir path=opt/sharefs-tests/tests/sharemgr/add
+dir path=opt/sharefs-tests/tests/sharemgr/create
+dir path=opt/sharefs-tests/tests/sharemgr/delete
+dir path=opt/sharefs-tests/tests/sharemgr/disable
+dir path=opt/sharefs-tests/tests/sharemgr/move
+dir path=opt/sharefs-tests/tests/sharemgr/remove
+dir path=opt/sharefs-tests/tests/sharemgr/set_
+dir path=opt/sharefs-tests/tests/sharemgr/set_security
+dir path=opt/sharefs-tests/tests/sharemgr/set_share
+dir path=opt/sharefs-tests/tests/sharemgr/show
+dir path=opt/sharefs-tests/tests/sharemgr/unset_
+dir path=opt/sharefs-tests/tests/sharemgr/usage
+dir path=opt/sharefs-tests/tests/sharemgr/zfs
+dir path=opt/sharefs-tests/tests/sharemgr/zones
+file path=opt/sharefs-tests/README mode=0444
+file path=opt/sharefs-tests/STC.INFO mode=0444
+file path=opt/sharefs-tests/bin/sharetest mode=0555
+file path=opt/sharefs-tests/config/test_config.tmpl mode=0644
+file path=opt/sharefs-tests/include/commands mode=0555
+file path=opt/sharefs-tests/lib/share_common mode=0555
+file path=opt/sharefs-tests/lib/utils_common mode=0555
+file path=opt/sharefs-tests/lib/verify_common mode=0555
+file path=opt/sharefs-tests/lib/zones_common mode=0555
+file path=opt/sharefs-tests/tests/configure/configure mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tc_sharectl mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_001 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_002 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_003 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_004 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_005 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_006 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_007 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_008 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_009 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_010 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_011 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_012 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_013 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_014 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_015 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_016 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_017 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_018 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_019 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_020 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_021 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_022 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_023 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_024 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_025 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_026 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_027 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_028 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_029 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_030 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_031 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_032 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_033 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_034 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_035 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_036 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_037 mode=0555
+file path=opt/sharefs-tests/tests/sharectl/tp_sharectl_038 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tc_add_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_008 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/add/tp_add_009 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tc_create_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_008 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_009 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_010 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_011 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_012 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/create/tp_create_013 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tc_delete_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tp_delete_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tp_delete_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tp_delete_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tp_delete_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tp_delete_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tp_delete_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/delete/tp_delete_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tc_disable_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_008 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_009 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_010 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/disable/tp_disable_011 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tc_move_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_008 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_009 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/move/tp_move_010 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tc_remove_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_008 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_009 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/remove/tp_remove_010 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tc_set_ mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_008 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_009 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_010 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_011 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_/tp_set_012 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tc_set_security \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_001 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_002 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_003 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_004 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_005 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_006 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_007 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_008 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_009 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_010 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_011 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_012 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_013 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_014 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_security/tp_set_security_015 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tc_set_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_001 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_002 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_003 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_004 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_005 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_006 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_007 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/set_share/tp_set_share_008 \
+    mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/show/tc_show mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/show/tp_show_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/show/tp_show_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tc_unset_ mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_006 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_007 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_008 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_009 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_010 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_011 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/unset_/tp_unset_012 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/usage/tc_usage_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/usage/tp_usage_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/usage/tp_usage_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/usage/tp_usage_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zfs/tc_zfs_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zfs/tp_zfs_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zfs/tp_zfs_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zfs/tp_zfs_003 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zfs/tp_zfs_004 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zfs/tp_zfs_005 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zones/tc_zones_share mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zones/tp_zones_001 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zones/tp_zones_002 mode=0555
+file path=opt/sharefs-tests/tests/sharemgr/zones/tp_zones_003 mode=0555
+file path=opt/sharefs-tests/tet_scen mode=0444
+license cr_Sun license=cr_Sun
+license lic_CDDL license=lic_CDDL

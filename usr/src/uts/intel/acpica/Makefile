@@ -1,6 +1,7 @@
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright 2013 Nexenta Systems, Inc. All rights reserved.
 #
 #
 #	This makefile drives the production of the ACPI CA services
@@ -45,18 +46,17 @@ DEBUG_DEFS	+= $(DEBUG_FLGS)
 #
 # lint pass one non-enforcement
 #
-CFLAGS += $(CCVERBOSE) -DPWRDMN -DACPI_USE_LOCAL_CACHE -DACPI_DEBUG_OUTPUT
+CFLAGS +=	$(CCVERBOSE) -DACPI_USE_LOCAL_CACHE
 
 #
 # 3rd party code is not lint clean
 #
-CERRWARN += -erroff=E_STATEMENT_NOT_REACHED
-
 LINTFLAGS += -errchk=%none
 LINTFLAGS += -errhdr=%none
 LINTFLAGS += -erroff=%all
 LINTFLAGS += -errwarn=%none
 
+CERRWARN	+= -_cc=-erroff=E_STATEMENT_NOT_REACHED
 CERRWARN	+= -_gcc=-Wno-unused-variable
 CERRWARN	+= -_gcc=-Wno-parentheses
 CERRWARN	+= -_gcc=-Wno-uninitialized

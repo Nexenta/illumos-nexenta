@@ -22,6 +22,7 @@
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
 #
 # Copyright 2010, Richard Lowe
+# Copyright 2014 Nexenta Systems, Inc. All rights reserved.
 
 SHELL=/usr/bin/ksh93
 
@@ -30,6 +31,7 @@ SHFILES= \
 	bldenv \
 	build_cscope \
 	bringovercheck \
+	check_mail_msg \
 	checkpaths \
 	checkproto \
 	cstyle \
@@ -39,6 +41,7 @@ SHFILES= \
 	hgsetup \
 	nightly \
 	onu \
+	onu-deb \
 	protocmp.terse \
 	sccscheck \
 	webrev \

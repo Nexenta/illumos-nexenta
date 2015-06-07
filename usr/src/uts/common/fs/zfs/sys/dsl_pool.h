@@ -21,6 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_DSL_POOL_H
@@ -96,6 +97,13 @@ typedef struct dsl_pool {
 	uint64_t dp_bptree_obj;
 	uint64_t dp_empty_bpobj;
 
+	/*
+	 * Used for "special" device only
+	 * dp_rtime: the time (in ms) when we moved the data
+	 */
+	hrtime_t dp_spec_rtime;
+	uint64_t dp_sync_history[2];
+
 	struct dsl_scan *dp_scan;
 
 	/* Uses dp_lock */
@@ -112,6 +120,8 @@ typedef struct dsl_pool {
 	 * wakeup for delayed transactions.
 	 */
 	hrtime_t dp_last_wakeup;
+
+	uint64_t dp_wrcio_towrite[TXG_SIZE];
 
 	/* Has its own locking */
 	tx_state_t dp_tx;
@@ -167,6 +177,8 @@ void dsl_pool_clean_tmp_userrefs(dsl_pool_t *dp);
 int dsl_pool_open_special_dir(dsl_pool_t *dp, const char *name, dsl_dir_t **);
 int dsl_pool_hold(const char *name, void *tag, dsl_pool_t **dp);
 void dsl_pool_rele(dsl_pool_t *dp, void *tag);
+
+boolean_t dsl_pool_wrcio_limit(dsl_pool_t *dp, uint64_t txg);
 
 #ifdef	__cplusplus
 }

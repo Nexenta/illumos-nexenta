@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -55,19 +58,24 @@ extern pgcnt_t	avefree30;	/* 30 sec moving average of free memory */
 extern pgcnt_t	deficit;	/* estimate of needs of new swapped in procs */
 extern pgcnt_t	nscan;		/* number of scans in last second */
 extern pgcnt_t	desscan;	/* desired pages scanned per second */
-extern pgcnt_t	slowscan;
-extern pgcnt_t	fastscan;
+extern volatile pgcnt_t	slowscan;
+extern volatile pgcnt_t	fastscan;
 extern pgcnt_t	pushes;		/* number of pages pushed to swap device */
 
 /* writable copies of tunables */
-extern pgcnt_t	maxpgio;	/* max paging i/o per sec before start swaps */
-extern pgcnt_t	lotsfree;	/* max free before clock freezes */
-extern pgcnt_t	desfree;	/* minimum free pages before swapping begins */
-extern pgcnt_t	minfree;	/* no of pages to try to keep free via daemon */
+extern volatile pgcnt_t	maxpgio;	/* max paging i/o per sec before */
+					/* start swaps */
+extern volatile pgcnt_t	lotsfree;	/* max free before clock freezes */
+extern volatile pgcnt_t	desfree;	/* minimum free pages before swapping */
+					/* begins */
+extern volatile pgcnt_t	minfree;	/* no of pages to try to keep free */
+					/* via daemon */
 extern pgcnt_t	needfree;	/* no of pages currently being waited for */
-extern pgcnt_t	throttlefree;	/* point at which we block PG_WAIT calls */
-extern pgcnt_t	pageout_reserve; /* point at which we deny non-PG_WAIT calls */
-extern pgcnt_t	pages_before_pager; /* XXX */
+extern volatile pgcnt_t	throttlefree;	/* point at which we block PG_WAIT */
+					/* calls */
+extern volatile pgcnt_t	pageout_reserve; /* point at which we deny */
+					/* non-PG_WAIT calls */
+extern volatile pgcnt_t	pages_before_pager; /* XXX */
 
 /*
  * TRUE if the pageout daemon, fsflush daemon or the scheduler.  These

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -141,7 +142,7 @@ static nc_hash_t *dnlc_free_rotor;
  * a random string of bits, probably not
  * normally chosen by a systems administrator
  */
-int ncsize = -1;
+volatile int ncsize = -1;
 volatile uint32_t dnlc_nentries = 0;	/* current num of name cache entries */
 static int nc_hashsz;			/* size of hash table */
 static int nc_hashmask;			/* size of hash table minus 1 */
@@ -300,9 +301,11 @@ vnode_t negative_cache_vnode;
 #define	VALID_DIR_CACHE(dcp) ((dircache_t *)(dcp) > DC_RET_LOW_MEM)
 
 /* Tunables */
-uint_t dnlc_dir_enable = 1; /* disable caching directories by setting to 0 */
-uint_t dnlc_dir_min_size = 40; /* min no of directory entries before caching */
-uint_t dnlc_dir_max_size = UINT_MAX; /* ditto maximum */
+volatile uint_t dnlc_dir_enable = 1;	/* disable caching directories by */
+					/* setting to 0 */
+volatile uint_t dnlc_dir_min_size = 40;	/* min no of directory entries before */
+					/* caching */
+volatile uint_t dnlc_dir_max_size = UINT_MAX; /* ditto maximum */
 uint_t dnlc_dir_hash_size_shift = 3; /* 8 entries per hash bucket */
 uint_t dnlc_dir_min_reclaim =  350000; /* approx 1MB of dcentrys */
 /*

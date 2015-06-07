@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #ifndef	_SYS_FM_FS_ZFS_H
 #define	_SYS_FM_FS_ZFS_H
@@ -34,6 +37,7 @@ extern "C" {
 
 #define	FM_EREPORT_ZFS_CHECKSUM			"checksum"
 #define	FM_EREPORT_ZFS_IO			"io"
+#define	FM_EREPORT_ZFS_TIMEOUT			"timeout"
 #define	FM_EREPORT_ZFS_DATA			"data"
 #define	FM_EREPORT_ZFS_POOL			"zpool"
 #define	FM_EREPORT_ZFS_DEVICE_UNKNOWN		"vdev.unknown"
@@ -68,6 +72,8 @@ extern "C" {
 #define	FM_EREPORT_PAYLOAD_ZFS_ZIO_ERR		"zio_err"
 #define	FM_EREPORT_PAYLOAD_ZFS_ZIO_OFFSET	"zio_offset"
 #define	FM_EREPORT_PAYLOAD_ZFS_ZIO_SIZE		"zio_size"
+#define	FM_EREPORT_PAYLOAD_ZFS_ZIO_LATENCY	"zio_latency"
+#define	FM_EREPORT_PAYLOAD_ZFS_ZIO_TIMEOUT	"zio_timeout"
 #define	FM_EREPORT_PAYLOAD_ZFS_PREV_STATE	"prev_state"
 #define	FM_EREPORT_PAYLOAD_ZFS_CKSUM_EXPECTED	"cksum_expected"
 #define	FM_EREPORT_PAYLOAD_ZFS_CKSUM_ACTUAL	"cksum_actual"

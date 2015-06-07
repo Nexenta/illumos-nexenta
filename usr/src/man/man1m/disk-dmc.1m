@@ -1,0 +1,98 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+.\"
+.Dd January 26, 2015
+.Dt DISK-DMC 1M
+.Os
+.Sh NAME
+.Nm disk-dmc
+.Nd firmware update utility
+.Sh SYNOPSIS
+.Nm
+.Fl h
+.Nm
+.Op Fl l
+.Op Fl v
+.Nm
+.Op Fl v
+.Fl d Ar dsk
+.Fl p Ar path
+.Op Fl s Ar 5|7
+.Op Fl w Ar delay
+.Nm
+.Op Fl v
+.Fl m Ar str
+.Fl p Ar path
+.Op Fl s Ar 5|7
+.Op Fl w Ar delay
+.Sh DESCRIPTION
+The
+.Nm
+utility performs firmware upgrade by issuing SCSI
+.Sy Write Buffer
+command (mode 5 or mode 7) on specified device(s).
+.Nm
+uses the
+.Xr uscsi 7I
+interface so the execution is limited to the root user.
+.Sh OPTIONS
+The following options are supported:
+.Bl -tag -width "-w delay"
+.It Fl d Ar dsk
+Specify the drive that will be targeted for firmware upgrade.
+.Ar dsk
+is the drive path in the form of
+.Sy /dev/rdsk/c?t?d?p0
+Requires
+.Fl p .
+This option is mutually exclusive with the
+.Fl m
+option.
+.It Fl s 7|5
+Change default (5) write buffer command mode. Supported values are 5 and 7.
+If 5 is selected
+.Nm
+will attempt to download the full firmware file onto
+the specified drive(s) in one write buffer command. If 7 is selected disk-dmc
+will break up the firmware file into 32K chunks and send as many write buffer
+commands as needed to complete the firmware transfer.
+.It Fl h
+Display the command line usage message.
+.It Fl l
+List the drives on a system available for firmware upgrade and display
+information specific to each device. This is implied if
+.Nm
+is run without any arguments.
+.It Fl m Ar str
+Specify the model of drive(s) to download firmware to. All discovered drives
+whose model exactly matches the
+.Ar str
+will be upgraded. Requires
+.Fl p .
+This option is mutually exclusive with the
+.Fl d
+option.
+.It Fl p Ar path
+Specify the path to the binary firmware image file you want to write to the
+device.
+.It Fl v
+Verbose mode, turns on extra debug messages.
+.It Fl w Ar delay
+Number of seconds to delay check for drive readiness after downloading the
+firmware. Also used for drive preparation timeouts.
+.El
+.Sh SEE ALSO
+.Xr fwflash 1M ,
+.Xr uscsi 7I
+.Pp
+.Lk http://www.t10.org "The SCSI Storage Interfaces committee website"

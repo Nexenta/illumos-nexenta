@@ -21,8 +21,9 @@
 /*
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
+
 /*
  * Copyright (c) 2010, Intel Corporation.
  * All rights reserved.
@@ -225,7 +226,7 @@ static void layout_kernel_va(void);
 
 #endif /* __amd64 */
 
-pgcnt_t physmem = PHYSMEM;
+volatile pgcnt_t physmem = PHYSMEM;
 pgcnt_t obp_pages;	/* Memory used by PROM for its text and data */
 
 char *kobj_file_buf;
@@ -319,9 +320,10 @@ struct seg *segkpm = NULL;	/* Unused on IA32 */
 caddr_t segkp_base;		/* Base address of segkp */
 caddr_t segzio_base;		/* Base address of segzio */
 #if defined(__amd64)
-pgcnt_t segkpsize = btop(SEGKPDEFSIZE);	/* size of segkp segment in pages */
+volatile pgcnt_t segkpsize = btop(SEGKPDEFSIZE); /* size of segkp segment in */
+						/* pages */
 #else
-pgcnt_t segkpsize = 0;
+volatile pgcnt_t segkpsize = 0;
 #endif
 pgcnt_t segziosize = 0;		/* size of zio segment in pages */
 

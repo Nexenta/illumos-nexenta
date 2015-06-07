@@ -38,6 +38,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <syslog.h>
 #include <stdio.h>
 #include <string.h>
 #include "ndmpd.h"
@@ -106,7 +107,7 @@ ndmp_has_backup_snapshot(char *volname, char *jobname)
 
 	(void) mutex_lock(&zlib_mtx);
 	if ((zhp = zfs_open(zlibh, volname, ZFS_TYPE_DATASET)) == 0) {
-		NDMP_LOG(LOG_ERR, "Cannot open snapshot %s.", volname);
+		syslog(LOG_ERR, "Cannot open snapshot %s.", volname);
 		(void) mutex_unlock(&zlib_mtx);
 		return (-1);
 	}
@@ -192,20 +193,20 @@ snapshot_hold(char *volname, char *snapname, char *jname, boolean_t recursive)
 	char *p;
 
 	if ((zhp = zfs_open(zlibh, volname, ZFS_TYPE_DATASET)) == 0) {
-		NDMP_LOG(LOG_ERR, "Cannot open volume %s.", volname);
+		syslog(LOG_ERR, "Cannot open volume %s.", volname);
 		return (-1);
 	}
 
 	if (cleanup_fd == -1 && (cleanup_fd = open(ZFS_DEV,
 	    O_RDWR|O_EXCL)) < 0) {
-		NDMP_LOG(LOG_ERR, "Cannot open dev %d", errno);
+		syslog(LOG_ERR, "Cannot open dev %d", errno);
 		zfs_close(zhp);
 		return (-1);
 	}
 
 	p = strchr(snapname, '@') + 1;
 	if (zfs_hold(zhp, p, jname, recursive, cleanup_fd) != 0) {
-		NDMP_LOG(LOG_ERR, "Cannot hold snapshot %s", p);
+		syslog(LOG_ERR, "Cannot hold snapshot %s", p);
 		zfs_close(zhp);
 		return (-1);
 	}
@@ -222,13 +223,13 @@ snapshot_release(char *volname, char *snapname, char *jname,
 	int rv = 0;
 
 	if ((zhp = zfs_open(zlibh, volname, ZFS_TYPE_DATASET)) == 0) {
-		NDMP_LOG(LOG_ERR, "Cannot open volume %s", volname);
+		syslog(LOG_ERR, "Cannot open volume %s", volname);
 		return (-1);
 	}
 
 	p = strchr(snapname, '@') + 1;
 	if (zfs_release(zhp, p, jname, recursive) != 0) {
-		NDMP_LOG(LOG_DEBUG, "Cannot release snapshot %s", p);
+		syslog(LOG_ERR, "Cannot release snapshot %s", p);
 		rv = -1;
 	}
 	if (cleanup_fd != -1) {
@@ -261,14 +262,14 @@ snapshot_create(char *volname, char *jname, boolean_t recursive,
 			(void) mutex_unlock(&zlib_mtx);
 			return (0);
 		}
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_ERR,
 		    "snapshot_create: %s failed (err=%d): %s",
 		    snapname, errno, libzfs_error_description(zlibh));
 		(void) mutex_unlock(&zlib_mtx);
 		return (rv);
 	}
 	if (hold && snapshot_hold(volname, snapname, jname, recursive) != 0) {
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_ERR,
 		    "snapshot_create: %s hold failed (err=%d): %s",
 		    snapname, errno, libzfs_error_description(zlibh));
 		(void) mutex_unlock(&zlib_mtx);
@@ -311,15 +312,15 @@ snapshot_destroy(char *volname, char *jname, boolean_t recursive,
 	(void) mutex_lock(&zlib_mtx);
 	if (hold &&
 	    snapshot_release(volname, namep, jname, recursive) != 0) {
-		NDMP_LOG(LOG_DEBUG,
+		syslog(LOG_ERR,
 		    "snapshot_destroy: %s release failed (err=%d): %s",
-		    namep, errno, libzfs_error_description(zlibh));
+		    namep, libzfs_errno(zlibh), libzfs_error_description(zlibh));
 		(void) mutex_unlock(&zlib_mtx);
 		return (-1);
 	}
 
 	if ((zhp = zfs_open(zlibh, namep, ztype)) == NULL) {
-		NDMP_LOG(LOG_DEBUG, "snapshot_destroy: open %s failed",
+		syslog(LOG_ERR, "snapshot_destroy: open %s failed",
 		    namep);
 		(void) mutex_unlock(&zlib_mtx);
 		return (-1);
@@ -332,7 +333,7 @@ snapshot_destroy(char *volname, char *jname, boolean_t recursive,
 	}
 
 	if (err) {
-		NDMP_LOG(LOG_ERR, "%s (recursive destroy: %d): %d; %s; %s",
+		syslog(LOG_ERR, "%s (recursive destroy: %d): %d; %s; %s",
 		    namep,
 		    recursive,
 		    libzfs_errno(zlibh),

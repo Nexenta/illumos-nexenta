@@ -56,7 +56,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool export\fR [\fB-f\fR] \fIpool\fR ...
+\fBzpool export\fR [\fB-fFc\fR] [\fB-t\fR \fInumthreads\fR] \fIpool\fR ...
 .fi
 
 .LP
@@ -128,7 +128,7 @@ zpool \- configures ZFS storage pools
 
 .LP
 .nf
-\fBzpool scrub\fR [\fB-s\fR] \fIpool\fR ...
+\fBzpool scrub\fR [\fB-s|-M|-m\fR] \fIpool\fR ...
 .fi
 
 .LP
@@ -532,7 +532,8 @@ the original storage pool device, which might be part of a mirrored or
 .LP
 The content of the cache devices is considered volatile, as is the case with
 other system caches.
-.SS "Properties"
+
+.SS "Pool properties"
 .sp
 .LP
 Each pool has several properties associated with it. Some properties are
@@ -841,6 +842,49 @@ Prints out a message to the console and generates a system crash dump.
 .sp
 .ne 2
 .na
+\fB\fBforcetrim\fR=\fBauto\fR | \fBon\fR | \fBoff\fR\fR
+.ad
+.sp .6
+.RS 4n
+Controls whether the underlying vdevs of the pool are notified when
+space is freed using the device-type-specific command set (TRIM here
+being a general placeholder term rather than referring to just the SATA
+TRIM command). This is frequently used on backing storage devices which
+support thin provisioning or pre-erasure of blocks on flash media.
+.sp
+.ne 2
+.na
+\fB\fBauto\fR\fR
+.ad
+.RS 12n
+This is the default setting and means TRIM commands (or equivalent) are
+only issued when a vdev indicates support for thin-provisioning.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fBon\fR\fR
+.ad
+.RS 12n
+Force sending TRIM commands even if the device didn't indicate support
+for it.
+.RE
+
+.sp
+.ne 2
+.na
+\fB\fBoff\fR\fR
+.ad
+.RS 12n
+Disable sending TRIM commands, even if the device indicated support for
+it.
+.RE
+.RE
+
+.sp
+.ne 2
+.na
 \fB\fBfeature@\fR\fIfeature_name\fR=\fBenabled\fR\fR
 .ad
 .RS 4n
@@ -1048,7 +1092,7 @@ option. See \fBzpool-features\fR(5) for details about feature properties.
 .ad
 .sp .6
 .RS 4n
-Sets the given pool properties. See the "Properties" section for a list of
+Sets the given pool properties. See the "Pool properties" section for a list of
 valid properties that can be set.
 .RE
 
@@ -1127,7 +1171,7 @@ other valid replicas of the data.
 .sp
 .ne 2
 .na
-\fB\fBzpool export\fR [\fB-f\fR] \fIpool\fR ...\fR
+\fBzpool export\fR [\fB-fFc\fR] [\fB-t\fR \fInumthreads\fR] \fIpool\fR ...
 .ad
 .sp .6
 .RS 4n
@@ -1154,6 +1198,35 @@ Forcefully unmount all datasets, using the "\fBunmount -f\fR" command.
 This command will forcefully export the pool even if it has a shared spare that
 is currently being used. This may lead to potential data corruption.
 .RE
+.sp
+.ne 2
+.na
+\fB\fB-F\fR\fR
+.ad
+.RS 6n
+Do not update device labels or cache file with new configuration
+.sp
+This command will export the pool without flushing configuration information.
+.RE
+.sp
+.ne 2
+.na
+\fB\fB-c\fR\fR
+.ad
+.RS 6n
+Keep configuarion information of exported pool in the cache file
+.sp
+This command will export the pool and keep the latest configuration of it
+in the cache file.
+.RE
+.sp
+.ne 2
+.na
+\fB\fB-t\fR \fInumthreads\fR\fR
+.ad
+.RS 6n
+Unmount datasets in parallel using up to \fInumthreads\fR threads.
+.RE
 
 .RE
 
@@ -1179,7 +1252,7 @@ the following fields:
 .in -2
 .sp
 
-See the "Properties" section for more information on the available pool
+See the "Pool properties" section for more information on the available pool
 properties.
 
 .sp
@@ -1187,7 +1260,7 @@ properties.
 .na
 \fB\fB-H\fR\fR
 .ad
-.RS 12n
+.RS 6n
 Scripted mode. Do not display headers, and separate fields by a single tab
 instead of arbitrary space.
 .RE
@@ -1326,7 +1399,7 @@ options.
 \fB\fB-o\fR \fIproperty=value\fR\fR
 .ad
 .RS 21n
-Sets the specified property on the imported pool. See the "Properties" section
+Sets the specified property on the imported pool. See the "Pool properties" section
 for more information on the available pool properties.
 .RE
 
@@ -1471,7 +1544,7 @@ options.
 .ad
 .sp .6
 .RS 4n
-Sets the specified property on the imported pool. See the "Properties" section
+Sets the specified property on the imported pool. See the "Pool properties" section
 for more information on the available pool properties.
 .RE
 
@@ -1655,7 +1728,7 @@ Display numbers in parsable (exact) values.
 \fB\fB-o\fR \fIprops\fR\fR
 .ad
 .RS 12n
-Comma-separated list of properties to display. See the "Properties" section for
+Comma-separated list of properties to display. See the "Pool properties" section for
 a list of valid properties. The default list is "name, size, used, available,
 fragmentation, expandsize, capacity, dedupratio, health, altroot"
 .RE
@@ -1789,7 +1862,7 @@ devices can be overridden in this manner.
 .sp
 .ne 2
 .na
-\fB\fBzpool scrub\fR [\fB-s\fR] \fIpool\fR ...\fR
+\fB\fBzpool scrub\fR [\fB-s|-M|-m\fR] \fIpool\fR ...\fR
 .ad
 .sp .6
 .RS 4n
@@ -1811,12 +1884,30 @@ scrub\fR" command terminates it and starts a new scrub. If a resilver is in
 progress, \fBZFS\fR does not allow a scrub to be started until the resilver
 completes.
 .sp
+Partial scrub may be requested using \fB-M\fR or \fB-m\fR flag.
+.sp
 .ne 2
 .na
 \fB\fB-s\fR\fR
 .ad
 .RS 6n
 Stop scrubbing.
+.RE
+.sp
+.ne 2
+.na
+\fB\fB-M\fR\fR
+.ad
+.RS 6n
+Scrub only MOS blocks.
+.RE
+.sp
+.ne 2
+.na
+\fB\fB-m\fR\fR
+.ad
+.RS 6n
+Scrub only metadata blocks.
 .RE
 
 .RE
@@ -1828,7 +1919,7 @@ Stop scrubbing.
 .ad
 .sp .6
 .RS 4n
-Sets the given property on the specified pool. See the "Properties" section for
+Sets the given property on the specified pool. See the "Pool properties" section for
 more information on what properties can be set and acceptable values.
 .RE
 

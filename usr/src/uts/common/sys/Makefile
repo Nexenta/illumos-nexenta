@@ -18,8 +18,10 @@
 #
 # CDDL HEADER END
 #
+
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2013, Joyent, Inc. All rights reserved.
 # Copyright 2013 Garrett D'Amore <garrett@damore.org>
 #
@@ -72,6 +74,7 @@ CHKHDRS=			\
 	aio_impl.h		\
 	aio_req.h		\
 	aiocb.h			\
+	aoe.h			\
 	ascii.h			\
 	asynch.h		\
 	atomic.h		\
@@ -179,6 +182,7 @@ CHKHDRS=			\
 	disp.h			\
 	dkbad.h			\
 	dkio.h			\
+	dkioc_free_util.h	\
 	dklabel.h		\
 	dl.h			\
 	dlpi.h			\

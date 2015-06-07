@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -57,8 +60,8 @@ extern const fs_operation_def_t swap_vnodeops_template[];
  */
 
 pgcnt_t swapfs_desfree = 0;
-pgcnt_t swapfs_minfree = 0;
-pgcnt_t swapfs_reserve = 0;
+volatile pgcnt_t swapfs_minfree = 0;
+volatile pgcnt_t swapfs_reserve = 0;
 
 #ifdef SWAPFS_DEBUG
 int swapfs_debug;

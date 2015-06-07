@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Driver specific data structures and function prototypes
@@ -34,10 +39,12 @@ extern "C" {
 
 #include <sys/types.h>
 #include <sys/dditypes.h>
+#include <sys/sysmacros.h>
 #include <sys/kstat.h>
 #include <sys/ddi_intr.h>
 #include <sys/cmn_err.h>
 #include <sys/byteorder.h>
+#include <netinet/ip6.h>
 #include <sys/mac_provider.h>
 #include <sys/mac_ether.h>
 #include <sys/gld.h>
@@ -67,6 +74,7 @@ extern "C" {
 #include <oce_io.h>
 #include <oce_buf.h>
 #include <oce_utils.h>
+#include <oce_ring.h>
 #include <oce_version.h>
 
 #define	SIZE_128	128
@@ -79,68 +87,55 @@ extern "C" {
 
 #define	END		0xdeadface
 
-#define	MAX_DEVS		32
-#define	MAX_RSS_PER_ADAPTER	2
-
-#define	OCE_MAX_ETH_FRAME_SIZE	1500
 #define	OCE_MAX_JUMBO_FRAME_SIZE 9018
-#define	OCE_MIN_ETH_FRAME_SIZE	64
-#define	OCE_LLC_SNAP_HDR_LEN	8
 
 #define	OCE_MIN_MTU	1500
 #define	OCE_MAX_MTU	9000
 #define	OCE_MAX_MCA	32
-#define	OCE_RQ_MAX_FRAME_SZ 9018
 
-#define	OCE_MAX_EQ	8
+#define	OCE_MAX_EQ	16
 #define	OCE_MAX_CQ	1024
-#define	OCE_MAX_WQ	8
-#define	OCE_MAX_RQ	5
-#define	OCE_MIN_RQ	1
 
-#define	OCE_WQ_NUM_BUFFERS		2048
-#define	OCE_WQ_BUF_SIZE			2048
-#define	OCE_LSO_MAX_SIZE		(64 * 1024)
+#define	OCE_WQ_NUM_BUFFERS	2048
+#define	OCE_WQ_BUF_SIZE	2048
+#define	OCE_LSO_MAX_SIZE (64 * 1024)
 #define	OCE_DEFAULT_TX_BCOPY_LIMIT	512
 #define	OCE_DEFAULT_RX_BCOPY_LIMIT	128
-#define	OCE_DEFAULT_WQ_EQD		16
+#define	OCE_DEFAULT_WQ_EQD	16
 
-#define	OCE_DEFAULT_TX_RING_SIZE	2048
-#define	OCE_DEFAULT_RX_RING_SIZE	1024
-#define	OCE_DEFAULT_WQS			1
-#if defined(__sparc)
-#define	OCE_DEFAULT_RQS			OCE_MAX_RQ
-#else
-#define	OCE_DEFAULT_RQS			OCE_MIN_RQ
-#endif
-
-#define	OCE_DEFAULT_RX_PKT_PER_INTR (OCE_DEFAULT_RX_RING_SIZE / 2)
+#define	OCE_DEFAULT_RX_PKTS_PER_INTR 64
 #define	OCE_DEFAULT_TX_RECLAIM_THRESHOLD 1024
-#define	OCE_MAX_RQ_POSTS		255
-#define	OCE_RQ_NUM_BUFFERS		2048
-#define	OCE_RQ_BUF_SIZE			8192
-#define	OCE_DEFAULT_RECHARGE_THRESHOLD	OCE_MAX_RQ_POSTS
-#define	OCE_NUM_USED_VECTORS		2
-#define	OCE_ITBL_SIZE			64
-#define	OCE_HKEY_SIZE			40
-#define	OCE_DMA_ALIGNMENT		0x1000ull
 
-#define	OCE_MIN_VECTORS			1
+#define	OCE_MAX_RSS_RINGS		16
+#define	OCE_MAX_RING_GROUPS		4
+#define	OCE_MAX_RING_PER_GROUP	(OCE_MAX_RSS_RINGS+1)
+#define	OCE_MIN_RING_PER_GROUP	1
+#define	OCE_MAX_RQ				(OCE_MAX_EQ+1)
+#define	OCE_MAX_WQ				OCE_MAX_EQ
+#define	OCE_MIN_RQ				1
+#define	OCE_MIN_WQ				1
+#define	OCE_DEF_RING_PER_GROUP	OCE_MAX_RING_PER_GROUP
+#define	OCE_DEFAULT_RQS			5
+#define	OCE_DEFAULT_WQS			1
 
-#define	OCE_CAPAB_FLAGS	(MBX_RX_IFACE_FLAGS_BROADCAST		| \
-			MBX_RX_IFACE_FLAGS_PROMISCUOUS		| \
-			MBX_RX_IFACE_FLAGS_UNTAGGED		| \
-			MBX_RX_IFACE_FLAGS_MCAST_PROMISCUOUS	| \
-			MBX_RX_IFACE_FLAGS_PASS_L3L4)
+#define	OCE_MAX_SMAC_PER_DEV	128
+#define	OCE_MAX_PMAC_PER_GRP	OCE_MAX_SMAC_PER_DEV
 
-#define	OCE_CAPAB_ENABLE	(MBX_RX_IFACE_FLAGS_BROADCAST	| \
-				MBX_RX_IFACE_FLAGS_UNTAGGED	| \
-				MBX_RX_IFACE_FLAGS_PASS_L3L4)
+#define	OCE_MAX_RQ_POSTS	255
+#define	OCE_RQ_NUM_BUFFERS	2048
+#define	OCE_RQ_BUF_SIZE		2048
+#define	OCE_DEFAULT_RECHARGE_THRESHOLD	32
+#define	OCE_ITBL_SIZE		64
+#define	OCE_HKEY_SIZE		40
+#define	OCE_DMA_ALIGNMENT	0x0000000000001000ull
+#define	OCE_MIN_VECTORS		1
 
-#define	OCE_FM_CAPABILITY	(DDI_FM_EREPORT_CAPABLE		| \
-				DDI_FM_ACCCHK_CAPABLE		| \
-				DDI_FM_DMACHK_CAPABLE)
+#define	OCE_DEFAULT_TX_RING_SIZE    2048
+#define	OCE_DEFAULT_RX_RING_SIZE    1024
 
+#define	OCE_FM_CAPABILITY		(DDI_FM_EREPORT_CAPABLE	|	\
+					DDI_FM_ACCCHK_CAPABLE	|	\
+					DDI_FM_DMACHK_CAPABLE)
 #define	OCE_DEFAULT_RSS_TYPE	(RSS_ENABLE_IPV4|RSS_ENABLE_TCP_IPV4)
 
 /* flow control definitions */
@@ -153,6 +148,8 @@ extern "C" {
 #define	OCE_DEV_CFG_BAR	0x01
 #define	OCE_PCI_CSR_BAR	0x02
 #define	OCE_PCI_DB_BAR	0x03
+/* Lancer DB Bar */
+#define	OCE_PCI_LANCER_DB_BAR	0x01
 
 /* macros for device IO */
 #define	OCE_READ_REG32(handle, addr) ddi_get32(handle, addr)
@@ -187,7 +184,6 @@ extern "C" {
 	    >> HOSTINTR_PFUNC_SHIFT) & HOSTINTR_PFUNC_MASK)
 
 #define	DEV_LOCK(dev)	mutex_enter(&dev->dev_lock)
-
 #define	DEV_UNLOCK(dev)	mutex_exit(&dev->dev_lock)
 
 enum oce_ring_size {
@@ -197,34 +193,95 @@ enum oce_ring_size {
 	RING_SIZE_2048 = 2048
 };
 
-enum oce_driver_state {
-	STATE_INIT		= 0x2,
+enum oce_device_state {
 	STATE_MAC_STARTED	= 0x4,
-	STATE_QUIESCE		= 0x8,
-	STATE_MAC_STOPPING	= 0x10
+	STATE_INTR_ENABLED	= 0x8,
+	STATE_MAC_STOPPING	= 0x10,
+	STATE_INTR_ADJUST	= 0x20
 };
 
+enum oce_group_state {
+	GROUP_INIT		= 0x01,
+	GROUP_MAC_STARTED	= 0x02,
+	GROUP_SUSPEND		= 0x04
+};
+
+#define	ATTACH_DEV_INIT 	0x1
+#define	ATTACH_FM_INIT		0x2
+#define	ATTACH_PCI_CFG		0x4
+#define	ATTACH_LOCK_INIT	0x8
+#define	ATTACH_PCI_INIT 	0x10
+#define	ATTACH_HW_INIT		0x20
+#define	ATTACH_SETUP_INTR	0x100
+#define	ATTACH_STAT_INIT	0x200
+#define	ATTACH_MAC_REG		0x400
+#define	ATTACH_CB_REG		0x1000
+#define	ATTACH_ALLOC_QUEUES	0x2000
+#define	ATTACH_REG_INTR_HANDLE	0x4000
+
+typedef union oce_ring_s {
+		struct oce_rq *rx;
+		struct oce_wq *tx;
+} oce_ring_t;
+
+
+typedef struct oce_group_s
+{
+	kmutex_t grp_lock; /* lock for group data */
+	mac_ring_type_t	grp_type; /* tx or rx ring group */
+	uint32_t grp_num; /* index into the group array */
+	mac_group_handle_t handle; /* ring handle used by framework */
+	boolean_t rss_enable; /* if rx, whether rss or not */
+	uint32_t if_id;	/* unique to a group */
+	uint32_t num_pmac; /* number of pmacs in this group */
+	uint32_t pmac_ids[OCE_MAX_PMAC_PER_GRP]; /* pmac ids of added pmacs */
+	struct ether_addr mac_addr[OCE_MAX_PMAC_PER_GRP]; /* MAC Addresses */
+	uint32_t num_rings;
+	uint32_t eq_idx;
+	oce_ring_t ring[OCE_MAX_RING_PER_GROUP];
+	void *parent;
+	enum oce_group_state state;
+
+	uint16_t num_mca; /* MCA supported */
+	struct ether_addr multi_cast[OCE_MAX_MCA]; /* MC TABLE */
+}oce_group_t;
+
 struct oce_dev {
-	kmutex_t bmbx_lock;		/* Bootstrap Lock */
-	kmutex_t dev_lock;		/* lock for device */
+	kmutex_t bmbx_lock; /* Bootstrap Lock */
+	kmutex_t dev_lock; /* lock for device */
+
+	uint16_t QnQ_tag;
+	uint8_t QnQ_valid;
+	uint8_t QnQ_queried;
+
+	uint32_t rx_rings_per_group;
+	uint32_t num_rx_groups;
+	uint32_t num_tx_groups;
+	oce_group_t rx_group[OCE_MAX_RING_GROUPS];
+	/* ungrouped TX rings */
+	oce_ring_t default_tx_rings[OCE_MAX_WQ];
+	uint32_t rx_rings; /* total */
+	uint32_t tx_rings; /* total */
+	uint32_t rss_cnt;
 
 	/* Queues relarted */
-	struct oce_wq *wq[OCE_MAX_WQ];	/* TXQ Array */
-	struct oce_rq *rq[OCE_MAX_RQ];	/* RXQ Array */
-	struct oce_cq *cq[OCE_MAX_CQ];	/* Completion Queues */
-	struct oce_eq *eq[OCE_MAX_EQ];	/* Event Queues	*/
-	struct oce_mq *mq;		/* MQ ring */
+	struct oce_wq *wq;	/* TXQ Array */
+	struct oce_rq *rq;	/* RXQ Array */
+	struct oce_cq **cq;	/* Completion Queues */
+	struct oce_eq *eq;	/* Event Queues	*/
+	struct oce_mq *mq;	/* MQ ring */
 
 	/* driver state  machine */
-	enum oce_driver_state state;	/* state */
+	enum oce_device_state state;	/* state */
 	boolean_t suspended;		/* CPR */
 	uint32_t attach_state;		/* attach progress */
 
-	oce_dma_buf_t *bmbx;		/* Bootstrap MailBox */
+	oce_dma_buf_t bmbx;		/* Bootstrap MailBox */
 
 	uint32_t tx_bcopy_limit;	/* TX BCOPY Limit */
 	uint32_t rx_bcopy_limit;	/* RX BCOPY Limit */
 	uint32_t tx_reclaim_threshold;	/* Tx reclaim */
+	uint32_t tx_reclaim;		/* Tx reclaim */
 	uint32_t rx_pkt_per_intr;	/* Rx pkts processed per intr */
 
 	/* BARS */
@@ -241,8 +298,9 @@ struct oce_dev {
 
 	/* device stats */
 	kstat_t *oce_kstats;		/* NIC STATS */
-	oce_dma_buf_t *stats_dbuf;	/* STATS BUFFER */
-	struct mbx_get_nic_stats *hw_stats;
+	oce_dma_buf_t stats_dbuf;	/* STATS BUFFER */
+	kmutex_t stat_lock;
+
 	/* dev stats */
 	uint32_t tx_errors;
 	uint32_t tx_noxmtbuf;
@@ -250,6 +308,15 @@ struct oce_dev {
 	/* link status */
 	link_state_t link_status;
 	int32_t link_speed;		/* Link speed in Mbps */
+	int32_t	link_duplex;
+	uint16_t pvid;
+	uint16_t reco_priority; /* Recommended priority */
+	uint32_t vlan_prio_bmap; /* Available Vlan priorities bitmap */
+
+	/* watch dog timer related */
+	kmutex_t wd_lock;
+	boolean_t wd_enable;
+	timeout_id_t wd_id;
 
 	/* OS */
 	uint32_t dev_id;	/* device ID or instance number */
@@ -262,6 +329,8 @@ struct oce_dev {
 	int intr_cap;
 	ddi_intr_handle_t *htable;	/* intr handler table */
 	int32_t hsize;
+	ddi_cb_handle_t	cb_handle;	/* IRM: callback handle */
+	int max_vectors;			/* IRM: max number of vectors */
 
 	/* device configuration */
 	uint32_t rq_max_bufs;		/* maximum prealloced buffers */
@@ -271,18 +340,14 @@ struct oce_dev {
 	uint32_t neqs;			/* No of event queues */
 	uint32_t nwqs;			/* No of Work Queues */
 	uint32_t nrqs;			/* No of Receive Queues */
-	uint32_t nifs;			/* No of interfaces created */
-	uint32_t tx_rings;
-	uint32_t rx_rings;
+	uint32_t num_pmac;		/* Total pmacs on this port */
 	uint32_t pmac_id;		/* used to add or remove mac */
 	uint8_t unicast_addr[ETHERADDRL];
 	uint32_t num_smac;
 	uint32_t mtu;
 	int32_t fm_caps;
-	boolean_t rss_enable;		/* RSS support */
 	boolean_t lso_capable;		/* LSO */
 	boolean_t promisc;		/* PROMISC MODE */
-	uint32_t if_cap_flags;		/* IF CAPAB */
 	uint32_t flow_control;		/* flow control settings */
 	uint8_t mac_addr[ETHERADDRL];	/* hardware mac address */
 	uint16_t num_mca;		/* MCA supported */
@@ -295,6 +360,7 @@ struct oce_dev {
 	uint32_t port_id;
 	uint32_t function_mode;
 	uint32_t function_caps;
+	uint32_t drvfn_caps;
 	uint32_t chip_rev;		/* Chip revision */
 	uint32_t max_tx_rings;		/* Max Rx rings available */
 	uint32_t max_rx_rings;		/* Max rx rings available */
@@ -303,18 +369,19 @@ struct oce_dev {
 	uint8_t fw_version[32];		/* fw version string */
 
 	/* PCI related */
-	uint16_t vendor_id;
-	uint16_t device_id;
-	uint16_t subsys_id;
-	uint16_t subvendor_id;
-	uint8_t pci_bus;
-	uint8_t pci_device;
-	uint8_t pci_function;
-	uint8_t dev_list_index;
+	uint16_t    vendor_id;
+	uint16_t    device_id;
+	uint16_t    subsys_id;
+	uint16_t    subvendor_id;
 
 	/* Logging related */
 	uint16_t mod_mask;		/* Log Mask */
 	int16_t severity;		/* Log level */
+
+	/* ue status */
+	uint32_t ue_mask_lo;
+	uint32_t ue_mask_hi;
+	uint32_t sli_family;
 };
 
 /* GLD handler functions */
@@ -339,7 +406,6 @@ int oce_m_stat(void *arg, uint_t stat, uint64_t *val);
 int oce_start(struct oce_dev *dev);
 void oce_stop(struct oce_dev *dev);
 int oce_identify_hw(struct oce_dev *dev);
-int oce_get_bdf(struct oce_dev *dev);
 
 /* FMA support Functions */
 void oce_fm_init(struct oce_dev *dev);
@@ -358,16 +424,36 @@ int oce_setup_intr(struct oce_dev *dev);
 int oce_teardown_intr(struct oce_dev *dev);
 int oce_setup_handlers(struct oce_dev *dev);
 void oce_remove_handler(struct oce_dev *dev);
-void oce_ei(struct oce_dev *dev);
-void oce_di(struct oce_dev *dev);
+int oce_ei(struct oce_dev *dev);
+int oce_di(struct oce_dev *dev);
 void oce_chip_ei(struct oce_dev *dev);
 void oce_chip_di(struct oce_dev *dev);
 
 /* HW initialisation */
 int oce_hw_init(struct oce_dev *dev);
 void oce_hw_fini(struct oce_dev *dev);
-int oce_setup_adapter(struct oce_dev *dev);
-void oce_unsetup_adapter(struct oce_dev *dev);
+int oce_create_group(struct oce_dev *dev, oce_group_t *grp, uint32_t mode);
+void oce_delete_group(struct oce_dev *dev, oce_group_t *grp);
+void oce_delete_nw_interface(struct oce_dev *dev, oce_group_t *grp,
+    uint32_t mode);
+int oce_create_nw_interface(struct oce_dev *dev, oce_group_t *grp,
+    uint32_t mode);
+int oce_rq_init(struct oce_dev *dev, struct oce_rq *, uint32_t q_len,
+    uint32_t frag_size, uint32_t mtu);
+void oce_rq_fini(struct oce_dev *dev, struct oce_rq *rq);
+
+/* Timer related */
+void oce_enable_wd_timer(struct oce_dev  *dev);
+void oce_disable_wd_timer(struct oce_dev *dev);
+boolean_t oce_check_ue(struct oce_dev *dev);
+boolean_t oce_tx_stall_check(struct oce_dev *dev);
+
+/* Helper functions for crossbow ring groups */
+int oce_start_group(oce_group_t *, boolean_t);
+void oce_stop_group(oce_group_t *, boolean_t);
+int oce_resume_group_rings(oce_group_t *);
+void oce_suspend_group_rings(oce_group_t *);
+void oce_group_create_itbl(oce_group_t *, char *);
 
 #ifdef __cplusplus
 }

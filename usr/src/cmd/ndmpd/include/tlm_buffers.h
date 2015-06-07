@@ -41,6 +41,7 @@
  * for both local-backup and NDMP.
  *
  */
+/* Copyright 2015 Nexenta Systems, Inc. All rights reserved. */
 
 #ifndef	_TLM_BUFFERS_H_
 #define	_TLM_BUFFERS_H_
@@ -267,6 +268,7 @@ typedef struct {
 	char *ba_job;
 	char *ba_dir;
 	char *ba_sels[NDMP_MAX_SELECTIONS];
+	int ba_count;
 	pthread_barrier_t ba_barrier;
 } tlm_backup_restore_arg_t;
 

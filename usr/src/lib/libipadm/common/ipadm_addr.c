@@ -259,10 +259,12 @@ i_ipadm_get_static_addr_db(ipadm_handle_t iph, ipadm_addrobj_t ipaddr)
 	}
 	assert(af != AF_UNSPEC);
 	if (nvpair_value_nvlist(nvp, &nvladdr) != 0 ||
-	    nvlist_lookup_string(nvladdr, IPADM_NVP_IPADDRHNAME, &sname) != 0 ||
-	    ipadm_set_addr(ipaddr, sname, af) != IPADM_SUCCESS) {
+	    nvlist_lookup_string(nvladdr, IPADM_NVP_IPADDRHNAME, &sname) != 0)
 		goto fail;
-	}
+
+	if (ipadm_set_addr(ipaddr, sname, af) != IPADM_SUCCESS)
+		goto fail;
+
 	nvlist_free(onvl);
 	return (IPADM_SUCCESS);
 fail:
@@ -1513,7 +1515,6 @@ ipadm_set_addrprop(ipadm_handle_t iph, const char *pname,
 	if ((pflags & IPADM_OPT_PERSIST) &&
 	    !(ipaddr.ipadm_flags & IPMGMT_PERSIST))
 		return (IPADM_TEMPORARY_OBJ);
-
 	/*
 	 * Currently, setting an address property on an address object of type
 	 * IPADM_ADDR_IPV6_ADDRCONF is not supported. Supporting it involves
@@ -2180,11 +2181,9 @@ ipadm_create_addrobj(ipadm_addr_type_t type, const char *aobjname,
 	/* Check if the interface name is valid. */
 	if (!ifparse_ifspec(ifname, &ifsp))
 		return (IPADM_INVALID_ARG);
-
 	/* Check if the given addrobj name is valid. */
 	if (aname != NULL && !i_ipadm_is_user_aobjname_valid(aname))
 		return (IPADM_INVALID_ARG);
-
 	if ((newaddr = calloc(1, sizeof (struct ipadm_addrobj_s))) == NULL)
 		return (IPADM_NO_MEMORY);
 
@@ -2366,10 +2365,6 @@ i_ipadm_get_db_addr(ipadm_handle_t iph, const char *ifname,
     const char *aobjname, nvlist_t **onvl)
 {
 	ipmgmt_getaddr_arg_t	garg;
-	ipmgmt_get_rval_t	*rvalp;
-	int			err;
-	size_t			nvlsize;
-	char			*nvlbuf;
 
 	/* Populate the door_call argument structure */
 	bzero(&garg, sizeof (garg));
@@ -2380,16 +2375,7 @@ i_ipadm_get_db_addr(ipadm_handle_t iph, const char *ifname,
 	if (ifname != NULL)
 		(void) strlcpy(garg.ia_ifname, ifname, sizeof (garg.ia_ifname));
 
-	rvalp = malloc(sizeof (ipmgmt_get_rval_t));
-	err = ipadm_door_call(iph, &garg, sizeof (garg), (void **)&rvalp,
-	    sizeof (*rvalp), B_TRUE);
-	if (err == 0) {
-		nvlsize = rvalp->ir_nvlsize;
-		nvlbuf = (char *)rvalp + sizeof (ipmgmt_get_rval_t);
-		err = nvlist_unpack(nvlbuf, nvlsize, onvl, NV_ENCODE_NATIVE);
-	}
-	free(rvalp);
-	return (ipadm_errno2status(err));
+	return (i_ipadm_call_ipmgmtd(iph, (void *) &garg, sizeof (garg), onvl));
 }
 
 /*
@@ -2434,7 +2420,6 @@ ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t addr, uint32_t flags)
 	status = i_ipadm_validate_create_addr(iph, addr, flags);
 	if (status != IPADM_SUCCESS)
 		return (status);
-
 	/*
 	 * For Legacy case, check if an addrobj already exists for the
 	 * given logical interface name. If one does not exist,
@@ -2631,6 +2616,7 @@ i_ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr, uint32_t flags)
 	struct sockaddr_storage		m, *mask = &m;
 	const struct sockaddr_storage	*addr = &ipaddr->ipadm_static_addr;
 	const struct sockaddr_storage	*daddr = &ipaddr->ipadm_static_dst_addr;
+	uint32_t			iff_flags = IFF_UP;
 	sa_family_t			af;
 	boolean_t			legacy = (iph->iph_flags & IPH_LEGACY);
 	struct ipadm_addrobj_s		legacy_addr;
@@ -2658,25 +2644,10 @@ i_ipadm_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr, uint32_t flags)
 	 * Create a new logical interface if needed; otherwise, just
 	 * use the 0th logical interface.
 	 */
-retry:
 	if (!(iph->iph_flags & IPH_LEGACY)) {
 		status = i_ipadm_do_addif(iph, ipaddr);
 		if (status != IPADM_SUCCESS)
 			return (status);
-		/*
-		 * We don't have to set the lifnum for IPH_INIT case, because
-		 * there is no placeholder created for the address object in
-		 * this case. For IPH_LEGACY, we don't do this because the
-		 * lifnum is given by the caller and it will be set in the
-		 * end while we call the i_ipadm_addr_persist().
-		 */
-		if (!(iph->iph_flags & IPH_INIT)) {
-			status = i_ipadm_setlifnum_addrobj(iph, ipaddr);
-			if (status == IPADM_ADDROBJ_EXISTS)
-				goto retry;
-			if (status != IPADM_SUCCESS)
-				return (status);
-		}
 	}
 	i_ipadm_addrobj2lifname(ipaddr, lifr.lifr_name,
 	    sizeof (lifr.lifr_name));
@@ -2700,7 +2671,10 @@ retry:
 	}
 
 	if (flags & IPADM_OPT_UP) {
-		status = i_ipadm_set_flags(iph, lifr.lifr_name, af, IFF_UP, 0);
+		if (i_ipadm_is_under_ipmp(iph, lifr.lifr_name))
+			iff_flags |= IFF_NOFAILOVER;
+		status = i_ipadm_set_flags(iph, lifr.lifr_name,
+		    af, iff_flags, 0);
 
 		/*
 		 * IPADM_DAD_FOUND is a soft-error for create-addr.
@@ -2735,6 +2709,7 @@ retry:
 ret:
 	if (status != IPADM_SUCCESS && !legacy)
 		(void) i_ipadm_delete_addr(iph, ipaddr);
+
 	return (status);
 }
 
@@ -3203,15 +3178,18 @@ i_ipadm_updown_common(ipadm_handle_t iph, const char *aobjname,
 
 	if (!(ipaddr->ipadm_flags & IPMGMT_ACTIVE))
 		return (IPADM_OP_DISABLE_OBJ);
+
 	if ((ipadm_flags & IPADM_OPT_PERSIST) &&
 	    !(ipaddr->ipadm_flags & IPMGMT_PERSIST))
 		return (IPADM_TEMPORARY_OBJ);
+
 	if (ipaddr->ipadm_atype == IPADM_ADDR_IPV6_ADDRCONF ||
 	    (ipaddr->ipadm_atype == IPADM_ADDR_DHCP &&
 	    (ipadm_flags & IPADM_OPT_PERSIST)))
 		return (IPADM_NOTSUP);
 
 	i_ipadm_addrobj2lifname(ipaddr, lifname, sizeof (lifname));
+
 	return (i_ipadm_get_flags(iph, lifname, ipaddr->ipadm_af, ifflags));
 }
 
@@ -3423,8 +3401,13 @@ i_ipadm_validate_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr,
 
 	ifname = ipaddr->ipadm_ifname;
 
-	if (i_ipadm_is_ipmp(iph, ifname) || i_ipadm_is_under_ipmp(iph, ifname))
-		return (IPADM_NOTSUP);
+	/*
+	 * Do not go further when we are under ipmp.
+	 * The interface is plumbed up and we are going to add
+	 * NOFAILOVER address to make in.mpathd happy.
+	 */
+	if (i_ipadm_is_under_ipmp(iph, ifname))
+		return (IPADM_SUCCESS);
 
 	af = ipaddr->ipadm_af;
 	af_exists = ipadm_if_enabled(iph, ifname, af);
@@ -3448,16 +3431,10 @@ i_ipadm_validate_create_addr(ipadm_handle_t iph, ipadm_addrobj_t ipaddr,
 	status = i_ipadm_if_pexists(iph, ifname, af, &p_exists);
 	if (status != IPADM_SUCCESS)
 		return (status);
+
 	if (!a_exists && p_exists)
 		return (IPADM_OP_DISABLE_OBJ);
-	if ((flags & IPADM_OPT_PERSIST) && a_exists && !p_exists) {
-		/*
-		 * If address has to be created persistently,
-		 * and the interface does not exist in the persistent
-		 * store but in active config, fail.
-		 */
-		return (IPADM_TEMPORARY_OBJ);
-	}
+
 	if (af_exists) {
 		status = i_ipadm_get_flags(iph, ifname, af, &ifflags);
 		if (status != IPADM_SUCCESS)

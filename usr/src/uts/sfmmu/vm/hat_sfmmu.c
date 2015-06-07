@@ -22,7 +22,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -660,14 +660,15 @@ int	tsb_lgrp_affinity = 0;
 #define	TSB_OK_GROW()	\
 	(tsb_alloc_bytes < tsb_alloc_hiwater && freemem > desfree)
 
-int	enable_tsb_rss_sizing = 1;
-int	tsb_rss_factor	= (int)TSB_RSS_FACTOR;
+volatile int	enable_tsb_rss_sizing = 1;
+volatile int	tsb_rss_factor = (int)TSB_RSS_FACTOR;
 
 /* which TSB size code to use for new address spaces or if rss sizing off */
-int default_tsb_size = TSB_8K_SZCODE;
+volatile int default_tsb_size = TSB_8K_SZCODE;
 
 static uint64_t tsb_alloc_hiwater; /* limit TSB reserved memory */
-uint64_t tsb_alloc_hiwater_factor; /* tsb_alloc_hiwater = physmem / this */
+volatile uint64_t tsb_alloc_hiwater_factor;	/* tsb_alloc_hiwater =	*/
+						/* 	physmem / this	*/
 #define	TSB_ALLOC_HIWATER_FACTOR_DEFAULT	32
 
 #ifdef DEBUG

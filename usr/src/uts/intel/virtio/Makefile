@@ -20,7 +20,7 @@
 #
 
 #
-# Copyright (c) 2012 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #

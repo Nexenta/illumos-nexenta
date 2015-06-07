@@ -351,6 +351,16 @@ xdfs_tgt_probe(xdfs_state_t *xsp, dev_info_t *tgt_dip)
 	    (xdf_hvm_setpgeom(xsp->xdfss_tgt_dip, &pgeom) != 0)))
 		return (B_FALSE);
 
+	if (xsp->xdfss_tgt_is_cd && !xdf_media_req_supported(tgt_dip)) {
+		/*
+		 * Unfortunatly, the dom0 backend driver doesn't support
+		 * important media request operations like eject, so fail
+		 * the probe (this should cause us to fall back to emulated
+		 * hvm device access, which does support things like eject).
+		 */
+		return (B_FALSE);
+	}
+
 	/*
 	 * Force the xdf front end driver to connect to the backend.  From
 	 * the solaris device tree perspective, the xdf driver devinfo node
@@ -361,18 +371,8 @@ xdfs_tgt_probe(xdfs_state_t *xsp, dev_info_t *tgt_dip)
 	 * to be connected.
 	 */
 	if (!xdf_hvm_connect(xsp->xdfss_tgt_dip)) {
-		cmn_err(CE_WARN, "pv driver failed to connect: %s",
+		cmn_err(CE_WARN, "PV driver failed to connect: %s",
 		    xsp->xdfss_pv);
-		return (B_FALSE);
-	}
-
-	if (xsp->xdfss_tgt_is_cd && !xdf_media_req_supported(tgt_dip)) {
-		/*
-		 * Unfortunatly, the dom0 backend driver doesn't support
-		 * important media request operations like eject, so fail
-		 * the probe (this should cause us to fall back to emulated
-		 * hvm device access, which does support things like eject).
-		 */
 		return (B_FALSE);
 	}
 
@@ -391,7 +391,7 @@ xdfs_tgt_probe(xdfs_state_t *xsp, dev_info_t *tgt_dip)
 	mutex_exit(&xsp->xdfss_mutex);
 
 	if (!xsp->xdfss_tgt_is_cd && xdfs_c_bb_check(xsp)) {
-		cmn_err(CE_WARN, "pv disks with bad blocks are unsupported: %s",
+		cmn_err(CE_WARN, "PV disks with bad blocks are unsupported: %s",
 		    xsp->xdfss_hvm);
 		mutex_enter(&xsp->xdfss_mutex);
 		xdf_kstat_delete(xsp->xdfss_tgt_dip);
@@ -948,7 +948,7 @@ xdfs_hvm_probe(dev_info_t *dip, char *path)
 	void		*xsp;
 
 	ASSERT(path != NULL);
-	cmn_err(CE_WARN, "PV access to device disabled: %s", path);
+	cmn_err(CE_WARN, "!PV access to device disabled: %s", path);
 
 	(void) ddi_soft_state_zalloc(xdfs_ssp, instance);
 	VERIFY((xsp = ddi_get_soft_state(xdfs_ssp, instance)) != NULL);

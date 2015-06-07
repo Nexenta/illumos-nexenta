@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -29,6 +30,7 @@
 #include <sys/strsun.h>
 #include <sys/squeue_impl.h>
 #include <sys/squeue.h>
+#include <sys/vmsystm.h>
 
 #include <inet/common.h>
 #include <inet/ip.h>
@@ -504,7 +506,6 @@ tcp_reclaim_timer(void *arg)
 	tcp_stack_t *tcps = (tcp_stack_t *)arg;
 	int64_t tot_conn = 0;
 	int i;
-	extern pgcnt_t lotsfree, needfree;
 
 	for (i = 0; i < tcps->tcps_sc_cnt; i++)
 		tot_conn += tcps->tcps_sc[i]->tcp_sc_conn_cnt;
@@ -546,7 +547,6 @@ tcp_conn_reclaim(void *arg)
 	netstack_handle_t nh;
 	netstack_t *ns;
 	tcp_stack_t *tcps;
-	extern pgcnt_t lotsfree, needfree;
 
 	if (!tcp_do_reclaim)
 		return;

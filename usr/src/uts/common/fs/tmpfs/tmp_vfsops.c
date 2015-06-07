@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -155,8 +156,8 @@ _info(struct modinfo *modinfop)
  * There is also a per mount limit on the amount of swap space
  * (tmount.tm_anonmax) settable via a mount option.
  */
-size_t tmpfs_maxkmem = 0;
-size_t tmpfs_minfree = 0;
+volatile size_t tmpfs_maxkmem = 0;
+volatile size_t tmpfs_minfree = 0;
 size_t tmp_kmemspace;		/* bytes of kernel heap used by all tmpfs */
 
 static major_t tmpfs_major;

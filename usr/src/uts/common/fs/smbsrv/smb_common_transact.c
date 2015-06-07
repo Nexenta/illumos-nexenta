@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <smbsrv/smb_kproto.h>
@@ -30,6 +30,7 @@
 #include <smbsrv/string.h>
 #include <smbsrv/nmpipes.h>
 #include <smbsrv/mailslot.h>
+#include <smbsrv/winioctl.h>
 
 /*
  * count of bytes in server response packet
@@ -75,6 +76,11 @@ smb_com_transaction(smb_request_t *sr)
 	struct smb_xa *xa;
 	char *stn;
 	int ready;
+
+	if (!STYPE_ISIPC(sr->tid_tree->t_res_type)) {
+		smbsr_error(sr, 0, ERRDOS, ERRnoaccess);
+		return (SDRC_ERROR);
+	}
 
 	rc = smbsr_decode_vwv(sr, SMB_TRANSHDR_ED_FMT,
 	    &tpscnt, &tdscnt, &mprcnt, &mdrcnt, &msrcnt, &flags,
@@ -771,6 +777,8 @@ smb_encode_SHARE_INFO_2(struct mbuf_chain *output, struct mbuf_chain *text,
 int
 smb_trans_net_share_enum(struct smb_request *sr, struct smb_xa *xa)
 {
+	uint16_t pid_hi, pid_lo;
+
 	/*
 	 * Number of data bytes that will
 	 * be sent in the current response
@@ -905,6 +913,9 @@ smb_trans_net_share_enum(struct smb_request *sr, struct smb_xa *xa)
 		tot_packet_bytes = param_pad + param_scnt + data_pad +
 		    data_scnt;
 
+		pid_hi = sr->smb_pid >> 16;
+		pid_lo = (uint16_t)sr->smb_pid;
+
 		MBC_FLUSH(&reply);
 		(void) smb_mbc_encodef(&reply, SMB_HEADER_ED_FMT,
 		    sr->first_smb_com,
@@ -913,10 +924,10 @@ smb_trans_net_share_enum(struct smb_request *sr, struct smb_xa *xa)
 		    sr->smb_err,
 		    sr->smb_flg | SMB_FLAGS_REPLY,
 		    sr->smb_flg2,
-		    sr->smb_pid_high,
+		    pid_hi,
 		    sr->smb_sig,
 		    sr->smb_tid,
-		    sr->smb_pid,
+		    pid_lo,
 		    sr->smb_uid,
 		    sr->smb_mid);
 
@@ -1383,16 +1394,53 @@ is_supported_mailslot(const char *mailslot)
 }
 
 /*
- * Currently, just return false if the pipe is \\PIPE\repl.
- * Otherwise, return true.
+ * smb_trans_nmpipe
+ *
+ * This is used for RPC bind and request transactions.
+ *
+ * If the data available from the pipe is larger than the maximum
+ * data size requested by the client, return as much as requested.
+ * The residual data remains in the pipe until the client comes back
+ * with a read request or closes the pipe.
+ *
+ * When we read less than what's available, we MUST return the
+ * status NT_STATUS_BUFFER_OVERFLOW (or ERRDOS/ERROR_MORE_DATA)
  */
-static boolean_t
-is_supported_pipe(const char *pname)
+static smb_sdrc_t
+smb_trans_nmpipe(smb_request_t *sr, smb_xa_t *xa)
 {
-	if (smb_strcasecmp(pname, PIPE_REPL, 0) == 0)
-		return (B_FALSE);
+	smb_fsctl_t fsctl;
+	uint32_t status;
 
-	return (B_TRUE);
+	smbsr_lookup_file(sr);
+	if (sr->fid_ofile == NULL) {
+		smbsr_error(sr, NT_STATUS_INVALID_HANDLE,
+		    ERRDOS, ERRbadfid);
+		return (SDRC_ERROR);
+	}
+
+	/*
+	 * A little confusing perhaps, but the fsctl "input" is what we
+	 * write to the pipe (from the transaction "send" data), and the
+	 * fsctl "output" is what we read from the pipe (and becomes the
+	 * transaction receive data).
+	 */
+	fsctl.CtlCode = FSCTL_PIPE_TRANSCEIVE;
+	fsctl.InputCount = xa->smb_tdscnt; /* write count */
+	fsctl.OutputCount = 0; /* minimum to read from the pipe */
+	fsctl.MaxOutputResp = xa->smb_mdrcnt;	/* max to read */
+	fsctl.in_mbc = &xa->req_data_mb; /* write from here */
+	fsctl.out_mbc = &xa->rep_data_mb; /* read into here */
+
+	status = smb_opipe_fsctl(sr, &fsctl);
+	if (status) {
+		smbsr_status(sr, status, 0, 0);
+		if (NT_SC_SEVERITY(status) == NT_STATUS_SEVERITY_ERROR)
+			return (SDRC_ERROR);
+		/* Warnings like NT_STATUS_BUFFER_OVERFLOW are OK */
+	}
+
+	return (SDRC_SUCCESS);
 }
 
 static smb_sdrc_t
@@ -1405,9 +1453,8 @@ smb_trans_dispatch(smb_request_t *sr, smb_xa_t *xa)
 	uint16_t	devstate;
 	char		*req_fmt;
 	char		*rep_fmt;
-	smb_vdb_t	vdb;
 
-	if (xa->smb_suwcnt > 0 && STYPE_ISIPC(sr->tid_tree->t_res_type)) {
+	if (xa->smb_suwcnt > 0) {
 		rc = smb_mbc_decodef(&xa->req_setup_mb, "ww", &opcode,
 		    &sr->smb_fid);
 		if (rc != 0)
@@ -1422,26 +1469,11 @@ smb_trans_dispatch(smb_request_t *sr, smb_xa_t *xa)
 			break;
 
 		case TRANS_TRANSACT_NMPIPE:
-			smbsr_lookup_file(sr);
-			if (sr->fid_ofile == NULL) {
-				smbsr_error(sr, NT_STATUS_INVALID_HANDLE,
-				    ERRDOS, ERRbadfid);
-				return (SDRC_ERROR);
-			}
-
-			rc = smb_mbc_decodef(&xa->req_data_mb, "#B",
-			    xa->smb_tdscnt, &vdb);
-			if (rc != 0)
-				goto trans_err_not_supported;
-
-			rc = smb_opipe_transact(sr, &vdb.vdb_uio);
+			rc = smb_trans_nmpipe(sr, xa);
 			break;
 
 		case TRANS_WAIT_NMPIPE:
-			if (!is_supported_pipe(xa->xa_pipe_name)) {
-				smbsr_error(sr, 0, ERRDOS, ERRbadfile);
-				return (SDRC_ERROR);
-			}
+			delay(SEC_TO_TICK(1));
 			rc = SDRC_SUCCESS;
 			break;
 
@@ -1731,7 +1763,7 @@ smb_trans2_dispatch(smb_request_t *sr, smb_xa_t *xa)
 		/* Param off from hdr start */
 		data_off = param_off + n_param + data_pad;
 		fmt = "bww2.wwwwwwb.Cw#.C#.C";
-		nt_unknown_secret = data_pad;
+		nt_unknown_secret = (uint16_t)data_pad;
 	}
 
 	total_bytes = param_pad + n_param + data_pad + n_data;
@@ -1998,7 +2030,7 @@ smb_xa_complete(smb_xa_t *xa)
 smb_xa_t *
 smb_xa_find(
     smb_session_t	*session,
-    uint16_t		pid,
+    uint32_t		pid,
     uint16_t		mid)
 {
 	smb_xa_t	*xa;

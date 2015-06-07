@@ -20,6 +20,7 @@
  */
 
 /*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  */
@@ -122,15 +123,20 @@ lzc_ioctl(zfs_ioc_t ioc, const char *name,
 	zfs_cmd_t zc = { 0 };
 	int error = 0;
 	char *packed;
-	size_t size;
+	size_t size = 0;
 
 	ASSERT3S(g_refcount, >, 0);
 
-	(void) strlcpy(zc.zc_name, name, sizeof (zc.zc_name));
+	if (name != NULL)
+		(void) strlcpy(zc.zc_name, name, sizeof (zc.zc_name));
 
-	packed = fnvlist_pack(source, &size);
-	zc.zc_nvlist_src = (uint64_t)(uintptr_t)packed;
-	zc.zc_nvlist_src_size = size;
+	if (source != NULL) {
+		packed = fnvlist_pack(source, &size);
+		zc.zc_nvlist_src = (uint64_t)(uintptr_t)packed;
+		zc.zc_nvlist_src_size = size;
+	} else {
+		packed = NULL;
+	}
 
 	if (resultp != NULL) {
 		*resultp = NULL;
@@ -163,10 +169,59 @@ lzc_ioctl(zfs_ioc_t ioc, const char *name,
 		    zc.zc_nvlist_dst_size);
 	}
 
-out:
-	fnvlist_pack_free(packed, size);
 	free((void *)(uintptr_t)zc.zc_nvlist_dst);
+out:
+	if (packed != NULL)
+		fnvlist_pack_free(packed, size);
 	return (error);
+}
+
+int
+lzc_pool_stats(const char *poolname, nvlist_t **stats)
+{
+	if (poolname == NULL || stats == NULL)
+		return (EINVAL);
+
+	return (lzc_ioctl(ZFS_IOC_POOL_STATS_NVL, poolname, NULL, stats));
+}
+
+/*
+ * Generation IDs are used to determine whether the config is already known to
+ * the caller. If they match, the ioctl will return EEXIST and a NULL config. If
+ * we get back configs, we always extract and remove the generation number after
+ * update. We have to keep state via the generation number, which is passed back
+ * via configs, so neither can be NULL.
+ */
+int
+lzc_pool_configs(uint64_t *generation, nvlist_t **configs)
+{
+	nvlist_t *args;
+	int ret;
+
+	if (generation == NULL || configs == NULL)
+		return (EINVAL);
+
+	args = fnvlist_alloc();
+	fnvlist_add_uint64(args, "generation", *generation);
+	ret = lzc_ioctl(ZFS_IOC_POOL_CONFIGS_NVL, NULL, args, configs);
+	if (ret == 0) {
+		*generation = fnvlist_lookup_uint64(*configs, "_generation");
+		fnvlist_remove(*configs, "_generation");
+	} else {
+		ASSERT3P(configs, ==, NULL);
+	}
+	nvlist_free(args);
+
+	return (ret);
+}
+
+int
+lzc_pool_get_props(const char *poolname, nvlist_t **props)
+{
+	if (poolname == NULL || props == NULL)
+		return (EINVAL);
+
+	return (lzc_ioctl(ZFS_IOC_POOL_GET_PROPS_NVL, poolname, NULL, props));
 }
 
 int
@@ -318,6 +373,105 @@ lzc_snaprange_space(const char *firstsnap, const char *lastsnap,
 	return (err);
 }
 
+/* nvlist functions return pointers to nvlists, so we dup to extract */
+static nvlist_t *
+lzc_extract_nvl(nvlist_t *nvl, const char *propname)
+{
+	return (fnvlist_dup(fnvlist_lookup_nvlist(nvl, propname)));
+}
+
+/* nvlist functions return pointers to strings, so we copy to extract */
+static int
+lzc_extract_name(nvlist_t *nvl, const char *propname, char **name)
+{
+	int ret = 0;
+	char *p;
+
+	p = fnvlist_lookup_string(nvl, propname);
+	errno = 0;
+	if ((*name = strdup(p)) == NULL)
+		ret = errno;
+
+	return (ret);
+}
+
+/*
+ * We have to know our dataset and offset and optionally accept the name of the
+ * next snapshot and its stats and props.
+ */
+int
+lzc_snapshot_list_next(const char *dataset, uint64_t *offset, char **nextsnap,
+    nvlist_t **stats, nvlist_t **props)
+{
+	int ret;
+	nvlist_t *args, *result;
+
+	if (dataset == NULL || offset == NULL)
+		return (EINVAL);
+
+	args = fnvlist_alloc();
+	fnvlist_add_uint64(args, "offset", *offset);
+	if ((ret = lzc_ioctl(ZFS_IOC_SNAPSHOT_LIST_NEXT_NVL, dataset, args,
+	    &result)) == 0) {
+		if (nextsnap != NULL) {
+			if ((ret = lzc_extract_name(result, "nextsnap",
+			    nextsnap)) != 0)
+				goto out;
+		}
+		if (stats != NULL)
+			*stats = lzc_extract_nvl(result, "stats");
+		if (props != NULL)
+			*props = lzc_extract_nvl(result, "props");
+		*offset = fnvlist_lookup_uint64(result, "offset");
+	}
+
+out:
+	if (result != NULL)
+		nvlist_free(result);
+	nvlist_free(args);
+
+	return (ret);
+}
+
+/*
+ * Dataset name alone can be used alone for an existence test. We can ignore
+ * stats and props. type is optional to verify type and existence. If type is
+ * specified but a dataset of the same name but different type exists, returns
+ * EEXIST, setting only type, indicating actual.
+ */
+int
+lzc_objset_stats(const char *dataset, dmu_objset_type_t *type, nvlist_t **stats,
+    nvlist_t **props)
+{
+	int ret;
+	nvlist_t *args = NULL;
+	nvlist_t *result;
+
+	if (dataset == NULL)
+		return (EINVAL);
+	if (type != NULL) {
+		args = fnvlist_alloc();
+		fnvlist_add_uint8(args, "type", (uint8_t)*type);
+	}
+	ret = lzc_ioctl(ZFS_IOC_OBJSET_STATS_NVL, dataset, args, &result);
+	if (args != NULL)
+		nvlist_free(args);
+	if (ret == 0) {
+		if (stats != NULL)
+			*stats = lzc_extract_nvl(result, "stats");
+		if (props != NULL)
+			*props = lzc_extract_nvl(result, "props");
+	} else if (ret != EEXIST) {
+		return (ret);
+	}
+	if (type != NULL)
+		*type = fnvlist_lookup_uint8_t(result, "type");
+	if (result != NULL)
+		nvlist_free(result);
+
+	return (ret);
+}
+
 boolean_t
 lzc_exists(const char *dataset)
 {
@@ -329,6 +483,13 @@ lzc_exists(const char *dataset)
 
 	(void) strlcpy(zc.zc_name, dataset, sizeof (zc.zc_name));
 	return (ioctl(g_fd, ZFS_IOC_OBJSET_STATS, &zc) == 0);
+}
+
+boolean_t
+lzc_has_snaps(const char *dataset)
+{
+	uint64_t offset = 0;
+	return (lzc_snapshot_list_next(dataset, &offset, NULL, NULL, NULL));
 }
 
 /*

@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2014, 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -945,6 +945,22 @@ iscsit_rx_pdu_error(idm_conn_t *ic, idm_pdu_t *rx_pdu, idm_status_t status)
 	idm_pdu_complete(rx_pdu, IDM_STATUS_SUCCESS);
 }
 
+/*
+ * iscsit_rx_scsi_rsp -- cause the connection to be closed if response rx'd
+ *
+ * A target sends an SCSI Response PDU, it should never receive one.
+ * This has been seen when running the Codemonicon suite of tests which
+ * does negative testing of the protocol. If such a condition occurs using
+ * a normal initiator it most likely means there's data corruption in the
+ * header and that's grounds for dropping the connection as well.
+ */
+void
+iscsit_rx_scsi_rsp(idm_conn_t *ic, idm_pdu_t *rx_pdu)
+{
+	idm_pdu_complete(rx_pdu, IDM_STATUS_SUCCESS);
+	idm_conn_event(ic, CE_TRANSPORT_FAIL, NULL);
+}
+
 void
 iscsit_task_aborted(idm_task_t *idt, idm_status_t status)
 {
@@ -1208,6 +1224,7 @@ iscsit_conn_accept(idm_conn_t *ic)
 	mutex_init(&ict->ict_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&ict->ict_statsn_mutex, NULL, MUTEX_DRIVER, NULL);
 	idm_refcnt_init(&ict->ict_refcnt, ict);
+	idm_refcnt_init(&ict->ict_dispatch_refcnt, ict);
 
 	/*
 	 * Initialize login state machine
@@ -1369,13 +1386,10 @@ iscsit_conn_destroy(idm_conn_t *ic)
 
 	/* Generate session state machine event */
 	if (ict->ict_sess != NULL) {
-		/*
-		 * Session state machine will call iscsit_conn_destroy_done()
-		 * when it has removed references to this connection.
-		 */
 		iscsit_sess_sm_event(ict->ict_sess, SE_CONN_FAIL, ict);
 	}
 
+	idm_refcnt_wait_ref(&ict->ict_dispatch_refcnt);
 	idm_refcnt_wait_ref(&ict->ict_refcnt);
 	/*
 	 * The session state machine does not need to post
@@ -1391,6 +1405,7 @@ iscsit_conn_destroy(idm_conn_t *ic)
 	iscsit_text_cmd_fini(ict);
 
 	mutex_destroy(&ict->ict_mutex);
+	idm_refcnt_destroy(&ict->ict_dispatch_refcnt);
 	idm_refcnt_destroy(&ict->ict_refcnt);
 	kmem_free(ict, sizeof (*ict));
 
@@ -1944,6 +1959,21 @@ iscsit_op_scsi_cmd(idm_conn_t *ic, idm_pdu_t *rx_pdu)
 	iscsit_process_pdu_in_queue(ict->ict_sess);
 }
 
+static int
+iscsit_validate_idm_pdu(idm_pdu_t *rx_pdu)
+{
+	iscsi_scsi_cmd_hdr_t	*iscsi_scsi =
+	    (iscsi_scsi_cmd_hdr_t *)rx_pdu->isp_hdr;
+
+	if ((iscsi_scsi->scb[0] == SCMD_READ) ||
+	    (iscsi_scsi->scb[0] == SCMD_READ_G1) ||
+	    (iscsi_scsi->scb[0] == SCMD_READ_G4)) {
+		if (iscsi_scsi->flags & ISCSI_FLAG_CMD_WRITE)
+			return (IDM_STATUS_FAIL);
+	}
+	return (IDM_STATUS_SUCCESS);
+}
+
 /*
  * ISCSI protocol
  */
@@ -1961,6 +1991,15 @@ iscsit_post_scsi_cmd(idm_conn_t *ic, idm_pdu_t *rx_pdu)
 	uint16_t		addl_cdb_len = 0;
 
 	ict = ic->ic_handle;
+	if (iscsit_validate_idm_pdu(rx_pdu) != IDM_STATUS_SUCCESS) {
+		/* Finish processing request */
+		iscsit_set_cmdsn(ict, rx_pdu);
+
+		iscsit_send_direct_scsi_resp(ict, rx_pdu,
+		    ISCSI_STATUS_CMD_COMPLETED, STATUS_CHECK);
+		idm_pdu_complete(rx_pdu, IDM_STATUS_PROTOCOL_ERROR);
+		return;
+	}
 
 	itask = iscsit_task_alloc(ict);
 	if (itask == NULL) {
@@ -2392,9 +2431,10 @@ iscsit_op_scsi_task_mgmt(iscsit_conn_t *ict, idm_pdu_t *rx_pdu)
 			if (iscsit_cmdsn_in_window(ict, refcmdsn) &&
 			    iscsit_sna_lt(refcmdsn, cmdsn)) {
 				mutex_enter(&ict->ict_sess->ist_sn_mutex);
-				(void) iscsit_remove_pdu_from_queue(
-				    ict->ict_sess, refcmdsn);
-				iscsit_conn_dispatch_rele(ict);
+				if (iscsit_remove_pdu_from_queue(
+				    ict->ict_sess, refcmdsn)) {
+					iscsit_conn_dispatch_rele(ict);
+				}
 				mutex_exit(&ict->ict_sess->ist_sn_mutex);
 				iscsit_send_task_mgmt_resp(tm_resp_pdu,
 				    SCSI_TCP_TM_RESP_COMPLETE);

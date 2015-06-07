@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
  */
@@ -168,6 +168,7 @@ extern int aok;
 #define	kpreempt(x)	yield()
 
 typedef struct kthread kthread_t;
+typedef uint64_t kt_did_t;
 
 #define	thread_create(stk, stksize, func, arg, len, pp, state, pri)	\
 	zk_thread_create(func, arg)
@@ -466,6 +467,8 @@ extern int fop_getattr(vnode_t *vp, vattr_t *vap);
 #define	VOP_GETATTR(vp, vap, fl, cr, ct)  fop_getattr((vp), (vap));
 
 #define	VOP_FSYNC(vp, f, cr, ct)	fsync((vp)->v_fd)
+#define	VOP_SPACE(vp, cmd, flck, fl, off, cr, ct) \
+	fcntl((vp)->v_fd, cmd, (flck), sizeof (*(flck)))
 
 #define	VN_RELE(vp)	vn_close(vp)
 
@@ -493,6 +496,8 @@ extern vnode_t *rootdir;
 #define	hz	119	/* frequency when using gethrtime() >> 23 for lbolt */
 
 extern void delay(clock_t ticks);
+extern timeout_id_t timeout(void (*)(void *), void *, clock_t);
+extern clock_t untimeout(timeout_id_t);
 
 #define	SEC_TO_TICK(sec)	((sec) * hz)
 #define	NSEC_TO_TICK(usec)	((usec) / (NANOSEC / hz))

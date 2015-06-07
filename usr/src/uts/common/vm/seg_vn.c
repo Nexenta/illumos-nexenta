@@ -308,7 +308,7 @@ svntr_cache_constructor(void *buf, void *cdrarg, int kmflags)
  * that have been transformed into malicious agents using one of the
  * numerous "buffer overflow" attacks.  See 4007890.
  */
-int noexec_user_stack = 0;
+volatile int noexec_user_stack = 0;
 int noexec_user_stack_log = 1;
 
 int segvn_lpg_disable = 0;

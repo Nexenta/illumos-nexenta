@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef _SYS_DDT_H
@@ -51,6 +52,17 @@ enum ddt_class {
 	DDT_CLASS_DUPLICATE,
 	DDT_CLASS_UNIQUE,
 	DDT_CLASSES
+};
+
+/*
+ * Tracks whether a DDE is loading or already loaded and
+ * which entries got removed from dedup path to support dedup ceiling
+ */
+enum dde_state {
+	DDE_LOADING	= (1 << 0),
+	DDE_LOADED	= (1 << 1),
+	DDE_NEW		= (1 << 2),
+	DDE_DONT_SYNC	= (1 << 3),
 };
 
 #define	DDT_TYPE_CURRENT		0
@@ -109,20 +121,26 @@ struct ddt_entry {
 	ddt_phys_t	dde_phys[DDT_PHYS_TYPES];
 	zio_t		*dde_lead_zio[DDT_PHYS_TYPES];
 	void		*dde_repair_data;
+	ddt_stat_t	dde_lkstat;
 	enum ddt_type	dde_type;
 	enum ddt_class	dde_class;
-	uint8_t		dde_loading;
-	uint8_t		dde_loaded;
+	uint8_t		dde_state;
 	kcondvar_t	dde_cv;
+	kmutex_t	dde_lock;
 	avl_node_t	dde_node;
 };
+
+#define	DDT_HASHSZ		0x100
+#define	DDT_HASHFN(csum)	(*((uint8_t *)&(csum).zc_word[0]) & \
+	    (DDT_HASHSZ - 1))
 
 /*
  * In-core ddt
  */
 struct ddt {
-	kmutex_t	ddt_lock;
-	avl_tree_t	ddt_tree;
+	kmutex_t	ddt_lock[DDT_HASHSZ];
+	avl_tree_t	ddt_tree[DDT_HASHSZ];
+	kmutex_t	ddt_repair_lock;
 	avl_tree_t	ddt_repair_tree;
 	enum zio_checksum ddt_checksum;
 	spa_t		*ddt_spa;
@@ -162,7 +180,7 @@ typedef struct ddt_ops {
 	    dmu_tx_t *tx);
 	int (*ddt_op_walk)(objset_t *os, uint64_t object, ddt_entry_t *dde,
 	    uint64_t *walk);
-	uint64_t (*ddt_op_count)(objset_t *os, uint64_t object);
+	int (*ddt_op_count)(objset_t *os, uint64_t object, uint64_t *count);
 } ddt_ops_t;
 
 #define	DDT_NAMELEN	80
@@ -171,8 +189,8 @@ extern void ddt_object_name(ddt_t *ddt, enum ddt_type type,
     enum ddt_class class, char *name);
 extern int ddt_object_walk(ddt_t *ddt, enum ddt_type type,
     enum ddt_class class, uint64_t *walk, ddt_entry_t *dde);
-extern uint64_t ddt_object_count(ddt_t *ddt, enum ddt_type type,
-    enum ddt_class class);
+extern int ddt_object_count(ddt_t *ddt, enum ddt_type type,
+    enum ddt_class class, uint64_t *count);
 extern int ddt_object_info(ddt_t *ddt, enum ddt_type type,
     enum ddt_class class, dmu_object_info_t *);
 extern boolean_t ddt_object_exists(ddt_t *ddt, enum ddt_type type,
@@ -214,8 +232,10 @@ extern size_t ddt_compress(void *src, uchar_t *dst, size_t s_len, size_t d_len);
 extern void ddt_decompress(uchar_t *src, void *dst, size_t s_len, size_t d_len);
 
 extern ddt_t *ddt_select(spa_t *spa, const blkptr_t *bp);
-extern void ddt_enter(ddt_t *ddt);
-extern void ddt_exit(ddt_t *ddt);
+extern void ddt_enter(ddt_t *ddt, uint8_t hash);
+extern void ddt_exit(ddt_t *ddt, uint8_t hash);
+extern void dde_enter(ddt_entry_t *dde);
+extern void dde_exit(ddt_entry_t *dde);
 extern ddt_entry_t *ddt_lookup(ddt_t *ddt, const blkptr_t *bp, boolean_t add);
 extern void ddt_prefetch(spa_t *spa, const blkptr_t *bp);
 extern void ddt_remove(ddt_t *ddt, ddt_entry_t *dde);
@@ -235,6 +255,8 @@ extern void ddt_sync(spa_t *spa, uint64_t txg);
 extern int ddt_walk(spa_t *spa, ddt_bookmark_t *ddb, ddt_entry_t *dde);
 extern int ddt_object_update(ddt_t *ddt, enum ddt_type type,
     enum ddt_class class, ddt_entry_t *dde, dmu_tx_t *tx);
+extern void ddt_init(void);
+extern void ddt_fini(void);
 
 extern const ddt_ops_t ddt_zap_ops;
 

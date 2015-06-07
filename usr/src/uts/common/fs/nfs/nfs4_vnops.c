@@ -369,17 +369,17 @@ void *lockt_denied_debug;
  */
 static int confirm_retry_sec = 30;
 
-static int nfs4_lookup_neg_cache = 1;
+volatile int nfs4_lookup_neg_cache = 1;
 
 /*
  * number of pages to read ahead
  * optimized for 100 base-T.
  */
-static int nfs4_nra = 4;
+volatile int nfs4_nra = 4;
 
-static int nfs4_do_symlink_cache = 1;
+volatile int nfs4_do_symlink_cache = 1;
 
-static int nfs4_pathconf_disable_cache = 0;
+volatile int nfs4_pathconf_disable_cache = 0;
 
 /*
  * These are the vnode ops routines which implement the vnode interface to

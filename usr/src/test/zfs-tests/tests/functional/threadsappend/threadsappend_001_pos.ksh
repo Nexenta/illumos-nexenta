@@ -53,7 +53,7 @@ log_assert "Ensure multiple threads performing write appends to the same" \
 # size of the file after all the threads have appended to it
 #
 typeset -i FILE_SIZE=1310720
-THREADSAPPEND="$STF_SUITE/tests/functional/threadsappend/threadsappend"
+THREADSAPPEND="$STF_SUITE/bin/threadsappend"
 TESTFILE='testfile-threadsappend'
 
 #

@@ -22,6 +22,9 @@
  *	Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  *	Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -387,7 +390,7 @@ typedef struct nfs4_opinst {
 
 #ifdef _KERNEL
 
-extern long nrnode;
+extern volatile long nrnode;
 
 /* Used for r_delay_interval */
 #define	NFS4_INITIAL_DELAY_INTERVAL	 1

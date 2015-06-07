@@ -21,8 +21,8 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -49,6 +49,7 @@
 #include <sys/metaslab_impl.h>
 #include <sys/arc.h>
 #include <sys/ddt.h>
+#include <sys/cos.h>
 #include "zfs_prop.h"
 #include "zfeature_common.h"
 
@@ -283,6 +284,12 @@ boolean_t zfs_recover = B_FALSE;
  * leaking space in the "partial temporary" failure case.
  */
 boolean_t zfs_free_leak_on_eio = B_FALSE;
+
+/*
+ * alpha for spa_update_latency() rolling average of pool latency, which
+ * is updated on every txg commit.
+ */
+int64_t zfs_root_latency_alpha = 10;
 
 /*
  * Expiration time in milliseconds. This value has two meanings. First it is
@@ -560,12 +567,19 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	mutex_init(&spa->spa_suspend_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_vdev_top_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&spa->spa_iokstat_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_cos_props_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_vdev_props_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_wrc.wrc_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_wrc_route.route_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&spa->spa_perfmon.perfmon_lock, NULL, MUTEX_DEFAULT, NULL);
 
 	cv_init(&spa->spa_async_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_evicting_os_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_proc_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_scrub_io_cv, NULL, CV_DEFAULT, NULL);
 	cv_init(&spa->spa_suspend_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&spa->spa_wrc.wrc_cv, NULL, CV_DEFAULT, NULL);
+	cv_init(&spa->spa_perfmon.perfmon_cv, NULL, CV_DEFAULT, NULL);
 
 	for (int t = 0; t < TXG_SIZE; t++)
 		bplist_create(&spa->spa_free_bplist[t]);
@@ -648,6 +662,25 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 
 	spa->spa_debug = ((zfs_flags & ZFS_DEBUG_SPA) != 0);
 
+	spa_cos_init(spa);
+
+	list_create(&spa->spa_wrc.wrc_blocks, sizeof (wrc_block_t),
+	    offsetof(wrc_block_t, node));
+	spa->spa_wrc.wrc_block_count = 0;
+	spa->spa_wrc.wrc_thread = NULL;
+	spa->spa_wrc_route.route_special = 0;
+	spa->spa_wrc_route.route_normal = 0;
+	spa->spa_wrc_route.route_perc = 0;
+
+	bzero(&(spa->spa_special_stat), sizeof (spa_special_stat_t));
+	spa->spa_special_stat_rotor = 0;
+	spa->spa_special_to_normal_ratio = SPA_SPECIAL_RATIO;
+	spa->spa_dedup_percentage = 100;
+	spa->spa_dedup_rotor = 0;
+
+	spa->spa_perfmon.perfmon_thread = NULL;
+	spa->spa_perfmon.perfmon_thr_exit = B_FALSE;
+
 	spa->spa_min_ashift = INT_MAX;
 	spa->spa_max_ashift = 0;
 
@@ -695,6 +728,9 @@ spa_remove(spa_t *spa)
 	}
 
 	list_destroy(&spa->spa_config_list);
+	list_destroy(&spa->spa_wrc.wrc_blocks);
+
+	spa_cos_fini(spa);
 
 	nvlist_free(spa->spa_label_features);
 	nvlist_free(spa->spa_load_info);
@@ -721,6 +757,8 @@ spa_remove(spa_t *spa)
 	cv_destroy(&spa->spa_proc_cv);
 	cv_destroy(&spa->spa_scrub_io_cv);
 	cv_destroy(&spa->spa_suspend_cv);
+	cv_destroy(&spa->spa_wrc.wrc_cv);
+	cv_destroy(&spa->spa_perfmon.perfmon_cv);
 
 	mutex_destroy(&spa->spa_async_lock);
 	mutex_destroy(&spa->spa_errlist_lock);
@@ -733,6 +771,11 @@ spa_remove(spa_t *spa)
 	mutex_destroy(&spa->spa_suspend_lock);
 	mutex_destroy(&spa->spa_vdev_top_lock);
 	mutex_destroy(&spa->spa_iokstat_lock);
+	mutex_destroy(&spa->spa_cos_props_lock);
+	mutex_destroy(&spa->spa_vdev_props_lock);
+	mutex_destroy(&spa->spa_wrc.wrc_lock);
+	mutex_destroy(&spa->spa_wrc_route.route_lock);
+	mutex_destroy(&spa->spa_perfmon.perfmon_lock);
 
 	kmem_free(spa, sizeof (spa_t));
 }
@@ -1104,6 +1147,7 @@ spa_vdev_config_exit(spa_t *spa, vdev_t *vd, uint64_t txg, int error, char *tag)
 	 */
 	ASSERT(metaslab_class_validate(spa_normal_class(spa)) == 0);
 	ASSERT(metaslab_class_validate(spa_log_class(spa)) == 0);
+	ASSERT(metaslab_class_validate(spa_special_class(spa)) == 0);
 
 	spa_config_exit(spa, SCL_ALL, spa);
 
@@ -1628,6 +1672,18 @@ spa_get_asize(spa_t *spa, uint64_t lsize)
 }
 
 /*
+ * Get either on disk (phys == B_TRUE) or possible in core DDT size
+ */
+uint64_t
+spa_get_ddts_size(spa_t *spa, boolean_t phys)
+{
+	if (phys)
+		return (spa->spa_ddt_dsize);
+
+	return (spa->spa_ddt_msize);
+}
+
+/*
  * Return the amount of slop space in bytes.  It is 1/32 of the pool (3.2%),
  * or at least 32MB.
  *
@@ -1651,6 +1707,56 @@ spa_update_dspace(spa_t *spa)
 	spa->spa_dspace = metaslab_class_get_dspace(spa_normal_class(spa)) +
 	    ddt_get_dedup_dspace(spa);
 }
+
+/*
+ * EXPERIMENTAL
+ * Use exponential moving average to track root vdev iotime, as well as top
+ * level vdev iotime.
+ * The principle: avg_new = avg_prev + (cur - avg_prev) * a / 100; a is
+ * tuneable. For example, if a = 10 (alpha = 0.1), it will take 20 iterations,
+ * or 100 seconds at 5 second txg commit intervals for the values from last 20
+ * iterations to account for 66% of the moving average.
+ * Currently, the challenge is that we keep track of iotime in cumulative
+ * nanoseconds since zpool import, both for leaf and top vdevs, so a way of
+ * getting delta pre/post txg commit is required.
+ */
+
+void
+spa_update_latency(spa_t *spa)
+{
+	vdev_t *rvd = spa->spa_root_vdev;
+	vdev_stat_t *rvs = &rvd->vdev_stat;
+	for (int c = 0; c < rvd->vdev_children; c++) {
+		vdev_t *cvd = rvd->vdev_child[c];
+		vdev_stat_t *cvs = &cvd->vdev_stat;
+		mutex_enter(&rvd->vdev_stat_lock);
+
+		for (int t = 0; t < ZIO_TYPES; t++) {
+
+			/*
+			 * Non-trivial bit here. We update the moving latency
+			 * average for each child vdev separately, but since we
+			 * want the average to settle at the same rate
+			 * regardless of top level vdev count, we effectively
+			 * divide our alpha by number of children of the root
+			 * vdev to account for that.
+			 */
+			zfs_dbgmsg("RLO %llu d %lld t %d t_d %llu",
+			    rvs->vs_latency[t], ((((int64_t)cvs->vs_latency[t] -
+			    (int64_t)rvs->vs_latency[t]) *
+			    (int64_t)zfs_root_latency_alpha) / 100) /
+			    (int64_t)rvd->vdev_children, t, cvs->vs_latency[t]);
+
+
+			rvs->vs_latency[t] += ((((int64_t)cvs->vs_latency[t] -
+			    (int64_t)rvs->vs_latency[t]) *
+			    (int64_t)zfs_root_latency_alpha) / 100) /
+			    (int64_t)(rvd->vdev_children);
+		}
+		mutex_exit(&rvd->vdev_stat_lock);
+	}
+}
+
 
 /*
  * Return the failure mode that has been set to this pool. The default
@@ -1690,6 +1796,12 @@ metaslab_class_t *
 spa_log_class(spa_t *spa)
 {
 	return (spa->spa_log_class);
+}
+
+metaslab_class_t *
+spa_special_class(spa_t *spa)
+{
+	return (spa->spa_special_class);
 }
 
 void
@@ -1743,6 +1855,12 @@ uint64_t
 spa_deadman_synctime(spa_t *spa)
 {
 	return (spa->spa_deadman_synctime);
+}
+
+spa_force_trim_t
+spa_get_force_trim(spa_t *spa)
+{
+	return (spa->spa_force_trim);
 }
 
 uint64_t
@@ -1839,6 +1957,14 @@ spa_init(int mode)
 
 	spa_mode_global = mode;
 
+	/*
+	 * logevent_max_q_sz from log_sysevent.c gives us upper bound on
+	 * the number of taskq entries; queueing of sysevents is serialized,
+	 * so there is no need for more than one worker thread
+	 */
+	spa_sysevent_taskq = taskq_create("spa_sysevent_tq", 1,
+	    minclsyspri, 1, 5000, TASKQ_DYNAMIC);
+
 #ifdef _KERNEL
 	spa_arch_init();
 #else
@@ -1863,13 +1989,18 @@ spa_init(int mode)
 	zfs_prop_init();
 	zpool_prop_init();
 	zpool_feature_init();
+	vdev_prop_init();
+	cos_prop_init();
 	spa_config_load();
 	l2arc_start();
+	ddt_init();
 }
 
 void
 spa_fini(void)
 {
+	ddt_fini();
+
 	l2arc_stop();
 
 	spa_evict_all();
@@ -1881,6 +2012,8 @@ spa_fini(void)
 	range_tree_fini();
 	unique_fini();
 	refcount_fini();
+
+	taskq_destroy(spa_sysevent_taskq);
 
 	avl_destroy(&spa_namespace_avl);
 	avl_destroy(&spa_spare_avl);
@@ -1935,6 +2068,12 @@ boolean_t
 spa_has_pending_synctask(spa_t *spa)
 {
 	return (!txg_all_lists_empty(&spa->spa_dsl_pool->dp_sync_tasks));
+}
+
+boolean_t
+spa_has_special(spa_t *spa)
+{
+	return (spa->spa_special_class->mc_rotor != NULL);
 }
 
 int

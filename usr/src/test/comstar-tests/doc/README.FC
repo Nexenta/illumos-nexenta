@@ -1,0 +1,155 @@
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# ident	"@(#)README.FC	1.6	09/04/14 SMI"
+#
+
+DESCRIPTION:
+===========
+This test suite is mainly designed to test the functionality of COMSTAR 
+(Common Multiprotocol SCSI Target) 
+
+PREREQUISITES:
+============
+1. test configuration need FC Initiator and FC Target hosts, which are 
+   both connected with Qlogic Switch. FC Initiator Host will reboot 
+   itself automatically during Fault Injection testing.
+
+2. FC Target Host should NOT have any existing LUs and related configuration 
+   information such as target group, host group, view entry and mapping 
+   association before test execution. 
+
+3. FC Target Host should disable other target port providers like disable 
+   SMF service /network/iscsi/target, disable smf serverice /system/iscsitgt.
+   Otherwise, unexpected test failures will result.
+
+4. FC Initiator Host should NOT probe any LUs except FC Target Host and 
+   be bound to only one FC Target Host for testing.
+
+5. The SUNWstc-tetlite test harness package is required to be installed, 
+   or be accessible via nfs.
+
+6. FC Initiator and Target hosts should accept rcp and rsh calls from 
+   test hosts.
+
+7. FC Initiator Host requires that the following package(s) are 
+   installed on the test host:
+        - SUNWdiskomizer 
+                location of latest version and install instructions at:
+               	http://diskomizer.eng/latest/Downloading_Diskomizer.html
+               	pkgadd -d http://diskomizer.eng.sun.com/6.1GA/SUNWdiskomizer.pkg
+	 The SunWdiskomizer pkg must be installed in the default directory:
+	 /opt/SUNWdiskomizer 
+
+8. For QLOGIC HBA, it's mandatory to switch into target mode by manual 
+   procedures after OS refresh installation. Please refer to the web page 
+   on opensolaris.org:
+        http://www.opensolaris.org/os/project/comstar/Documentation/AdminGuide
+
+It is assumed that following INSTALLATION, CONFIGURATION, EXECUTION steps are 
+performed in a single shell environment. If they are performed in different
+shell environment, please set up CTI_ROOT and PATH properly.
+
+
+CTI-TET PACKAGE INSTALLATION:
+=============================
+As root do the following :
+	pkgadd -d /ws/stcnv-gate/packages/`uname -p` SUNWstc-tetlite
+
+It is also acceptable to use an NFS-accessible location of the tetlite package.
+
+TEST SUITE INSTALLATION:
+=======================
+The test suite can be installed locally to the testing system or
+accessed via nfs over the network from a server.  To install the
+test root, as root do:
+	pkgadd -d /ws/stcnv-gate/packages/`uname -p` SUNWstc-storage-comstar
+
+It is also acceptable to use an NFS accessible location of the test suite
+package.
+
+ALTERNATIVELY, the test suite source can be installed and built.  To
+build the test suite source, as any user, do:
+	$ workspace create /export/STC	(example path)
+	$ bringover -p /ws/stcnv-gate -w /export/STC usr/closed/suites/storage/comstar
+	$ CTI_ROOT=/opt/SUNWstc-tetlite/contrib/ctitools
+	$ PATH=$CTI_ROOT/bin:$PATH
+	$ cd /export/STC/usr/closed/suites/storage/comstar
+	$ /usr/ccs/bin/make
+
+To install test suite binaries in the proto tree, do
+	$ /usr/ccs/bin/make install
+To create installable test suite packages, do
+	$ /usr/ccs/bin/make package
+
+TEST SUITE CONFIGURATION:
+=========================
+Test suite configuration must be done as root.
+	
+1. Set up the following environment variables
+	# CTI_ROOT=/opt/SUNWstc-tetlite/contrib/ctitools
+	# PATH=$CTI_ROOT/bin:$PATH
+
+2. To configure the test suite :
+
+# run_test \
+  -v FC_IHOST=<FC Initiator IP Addr> \
+  -v EXPECT=<EXPECT Script Parser Location> \
+  -v "BDEVS=\"<Block disk device list separated by space>\"" \ 
+  	(Example: -v "BDEVS=\"/dev/dsk/c0t1d0s2 /dev/dsk/c0t2d0s2\"")
+  -v "RDEVS=\"<Raw disk device list separated by space>\"" \ 
+  	(Example: -v "RDEVS=\"/dev/rdsk/c0t1d0s2 /dev/rdsk/c0t2d0s2\"")
+  -v FC_TARGET_SWITCH_PORT=<FC Switch Model:FC Switch IP:Admin:Passwd:Port1,Port2...> \
+	(Example: -v FC_TARGET_SWITCH_PORT=QLOGIC:127.0.0.1:admin:password:1,2)
+  comstar-tests fc_configure
+
+The configuration file will be created as a result of the arguments specified 
+in the run_test command line.  There is no need to manually edit the 
+configuration file as is required by some of the other test suites. 
+
+Other configurable variables that can be set in the configuration line :
+
+FC_IHOST	- [ fc initiator host ip address ] is a must
+		- only supports one fc initiator host nowadays
+
+EXPECT		- [ Expect script parser location ] is optional
+		- defaults to /usr/bin/expect
+
+BDEVS		- [ block disk device list ] is a must
+
+RDEVS		- [ raw disk device list ] is a must
+
+FC_TARGET_SWITCH_PORT
+		- [ fc target host topology in fabric switch ] is a must
+		- QLOGIC and BROCADE fabric switches are supported
+		- for fault injection testing of target side cable pull 
+
+TEST SUITE EXECUTION :
+====================
+The test suite execution is required to be done as root.
+
+To run the entire test suite do the following.
+
+# run_test comstar-tests fc
+
+To execute individual scenarios (sbdadm stmfadm misc fcinfo libstmf)
+
+# run_test comstar-tests <scenario>
+
+# run_test comstar-tests sbdadm
+
+To execute Test Purposes within a scenario :
+
+# run_test comstar-tests sbdadm/<test case dir>:<test purpose number>
+
+# run_test comstar-tests sbdadm/create:1
+# run_test comstar-tests stmfadm/create:1-2
+# run_test comstar-tests fc/fault/forcelip:1,2
+
+Test case directories are sbdadm, stmfadm, misc, fault, and libstmf
+
+TEST SUITE UNCONFIGURE :
+======================
+
+# run_test comstar-tests fc_unconfigure

@@ -22,7 +22,7 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"%Z%%M%	%I%	%E% SMI"
+# Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
 #
 
 LIBRARY =	libnss_files.a
@@ -35,6 +35,7 @@ OBJECTS =	bootparams_getbyname.o	\
 		gethostent.o		\
 		gethostent6.o		\
 		getnetent.o		\
+		getnetgrent.o		\
 		getprojent.o		\
 		getprotoent.o		\
 		getpwnam.o		\

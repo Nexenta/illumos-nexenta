@@ -18,11 +18,12 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2012, Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
@@ -33,6 +34,7 @@
 #include <sys/sunddi.h>
 #include <sys/modctl.h>
 #include <sys/scsi/scsi.h>
+#include <sys/scsi/generic/commands.h>
 #include <sys/scsi/generic/persist.h>
 #include <sys/scsi/impl/scsi_reset_notify.h>
 #include <sys/disp.h>
@@ -192,9 +194,10 @@ volatile int	stmf_default_task_timeout = 75;
  */
 volatile int	stmf_allow_modunload = 0;
 
-volatile int stmf_max_nworkers = 256;
-volatile int stmf_min_nworkers = 4;
-volatile int stmf_worker_scale_down_delay = 20;
+volatile uint8_t	stmf_enable_scaledown = 0;
+volatile int stmf_max_nworkers = 1024;
+volatile int stmf_min_nworkers = 128;
+volatile int stmf_worker_scale_down_delay = 90;
 
 /* === [ Debugging and fault injection ] === */
 #ifdef	DEBUG
@@ -227,7 +230,7 @@ static int stmf_nworkers_cur;		/* # of workers currently running */
 static int stmf_nworkers_needed;	/* # of workers need to be running */
 static int stmf_worker_sel_counter = 0;
 static uint32_t stmf_cur_ntasks = 0;
-static clock_t stmf_wm_last = 0;
+static clock_t stmf_wm_next = 0;
 /*
  * This is equal to stmf_nworkers_cur while we are increasing # workers and
  * stmf_nworkers_needed while we are decreasing the worker count.
@@ -4101,15 +4104,6 @@ stmf_task_alloc(struct stmf_local_port *lport, stmf_scsi_session_t *ss,
 			return (NULL);
 		}
 		task->task_lu = lu;
-		l = task->task_lun_no;
-		l[0] = lun[0];
-		l[1] = lun[1];
-		l[2] = lun[2];
-		l[3] = lun[3];
-		l[4] = lun[4];
-		l[5] = lun[5];
-		l[6] = lun[6];
-		l[7] = lun[7];
 		task->task_cdb = (uint8_t *)task->task_port_private;
 		if ((ulong_t)(task->task_cdb) & 7ul) {
 			task->task_cdb = (uint8_t *)(((ulong_t)
@@ -4119,6 +4113,22 @@ stmf_task_alloc(struct stmf_local_port *lport, stmf_scsi_session_t *ss,
 		itask->itask_cdb_buf_size = cdb_length;
 		mutex_init(&itask->itask_audit_mutex, NULL, MUTEX_DRIVER, NULL);
 	}
+
+	/*
+	 * Since a LUN can be mapped as different LUN ids to different initiator
+	 * groups, we need to set LUN id for a new task and reset LUN id for
+	 * a reused task.
+	 */
+	l = task->task_lun_no;
+	l[0] = lun[0];
+	l[1] = lun[1];
+	l[2] = lun[2];
+	l[3] = lun[3];
+	l[4] = lun[4];
+	l[5] = lun[5];
+	l[6] = lun[6];
+	l[7] = lun[7];
+
 	task->task_session = ss;
 	task->task_lport = lport;
 	task->task_cdb_length = cdb_length_in;
@@ -4128,6 +4138,8 @@ stmf_task_alloc(struct stmf_local_port *lport, stmf_scsi_session_t *ss,
 	itask->itask_lport_read_time = itask->itask_lport_write_time = 0;
 	itask->itask_read_xfer = itask->itask_write_xfer = 0;
 	itask->itask_audit_index = 0;
+	bzero(&itask->itask_audit_records[0],
+	    sizeof (stmf_task_audit_rec_t) * ITASK_TASK_AUDIT_DEPTH);
 
 	if (new_task) {
 		if (lu->lu_task_alloc(task) != STMF_SUCCESS) {
@@ -4168,6 +4180,7 @@ stmf_task_alloc(struct stmf_local_port *lport, stmf_scsi_session_t *ss,
 	return (task);
 }
 
+/* ARGSUSED */
 static void
 stmf_task_lu_free(scsi_task_t *task, stmf_i_scsi_session_t *iss)
 {
@@ -4178,6 +4191,7 @@ stmf_task_lu_free(scsi_task_t *task, stmf_i_scsi_session_t *iss)
 	ASSERT(rw_lock_held(iss->iss_lockp));
 	itask->itask_flags = ITASK_IN_FREE_LIST;
 	itask->itask_proxy_msg_id = 0;
+	atomic_dec_32(itask->itask_ilu_task_cntr);
 	mutex_enter(&ilu->ilu_task_lock);
 	itask->itask_lu_free_next = ilu->ilu_free_tasks;
 	ilu->ilu_free_tasks = itask;
@@ -4185,7 +4199,6 @@ stmf_task_lu_free(scsi_task_t *task, stmf_i_scsi_session_t *iss)
 	if (ilu->ilu_ntasks == ilu->ilu_ntasks_free)
 		cv_signal(&ilu->ilu_offline_pending_cv);
 	mutex_exit(&ilu->ilu_task_lock);
-	atomic_dec_32(itask->itask_ilu_task_cntr);
 }
 
 void
@@ -4474,6 +4487,16 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 	if (w1->worker_queue_depth < w->worker_queue_depth)
 		w = w1;
 
+	/*
+	 * if this command is a write_same or unmap just use worker 0
+	 * to limit starvation.
+	 */
+	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
+	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
+	    task->task_cdb[0] == SCMD_UNMAP) {
+		w = &stmf_workers[0];
+	}
+
 	mutex_enter(&w->worker_lock);
 	if (((w->worker_flags & STMF_WORKER_STARTED) == 0) ||
 	    (w->worker_flags & STMF_WORKER_TERMINATE)) {
@@ -4513,19 +4536,9 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 
 	stmf_itl_task_start(itask);
 
-	itask->itask_worker_next = NULL;
-	if (w->worker_task_tail) {
-		w->worker_task_tail->itask_worker_next = itask;
-	} else {
-		w->worker_task_head = itask;
-	}
-	w->worker_task_tail = itask;
-	if (++(w->worker_queue_depth) > w->worker_max_qdepth_pu) {
-		w->worker_max_qdepth_pu = w->worker_queue_depth;
-	}
-	/* Measure task waitq time */
-	itask->itask_waitq_enter_timestamp = gethrtime();
+	STMF_ENQUEUE_ITASK(w, itask);
 	atomic_inc_32(&w->worker_ref_count);
+
 	itask->itask_cmd_stack[0] = ITASK_CMD_NEW_TASK;
 	itask->itask_ncmds = 1;
 	stmf_task_audit(itask, TE_TASK_START, CMD_OR_IOF_NA, dbuf);
@@ -4712,19 +4725,7 @@ stmf_data_xfer_done(scsi_task_t *task, stmf_data_buf_t *dbuf, uint32_t iof)
 		ASSERT(itask->itask_ncmds < ITASK_MAX_NCMDS);
 		itask->itask_cmd_stack[itask->itask_ncmds++] = cmd;
 		if (queue_it) {
-			itask->itask_worker_next = NULL;
-			if (w->worker_task_tail) {
-				w->worker_task_tail->itask_worker_next = itask;
-			} else {
-				w->worker_task_head = itask;
-			}
-			w->worker_task_tail = itask;
-			/* Measure task waitq time */
-			itask->itask_waitq_enter_timestamp = gethrtime();
-			if (++(w->worker_queue_depth) >
-			    w->worker_max_qdepth_pu) {
-				w->worker_max_qdepth_pu = w->worker_queue_depth;
-			}
+			STMF_ENQUEUE_ITASK(w, itask);
 			if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
 				cv_signal(&w->worker_cv);
 		}
@@ -4794,7 +4795,6 @@ stmf_send_status_done(scsi_task_t *task, stmf_status_t s, uint32_t iof)
 	    (stmf_i_scsi_task_t *)task->task_stmf_private;
 	stmf_worker_t *w = itask->itask_worker;
 	uint32_t new, old;
-	uint8_t free_it, queue_it;
 
 	stmf_task_audit(itask, TE_SEND_STATUS_DONE, iof, NULL);
 
@@ -4805,67 +4805,22 @@ stmf_send_status_done(scsi_task_t *task, stmf_status_t s, uint32_t iof)
 			mutex_exit(&w->worker_lock);
 			return;
 		}
-		free_it = 0;
-		if (iof & STMF_IOF_LPORT_DONE) {
-			new &= ~ITASK_KNOWN_TO_TGT_PORT;
-			free_it = 1;
+		if (old & ITASK_IN_WORKER_QUEUE) {
+			cmn_err(CE_PANIC, "status completion received"
+			    " when task is already in worker queue "
+			    " task = %p", (void *)task);
 		}
-		/*
-		 * If the task is known to LU then queue it. But if
-		 * it is already queued (multiple completions) then
-		 * just update the buffer information by grabbing the
-		 * worker lock. If the task is not known to LU,
-		 * completed/aborted, then see if we need to
-		 * free this task.
-		 */
-		if (old & ITASK_KNOWN_TO_LU) {
-			free_it = 0;
-			queue_it = 1;
-			if (old & ITASK_IN_WORKER_QUEUE) {
-				cmn_err(CE_PANIC, "status completion received"
-				    " when task is already in worker queue "
-				    " task = %p", (void *)task);
-			}
-			new |= ITASK_IN_WORKER_QUEUE;
-		} else {
-			queue_it = 0;
-		}
+		new |= ITASK_IN_WORKER_QUEUE;
 	} while (atomic_cas_32(&itask->itask_flags, old, new) != old);
 	task->task_completion_status = s;
 
-
-	if (queue_it) {
-		ASSERT(itask->itask_ncmds < ITASK_MAX_NCMDS);
-		itask->itask_cmd_stack[itask->itask_ncmds++] =
-		    ITASK_CMD_STATUS_DONE;
-		itask->itask_worker_next = NULL;
-		if (w->worker_task_tail) {
-			w->worker_task_tail->itask_worker_next = itask;
-		} else {
-			w->worker_task_head = itask;
-		}
-		w->worker_task_tail = itask;
-		/* Measure task waitq time */
-		itask->itask_waitq_enter_timestamp = gethrtime();
-		if (++(w->worker_queue_depth) > w->worker_max_qdepth_pu) {
-			w->worker_max_qdepth_pu = w->worker_queue_depth;
-		}
-		if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
-			cv_signal(&w->worker_cv);
-	}
+	ASSERT(itask->itask_ncmds < ITASK_MAX_NCMDS);
+	itask->itask_cmd_stack[itask->itask_ncmds++] =
+	    ITASK_CMD_STATUS_DONE;
+	STMF_ENQUEUE_ITASK(w, itask);
+	if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
+		cv_signal(&w->worker_cv);
 	mutex_exit(&w->worker_lock);
-
-	if (free_it) {
-		if ((itask->itask_flags & (ITASK_KNOWN_TO_LU |
-		    ITASK_KNOWN_TO_TGT_PORT | ITASK_IN_WORKER_QUEUE |
-		    ITASK_BEING_ABORTED)) == 0) {
-			stmf_task_free(task);
-		} else {
-			cmn_err(CE_PANIC, "LU is done with the task but LPORT "
-			    " is not done, itask %p itask_flags %x",
-			    (void *)itask, itask->itask_flags);
-		}
-	}
 }
 
 void
@@ -4910,6 +4865,7 @@ stmf_queue_task_for_abort(scsi_task_t *task, stmf_status_t s)
 	    (stmf_i_scsi_task_t *)task->task_stmf_private;
 	stmf_worker_t *w;
 	uint32_t old, new;
+	stmf_lu_t *lu = task->task_lu;
 
 	stmf_task_audit(itask, TE_TASK_ABORT, CMD_OR_IOF_NA, NULL);
 
@@ -4925,6 +4881,7 @@ stmf_queue_task_for_abort(scsi_task_t *task, stmf_status_t s)
 	task->task_completion_status = s;
 	itask->itask_start_time = ddi_get_lbolt();
 
+	lu->lu_abort(lu, STMF_LU_SET_ABORT, task, 0);
 	if (((w = itask->itask_worker) == NULL) ||
 	    (itask->itask_flags & ITASK_IN_TRANSITION)) {
 		return;
@@ -4937,16 +4894,8 @@ stmf_queue_task_for_abort(scsi_task_t *task, stmf_status_t s)
 		return;
 	}
 	atomic_or_32(&itask->itask_flags, ITASK_IN_WORKER_QUEUE);
-	itask->itask_worker_next = NULL;
-	if (w->worker_task_tail) {
-		w->worker_task_tail->itask_worker_next = itask;
-	} else {
-		w->worker_task_head = itask;
-	}
-	w->worker_task_tail = itask;
-	if (++(w->worker_queue_depth) > w->worker_max_qdepth_pu) {
-		w->worker_max_qdepth_pu = w->worker_queue_depth;
-	}
+	STMF_ENQUEUE_ITASK(w, itask);
+
 	if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
 		cv_signal(&w->worker_cv);
 	mutex_exit(&w->worker_lock);
@@ -5083,16 +5032,7 @@ stmf_task_poll_lu(scsi_task_t *task, uint32_t timeout)
 		itask->itask_poll_timeout = ddi_get_lbolt() + t;
 	}
 	if ((itask->itask_flags & ITASK_IN_WORKER_QUEUE) == 0) {
-		itask->itask_worker_next = NULL;
-		if (w->worker_task_tail) {
-			w->worker_task_tail->itask_worker_next = itask;
-		} else {
-			w->worker_task_head = itask;
-		}
-		w->worker_task_tail = itask;
-		if (++(w->worker_queue_depth) > w->worker_max_qdepth_pu) {
-			w->worker_max_qdepth_pu = w->worker_queue_depth;
-		}
+		STMF_ENQUEUE_ITASK(w, itask);
 		atomic_or_32(&itask->itask_flags, ITASK_IN_WORKER_QUEUE);
 		if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
 			cv_signal(&w->worker_cv);
@@ -5131,16 +5071,7 @@ stmf_task_poll_lport(scsi_task_t *task, uint32_t timeout)
 		itask->itask_poll_timeout = ddi_get_lbolt() + t;
 	}
 	if ((itask->itask_flags & ITASK_IN_WORKER_QUEUE) == 0) {
-		itask->itask_worker_next = NULL;
-		if (w->worker_task_tail) {
-			w->worker_task_tail->itask_worker_next = itask;
-		} else {
-			w->worker_task_head = itask;
-		}
-		w->worker_task_tail = itask;
-		if (++(w->worker_queue_depth) > w->worker_max_qdepth_pu) {
-			w->worker_max_qdepth_pu = w->worker_queue_depth;
-		}
+		STMF_ENQUEUE_ITASK(w, itask);
 		if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
 			cv_signal(&w->worker_cv);
 	}
@@ -5743,6 +5674,7 @@ void
 stmf_scsilib_send_status(scsi_task_t *task, uint8_t st, uint32_t saa)
 {
 	uint8_t sd[18];
+
 	task->task_scsi_status = st;
 	if (st == 2) {
 		bzero(sd, 18);
@@ -6215,6 +6147,8 @@ stmf_worker_loop:;
 	}
 	/* CONSTCOND */
 	while (1) {
+		itask = NULL;
+		curcmd = 0;
 		dec_qdepth = 0;
 		if (wait_timer && (ddi_get_lbolt() >= wait_timer)) {
 			wait_timer = 0;
@@ -6232,16 +6166,13 @@ stmf_worker_loop:;
 				    NULL;
 			}
 		}
-		if ((itask = w->worker_task_head) == NULL) {
+		STMF_DEQUEUE_ITASK(w, itask);
+
+		if (!itask)
 			break;
-		}
 		task = itask->itask_task;
 		DTRACE_PROBE2(worker__active, stmf_worker_t, w,
 		    scsi_task_t *, task);
-		w->worker_task_head = itask->itask_worker_next;
-		if (w->worker_task_head == NULL)
-			w->worker_task_tail = NULL;
-
 		wait_queue = 0;
 		abort_free = 0;
 		if (itask->itask_ncmds > 0) {
@@ -6353,9 +6284,11 @@ out_itask_flag_loop:
 			lu->lu_dbuf_xfer_done(task, dbuf);
 			break;
 		case ITASK_CMD_STATUS_DONE:
-			lu->lu_send_status_done(task);
+			lu->lu_task_done(task, 10);
+			stmf_task_free(task);
 			break;
 		case ITASK_CMD_ABORT:
+			lu->lu_task_done(task, 11);
 			if (abort_free) {
 				stmf_task_free(task);
 			} else {
@@ -6407,9 +6340,7 @@ stmf_worker_mgmt()
 {
 	int i;
 	int workers_needed;
-	uint32_t qd;
-	clock_t tps, d = 0;
-	uint32_t cur_max_ntasks = 0;
+	uint32_t qd = 0, cur_max_ntasks = 0;
 	stmf_worker_t *w;
 
 	/* Check if we are trying to increase the # of threads */
@@ -6449,29 +6380,32 @@ stmf_worker_mgmt()
 		goto worker_mgmt_trigger_change;
 	}
 
-	tps = drv_usectohz(1 * 1000 * 1000);
-	if ((stmf_wm_last != 0) &&
-	    ((d = ddi_get_lbolt() - stmf_wm_last) > tps)) {
-		qd = 0;
-		for (i = 0; i < stmf_nworkers_accepting_cmds; i++) {
-			qd += stmf_workers[i].worker_max_qdepth_pu;
-			stmf_workers[i].worker_max_qdepth_pu = 0;
-			if (stmf_workers[i].worker_max_sys_qdepth_pu >
-			    cur_max_ntasks) {
-				cur_max_ntasks =
-				    stmf_workers[i].worker_max_sys_qdepth_pu;
-			}
-			stmf_workers[i].worker_max_sys_qdepth_pu = 0;
-		}
-	}
-	stmf_wm_last = ddi_get_lbolt();
-	if (d <= tps) {
-		/* still ramping up */
+	/* Check if we're still ramping up */
+	if (stmf_wm_next > ddi_get_lbolt()) {
 		return;
 	}
+	/* Get maximum queue depth since the last time we checked */
+	for (i = 0; i < stmf_nworkers_accepting_cmds; i++) {
+		w = &stmf_workers[i];
+		mutex_enter(&w->worker_lock);
+		if (w->worker_max_sys_qdepth_pu > cur_max_ntasks) {
+			cur_max_ntasks = w->worker_max_sys_qdepth_pu;
+		}
+		qd += w->worker_max_qdepth_pu;
+		w->worker_max_sys_qdepth_pu = 0;
+		w->worker_max_qdepth_pu = 0;
+		mutex_exit(&w->worker_lock);
+	}
+	stmf_wm_next = ddi_get_lbolt() + drv_usectohz(1 * 1000 * 1000);
+
 	/* max qdepth cannot be more than max tasks */
 	if (qd > cur_max_ntasks)
 		qd = cur_max_ntasks;
+	/* qdepth should also be within worker limits */
+	if (qd > stmf_i_max_nworkers)
+		qd = stmf_i_max_nworkers;
+	if (qd < stmf_i_min_nworkers)
+		qd = stmf_i_min_nworkers;
 
 	/* See if we have more workers */
 	if (qd < stmf_nworkers_accepting_cmds) {
@@ -6490,30 +6424,17 @@ stmf_worker_mgmt()
 		if (ddi_get_lbolt() < stmf_worker_scale_down_timer) {
 			return;
 		}
-		/* Its time to reduce the workers */
-		if (stmf_worker_scale_down_qd < stmf_i_min_nworkers)
-			stmf_worker_scale_down_qd = stmf_i_min_nworkers;
-		if (stmf_worker_scale_down_qd > stmf_i_max_nworkers)
-			stmf_worker_scale_down_qd = stmf_i_max_nworkers;
-		if (stmf_worker_scale_down_qd == stmf_nworkers_cur)
-			return;
 		workers_needed = stmf_worker_scale_down_qd;
 		stmf_worker_scale_down_qd = 0;
 		goto worker_mgmt_trigger_change;
 	}
+
 	stmf_worker_scale_down_qd = 0;
 	stmf_worker_scale_down_timer = 0;
-	if (qd > stmf_i_max_nworkers)
-		qd = stmf_i_max_nworkers;
-	if (qd < stmf_i_min_nworkers)
-		qd = stmf_i_min_nworkers;
-	if (qd == stmf_nworkers_cur)
-		return;
 	workers_needed = qd;
-	goto worker_mgmt_trigger_change;
-
-	/* NOTREACHED */
-	return;
+	if (workers_needed == stmf_nworkers_cur) {
+		return;
+	}
 
 worker_mgmt_trigger_change:
 	ASSERT(workers_needed != stmf_nworkers_cur);
@@ -6528,6 +6449,8 @@ worker_mgmt_trigger_change:
 		return;
 	}
 	/* At this point we know that we are decreasing the # of workers */
+	if (stmf_enable_scaledown == 0)
+		return;
 	stmf_nworkers_accepting_cmds = workers_needed;
 	stmf_nworkers_needed = workers_needed;
 	/* Signal the workers that its time to quit */
@@ -6658,15 +6581,14 @@ stmf_dlun0_new_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		p[4] = inq_page_length;
 		p[6] = 0x80;
 
-		(void) strncpy((char *)p+8, "SUN     ", 8);
-		(void) strncpy((char *)p+16, "COMSTAR	       ", 16);
-		(void) strncpy((char *)p+32, "1.0 ", 4);
+		(void) strncpy((char *)p+8, "NONE    ", 8);
+		(void) strncpy((char *)p+16, "NONE            ", 16);
+		(void) strncpy((char *)p+32, "NONE", 4);
 
 		dbuf->db_data_size = sz;
 		dbuf->db_relative_offset = 0;
 		dbuf->db_flags = DB_DIRECTION_TO_RPORT;
 		(void) stmf_xfer_data(task, dbuf, 0);
-
 		return;
 
 	case SCMD_REPORT_LUNS:
@@ -6724,7 +6646,6 @@ stmf_dlun0_new_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		(void) stmf_xfer_data(task, dbuf, 0);
 		return;
 	}
-
 	stmf_scsilib_send_status(task, STATUS_CHECK, STMF_SAA_INVALID_OPCODE);
 }
 
@@ -6787,6 +6708,12 @@ stmf_dlun0_status_done(scsi_task_t *task)
 /* ARGSUSED */
 void
 stmf_dlun0_task_free(scsi_task_t *task)
+{
+}
+
+/* ARGSUSED */
+void
+stmf_dlun0_task_done(scsi_task_t *task, uint8_t id)
 {
 }
 
@@ -6884,6 +6811,7 @@ stmf_dlun_init()
 	dlun0->lu_abort = stmf_dlun0_abort;
 	dlun0->lu_task_poll = stmf_dlun0_task_poll;
 	dlun0->lu_ctl = stmf_dlun0_ctl;
+	dlun0->lu_task_done = stmf_dlun0_task_done;
 
 	ilu = (stmf_i_lu_t *)dlun0->lu_stmf_private;
 	ilu->ilu_cur_task_cntr = &ilu->ilu_task_cntr1;
@@ -7206,6 +7134,23 @@ stmf_itl_task_done(stmf_i_scsi_task_t *itask)
 		stmf_update_kstat_lu_q(task, kstat_waitq_exit);
 		mutex_exit(ilu->ilu_kstat_io->ks_lock);
 		stmf_update_kstat_lport_q(task, kstat_waitq_exit);
+	}
+}
+
+void
+stmf_lu_xfer_done(scsi_task_t *task, boolean_t read, hrtime_t elapsed_time)
+{
+	stmf_i_scsi_task_t *itask = task->task_stmf_private;
+
+	if (task->task_lu == dlun0)
+		return;
+
+	if (read) {
+		atomic_add_64((uint64_t *)&itask->itask_lu_read_time,
+		    elapsed_time);
+	} else {
+		atomic_add_64((uint64_t *)&itask->itask_lu_write_time,
+		    elapsed_time);
 	}
 }
 
@@ -7741,6 +7686,7 @@ stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
 		break;
 
 	case PROTOCOL_iSCSI:
+		/* CSTYLED */
 		{
 		iscsi_transport_id_t	*iscsiid;
 		uint16_t		adn_len, name_len;
@@ -7786,6 +7732,7 @@ stmf_scsilib_tptid_validate(scsi_transport_id_t *tptid, uint32_t total_sz,
 	case PROTOCOL_ADT:
 	case PROTOCOL_ATAPI:
 	default:
+		/* CSTYLED */
 		{
 		stmf_dflt_scsi_tptid_t *dflttpd;
 
@@ -7815,6 +7762,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 	switch (tpd1->protocol_id) {
 
 	case PROTOCOL_iSCSI:
+		/* CSTYLED */
 		{
 		iscsi_transport_id_t *iscsitpd1, *iscsitpd2;
 		uint16_t len;
@@ -7830,6 +7778,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 		break;
 
 	case PROTOCOL_SRP:
+		/* CSTYLED */
 		{
 		scsi_srp_transport_id_t *srptpd1, *srptpd2;
 
@@ -7842,6 +7791,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 		break;
 
 	case PROTOCOL_FIBRE_CHANNEL:
+		/* CSTYLED */
 		{
 		scsi_fc_transport_id_t *fctpd1, *fctpd2;
 
@@ -7860,6 +7810,7 @@ stmf_scsilib_tptid_compare(scsi_transport_id_t *tpd1,
 	case PROTOCOL_ADT:
 	case PROTOCOL_ATAPI:
 	default:
+		/* CSTYLED */
 		{
 		stmf_dflt_scsi_tptid_t *dflt1, *dflt2;
 		uint16_t len;
@@ -7990,4 +7941,75 @@ stmf_remote_port_free(stmf_remote_port_t *rpt)
 	 *	need to be made here too.
 	 */
 	kmem_free(rpt, sizeof (stmf_remote_port_t) + rpt->rport_tptid_sz);
+}
+
+stmf_lu_t *
+stmf_check_and_hold_lu(scsi_task_t *task, uint8_t *guid)
+{
+	stmf_i_scsi_session_t *iss;
+	stmf_lu_t *lu;
+	stmf_i_lu_t *ilu = NULL;
+	stmf_lun_map_t *sm;
+	stmf_lun_map_ent_t *lme;
+	int i;
+
+	iss = (stmf_i_scsi_session_t *)task->task_session->ss_stmf_private;
+	rw_enter(iss->iss_lockp, RW_READER);
+	sm = iss->iss_sm;
+
+	for (i = 0; i < sm->lm_nentries; i++) {
+		if (sm->lm_plus[i] == NULL)
+			continue;
+		lme = (stmf_lun_map_ent_t *)sm->lm_plus[i];
+		lu = lme->ent_lu;
+		if (bcmp(lu->lu_id->ident, guid, 16) == 0) {
+			break;
+		}
+		lu = NULL;
+	}
+
+	if (!lu) {
+		goto hold_lu_done;
+	}
+
+	ilu = lu->lu_stmf_private;
+	mutex_enter(&ilu->ilu_task_lock);
+	ilu->ilu_additional_ref++;
+	mutex_exit(&ilu->ilu_task_lock);
+
+hold_lu_done:
+	rw_exit(iss->iss_lockp);
+	return (lu);
+}
+
+void
+stmf_release_lu(stmf_lu_t *lu)
+{
+	stmf_i_lu_t *ilu;
+
+	ilu = lu->lu_stmf_private;
+	ASSERT(ilu->ilu_additional_ref != 0);
+	mutex_enter(&ilu->ilu_task_lock);
+	ilu->ilu_additional_ref--;
+	mutex_exit(&ilu->ilu_task_lock);
+}
+
+int
+stmf_is_task_being_aborted(scsi_task_t *task)
+{
+	stmf_i_scsi_task_t *itask;
+
+	itask = (stmf_i_scsi_task_t *)task->task_stmf_private;
+	if (itask->itask_flags & ITASK_BEING_ABORTED)
+		return (1);
+
+	return (0);
+}
+
+volatile boolean_t stmf_pgr_aptpl_always = B_FALSE;
+
+boolean_t
+stmf_is_pgr_aptpl_always()
+{
+	return (stmf_pgr_aptpl_always);
 }

@@ -1,10 +1,11 @@
 '\" te
 .\" Copyright (c) 2008, Sun Microsystems, Inc. All Rights Reserved.
 .\" Copyright 1989 AT&T
+.\" Copyright 2014 PALO, Richard. All rights reserved.
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License"). You may not use this file except in compliance with the License. You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.
 .\"  See the License for the specific language governing permissions and limitations under the License. When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE. If applicable, add the following below this CDDL HEADER, with the
 .\" fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH FILESYSTEM 5 "Aug 26, 2013"
+.TH FILESYSTEM 5 "Dec 20, 2014"
 .SH NAME
 filesystem \- File system organization
 .SH SYNOPSIS
@@ -19,7 +20,6 @@ filesystem \- File system organization
 .fi
 
 .SH DESCRIPTION
-.sp
 .LP
 The file system tree is organized for administrative convenience. Distinct
 areas within the file system tree are provided for files that are private to
@@ -75,7 +75,6 @@ In the following file or directory descriptions, GNOME stands for GNU Network
 Object Model Environment. The GNOME Desktop is shipped with the Solaris
 operating system.
 .SS "Root File System"
-.sp
 .LP
 The root file system contains files that are unique to each machine. It
 contains the following directories:
@@ -1891,7 +1890,6 @@ Databases needed for backwards compatibility with \fBNIS\fR and
 .RE
 
 .SS "\fB/usr\fR File System"
-.sp
 .LP
 Because it is desirable to keep the root file system small and not volatile, on
 disk-based systems larger file systems are often mounted on \fB/home\fR,
@@ -3650,7 +3648,6 @@ Directory for newer versions of POSIX-compliant utilities.
 .RE
 
 .SH SEE ALSO
-.sp
 .LP
 \fBat\fR(1), \fBex\fR(1), \fBfmli\fR(1), \fBiconv\fR(1), \fBlp\fR(1),
 \fBisainfo\fR(1), \fBmail\fR(1), \fBmailx\fR(1), \fBnroff\fR(1),

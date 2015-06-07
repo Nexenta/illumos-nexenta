@@ -22,6 +22,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 #ifndef	_IDM_CONN_SM_H_
 #define	_IDM_CONN_SM_H_
@@ -64,160 +65,134 @@ extern "C" {
 #define	IDM_LOGOUT_SECONDS	20
 #define	IDM_CLEANUP_SECONDS	0
 
+#define	IDM_CONN_EVENT_LIST() \
+	item(CE_UNDEFINED) \
+	/* Initiator events */ \
+	item(CE_CONNECT_REQ) \
+	item(CE_CONNECT_FAIL) \
+	item(CE_CONNECT_SUCCESS) \
+	item(CE_LOGIN_SND) \
+	item(CE_LOGIN_SUCCESS_RCV) \
+	item(CE_LOGIN_FAIL_RCV) \
+	item(CE_LOGOUT_THIS_CONN_SND) \
+	item(CE_LOGOUT_OTHER_CONN_SND) \
+	item(CE_LOGOUT_SESSION_SND) \
+	item(CE_LOGOUT_SUCCESS_RCV) \
+	item(CE_LOGOUT_FAIL_RCV) \
+	item(CE_ASYNC_LOGOUT_RCV) \
+	item(CE_ASYNC_DROP_CONN_RCV) \
+	item(CE_ASYNC_DROP_ALL_CONN_RCV) \
+	/* Target events */ \
+	item(CE_CONNECT_ACCEPT) \
+	item(CE_CONNECT_REJECT) \
+	item(CE_LOGIN_RCV) \
+	item(CE_LOGIN_TIMEOUT) \
+	item(CE_LOGIN_SUCCESS_SND) \
+	item(CE_LOGIN_FAIL_SND) \
+	item(CE_LOGIN_FAIL_SND_DONE) \
+	item(CE_LOGOUT_THIS_CONN_RCV) \
+	item(CE_LOGOUT_OTHER_CONN_RCV) \
+	item(CE_LOGOUT_SESSION_RCV) \
+	item(CE_LOGOUT_SUCCESS_SND) \
+	item(CE_LOGOUT_SUCCESS_SND_DONE) \
+	item(CE_LOGOUT_FAIL_SND) \
+	item(CE_LOGOUT_FAIL_SND_DONE) \
+	item(CE_CLEANUP_TIMEOUT) \
+	item(CE_ASYNC_LOGOUT_SND) \
+	item(CE_ASYNC_DROP_CONN_SND) \
+	item(CE_ASYNC_DROP_ALL_CONN_SND) \
+	item(CE_LOGOUT_TIMEOUT) \
+	/* Common events */ \
+	item(CE_TRANSPORT_FAIL) \
+	item(CE_MISC_TX) \
+	item(CE_TX_PROTOCOL_ERROR) \
+	item(CE_MISC_RX) \
+	item(CE_RX_PROTOCOL_ERROR) \
+	item(CE_LOGOUT_SESSION_SUCCESS) \
+	item(CE_CONN_REINSTATE) \
+	item(CE_CONN_REINSTATE_SUCCESS) \
+	item(CE_CONN_REINSTATE_FAIL) \
+	item(CE_ENABLE_DM_SUCCESS) \
+	item(CE_ENABLE_DM_FAIL) \
+	/* Add new events above CE_MAX_EVENT */ \
+	item(CE_MAX_EVENT)
+
 /* Update idm_ce_name table whenever connection events are modified */
 typedef enum {
-	CE_UNDEFINED = 0,
-
-	/* Initiator events */
-	CE_CONNECT_REQ,
-	CE_CONNECT_FAIL,
-	CE_CONNECT_SUCCESS,
-	CE_LOGIN_SND,
-	CE_LOGIN_SUCCESS_RCV,
-	CE_LOGIN_FAIL_RCV,
-	CE_LOGOUT_THIS_CONN_SND,
-	CE_LOGOUT_OTHER_CONN_SND,
-	CE_LOGOUT_SESSION_SND,
-	CE_LOGOUT_SUCCESS_RCV,
-	CE_LOGOUT_FAIL_RCV,
-	CE_ASYNC_LOGOUT_RCV,
-	CE_ASYNC_DROP_CONN_RCV,
-	CE_ASYNC_DROP_ALL_CONN_RCV,
-
-	/* Target events */
-	CE_CONNECT_ACCEPT,
-	CE_CONNECT_REJECT,
-	CE_LOGIN_RCV,
-	CE_LOGIN_TIMEOUT,
-	CE_LOGIN_SUCCESS_SND,
-	CE_LOGIN_FAIL_SND,
-	CE_LOGIN_FAIL_SND_DONE,
-	CE_LOGOUT_THIS_CONN_RCV,
-	CE_LOGOUT_OTHER_CONN_RCV,
-	CE_LOGOUT_SESSION_RCV,
-	CE_LOGOUT_SUCCESS_SND,
-	CE_LOGOUT_SUCCESS_SND_DONE,
-	CE_LOGOUT_FAIL_SND,
-	CE_LOGOUT_FAIL_SND_DONE,
-	CE_CLEANUP_TIMEOUT,
-	CE_ASYNC_LOGOUT_SND,
-	CE_ASYNC_DROP_CONN_SND,
-	CE_ASYNC_DROP_ALL_CONN_SND,
-	CE_LOGOUT_TIMEOUT,
-
-	/* Common events */
-	CE_TRANSPORT_FAIL,
-	CE_MISC_TX,
-	CE_TX_PROTOCOL_ERROR,
-	CE_MISC_RX,
-	CE_RX_PROTOCOL_ERROR,
-	CE_LOGOUT_SESSION_SUCCESS,
-	CE_CONN_REINSTATE,
-	CE_CONN_REINSTATE_SUCCESS,
-	CE_CONN_REINSTATE_FAIL,
-	CE_ENABLE_DM_SUCCESS,
-	CE_ENABLE_DM_FAIL,
-
-	/* Add new events above CE_MAX_EVENT */
-	CE_MAX_EVENT
+#define	item(a) a,
+	IDM_CONN_EVENT_LIST()
+#undef	item
 } idm_conn_event_t;
 
 #ifdef IDM_CONN_SM_STRINGS
 /* An array of event text values, for use in logging events */
 static const char *idm_ce_name[CE_MAX_EVENT+1] = {
-	"CE_UNDEFINED",
-	"CE_CONNECT_REQ",
-	"CE_CONNECT_FAIL",
-	"CE_CONNECT_SUCCESS",
-	"CE_LOGIN_SND",
-	"CE_LOGIN_SUCCESS_RCV",
-	"CE_LOGIN_FAIL_RCV",
-	"CE_LOGOUT_THIS_CONN_SND",
-	"CE_LOGOUT_OTHER_CONN_SND",
-	"CE_LOGOUT_SESSION_SND",
-	"CE_LOGOUT_SUCCESS_RCV",
-	"CE_LOGOUT_FAIL_RCV",
-	"CE_ASYNC_LOGOUT_RCV",
-	"CE_ASYNC_DROP_CONN_RCV",
-	"CE_ASYNC_DROP_ALL_CONN_RCV",
-	"CE_CONNECT_ACCEPT",
-	"CE_CONNECT_REJECT",
-	"CE_LOGIN_RCV",
-	"CE_LOGIN_TIMEOUT",
-	"CE_LOGIN_SUCCESS_SND",
-	"CE_LOGIN_FAIL_SND",
-	"CE_LOGIN_FAIL_SND_DONE",
-	"CE_LOGOUT_THIS_CONN_RCV",
-	"CE_LOGOUT_OTHER_CONN_RCV",
-	"CE_LOGOUT_SESSION_RCV",
-	"CE_LOGOUT_SUCCESS_SND",
-	"CE_LOGOUT_SUCCESS_SND_DONE",
-	"CE_LOGOUT_FAIL_SND",
-	"CE_LOGOUT_FAIL_SND_DONE",
-	"CE_CLEANUP_TIMEOUT",
-	"CE_ASYNC_LOGOUT_SND",
-	"CE_ASYNC_DROP_CONN_SND",
-	"CE_ASYNC_DROP_ALL_CONN_SND",
-	"CE_LOGOUT_TIMEOUT",
-	"CE_TRANSPORT_FAIL",
-	"CE_MISC_TX",
-	"CE_TX_PROTOCOL_ERROR",
-	"CE_MISC_RX",
-	"CE_RX_PROTOCOL_ERROR",
-	"CE_LOGOUT_SESSION_SUCCESS",
-	"CE_CONN_REINSTATE",
-	"CE_CONN_REINSTATE_SUCCESS",
-	"CE_CONN_REINSTATE_FAIL",
-	"CE_ENABLE_DM_SUCCESS",
-	"CE_ENABLE_DM_FAIL",
-	"CE_MAX_EVENT"
+#define	item(a) #a,
+	IDM_CONN_EVENT_LIST()
+#undef	item
 };
 #endif
 
+#define	CONN_STATE_LIST() \
+	item(CS_S0_UNDEFINED) \
+	item(CS_S1_FREE) \
+	item(CS_S2_XPT_WAIT) \
+	item(CS_S3_XPT_UP) \
+	item(CS_S4_IN_LOGIN) \
+	item(CS_S5_LOGGED_IN) \
+	item(CS_S6_IN_LOGOUT) \
+	item(CS_S7_LOGOUT_REQ) \
+	item(CS_S8_CLEANUP) \
+	item(CS_S9_INIT_ERROR) \
+	item(CS_S10_IN_CLEANUP) \
+	item(CS_S11_COMPLETE) \
+	item(CS_S12_ENABLE_DM) \
+	item(CS_S9A_REJECTED) \
+	item(CS_S9B_WAIT_SND_DONE) \
+	/* Add new connection states above CS_MAX_STATE */ \
+	item(CS_MAX_STATE)
+
 /* Update idm_cs_name table whenever connection states are modified */
 typedef enum {
-	CS_S0_UNDEFINED = 0,
-
-	CS_S1_FREE,
-	CS_S2_XPT_WAIT,
-	CS_S3_XPT_UP,
-	CS_S4_IN_LOGIN,
-	CS_S5_LOGGED_IN,
-	CS_S6_IN_LOGOUT,
-	CS_S7_LOGOUT_REQ,
-	CS_S8_CLEANUP,
-	CS_S9_INIT_ERROR,
-	CS_S10_IN_CLEANUP,
-	CS_S11_COMPLETE,
-	CS_S12_ENABLE_DM,
-	CS_S9A_REJECTED,
-	CS_S9B_WAIT_SND_DONE,
-
-	/* Add new connection states above CS_MAX_STATE */
-	CS_MAX_STATE
+#define	item(a) a,
+	CONN_STATE_LIST()
+#undef	item
 } idm_conn_state_t;
 
 #ifdef IDM_CONN_SM_STRINGS
 /* An array of state text values, for use in logging state transitions */
 static const char *idm_cs_name[CS_MAX_STATE+1] = {
-	"CS_S0_UNDEFINED",
-	"CS_S1_FREE",
-	"CS_S2_XPT_WAIT",
-	"CS_S3_XPT_UP",
-	"CS_S4_IN_LOGIN",
-	"CS_S5_LOGGED_IN",
-	"CS_S6_IN_LOGOUT",
-	"CS_S7_LOGOUT_REQ",
-	"CS_S8_CLEANUP",
-	"CS_S9_INIT_ERROR",
-	"CS_S10_IN_CLEANUP",
-	"CS_S11_COMPLETE",
-	"CS_S12_ENABLE_DM",
-	"CS_S9A_REJECTED",
-	"CS_S9B_WAIT_SND_DONE",
-	"CS_MAX_STATE"
+#define	item(a) #a,
+	CONN_STATE_LIST()
+#undef	item
 };
 #endif
+
+/*
+ * Currently the state machine has a condition where idm_login_timeout() is
+ * left active after the connection has been closed. This causes the system
+ * to panic when idm_login_timeout() modifies the freed memory. In an attempt
+ * to isolate and find this issue special attention is being placed on
+ * the ic_state_timeout value. After each untimeout call the value will now
+ * be cleared. Just before the value is set the code will check for 0 and
+ * display an error. One final change is being done in idm_conn_sm_fini() which
+ * if ic_state_machine is not 0, an error message will be displayed and
+ * untimeout() called. That should prevent customer sites from seeing the
+ * panic. The code also calls ASSERT(0) which should cause a panic during
+ * system test.
+ */
+#define	IDM_SM_TIMER_CHECK(ic) \
+	if (ic->ic_state_timeout) { \
+		cmn_err(CE_WARN, "%s: existing timeout still set. " \
+		    "state: %s, last: %s\n", __func__, \
+		    idm_cs_name[ic->ic_state], \
+		    idm_cs_name[ic->ic_last_state]); \
+		ASSERT(0); \
+	}
+
+#define	IDM_SM_TIMER_CLEAR(ic) \
+	(void) untimeout(ic->ic_state_timeout); \
+	ic->ic_state_timeout = 0;
 
 typedef enum {
 	CT_NONE = 0,

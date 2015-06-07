@@ -1,0 +1,138 @@
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# BSD 3 Clause License
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#       - Redistributions of source code must retain the above copyright
+#         notice, this list of conditions and the following disclaimer.
+#
+#       - Redistributions in binary form must reproduce the above copyright
+#         notice, this list of conditions and the following disclaimer in
+#         the documentation and/or other materials provided with the
+#         distribution.
+#
+#       - Neither the name of Sun Microsystems, Inc. nor the
+#         names of its contributors may be used to endorse or promote products
+#         derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY SUN MICROSYSTEMS, INC. "AS IS" AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL SUN MICROSYSTEMS, INC. BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+#
+#	Solaris Test Collection (STC) information file.
+#
+#
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+#
+#
+#	STC_NAME - Required
+#
+#	The one word (no whitespace) test suite or tool name. This field is used
+#	as the package name.
+#
+STC_NAME="storage/ndmp/protocol"
+
+#
+#	STC_SYNOPSIS - Required
+#
+#	A short one line description of the test suite or tool.  This field is
+#	used as the package description and on websites, so make it meaningful.
+#
+STC_SYNOPSIS="NDMP protocol test suite"
+
+#
+#	STC_SUPPORT_LEVEL - Required
+#
+#	One of the following values is required to indicate the level of support
+#	provided for the test suite or tool:
+#
+#	full - test suite or tool is fully supported. All bugs are fixed based
+# 		on priority.
+#	partial - test suite or tool is maintained, but support is limited.
+#		Only P1 and P2 bugs are fixed in a timely manner.
+#	minimum - test suite or tool is supported only when critical issues
+#		need to be resolved.  Only P1 bugs are fixed in a timely manner.
+#	obsolete - test suite or tool is not supported and has been moved to
+#		an inactive part of the STC gate.
+#
+STC_SUPPORT_LEVEL="full"
+
+#
+#	STC_OS_VERSION - Required
+#
+#	All Solaris OS versions that this test suite or tool supports.  This
+# 	should be the `uname -r` value. Separate multiple versions using spaces
+#	(ie. "5.10 5.11").
+# 
+STC_OS_VERSION="5.11"
+
+#
+#	STC_VERSION - Required
+#	
+#	The test suite or tool version.  This field is used as the package
+#	version.  The version number supports the following major and minor
+#	number components:
+#	
+#	major - test suite or tool major version.  The major version should be
+#		incremented when a significant new version of the test suite or
+#		tool is released.  Normally this indicates substantial changes
+#		and/or additions to the test suite or tool. The initial version
+#		should be "1.0".
+#	minor - test suite or tool minor version.  The minor version should be
+#		incremented every time the test suite or tool changes.  When the
+#		major number changes, the minor number should be reset to 0.
+#
+STC_VERSION=2.2
+
+#
+#	STC_BUGPRODUCT - Required (for full, partial or minimum support)
+#	STC_BUGCAT - Required (for full, partial or minimum support)
+#	STC_BUGSUBCAT - Required (for full, partial or minimum support)
+#
+#	The Bugtraq Product/Category/Subcategory information for this test suite
+#	or tool. 
+#
+STC_BUGPRODUCT="stc"
+STC_BUGCAT="storage"
+STC_BUGSUBCAT="ndmp"
+
+#
+#	STC_CONTACT - Required (for full, partial or minimum support)
+#
+#	The email alias that provides support for this test suite or tool.
+#	An email address of an individual is not acceptable. This email
+#	alias is also used as the package hotline value. This value should
+#	be switched to an external email alias when the test suite or tool
+#	is open sourced.
+#
+#STC_CONTACT=""
+
+#
+#	STC_URL - Optional
+#
+#	The URL for information about this test suite or tool, or the URL of
+#	the open source development project associated with this test suite or
+#	tool.
+#
+#STC_URL=""
+
+#
+#	STC_OPENSOURCE_COMMUNITY - Required for open source
+#
+#	The URL of the open source community that this test suite or tool is
+#	associated with.
+#
+#STC_OPENSOURCE_COMMUNITY=""
+

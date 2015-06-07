@@ -21,9 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- */
-/*
  * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -52,19 +51,31 @@
 static zprop_desc_t *
 zprop_get_proptable(zfs_type_t type)
 {
-	if (type == ZFS_TYPE_POOL)
+	switch (type) {
+	case ZFS_TYPE_POOL:
 		return (zpool_prop_get_table());
-	else
+	case ZFS_TYPE_VDEV:
+		return (vdev_prop_get_table());
+	case ZFS_TYPE_COS:
+		return (cos_prop_get_table());
+	default:
 		return (zfs_prop_get_table());
+	}
 }
 
 static int
 zprop_get_numprops(zfs_type_t type)
 {
-	if (type == ZFS_TYPE_POOL)
+	switch (type) {
+	case ZFS_TYPE_POOL:
 		return (ZPOOL_NUM_PROPS);
-	else
+	case ZFS_TYPE_VDEV:
+		return (VDEV_NUM_PROPS);
+	case ZFS_TYPE_COS:
+		return (COS_NUM_PROPS);
+	default:
 		return (ZFS_NUM_PROPS);
+	}
 }
 
 void

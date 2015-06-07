@@ -170,6 +170,12 @@ dt_analyze_disk(topo_hdl_t *thp, tnode_t *node, void *arg)
 			    &details) != 0)
 				continue;
 
+			if (strcmp(nvpair_name(elem),
+			    FM_EREPORT_SCSI_OVERTEMP) == 0 &&
+			    fmd_prop_get_int32(dmp->dm_hdl,
+			    "ignore-overtemp") == FMD_B_TRUE)
+				continue;
+
 			dt_post_ereport(dmp->dm_hdl, dmp->dm_xprt, protocol,
 			    nvpair_name(elem), ena, fmri, details);
 		}
@@ -248,6 +254,7 @@ static const fmd_prop_t fmd_props[] = {
 	{ "interval", FMD_TYPE_TIME, "1h" },
 	{ "min-interval", FMD_TYPE_TIME, "1min" },
 	{ "simulate", FMD_TYPE_STRING, "" },
+	{ "ignore-overtemp", FMD_TYPE_BOOL, "true"},
 	{ NULL, 0, NULL }
 };
 

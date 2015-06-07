@@ -20,9 +20,10 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SYS_SPA_H
@@ -34,6 +35,7 @@
 #include <sys/sysmacros.h>
 #include <sys/types.h>
 #include <sys/fs/zfs.h>
+#include <sys/dmu.h>
 
 #ifdef	__cplusplus
 extern "C" {
@@ -447,14 +449,16 @@ _NOTE(CONSTCOND) } while (0)
 	(0 == ((zc)->zc_word[0] | (zc)->zc_word[1] | \
 	(zc)->zc_word[2] | (zc)->zc_word[3]))
 
-#define	ZIO_CHECKSUM_BSWAP(zcp)					\
-{								\
-	(zcp)->zc_word[0] = BSWAP_64((zcp)->zc_word[0]);	\
-	(zcp)->zc_word[1] = BSWAP_64((zcp)->zc_word[1]);	\
-	(zcp)->zc_word[2] = BSWAP_64((zcp)->zc_word[2]);	\
-	(zcp)->zc_word[3] = BSWAP_64((zcp)->zc_word[3]);	\
-}
-
+#define	ZIO_CHECKSUM_BSWAP(_zc) \
+	do { \
+		zio_cksum_t *zc = (_zc); \
+		zc->zc_word[0] = BSWAP_64(zc->zc_word[0]); \
+		zc->zc_word[1] = BSWAP_64(zc->zc_word[1]); \
+		zc->zc_word[2] = BSWAP_64(zc->zc_word[2]); \
+		zc->zc_word[3] = BSWAP_64(zc->zc_word[3]); \
+		_NOTE(NOTREACHED) \
+		_NOTE(CONSTCOND) \
+	} while (0)
 
 #define	DVA_IS_VALID(dva)	(DVA_GET_ASIZE(dva) != 0)
 
@@ -477,6 +481,10 @@ _NOTE(CONSTCOND) } while (0)
 /* BP_IS_RAIDZ(bp) assumes no block compression */
 #define	BP_IS_RAIDZ(bp)		(DVA_GET_ASIZE(&(bp)->blk_dva[0]) > \
 				BP_GET_PSIZE(bp))
+
+/* Determines whether BP points to data or metadata blocks */
+#define	BP_IS_METADATA(bp)	(BP_GET_LEVEL(bp) > 0 || \
+				dmu_ot[BP_GET_TYPE(bp)].ot_metadata)
 
 #define	BP_ZERO(bp)				\
 {						\
@@ -581,23 +589,40 @@ _NOTE(CONSTCOND) } while (0)
 	ASSERT(len < size);						\
 }
 
-#include <sys/dmu.h>
-
 #define	BP_GET_BUFC_TYPE(bp)						\
-	(((BP_GET_LEVEL(bp) > 0) || (DMU_OT_IS_METADATA(BP_GET_TYPE(bp)))) ? \
-	ARC_BUFC_METADATA : ARC_BUFC_DATA)
+	((BP_GET_TYPE(bp) == DMU_OT_DDT_ZAP || \
+	BP_GET_TYPE(bp) == DMU_OT_DDT_STATS) ? ARC_BUFC_DDT : \
+	((((BP_GET_LEVEL(bp) > 0) || (DMU_OT_IS_METADATA(BP_GET_TYPE(bp)))) ? \
+	ARC_BUFC_METADATA : ARC_BUFC_DATA)))
+
 
 typedef enum spa_import_type {
 	SPA_IMPORT_EXISTING,
 	SPA_IMPORT_ASSEMBLE
 } spa_import_type_t;
 
+/*
+ * zio_trim() behavior on a given spa:
+ * - auto: issue TRIM iff the device supports it
+ * - on: always issue TRIM, even if support is not indicated
+ * - off: never issue TRIM, even is support is indicated
+ * In addition to these, the global zfs_trim boolean_t serves as the
+ * master mode switch. If zfs_trim == B_TRUE, "spa_force_trim" is
+ * consulted. If zfs_trim == B_FALSE, TRIM is globally disabled,
+ * regardless of the spa_force_trim setting.
+ */
+typedef enum {
+	SPA_FORCE_TRIM_AUTO,	/* default */
+	SPA_FORCE_TRIM_ON,
+	SPA_FORCE_TRIM_OFF
+} spa_force_trim_t;
+
 /* state manipulation functions */
 extern int spa_open(const char *pool, spa_t **, void *tag);
 extern int spa_open_rewind(const char *pool, spa_t **, void *tag,
     nvlist_t *policy, nvlist_t **config);
-extern int spa_get_stats(const char *pool, nvlist_t **config, char *altroot,
-    size_t buflen);
+extern int spa_get_stats(const char *name, nvlist_t **config,
+    char *altroot, size_t buflen);
 extern int spa_create(const char *pool, nvlist_t *config, nvlist_t *props,
     nvlist_t *zplprops);
 extern int spa_import_rootpool(char *devpath, char *devid);
@@ -606,7 +631,7 @@ extern int spa_import(const char *pool, nvlist_t *config, nvlist_t *props,
 extern nvlist_t *spa_tryimport(nvlist_t *tryconfig);
 extern int spa_destroy(char *pool);
 extern int spa_export(char *pool, nvlist_t **oldconfig, boolean_t force,
-    boolean_t hardforce);
+    boolean_t hardforce, boolean_t saveconfig);
 extern int spa_reset(char *pool);
 extern void spa_async_request(spa_t *spa, int flag);
 extern void spa_async_unrequest(spa_t *spa, int flag);
@@ -617,14 +642,15 @@ extern void spa_inject_delref(spa_t *spa);
 extern void spa_scan_stat_init(spa_t *spa);
 extern int spa_scan_get_stats(spa_t *spa, pool_scan_stat_t *ps);
 
-#define	SPA_ASYNC_CONFIG_UPDATE	0x01
-#define	SPA_ASYNC_REMOVE	0x02
-#define	SPA_ASYNC_PROBE		0x04
-#define	SPA_ASYNC_RESILVER_DONE	0x08
-#define	SPA_ASYNC_RESILVER	0x10
-#define	SPA_ASYNC_AUTOEXPAND	0x20
-#define	SPA_ASYNC_REMOVE_DONE	0x40
-#define	SPA_ASYNC_REMOVE_STOP	0x80
+#define	SPA_ASYNC_CONFIG_UPDATE		0x01
+#define	SPA_ASYNC_REMOVE		0x02
+#define	SPA_ASYNC_PROBE			0x04
+#define	SPA_ASYNC_RESILVER_DONE		0x08
+#define	SPA_ASYNC_RESILVER		0x10
+#define	SPA_ASYNC_AUTOEXPAND		0x20
+#define	SPA_ASYNC_REMOVE_DONE		0x40
+#define	SPA_ASYNC_REMOVE_STOP		0x80
+#define	SPA_ASYNC_L2CACHE_REBUILD	0x100
 
 /*
  * Controls the behavior of spa_vdev_remove().
@@ -640,10 +666,19 @@ extern int spa_vdev_detach(spa_t *spa, uint64_t guid, uint64_t pguid,
     int replace_done);
 extern int spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare);
 extern boolean_t spa_vdev_remove_active(spa_t *spa);
+extern int spa_vdev_setl2adddt(spa_t *spa, uint64_t guid, const char *newval);
 extern int spa_vdev_setpath(spa_t *spa, uint64_t guid, const char *newpath);
 extern int spa_vdev_setfru(spa_t *spa, uint64_t guid, const char *newfru);
 extern int spa_vdev_split_mirror(spa_t *spa, char *newname, nvlist_t *config,
     nvlist_t *props, boolean_t exp);
+
+extern int spa_load_vdev_props(spa_t *spa);
+
+extern int spa_vdev_prop_validate(spa_t *spa, uint64_t vdev_guid,
+    nvlist_t *nvp);
+extern int spa_vdev_prop_set(spa_t *spa, uint64_t vdev_guid, nvlist_t *nvp);
+extern int spa_vdev_prop_get(spa_t *spa, uint64_t vdev_guid, nvlist_t **nvp);
+extern int spa_vdev_props_sync_task_do(spa_t *spa);
 
 /* spare state (which is global across all pools) */
 extern void spa_spare_add(vdev_t *vd);
@@ -687,6 +722,10 @@ extern void spa_config_update(spa_t *spa, int what);
 /*
  * Miscellaneous SPA routines in spa_misc.c
  */
+
+/* dedup ceiling helper functions */
+extern uint64_t spa_get_ddts_size(spa_t *spa, boolean_t phys);
+extern int spa_get_l2arc_ddt_utilization(spa_t *spa);
 
 /* Namespace manipulation */
 extern spa_t *spa_lookup(const char *name);
@@ -766,10 +805,12 @@ extern uint64_t spa_get_asize(spa_t *spa, uint64_t lsize);
 extern uint64_t spa_get_dspace(spa_t *spa);
 extern uint64_t spa_get_slop_space(spa_t *spa);
 extern void spa_update_dspace(spa_t *spa);
+extern void spa_update_latency(spa_t *spa);
 extern uint64_t spa_version(spa_t *spa);
 extern boolean_t spa_deflate(spa_t *spa);
 extern metaslab_class_t *spa_normal_class(spa_t *spa);
 extern metaslab_class_t *spa_log_class(spa_t *spa);
+extern metaslab_class_t *spa_special_class(spa_t *spa);
 extern void spa_evicting_os_register(spa_t *, objset_t *os);
 extern void spa_evicting_os_deregister(spa_t *, objset_t *os);
 extern void spa_evicting_os_wait(spa_t *spa);
@@ -782,6 +823,7 @@ extern uint64_t spa_bootfs(spa_t *spa);
 extern uint64_t spa_delegation(spa_t *spa);
 extern objset_t *spa_meta_objset(spa_t *spa);
 extern uint64_t spa_deadman_synctime(spa_t *spa);
+extern spa_force_trim_t spa_get_force_trim(spa_t *spa);
 
 /* Miscellaneous support routines */
 extern void spa_activate_mos_feature(spa_t *spa, const char *feature,
@@ -809,11 +851,19 @@ extern boolean_t spa_has_slogs(spa_t *spa);
 extern boolean_t spa_is_root(spa_t *spa);
 extern boolean_t spa_writeable(spa_t *spa);
 extern boolean_t spa_has_pending_synctask(spa_t *spa);
+extern boolean_t spa_has_special(spa_t *spa);
 extern int spa_maxblocksize(spa_t *spa);
 extern void zfs_blkptr_verify(spa_t *spa, const blkptr_t *bp);
 
 extern int spa_mode(spa_t *spa);
 extern uint64_t strtonum(const char *str, char **nptr);
+
+/* Selector for dynamic I/O balancing between special and regular vdevs */
+extern boolean_t spa_use_special_class(spa_t *spa);
+
+/* Pool perfmon thread management */
+extern void spa_start_perfmon_thread(spa_t *spa);
+extern boolean_t spa_stop_perfmon_thread(spa_t *spa);
 
 extern char *spa_his_ievent_table[];
 

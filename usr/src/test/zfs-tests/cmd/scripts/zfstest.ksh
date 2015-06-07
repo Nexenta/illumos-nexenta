@@ -14,6 +14,7 @@
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2014, OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 
 export STF_SUITE="/opt/zfs-tests"
@@ -61,6 +62,8 @@ function find_runfile
 		distro=openindiana
 	elif [[ 0 -ne $(grep -c OmniOS /etc/release 2>/dev/null) ]]; then
 		distro=omnios
+	elif [[ 0 -ne $(grep -c Nexenta /etc/release 2>/dev/null) ]]; then
+		distro=nexenta
 	fi
 
 	[[ -n $distro ]] && echo $STF_SUITE/runfiles/$distro.run

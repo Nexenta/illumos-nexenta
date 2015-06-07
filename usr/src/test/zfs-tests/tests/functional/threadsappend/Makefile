@@ -47,6 +47,7 @@ $(PROG): $(OBJS)
 	$(COMPILE.c) $<
 
 install: all $(CMDS)
+	 mv $(TESTDIR)/$(PROG) $(ROOTOPTPKG)/bin
 
 lint: lint_SRCS
 

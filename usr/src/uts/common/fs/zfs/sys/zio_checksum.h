@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014 by Delphix. All rights reserved.
  */
 
@@ -63,10 +64,17 @@ extern zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS];
  * Checksum routines.
  */
 extern zio_checksum_func_t zio_checksum_SHA256;
+extern zio_checksum_func_t zio_checksum_SHA1CRC32;
+extern void zio_parallel_checksum_init(void);
+extern void zio_parallel_checksum_fini(void);
+extern int zio_parallel_checksum_fsm(zio_t *, enum zio_checksum,
+    void *, uint64_t, int, zio_cksum_t *, int *);
+extern void _zio_checksum_SHA1CRC32(const void *buf, uint64_t size,
+    zio_cksum_t *zcp, boolean_t crc_only);
 
-extern void zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
-    void *data, uint64_t size);
-extern int zio_checksum_error(zio_t *zio, zio_bad_cksum_t *out);
+extern int zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
+    void *data, uint64_t size, int can_accumulate);
+extern int zio_checksum_error(zio_t *zio, zio_bad_cksum_t *out, int *progress);
 extern enum zio_checksum spa_dedup_checksum(spa_t *spa);
 
 #ifdef	__cplusplus

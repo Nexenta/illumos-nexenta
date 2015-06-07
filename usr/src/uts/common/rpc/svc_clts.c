@@ -20,10 +20,15 @@
  */
 /*
  *  Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
+
+/*
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*
  * Portions of this source code were derived from Berkeley 4.3 BSD
@@ -108,6 +113,7 @@ struct svc_ops svc_clts_op = {
 struct udp_data {
 	mblk_t	*ud_resp;			/* buffer for response */
 	mblk_t	*ud_inmp;			/* mblk chain of request */
+	sin6_t	ud_local;			/* local address */
 };
 
 #define	UD_MAXSIZE	8800
@@ -320,6 +326,8 @@ svc_clts_krecv(SVCXPRT *clone_xprt, mblk_t *mp, struct rpc_msg *msg)
 	clone_xprt->xp_rtaddr.buf = (char *)mp->b_rptr +
 	    pptr->unitdata_ind.SRC_offset;
 	clone_xprt->xp_rtaddr.len = pptr->unitdata_ind.SRC_length;
+
+	clone_xprt->xp_lcladdr.buf = (char *)&ud->ud_local;
 
 	/*
 	 * Copy the local transport address in the service_transport
@@ -749,7 +757,7 @@ svc_clts_kfreeres(SVCXPRT *clone_xprt)
 #define	REQTOXID(req)	((req)->rq_xprt->xp_xid)
 
 static int	ndupreqs = 0;
-int	maxdupreqs = MAXDUPREQS;
+volatile int	maxdupreqs = MAXDUPREQS;
 static kmutex_t dupreq_lock;
 static struct dupreq *drhashtbl[DRHASHSZ];
 static int	drhashstat[DRHASHSZ];

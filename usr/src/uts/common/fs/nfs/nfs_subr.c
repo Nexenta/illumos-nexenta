@@ -18,13 +18,14 @@
  *
  * CDDL HEADER END
  */
+
 /*
- * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
- * Use is subject to license terms.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
- * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+ * Use is subject to license terms.
  */
 
 #include <sys/param.h>
@@ -130,7 +131,7 @@ static rhashq_t *rtable;
 static kmutex_t rpfreelist_lock;
 static rnode_t *rpfreelist = NULL;
 static long rnew = 0;
-long nrnode = 0;
+volatile long nrnode = 0;
 
 static int rtablesize;
 static int rtablemask;
@@ -148,14 +149,17 @@ kmutex_t nfs_minor_lock;
 int nfs_major;
 int nfs_minor;
 
-/* Do we allow preepoch (negative) time values otw? */
-bool_t nfs_allow_preepoch_time = FALSE;	/* default: do not allow preepoch */
+/*
+ * Do we allow preepoch (negative) time values otw?
+ * default: do not allow preepoch
+ */
+volatile bool_t nfs_allow_preepoch_time = FALSE;
 
 /*
  * Access cache
  */
 static acache_hash_t *acache;
-static long nacache;	/* used strictly to size the number of hash queues */
+volatile long nacache;	/* used strictly to size the number of hash queues */
 
 static int acachesize;
 static int acachemask;
@@ -227,7 +231,7 @@ static struct kmem_cache *chtab_cache;
  * with these broken servers, the nfs_disable_rddir_cache
  * parameter must be set in /etc/system
  */
-int nfs_disable_rddir_cache = 0;
+volatile int nfs_disable_rddir_cache = 0;
 
 int		clget(clinfo_t *, servinfo_t *, cred_t *, CLIENT **,
 		    struct chtab **);
@@ -863,7 +867,7 @@ rfs2call(mntinfo_t *mi, rpcproc_t which, xdrproc_t xdrargs, caddr_t argsp,
 
 #define	NFS3_JUKEBOX_DELAY	10 * hz
 
-static clock_t nfs3_jukebox_delay = 0;
+volatile clock_t nfs3_jukebox_delay = 0;
 
 #ifdef DEBUG
 static int rfs3call_hits = 0;
@@ -5196,4 +5200,87 @@ do_xattr_exists_check(vnode_t *vp, ulong_t *valp, cred_t *cr)
 	}
 	kmem_free(dbuf, dlen);
 	return (0);
+}
+
+/*
+ * Return non-zero in a case the vp is an empty directory used as a ZFS mount
+ * point.  The NFSv2 and NFSv3 servers should not allow to write to such
+ * directories.
+ */
+int
+protect_zfs_mntpt(vnode_t *vp)
+{
+	int error;
+	vfs_t *vfsp;
+	struct uio uio;
+	struct iovec iov;
+	int eof;
+	size_t len = 8 * 1024;
+	char *buf;
+
+	if (vp->v_type != VDIR || vn_ismntpt(vp) == 0)
+		return (0);
+
+	error = vn_vfsrlock_wait(vp);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * We protect ZFS mount points only
+	 */
+	if ((vfsp = vn_mountedvfs(vp)) == NULL ||
+	    strncmp(vfssw[vfsp->vfs_fstype].vsw_name, "zfs", 3) != 0) {
+		vn_vfsunlock(vp);
+		return (0);
+	}
+
+	vn_vfsunlock(vp);
+
+	buf = kmem_alloc(len, KM_SLEEP);
+
+	uio.uio_iov = &iov;
+	uio.uio_iovcnt = 1;
+	uio.uio_segflg = UIO_SYSSPACE;
+	uio.uio_fmode = 0;
+	uio.uio_extflg = UIO_COPY_CACHED;
+	uio.uio_loffset = 0;
+	uio.uio_llimit = MAXOFFSET_T;
+
+	eof = 0;
+
+	do {
+		size_t rlen;
+		dirent64_t *dp;
+
+		uio.uio_resid = len;
+		iov.iov_base = buf;
+		iov.iov_len = len;
+
+		(void) VOP_RWLOCK(vp, V_WRITELOCK_FALSE, NULL);
+		error = VOP_READDIR(vp, &uio, kcred, &eof, NULL, 0);
+		VOP_RWUNLOCK(vp, V_WRITELOCK_FALSE, NULL);
+
+		if (error != 0)
+			break;
+
+		error = EBUSY;
+
+		rlen = len - uio.uio_resid;
+		if (rlen == 0)
+			break;
+
+		for (dp = (dirent64_t *)buf;
+		    (intptr_t)dp < (intptr_t)buf + rlen;
+		    dp = (dirent64_t *)((intptr_t)dp + dp->d_reclen)) {
+			if (strcmp(dp->d_name, ".") != 0 &&
+			    strcmp(dp->d_name, "..") != 0) {
+				error = 0;
+				break;
+			}
+		}
+	} while (eof == 0 && error != 0);
+
+	kmem_free(buf, len);
+
+	return (error);
 }

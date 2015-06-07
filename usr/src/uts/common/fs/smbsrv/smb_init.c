@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -81,7 +81,7 @@ uint_t	smb_audit_flags =
  * Maximum number of simultaneous authentication, share mapping, pipe open
  * requests to be processed.
  */
-int	smb_ssetup_threshold = 256;
+int	smb_ssetup_threshold = SMB_AUTHSVC_MAXTHREAD;
 int	smb_tcon_threshold = 1024;
 int	smb_opipe_threshold = 1024;
 
@@ -183,7 +183,7 @@ _init(void)
 	}
 
 	if ((rc = mod_install(&modlinkage)) != 0) {
-		(void) smb_server_g_fini();
+		smb_server_g_fini();
 	}
 
 	return (rc);
@@ -200,8 +200,11 @@ _fini(void)
 {
 	int	rc;
 
+	if (smb_server_get_count() != 0)
+		return (EBUSY);
+
 	if ((rc = mod_remove(&modlinkage)) == 0) {
-		rc = smb_server_g_fini();
+		smb_server_g_fini();
 	}
 
 	return (rc);

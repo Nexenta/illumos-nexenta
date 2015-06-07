@@ -21,11 +21,13 @@
 
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2014 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
 #
 
 include $(SRC)/Makefile.master
 include $(SRC)/Makefile.buildnum
+include $(NZA_MAKEDEFS)
 
 #
 # Make sure we're getting a consistent execution environment for the
@@ -227,13 +229,23 @@ CLOBBERFILES= $(PDIR) proto_list_$(PKGMACH) install-$(PKGMACH).out \
 # to the SPECIAL_MANIFESTS vaiable.  It can contain wildcards in
 # regexp form, i.e. SUNW.* as one useful example.
 #
-SPECIAL_MANIFESTS = print-lp-ipp-ipp-listener.mf
+SPECIAL_MANIFESTS = \
+	print-lp-ipp-ipp-listener.mf \
+	driver-isal.mf \
+	network-aoe-target.mf
+
 LIST_MANIFESTS_CMD = (cd manifests ; /usr/bin/ls -1 *.mf |\
 	$(SED) $(SPECIAL_MANIFESTS:%=-e '/^%$$/d') )
 MANIFESTS = $(LIST_MANIFESTS_CMD:sh)
 
-# Conditionally add back lp-ipp
+# Conditionally add back lp-ipp, isal, and AoE
 $(ENABLE_IPP_PRINTING) MANIFESTS += print-lp-ipp-ipp-listener.mf
+$(ENABLE_NZA_CLOSED) MANIFESTS += driver-isal.mf network-aoe-target.mf
+
+$(ENABLE_NZA_CLOSED) NZA_CLOSED_MANIFESTS:sh= (		\
+	cd manifests;						\
+	cp ../../../nza-closed/pkg/manifests/driver-isal.mf .;	\
+	cp ../../../nza-closed/pkg/manifests/network-aoe-target.mf .)
 
 PKGS= $(MANIFESTS:%.mf=%)
 DEP_PKGS= $(PKGS:%=$(PDIR)/%.dep)
@@ -367,6 +379,10 @@ PKGLISTS= \
 
 ALL_TARGETS= $(PROC_SYNTH_PKGS) proto_list_$(PKGMACH)
 
+# This may be empty, or set to "ips", or "deb"
+PKGTYPE=ips
+include Makefile.$(PKGTYPE)
+
 all: $(ALL_TARGETS)
 
 #
@@ -392,8 +408,8 @@ $(PDIR)/gendeps: $(DEP_SYNTH_PKGS) $(DEP_PKGS)
 		done; \
 	else \
 		print "Resolving dependencies"; \
-		pkgdepend -R $(PKGDEP_RESOLVE_IMAGE) resolve \
-		    -m $(DEP_SYNTH_PKGS) $(DEP_PKGS); \
+		pkgdepend $(PKGDEP_FLAGS) resolve \
+		    $(PKGRES_FLAGS) $(DEP_SYNTH_PKGS) $(DEP_PKGS); \
 		for p in $(DEP_SYNTH_PKGS:%.dep=%) $(DEP_PKGS:%.dep=%); do \
 			if [ "$$(print $$p.metadata.*)" = \
 			     "$$(print $$p.metadata.noincorp.*)" ]; \
@@ -409,40 +425,6 @@ $(PDIR)/gendeps: $(DEP_SYNTH_PKGS) $(DEP_PKGS)
 		done; \
 	fi
 	$(PKGDEBUG)$(TOUCH) $(@)
-
-install: $(ALL_TARGETS) repository-metadata
-
-repository-metadata: publish_pkgs
-	$(PKGDEBUG)for r in $(REPOS); do \
-		pkgrepo refresh -s $(PKGDEST)/repo.$$r; \
-	done
-
-#
-# Since we create zero-length processed manifests for a graceful abort
-# from pkgmogrify, we need to detect that here and make no effort to
-# publish the package.
-#
-# For all other packages, we publish them regardless of status.  We
-# derive the target repository as a component of the metadata-derived
-# symlink for each package.
-#
-publish_pkgs: $(REPOS:%=$(PKGDEST)/repo.%) $(PDIR)/gendeps .WAIT $(PUB_PKGS)
-
-#
-# Before publishing, we want to pull the license files from $CODEMGR_WS
-# into the proto area.  This allows us to NOT pass $SRC (or
-# $CODEMGR_WS) as a basedir for publication.
-#
-$(PUB_PKGS): stage-licenses
-
-#
-# Initialize the empty on-disk repositories
-#
-$(REPOS:%=$(PKGDEST)/repo.%):
-	@print "Initializing $(@F)"
-	$(PKGDEBUG)$(INS.dir)
-	$(PKGDEBUG)pkgsend -s file://$(@) create-repository \
-		--set-property publisher.prefix=$(PKGPUBLISHER)
 
 #
 # rule to process real manifests
@@ -505,7 +487,7 @@ $(REPOS:%=$(PKGDEST)/repo.%):
 $(PDIR)/%.mog: manifests/%.mf
 	@print "Processing manifest $(<F)"
 	@env PKGFMT_OUTPUT=v1 pkgfmt -c $<
-	$(PKGDEBUG)$(RM) $(@) $(@:%.mog=%) $(@:%.mog=%.nodepend) \
+	$(PKGDEBUG)$(RM) -r $(@) $(@:%.mog=%) $(@:%.mog=%.nodepend) \
 		$(@:%.mog=%.lics) $(PDIR)/$(@F:%.mog=%).metadata.* $(@).vars
 	$(PKGDEBUG)$(PKGMOGRIFY) $(PKGMOG_VERBOSE) $(PM_INC:%= -I %) \
 		$(PKGMOG_DEFINES:%=-D %) -P $(@).vars -O $(@) \
@@ -537,25 +519,6 @@ $(PDIR)/%.dep: $(PDIR)/%.mog
 	else \
 		$(CP) $(<) $(@); \
 	fi
-
-#
-# The full chain implies that there should be a .dep.res suffix rule,
-# but dependency generation is done on a set of manifests, rather than
-# on a per-manifest basis.  Instead, see the gendeps rule above.
-#
-
-$(PDIR)/%.pub: $(PDIR)/%.res
-	$(PKGDEBUG)m=$$(basename $(@:%.pub=%).metadata.*); \
-	r=$${m#$(@F:%.pub=%.metadata.)+(?).}; \
-	if [ -s $(<) ]; then \
-		print "Publishing $(@F:%.pub=%) to $$r repository"; \
-		pkgsend -s file://$(PKGDEST)/repo.$$r publish \
-		    -d $(PKGROOT) -d $(TOOLSROOT) \
-		    -d license_files -d $(PKGROOT)/licenses \
-		    --fmri-in-manifest --no-index --no-catalog $(<) \
-		    > /dev/null; \
-	fi; \
-	$(TOUCH) $(@);
 
 #
 # rule to build the synthetic manifests
@@ -715,7 +678,6 @@ $(PROC_PKGS): $(PDIR)
 #
 $(PKGS) $(SYNTH_PKGS): $(PDIR)/$$(@:%=%.mog)
 
-$(PKGS:%=%.pub) $(SYNTH_PKGS:%=%.pub): $(PDIR)/$$(@)
 
 #
 # This is a convenience target to resolve dependencies without publishing

@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1986, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  *
  *  	Copyright (c) 1983,1984,1985,1986,1987,1988,1989  AT&T.
  *	All rights reserved.
@@ -1181,7 +1182,7 @@ fattr3_to_vattr(vnode_t *vp, fattr3 *na, struct vattr *vap)
  * dies.  See nfs_async_putpage and nfs_async_start.
  */
 
-int nfs_async_timeout = -1;	/* uninitialized */
+volatile int nfs_async_timeout = -1;	/* uninitialized */
 
 static void	nfs_async_start(struct vfs *);
 static void	nfs_async_pgops_start(struct vfs *);
@@ -2544,7 +2545,7 @@ nfs_invalidate_pages(vnode_t *vp, u_offset_t off, cred_t *cr)
 	mutex_exit(&rp->r_statelock);
 }
 
-static int nfs_write_error_to_cons_only = 0;
+volatile int nfs_write_error_to_cons_only = 0;
 #define	MSG(x)	(nfs_write_error_to_cons_only ? (x) : (x) + 1)
 
 /*
@@ -2594,7 +2595,7 @@ nfs_printfhandle(nfs_fhandle *fhp)
  */
 
 /* seconds between ENOSPC/EDQUOT messages */
-clock_t nfs_write_error_interval = 5;
+volatile clock_t nfs_write_error_interval = 5;
 
 void
 nfs_write_error(vnode_t *vp, int error, cred_t *cr)

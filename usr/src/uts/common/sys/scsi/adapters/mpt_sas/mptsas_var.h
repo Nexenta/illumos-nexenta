@@ -77,6 +77,11 @@ extern "C" {
 #define	MPTSAS_DEBUG		/* turn on debugging code */
 #endif	/* DEBUG */
 
+
+#if defined(DEBUG) || lint
+#define	MPTSAS_FAULTINJECTION
+#endif
+
 #define	MPTSAS_INITIAL_SOFT_SPACE	4
 
 #define	MAX_MPI_PORTS		16
@@ -203,13 +208,13 @@ typedef	struct NcrTableIndirect {	/* Table Indirect entries */
 #define	MPTSAS_RAID_WWID(wwid) \
 	((wwid & 0x0FFFFFFFFFFFFFFF) | 0x3000000000000000)
 
+TAILQ_HEAD(mptsas_active_cmdq, mptsas_cmd);
+typedef struct mptsas_active_cmdq mptsas_active_cmdq_t;
+
 typedef struct mptsas_target_addr {
 	uint64_t mta_wwn;
 	mptsas_phymask_t mta_phymask;
 } mptsas_target_addr_t;
-
-TAILQ_HEAD(mptsas_active_cmdq, mptsas_cmd);
-typedef struct mptsas_active_cmdq mptsas_active_cmdq_t;
 
 typedef	struct mptsas_target {
 		mptsas_target_addr_t	m_addr;
@@ -936,6 +941,10 @@ typedef struct mptsas {
 	 */
 	m_event_struct_t	m_event_task_mgmt;	/* must be last */
 							/* ... scsi_pkt_size */
+
+#ifdef MPTSAS_FAULTINJECTION
+	struct mptsas_active_cmdq  m_fminj_cmdq;
+#endif
 } mptsas_t;
 #define	MPTSAS_SIZE	(sizeof (struct mptsas) - \
 			sizeof (struct scsi_pkt) + scsi_pkt_size())

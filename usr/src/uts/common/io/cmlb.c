@@ -23,6 +23,7 @@
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -675,6 +676,7 @@ cmlb_free_handle(cmlb_handle_t *cmlbhandlep)
  * 	ENXIO 	creating minor nodes failed.
  *	EINVAL  invalid arg, unsupported tg_ops version
  */
+/*ARGSUSED8*/
 int
 cmlb_attach(dev_info_t *devi, cmlb_tg_ops_t *tgopsp, int device_type,
     boolean_t is_removable, boolean_t is_hotpluggable, char *node_type,
@@ -682,8 +684,6 @@ cmlb_attach(dev_info_t *devi, cmlb_tg_ops_t *tgopsp, int device_type,
 {
 
 	struct cmlb_lun	*cl = (struct cmlb_lun *)cmlbhandle;
-	diskaddr_t	cap;
-	int		status;
 
 	ASSERT(VALID_BOOLEAN(is_removable));
 	ASSERT(VALID_BOOLEAN(is_hotpluggable));
@@ -708,16 +708,6 @@ cmlb_attach(dev_info_t *devi, cmlb_tg_ops_t *tgopsp, int device_type,
 #if defined(__i386) || defined(__amd64)
 	cl->cl_logical_drive_count = 0;
 #endif
-
-	if (!is_removable) {
-		mutex_exit(CMLB_MUTEX(cl));
-		status = DK_TG_GETCAP(cl, &cap, tg_cookie);
-		mutex_enter(CMLB_MUTEX(cl));
-		if (status == 0 && cap > CMLB_EXTVTOC_LIMIT) {
-			/* set default EFI if > 2TB */
-			cl->cl_def_labeltype = CMLB_LABEL_EFI;
-		}
-	}
 
 	/* create minor nodes based on default label type */
 	cl->cl_last_labeltype = CMLB_LABEL_UNDEF;
@@ -763,6 +753,32 @@ cmlb_detach(cmlb_handle_t cmlbhandle, void *tg_cookie)
 	i_ddi_prop_dyn_driver_set(CMLB_DEVINFO(cl), NULL);
 	cl->cl_state = CMLB_INITED;
 	mutex_exit(CMLB_MUTEX(cl));
+}
+
+/*
+ * cmlb_workaround_off_by_one:
+ *
+ *	Enables the workaround for the ancient off-by-one bug in sd.
+ *      See comment preceding cmlb_attach().
+ *
+ * Arguments
+ *	cmlbhandle	cmlb handle associated with device.
+ *
+ *
+ * Notes:
+ *	This should only be called by sd_unit_attach(), and only before
+ *	validating the label for the first time.
+ *
+ * Return values:
+ *	None.
+ */
+
+void
+cmlb_workaround_off_by_one(cmlb_handle_t cmlbhandle)
+{
+	struct cmlb_lun *cl = (struct cmlb_lun *)cmlbhandle;
+
+	cl->cl_alter_behavior |= CMLB_OFF_BY_ONE;
 }
 
 /*

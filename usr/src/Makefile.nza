@@ -1,0 +1,54 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+# Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+
+
+#
+# Makefile.nza -- For only-open-source, this file will contain at most a few
+# empty, but set, variables.  The environment variable NZA_MAKEDEFS will be
+# set to this file for only-open-source builds.  If $WS/usr/nza-closed is
+# present, that variable should be set to $WS/usr/nza-closed/Makefile.nza
+#
+# NZA is short for Nexenta ZFS Appliance, and it is a prefix not seen in any
+# other Illumos source.  Anytime one encounters something starting with NZA,
+# it means that there is most likely accompanying closed source that should
+# live in $WS/usr/nza-closed/.
+#
+# This child-of-Illumos should be able to build by itself, if it does not,
+# that will be at most a temporary condition.
+#
+
+# For the stmf_sbd mdb(1) modules, no extra includes are needed.
+
+NZA_ZFSPLUSBASE_FLAGS=
+NZA_ZFSPLUS_SHARED_OBJS=
+NZA_ZFSPLUS_SHARED_SRCS=
+
+NZA_ZFSPLUS_OBJS += $(NZA_ZFSPLUS_SHARED_OBJS)
+
+# Trick kernel Makefiles into ignoring AOE target
+NZA_KMODS=$(POUND_SIGN)
+ENABLE_NZA_CLOSED=$(POUND_SIGN)
+
+ZFS_OBJS +=		\
+	$(NZA_ZFSPLUS_SHARED_OBJS)
+

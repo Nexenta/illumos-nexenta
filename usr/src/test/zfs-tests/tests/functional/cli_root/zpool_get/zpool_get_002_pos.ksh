@@ -27,6 +27,7 @@
 
 #
 # Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -48,7 +49,7 @@
 # default values are sane, or whether they can be changed with zpool set.
 #
 
-log_assert "Zpool get all works as expected"
+log_assert "zpool get all works as expected"
 
 typeset -i i=0;
 
@@ -59,11 +60,11 @@ fi
 log_must $ZPOOL get all $TESTPOOL
 $ZPOOL get all $TESTPOOL > /tmp/values.$$
 
-log_note "Checking zpool get all output for a header."
+log_note "Checking zpool get all output for a header"
 $GREP ^"NAME " /tmp/values.$$ > /dev/null 2>&1
 if [ $? -ne 0 ]
 then
-	log_fail "The header was not printed from zpool get all"
+	log_fail "The header was not found in zpool get all output"
 fi
 
 
@@ -73,8 +74,8 @@ do
 	$GREP "$TESTPOOL *${properties[$i]}" /tmp/values.$$ > /dev/null 2>&1
 	if [ $? -ne 0 ]
 	then
-		log_fail "zpool property ${properties[$i]} was not found\
- in pool output."
+		log_fail "zpool property ${properties[$i]} was not found" \
+		    "in zpool get all output"
 	fi
 	i=$(( $i + 1 ))
 done
@@ -85,10 +86,11 @@ i=$(( $i + 1 ))
 COUNT=$($WC /tmp/values.$$ | $AWK '{print $1}')
 if [ $i -ne $COUNT ]
 then
-	log_fail "Found zpool features not in the zpool_get test config."
+	log_fail "Length of output $COUNT is not equal to number of props and" \
+	    "header"
 fi
 
 
 
 $RM /tmp/values.$$
-log_pass "Zpool get all works as expected"
+log_pass "zpool get all works as expected"

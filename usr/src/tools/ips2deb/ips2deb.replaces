@@ -1,0 +1,18 @@
+# Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+#
+# This file is used for setting the Replaces: header in the control
+# file of a package.
+#
+# Examples:
+# new-package: old-package (<< version)
+# new-package: old-package1, old-package2
+#
+system-data-zoneinfo: sunwcs
+library-perl-5-sun-solaris-512: library-perl-5-sun-solaris
+library-perl-5-sun-solaris-510: library-perl-510-sun-solaris
+system-library-libmtsk: system-library-math
+text-mantools: text-doctools
+system-man: text-mantools
+system-kernel: driver-network-platform (<< 40-0-23)
+runtime-perl-510-module-sun-solaris: library-perl-5-sun-solaris-510, library-perl-5-sun-solaris-512
+developer-build-onbld: developer-build-nza-kernel

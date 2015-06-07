@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
@@ -839,7 +842,7 @@ extern int mp_cont_len(mblk_t *, int *);
 /*
  * shared or externally configured data structures
  */
-extern int nstrpush;			/* maximum number of pushes allowed */
+extern volatile int nstrpush;		/* maximum number of pushes allowed */
 
 #endif /* _KERNEL */
 

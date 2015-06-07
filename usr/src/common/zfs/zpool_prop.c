@@ -20,12 +20,13 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  */
 
 #include <sys/zio.h>
 #include <sys/spa.h>
+#include <sys/special.h>
 #include <sys/zfs_acl.h>
 #include <sys/zfs_ioctl.h>
 #include <sys/fs/zfs.h>
@@ -57,10 +58,24 @@ zpool_prop_init(void)
 		{ NULL }
 	};
 
+	static zprop_index_t meta_placement_table[] = {
+		{ "off",	META_PLACEMENT_OFF},
+		{ "on",		META_PLACEMENT_ON},
+		{ "dual",	META_PLACEMENT_DUAL},
+		{ NULL }
+	};
+
 	static zprop_index_t failuremode_table[] = {
 		{ "wait",	ZIO_FAILURE_MODE_WAIT },
 		{ "continue",	ZIO_FAILURE_MODE_CONTINUE },
 		{ "panic",	ZIO_FAILURE_MODE_PANIC },
+		{ NULL }
+	};
+
+	static zprop_index_t forcetrim_table[] = {
+		{ "auto",	SPA_FORCE_TRIM_AUTO },
+		{ "on",		SPA_FORCE_TRIM_ON },
+		{ "off",	SPA_FORCE_TRIM_OFF },
 		{ NULL }
 	};
 
@@ -104,6 +119,15 @@ zpool_prop_init(void)
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "<version>", "VERSION");
 	zprop_register_number(ZPOOL_PROP_DEDUPDITTO, "dedupditto", 0,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "<threshold (min 100)>", "DEDUPDITTO");
+	zprop_register_number(ZPOOL_PROP_DEDUPMETA_DITTO, "dedup_meta_ditto", 0,
+	    PROP_DEFAULT, ZFS_TYPE_POOL, "<number of copies>",
+	    "DEDUP_META_DITTO");
+	zprop_register_number(ZPOOL_PROP_DEDUP_LO_BEST_EFFORT,
+	    "dedup_lo_best_effort", 60, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "0-100", "DEDUP_LO_BEST_EFFORT");
+	zprop_register_number(ZPOOL_PROP_DEDUP_HI_BEST_EFFORT,
+	    "dedup_hi_best_effort", 80, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "0-100", "DEDUP_HI_BEST_EFFORT");
 
 	/* default index (boolean) properties */
 	zprop_register_index(ZPOOL_PROP_DELEGATION, "delegation", 1,
@@ -118,11 +142,50 @@ zpool_prop_init(void)
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "EXPAND", boolean_table);
 	zprop_register_index(ZPOOL_PROP_READONLY, "readonly", 0,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "RDONLY", boolean_table);
+	zprop_register_index(ZPOOL_PROP_DDT_DESEGREGATION, "ddt_desegregation",
+	    0, PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "DDT_DESEG",
+	    boolean_table);
+	zprop_register_index(ZPOOL_PROP_DEDUP_BEST_EFFORT, "dedup_best_effort",
+	    0, PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "DEDUP_BEST_EFFORT",
+	    boolean_table);
+
+	zprop_register_index(ZPOOL_PROP_META_PLACEMENT, "meta_placement", 1,
+	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "META_PLCMNT",
+	    boolean_table);
+	zprop_register_index(ZPOOL_PROP_DDT_TO_METADEV, "ddt_to_metadev",
+	    META_PLACEMENT_ON, PROP_DEFAULT, ZFS_TYPE_POOL, "on | dual | off",
+	    "DDT_TO_MD", meta_placement_table);
+	zprop_register_index(ZPOOL_PROP_GENERAL_META_TO_METADEV,
+	    "gen_meta_to_metadev", META_PLACEMENT_ON, PROP_DEFAULT,
+	    ZFS_TYPE_POOL, "on | dual | off", "GENMETA_TO_MD",
+	    meta_placement_table);
+	zprop_register_index(ZPOOL_PROP_OTHER_META_TO_METADEV,
+	    "other_meta_to_metadev", META_PLACEMENT_OFF, PROP_DEFAULT,
+	    ZFS_TYPE_POOL, "on | dual | off", "OTHERMETA_TO_MD",
+	    meta_placement_table);
 
 	/* default index properties */
 	zprop_register_index(ZPOOL_PROP_FAILUREMODE, "failmode",
 	    ZIO_FAILURE_MODE_WAIT, PROP_DEFAULT, ZFS_TYPE_POOL,
 	    "wait | continue | panic", "FAILMODE", failuremode_table);
+	zprop_register_index(ZPOOL_PROP_FORCETRIM, "forcetrim",
+	    SPA_FORCE_TRIM_AUTO, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "auto | on | off", "FORCETRIM", forcetrim_table);
+
+	/* special device status (enabled/disabled) */
+	zprop_register_index(ZPOOL_PROP_ENABLESPECIAL, "enablespecial", 0,
+	    PROP_READONLY, ZFS_TYPE_POOL, "on | off", "ENABLESPECIAL",
+	    boolean_table);
+
+	/* pool's low watermark in percents (for write cache) */
+	zprop_register_number(ZPOOL_PROP_LOWATERMARK, "low-watermark",
+	    60, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "<watermark 0-100%>", "LOWATERMARK");
+
+	/* pool's high watermark in percents (for write cache) */
+	zprop_register_number(ZPOOL_PROP_HIWATERMARK, "high-watermark",
+	    80, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "<watermark 0-100%>", "HIWATERMARK");
 
 	/* hidden properties */
 	zprop_register_hidden(ZPOOL_PROP_NAME, "name", PROP_TYPE_STRING,

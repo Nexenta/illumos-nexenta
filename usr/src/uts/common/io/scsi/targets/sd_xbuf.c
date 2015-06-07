@@ -53,7 +53,6 @@
 static int xbuf_iostart(ddi_xbuf_attr_t xap);
 static void xbuf_dispatch(ddi_xbuf_attr_t xap);
 static void xbuf_restart_callback(void *arg);
-static void xbuf_enqueue(struct buf *bp, ddi_xbuf_attr_t xap);
 static int xbuf_brk_done(struct buf *bp);
 
 

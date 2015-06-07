@@ -21,6 +21,7 @@
 
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 #
 
@@ -40,6 +41,7 @@ COMMON_SUBDIRS= \
 	depcheck \
 	env \
 	findunref \
+	ips2deb \
 	ndrgen \
 	onbld \
 	pmodes \

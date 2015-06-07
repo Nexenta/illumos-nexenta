@@ -877,7 +877,7 @@ zpool_read_label(int fd, nvlist_t **config)
 		return (0);
 	size = P2ALIGN_TYPED(statbuf.st_size, sizeof (vdev_label_t), uint64_t);
 
-	if ((label = malloc(sizeof (vdev_label_t))) == NULL)
+	if ((label = calloc(sizeof (vdev_label_t), 1)) == NULL)
 		return (-1);
 
 	for (l = 0; l < VDEV_LABELS; l++) {

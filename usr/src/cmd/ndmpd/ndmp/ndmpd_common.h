@@ -46,7 +46,6 @@
 
 #include <thread.h>
 #include <synch.h>
-#include "ndmpd_log.h"
 #include "ndmp.h"
 #include <unistd.h>
 #include <sys/types.h>

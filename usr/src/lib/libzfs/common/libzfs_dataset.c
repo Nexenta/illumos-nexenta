@@ -2941,7 +2941,7 @@ parent_name(const char *path, char *buf, size_t buflen)
  * 'zoned' property, which is used to validate property settings when creating
  * new datasets.
  */
-static int
+int
 check_parents(libzfs_handle_t *hdl, const char *path, uint64_t *zoned,
     boolean_t accept_ancestor, int *prefixlen)
 {
@@ -3237,6 +3237,8 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 	/* create the dataset */
 	ret = lzc_create(path, ost, props);
 	nvlist_free(props);
+	if (ret == 0)
+		libzfs_log_event(hdl, path);
 
 	/* check for failure */
 	if (ret != 0) {
@@ -3382,9 +3384,15 @@ int
 zfs_destroy_snaps_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, boolean_t defer)
 {
 	int ret;
+	nvpair_t *elem;
 	nvlist_t *errlist;
 
 	ret = lzc_destroy_snaps(snaps, defer, &errlist);
+	if (ret == 0) {
+		for (elem = nvlist_next_nvpair(snaps, NULL); elem != NULL;
+		    elem = nvlist_next_nvpair(snaps, elem))
+			libzfs_log_event(hdl, nvpair_name(elem));
+	}
 
 	if (ret == 0)
 		return (0);
@@ -3461,6 +3469,8 @@ zfs_clone(zfs_handle_t *zhp, const char *target, nvlist_t *props)
 
 	ret = lzc_clone(target, zhp->zfs_name, props);
 	nvlist_free(props);
+	if (ret == 0)
+		libzfs_log_event(hdl, target);
 
 	if (ret != 0) {
 		switch (errno) {
@@ -3606,6 +3616,11 @@ zfs_snapshot_nvl(libzfs_handle_t *hdl, nvlist_t *snaps, nvlist_t *props)
 	}
 
 	ret = lzc_snapshot(snaps, props, &errors);
+	if (ret == 0) {
+		for (elem = nvlist_next_nvpair(snaps, NULL); elem != NULL;
+		    elem = nvlist_next_nvpair(snaps, elem))
+			libzfs_log_event(hdl, nvpair_name(elem));
+	}
 
 	if (ret != 0) {
 		boolean_t printed = B_FALSE;
@@ -4442,6 +4457,8 @@ zfs_release_one(zfs_handle_t *zhp, void *arg)
 		fnvlist_add_nvlist(ha->nvl, name, torelease);
 		fnvlist_free(torelease);
 	}
+
+	fnvlist_free(existing_holds);
 
 	if (ha->recursive)
 		rv = zfs_iter_filesystems(zhp, zfs_release_one, ha);

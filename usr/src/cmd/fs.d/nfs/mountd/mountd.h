@@ -68,6 +68,10 @@ extern int check_client(struct share *, struct netbuf *,
     struct nd_hostservlist *, int, uid_t, gid_t, uint_t, gid_t *, uid_t *,
     gid_t *, uint_t *, gid_t **);
 extern struct nd_hostservlist *anon_client(char *host);
+extern int getclientsnames_lazy(char *, struct netbuf **,
+	struct nd_hostservlist **);
+extern int getclientsnames(SVCXPRT *, struct netbuf **,
+	struct nd_hostservlist **);
 
 /*
  * These functions are defined here due to the fact

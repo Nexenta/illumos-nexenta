@@ -1,7 +1,5 @@
 /*
  * Copyright (c) 2010 Minoura Makoto.
- * Copyright (c) 2012 Nexenta Systems, Inc.
- * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -62,6 +60,9 @@
  * SUCH DAMAGE.
  */
 
+/*
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #ifndef __VIRTIOREG_H__
 #define	__VIRTIOREG_H__

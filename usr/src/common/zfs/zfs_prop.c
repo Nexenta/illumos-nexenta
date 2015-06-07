@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
@@ -29,6 +30,7 @@
 
 #include <sys/zio.h>
 #include <sys/spa.h>
+#include <sys/special.h>
 #include <sys/u8_textprep.h>
 #include <sys/zfs_acl.h>
 #include <sys/zfs_ioctl.h>
@@ -71,6 +73,7 @@ zfs_prop_init(void)
 		{ "fletcher4",	ZIO_CHECKSUM_FLETCHER_4 },
 		{ "sha256",	ZIO_CHECKSUM_SHA256 },
 		{ "noparity",	ZIO_CHECKSUM_NOPARITY },
+		{ "sha1crc32",	ZIO_CHECKSUM_SHA1CRC32 },
 		{ NULL }
 	};
 
@@ -81,6 +84,9 @@ zfs_prop_init(void)
 		{ "sha256",	ZIO_CHECKSUM_SHA256 },
 		{ "sha256,verify",
 				ZIO_CHECKSUM_SHA256 | ZIO_CHECKSUM_VERIFY },
+		{ "sha1crc32",	ZIO_CHECKSUM_SHA1CRC32 },
+		{ "sha1crc32,verify",
+				ZIO_CHECKSUM_SHA1CRC32 | ZIO_CHECKSUM_VERIFY },
 		{ NULL }
 	};
 
@@ -184,10 +190,18 @@ zfs_prop_init(void)
 		{ NULL }
 	};
 
-	static zprop_index_t cache_table[] = {
+	static zprop_index_t primary_cache_table[] = {
 		{ "none",	ZFS_CACHE_NONE },
 		{ "metadata",	ZFS_CACHE_METADATA },
 		{ "all",	ZFS_CACHE_ALL },
+		{ NULL }
+	};
+
+	static zprop_index_t secondary_cache_table[] = {
+		{ "none",	ZFS_CACHE_NONE },
+		{ "metadata",	ZFS_CACHE_METADATA },
+		{ "all",	ZFS_CACHE_ALL },
+		{ "data",	ZFS_CACHE_DATA },
 		{ NULL }
 	};
 
@@ -201,6 +215,23 @@ zfs_prop_init(void)
 	static zprop_index_t redundant_metadata_table[] = {
 		{ "all",	ZFS_REDUNDANT_METADATA_ALL },
 		{ "most",	ZFS_REDUNDANT_METADATA_MOST },
+		{ NULL }
+	};
+
+	static zprop_index_t meta_placement_table[] = {
+		{ "off",	META_PLACEMENT_OFF},
+		{ "on",		META_PLACEMENT_ON},
+		{ "dual",	META_PLACEMENT_DUAL},
+		{ NULL }
+	};
+
+	static zprop_index_t specialclass_table[] = {
+		{ "zil",	SPA_SPECIALCLASS_ZIL },
+		{ "meta",	SPA_SPECIALCLASS_META },
+#if 0
+		/* temporarily disable wrcache */
+		{ "wrcache",	SPA_SPECIALCLASS_WRCACHE },
+#endif
 		{ NULL }
 	};
 
@@ -245,14 +276,35 @@ zfs_prop_init(void)
 	zprop_register_index(ZFS_PROP_PRIMARYCACHE, "primarycache",
 	    ZFS_CACHE_ALL, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME,
-	    "all | none | metadata", "PRIMARYCACHE", cache_table);
+	    "all | none | metadata", "PRIMARYCACHE", primary_cache_table);
 	zprop_register_index(ZFS_PROP_SECONDARYCACHE, "secondarycache",
 	    ZFS_CACHE_ALL, PROP_INHERIT,
 	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME,
-	    "all | none | metadata", "SECONDARYCACHE", cache_table);
+	    "all | none | metadata | data", "SECONDARYCACHE",
+	    secondary_cache_table);
 	zprop_register_index(ZFS_PROP_LOGBIAS, "logbias", ZFS_LOGBIAS_LATENCY,
 	    PROP_INHERIT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "latency | throughput", "LOGBIAS", logbias_table);
+
+#if 0
+	/* temporarily disable wrcache */
+	/* special class */
+	zprop_register_index(ZFS_PROP_SPECIALCLASS, "specialclass",
+	    SPA_SPECIALCLASS_ZIL, PROP_INHERIT,
+	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME,
+	    "zil | meta | wrcache", "SPECIALCLASS", specialclass_table);
+#else
+	/* special class */
+	zprop_register_index(ZFS_PROP_SPECIALCLASS, "specialclass",
+	    SPA_SPECIALCLASS_ZIL, PROP_INHERIT,
+	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME,
+	    "zil | meta", "SPECIALCLASS", specialclass_table);
+#endif
+
+	zprop_register_index(ZFS_PROP_ZPL_TO_METADEV, "zpl_to_metadev",
+	    META_PLACEMENT_ON, PROP_INHERIT,
+	    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_SNAPSHOT | ZFS_TYPE_VOLUME,
+	    "on | dual | off", "ZPL_TO_MD", meta_placement_table);
 
 	/* inherit index (boolean) properties */
 	zprop_register_index(ZFS_PROP_ATIME, "atime", 1, PROP_INHERIT,
@@ -425,6 +477,8 @@ zfs_prop_init(void)
 	    PROP_TYPE_NUMBER, PROP_READONLY, ZFS_TYPE_DATASET, "INCONSISTENT");
 	zprop_register_hidden(ZFS_PROP_PREV_SNAP, "prevsnap", PROP_TYPE_STRING,
 	    PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME, "PREVSNAP");
+	zprop_register_hidden(ZFS_PROP_LSTXG, "lstxg", PROP_TYPE_NUMBER,
+	    PROP_READONLY, ZFS_TYPE_DATASET, "LSTXG");
 
 	/* oddball properties */
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,

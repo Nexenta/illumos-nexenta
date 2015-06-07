@@ -21,10 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- */
-
-/*
  * Copyright (c) 2012 by Delphix. All rights reserved.
+ * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -305,7 +303,18 @@ zfs_ereport_start(nvlist_t **ereport_out, nvlist_t **detector_out,
 		 * provided for us, instead of within the zio_t.
 		 */
 		if (vd != NULL) {
-			if (size)
+			/*
+			 * The 'stateoroffset' and 'size' parameters are
+			 * overloaded to represent the timeout and latency,
+			 * respectively, in a timeout report.
+			 */
+			if (strcmp(subclass, FM_EREPORT_ZFS_TIMEOUT) == 0)
+				fm_payload_set(ereport,
+				    FM_EREPORT_PAYLOAD_ZFS_ZIO_TIMEOUT,
+				    DATA_TYPE_UINT64, stateoroffset,
+				    FM_EREPORT_PAYLOAD_ZFS_ZIO_LATENCY,
+				    DATA_TYPE_UINT64, size, NULL);
+			else if (size)
 				fm_payload_set(ereport,
 				    FM_EREPORT_PAYLOAD_ZFS_ZIO_OFFSET,
 				    DATA_TYPE_UINT64, stateoroffset,

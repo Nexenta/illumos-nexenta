@@ -1,0 +1,58 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+#
+# Copyright 2015 Nexenta Systems Inc. All rights reserved.
+#
+
+set name=pkg.fmri value=pkg:/system/test/ndmptest@$(PKGVERS)
+set name=pkg.description value="ndmp Test Suite"
+set name=pkg.summary value="ndmp Protocol and Stress Tests"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Development/System
+set name=variant.arch value=$(ARCH)
+dir path=opt/ndmp-tests
+dir path=opt/ndmp-tests/bin
+dir path=opt/ndmp-tests/tests
+dir path=opt/ndmp-tests/tests/configure
+dir path=opt/ndmp-tests/tests/lib
+dir path=opt/ndmp-tests/tests/protocol-tests
+dir path=opt/ndmp-tests/tests/protocol-tests/CONFIG
+dir path=opt/ndmp-tests/tests/protocol-tests/CONNECT
+dir path=opt/ndmp-tests/tests/protocol-tests/DATA
+dir path=opt/ndmp-tests/tests/protocol-tests/MOVER
+dir path=opt/ndmp-tests/tests/protocol-tests/POST
+dir path=opt/ndmp-tests/tests/protocol-tests/SCSI
+dir path=opt/ndmp-tests/tests/protocol-tests/TAPE
+file path=opt/ndmp-tests/README mode=0444
+file path=opt/ndmp-tests/STC.INFO mode=0444
+file path=opt/ndmp-tests/bin/ndmp_proto_test mode=0555
+file path=opt/ndmp-tests/bin/ndmptest mode=0555
+file path=opt/ndmp-tests/tests/configure/tc_configure mode=0555
+file path=opt/ndmp-tests/tests/lib/ndmp_execute mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/CONFIG/tc_CONFIG mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/CONFIG/tp_CONFIG mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/CONNECT/tc_CONNECT mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/CONNECT/tp_CONNECT mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/DATA/tc_DATA mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/DATA/tp_DATA mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/MOVER/tc_MOVER mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/MOVER/tp_MOVER mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/POST/tc_POST mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/POST/tp_POST mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/SCSI/tc_SCSI mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/SCSI/tp_SCSI mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/TAPE/tc_TAPE mode=0555
+file path=opt/ndmp-tests/tests/protocol-tests/TAPE/tp_TAPE mode=0555
+file path=opt/ndmp-tests/tet_scen mode=0444
+license cr_Sun license=cr_Sun
+license lic_CDDL license=lic_CDDL
+license usr/src/test/ndmp-tests/THIRDPARTYLICENSE \
+    license=usr/src/test/ndmp-tests/THIRDPARTYLICENSE

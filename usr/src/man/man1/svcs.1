@@ -1,621 +1,376 @@
-'\" te
+.\"
+.\" The contents of this file are subject to the terms of the
+.\" Common Development and Distribution License (the "License").
+.\" You may not use this file except in compliance with the License.
+.\"
+.\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+.\" or http://www.opensolaris.org/os/licensing.
+.\" See the License for the specific language governing permissions
+.\" and limitations under the License.
+.\"
+.\" When distributing Covered Code, include this CDDL HEADER in each
+.\" file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+.\" If applicable, add the following below this CDDL HEADER, with the
+.\" fields enclosed by brackets "[]" replaced with your own identifying
+.\" information: Portions Copyright [yyyy] [name of copyright owner]
+.\"
+.\"
 .\" Copyright (c) 2008, Sun Microsystems, Inc. All Rights Reserved
-.\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License.
-.\" You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.  See the License for the specific language governing permissions and limitations under the License.
-.\" When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
-.TH SVCS 1 "Apr 17, 2011"
-.SH NAME
-svcs \- report service status
-.SH SYNOPSIS
-.LP
-.nf
-\fBsvcs\fR [\fB-aHpv?\fR] [\fB-Z\fR | \fB-z\fR \fIzone\fR] [\fB-o\fR \fIcol\fR[,\fIcol\fR]]... [\fB-R\fR \fIFMRI-instance\fR]...
-     [\fB-sS\fR \fIcol\fR]... [\fIFMRI\fR | \fIpattern\fR]...
-.fi
-
-.LP
-.nf
-\fBsvcs\fR {\fB-d\fR | \fB-D\fR} [\fB-Hpv?\fR] [\fB-Z\fR | \fB-z\fR \fIzone\fR] [\fB-o\fR \fIcol\fR[,\fIcol\fR]]... [\fB-sS\fR \fIcol\fR]...
-     [\fIFMRI\fR | \fIpattern\fR] ...
-.fi
-
-.LP
-.nf
-\fBsvcs\fR [\fB-l\fR | \fB-L\fR] [\fB-vZ\fR] [\fB-z\fR \fIzone\fR] [\fIFMRI\fR | \fIpattern\fR]...
-.fi
-
-.LP
-.nf
-\fBsvcs\fR \fB-x\fR [\fB-v\fR] [\fB-Z\fR | \fB-z\fR \fIzone\fR] [\fIFMRI\fR]...
-.fi
-
-.SH DESCRIPTION
-.sp
-.LP
-The \fBsvcs\fR command displays information about service instances as recorded
-in the service configuration repository.
-.sp
-.LP
+.\" Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+.\"
+.Dd April 23, 2015
+.Dt SVCS 1
+.Os
+.Sh NAME
+.Nm svcs
+.Nd report service status
+.Sh SYNOPSIS
+.Nm
+.Op Fl aHpv\?
+.Op Fl o Ar col Ns Oo , Ns Ar col Oc Ns ...
+.Oo Fl R Ar FMRI-instance Oc Ns ...
+.Oo Fl sS Ar col Oc Ns ...
+.Op Fl z Ar zone Ns | Ns Fl Z
+.Oo Ar FMRI Ns | Ns Ar pattern Oc Ns ...
+.Nm
+.Brq Fl d Ns | Ns Fl D
+.Fl Hpv\?
+.Op Fl o Ar col Ns Oo , Ns Ar col Oc Ns ...
+.Oo Fl sS Ar col Oc Ns ...
+.Op Fl z Ar zone Ns | Ns Fl Z
+.Oo Ar FMRI Ns | Ns Ar pattern Oc Ns ...
+.Nm
+.Brq Fl l Ns | Ns Fl L
+.Op Fl v
+.Op Fl z Ar zone Ns | Ns Fl Z
+.Bro Ar FMRI Ns |  Ns Ar pattern Brc Ns ...
+.Nm
+.Fl x
+.Op Fl v
+.Op Fl z Ar zone Ns | Ns Fl Z
+.Oo Ar FMRI Oc Ns ...
+.Sh DESCRIPTION
+The
+.Nm
+command displays information about service instances as recorded in the service
+configuration repository.
+.Pp
 The first form of this command prints one-line status listings for service
 instances specified by the arguments. Each instance is listed only once. With
 no arguments, all enabled service instances, even if temporarily disabled, are
 listed with the columns indicated below.
-.sp
-.LP
+.Pp
 The second form prints one-line status listings for the dependencies or
 dependents of the service instances specified by the arguments.
-.sp
-.LP
+.Pp
 The third form prints detailed information about specific services and
 instances.
-.sp
-.LP
+.Pp
 The fourth form explains the states of service instances. For each argument, a
 block of human-readable text is displayed which explains what state the service
 is in, and why it is in that state. With no arguments, problematic services are
 described.
-.sp
-.LP
-Error messages are printed to the standard error stream.
-.sp
-.LP
+.Pp
 The output of this command can be used appropriately as input to the
-\fBsvcadm\fR(1M) command.
-.SH OPTIONS
-.sp
-.LP
+.Xr svcadm 1M
+command.
+.Sh OPTIONS
 The following options are supported:
-.sp
-.ne 2
-.na
-\fB\fB-?\fR\fR
-.ad
-.RS 20n
+.Bl -tag -width "-R FMRI-instance"
+.It Fl \?
 Displays an extended usage message, including column specifiers.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-a\fR\fR
-.ad
-.RS 20n
+.It Fl a
 Show all services, even disabled ones. This option has no effect if services
 are selected.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-d\fR\fR
-.ad
-.RS 20n
+.It Fl d
 Lists the services or service instances upon which the given service instances
 depend.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-D\fR\fR
-.ad
-.RS 20n
+.It Fl D
 Lists the service instances that depend on the given services or service
 instances.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-H\fR\fR
-.ad
-.RS 20n
-Omits the column headers.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-l\fR\fR
-.ad
-.RS 20n
-(The letter ell.) Displays all available information about the selected
-services and service instances, with one service attribute displayed for each
-line. Information for different instances are separated by blank lines.
-.sp
+.It Fl H
+Used for scripting mode. Do not print headers and separate fields by a single
+tab instead of arbitrary white space.
+.It Fl l
+Displays all available information about the selected services and service
+instances, with one service attribute displayed for each line. Information for
+different instances are separated by blank lines.
+.Pp
 The following specific attributes require further explanation:
-.sp
-.ne 2
-.na
-\fB\fBdependency\fR\fR
-.ad
-.RS 14n
-Information about a dependency. The grouping and \fBrestart_on\fR properties
-are displayed first and are separated by a forward slash (\fB/\fR). Next, each
-entity and its state is listed. See \fBsmf\fR(5) for information about states.
-In addition to the standard states, each service dependency can have the
-following state descriptions:
-.sp
-.ne 2
-.na
-\fB\fBabsent\fR\fR
-.ad
-.RS 12n
+.Bl -tag -width "dependency"
+.It Sy dependency
+Information about a dependency. The grouping and
+.Ar restart_on
+properties are displayed first and are separated by a forward slash
+.Pq Sy / .
+Next, each entity and its state is listed. See
+.Xr smf 5
+for information about states. In addition to the standard states, each service
+dependency can have the following state descriptions:
+.Bl -tag -width "multiple"
+.It Sy absent
 No such service is defined on the system.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBinvalid\fR\fR
-.ad
-.RS 12n
-The fault management resource identifier (FMRI) is invalid (see \fBsmf\fR(5)).
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBmultiple\fR\fR
-.ad
-.RS 12n
+.It Sy invalid
+The fault management resource identifier
+.Pq FMRI
+is invalid
+.Pq see Xr smf 5 .
+.It Sy multiple
 The entity is a service with multiple instances.
-.RE
-
+.El
+.Pp
 File dependencies can only have one of the following state descriptions:
-.sp
-.ne 2
-.na
-\fB\fBabsent\fR\fR
-.ad
-.RS 11n
+.Bl -tag -width "unknown"
+.It Sy absent
 No such file on the system.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBonline\fR\fR
-.ad
-.RS 11n
+.It Sy online
 The file exists.
-.sp
-If the file did not exist the last time that \fBsvc.startd\fR evaluated the
-service's dependencies, it can consider the dependency to be unsatisfied.
-\fBsvcadm refresh\fR forces dependency re-evaluation.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBunknown\fR\fR
-.ad
-.RS 11n
-\fBstat\fR(2) failed for a reason other than \fBENOENT\fR.
-.RE
-
-See \fBsmf\fR(5) for additional details about dependencies, grouping, and
-\fBrestart_on\fR values.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBenabled\fR\fR
-.ad
-.RS 14n
+.Pp
+If the file did not exist the last time that
+.Nm svc.startd
+evaluated the service's dependencies, it can consider the dependency to be
+unsatisfied.
+.Nm svcadm Cm refresh
+forces dependency re-evaluation.
+.It Sy unknown
+.Xr stat 2
+failed for a reason other than
+.Dv ENOENT .
+.El
+.Pp
+See
+.Xr smf 5
+for additional details about dependencies, grouping, and
+.Ar restart_on
+values.
+.It Sy enabled
 Whether the service is enabled or not, and whether it is enabled or disabled
-temporarily (until the next system reboot). The former is specified as either
-\fBtrue\fR or \fBfalse\fR, and the latter is designated by the presence of
-\fB(temporary)\fR.
-.sp
+temporarily
+.Pq until the next system reboot .
+The former is specified as either
+.Sy true
+or
+.Sy false ,
+and the latter is designated by the presence of
+.Pq Sy temporary .
+.Pp
 A service might be temporarily disabled because an administrator has run
-\fBsvcadm disable -t\fR, used \fBsvcadm milestone\fR, or booted the system to a
-specific milestone. See \fBsvcadm\fR(1M) for details.
-.RE
-
-.RE
-
-.sp
-.ne 2
-.na
-\fB-L\fR
-.ad
-.RS 20n
+.Nm svcadm Cm disable Fl t ,
+used
+.Nm svcadm Cm milestone ,
+or booted the system to a specific milestone. See
+.Xr svcadm 1M
+for details.
+.El
+.It Fl L
 Display the log file of the selected services and service instances, one
 per-line.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-o\fR \fIcol\fR[,\fIcol\fR]...\fR
-.ad
-.RS 20n
-Prints the specified columns. Each \fIcol\fR should be a column name. See
-\fBCOLUMNS\fR below for available columns.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-p\fR\fR
-.ad
-.RS 20n
+.It Fl o Ar col Ns Oo , Ns Ar col Oc Ns ...
+Prints the specified columns. Each
+.Ar col
+should be a column name. See
+.Sx COLUMNS
+below for available columns.
+.It Fl p
 Lists processes associated with each service instance. A service instance can
 have no associated processes. The process ID, start time, and command name
-(\fBPID\fR, \fBSTIME\fR, and \fBCMD\fR fields from \fBps\fR(1)) are displayed
-for each process.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-R\fR \fIFMRI-instance\fR\fR
-.ad
-.RS 20n
+.Po
+.Sy PID , STIME ,
+and
+.Sy CMD
+fields from
+.Xr ps 1
+.Pc
+are displayed for each process.
+.It Fl R Ar FMRI-instance
 Selects service instances that have the given service instance as their
 restarter.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-s\fR \fIcol\fR\fR
-.ad
-.RS 20n
-Sorts output by column. \fIcol\fR should be a column name. See \fBCOLUMNS\fR
-below for available columns. Multiple \fB-s\fR options behave additively.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-S\fR \fIcol\fR\fR
-.ad
-.RS 20n
-Sorts by \fIcol\fR in the opposite order as option \fB-s\fR.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-v\fR\fR
-.ad
-.RS 20n
-Without \fB-x\fR or \fB-l\fR, displays verbose columns: \fBSTATE\fR,
-\fBNSTATE\fR, \fBSTIME\fR, \fBCTID\fR, and \fBFMRI\fR.
-.sp
-With \fB-x\fR, displays extra information for each explanation.
-.sp
-With \fB-l\fR, displays user-visible properties in property groups of type
-\fBapplication\fR and their description.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB-x\fR\fR
-.ad
-.RS 20n
+.It Fl s Ar col
+Sorts output by column.
+.Ar col
+should be a column name. See
+.Sx COLUMNS
+below for available columns. Multiple
+.Fl s
+options behave additively.
+.It Fl S Ar col
+Sorts by
+.Ar col
+in the opposite order as option
+.Fl s .
+.It Fl v
+Without
+.Fl x
+or
+.Fl l ,
+displays verbose columns:
+.Sy STATE , NSTATE , STIME , CTID ,
+and
+.Sy FMRI .
+.Pp
+With
+.Fl x ,
+displays extra information for each explanation.
+.Pp
+With
+.Fl l ,
+displays user-visible properties in property groups of type
+.Sy application
+and their description.
+.It Fl x
 Displays explanations for service states.
-.sp
-Without arguments, the \fB-x\fR option explains the states of services which:
-.RS +4
-.TP
-.ie t \(bu
-.el o
+.Pp
+Without arguments, the
+.Fl x
+option explains the states of services which:
+.Bl -bullet
+.It
 are enabled, but are not running.
-.RE
-.RS +4
-.TP
-.ie t \(bu
-.el o
+.It
 are preventing another enabled service from running.
-.RE
-.RE
-
-.sp
-.ne 2
-.na
-\fB-z \fIzone\fR
-.ad
-.RS 20n
-Display only the services in the \fIzone\fR.  This option is only applicable
-in the global zone, see \fBzones\fR(5).
-.RE
-
-.sp
-.ne 2
-.na
-\fB-Z\fR
-.ad
-.RS 20n
+.El
+.It Fl z Ar zone
+Display only the services in the
+.Ar zone .
+This option is only applicable in the global zone, see
+.Xr zones 5 .
+.It Fl Z
 Display services from all zones, with an additional column indicating in which
-zone the service is running.  This option is only applicable in the global
-zone, see \fBzones\fR(5).
-.RE
-
-.SH OPERANDS
-.sp
-.LP
+zone the service is running. This option is only applicable in the global zone,
+see
+.Xr zones 5 .
+.El
+.Sh OPERANDS
 The following operands are supported:
-.sp
-.ne 2
-.na
-\fB\fIFMRI\fR\fR
-.ad
-.RS 17n
-A fault management resource identifier (FMRI) that specifies one or more
-instances (see \fBsmf\fR(5)). FMRIs can be abbreviated by specifying the
-instance name, or the trailing portion of the service name. For example, given
-the FMRI:
-.sp
-.in +2
-.nf
-svc:/network/smtp:sendmail
-.fi
-.in -2
-.sp
-
-The following are valid abbreviations:
-.sp
-.in +2
-.nf
-sendmail
-:sendmail
-smtp
-smtp:sendmail
-network/smtp
-.fi
-.in -2
-.sp
-
-The following are invalid abbreviations:
-.sp
-.in +2
-.nf
-mail
-network
-network/smt
-.fi
-.in -2
-.sp
-
+.Bl -tag -width "FMRI-instance"
+.It Ar FMRI
+A fault management resource identifier
+.Pq FMRI
+that specifies one or more instances
+.Pq see Xr smf 5 .
+FMRIs can be abbreviated by specifying the instance name, or the trailing
+portion of the service name. For example, given the FMRI
+.Sy svc:/network/smtp:sendmail ,
+the following are valid abbreviations:
+.Sy sendmail :sendmail smtp smtp:sendmail network/smtp ,
+and the following are invalid abbreviations:
+.Sy mail network network/smt .
+.Pp
 If the FMRI specifies a service, then the command applies to all instances of
-that service, except when used with the \fB-D\fR option.
-.sp
+that service, except when used with the
+.Fl D
+option.
+.Pp
 Abbreviated forms of FMRIs are unstable, and should not be used in scripts or
 other permanent tools.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fIpattern\fR\fR
-.ad
-.RS 17n
-A pattern that is matched against the \fIFMRI\fRs of service instances
-according to the "globbing" rules described by \fBfnmatch\fR(5). If the pattern
-does not begin with \fBsvc:\fR, then \fBsvc:/\fR is prepended. The following is
-a typical example of a glob pattern:
-.sp
-.in +2
-.nf
+.It Ar pattern
+A pattern that is matched against the FMRI of service instances according to the
+"globbing" rules described by
+.Xr fnmatch 5 .
+If the pattern does not begin with
+.Sy svc: ,
+then
+.Sy svc:/
+is prepended. The following is a typical example of a glob pattern:
+.Bd -literal
 qexample% svcs \e*keyserv\e*
 STATE          STIME     FMRI
 disabled       Aug_02    svc:/network/rpc/keyserv:default
-.fi
-.in -2
-.sp
-
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fIFMRI-instance\fR\fR
-.ad
-.RS 17n
+.Ed
+.It Ar FMRI-instance
 An FMRI that specifies an instance.
-.RE
-
-.SH COLUMNS
-.sp
-.LP
+.El
+.Sh COLUMNS
 Column names are case insensitive. The default output format is equivalent to
-"\fB-o\fR \fBstate,stime,fmri\fR". The default sorting columns are \fBSTATE\fR,
-\fBSTIME\fR, \fBFMRI\fR.
-.sp
-.ne 2
-.na
-\fB\fBCTID\fR\fR
-.ad
-.RS 10n
+.Fl o Sy state,stime,fmri .
+The default sorting columns are
+.Sy STATE , STIME , FMRI .
+.Bl -tag -width "NSTATE"
+.It Sy CTID
 The primary contract ID for the service instance. Not all instances have valid
 primary contract IDs.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBDESC\fR\fR
-.ad
-.RS 10n
+.It Sy DESC
 A brief description of the service, from its template element. A service might
-not have a description available, in which case a hyphen (\fB\(hy\fR) is used
-to denote an empty value.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBFMRI\fR\fR
-.ad
-.RS 10n
-The \fIFMRI\fR of the service instance.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBINST\fR\fR
-.ad
-.RS 10n
+not have a description available, in which case a hyphen
+.Pq Sy \(hy
+is used to denote an empty value.
+.It Sy FMRI
+The FMRI of the service instance.
+.It Sy INST
 The instance name of the service instance.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBNSTA\fR\fR
-.ad
-.RS 10n
-The abbreviated next state of the service instance, as given in the \fBSTA\fR
+.It Sy NSTA
+The abbreviated next state of the service instance, as given in the
+.Sy STA
 column description. A hyphen denotes that the instance is not transitioning.
-Same as \fBSTA\fR otherwise.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBNSTATE\fR\fR
-.ad
-.RS 10n
+Same as
+.Sy STA
+otherwise.
+.It Sy NSTATE
 The next state of the service. A hyphen is used to denote that the instance is
-not transitioning. Same as \fBSTATE\fR otherwise.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBSCOPE\fR\fR
-.ad
-.RS 10n
+not transitioning. Same as
+.Sy STATE
+otherwise.
+.It Sy SCOPE
 The scope name of the service instance.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBSVC\fR\fR
-.ad
-.RS 10n
+.It Sy SVC
 The service name of the service instance.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBSTA\fR\fR
-.ad
-.RS 10n
-The abbreviated state of the service instance (see \fBsmf\fR(5)):
-.sp
-.ne 2
-.na
-\fB\fBDGD\fR\fR
-.ad
-.RS 7n
+.It Sy STA
+The abbreviated state of the service instance:
+.Bl -tag -width "DGD"
+.It Sy DGD
 degraded
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBDIS\fR\fR
-.ad
-.RS 7n
+.It Sy DIS
 disabled
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBLRC\fR\fR
-.ad
-.RS 7n
-legacy \fBrc*.d\fR script-initiated instance
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBMNT\fR\fR
-.ad
-.RS 7n
+.It Sy LRC
+legacy rc*.d script-initiated instance
+.It Sy MNT
 maintenance
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBOFF\fR\fR
-.ad
-.RS 7n
+.It Sy OFF
 offline
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBON\fR\fR
-.ad
-.RS 7n
+.It Sy ON
 online
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBUN\fR\fR
-.ad
-.RS 7n
+.It Sy UN
 uninitialized
-.RE
-
-Absent or unrecognized states are denoted by a question mark (\fB?\fR)
-character. An asterisk (\fB*\fR) is appended for instances in transition,
-unless the \fBNSTA\fR or \fBNSTATE\fR column is also being displayed.
-.sp
-See \fBsmf\fR(5) for an explanation of service states.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBSTATE\fR\fR
-.ad
-.RS 10n
+.El
+.Pp
+Absent or unrecognized states are denoted by a question mark
+.Pq Sy \?
+character. An asterisk
+.Pq Sy *
+is appended for instances in transition, unless the
+.Sy NSTA
+or
+.Sy NSTATE
+column is also being displayed.
+.It Sy STATE
 The state of the service instance. An asterisk is appended for instances in
-transition, unless the \fBNSTA\fR or \fBNSTATE\fR column is also being
-displayed.
-.sp
-See \fBsmf\fR(5) for an explanation of service states.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fBSTIME\fR\fR
-.ad
-.RS 10n
+transition, unless the
+.Sy NSTA
+or
+.Sy NSTATE
+column is also being displayed.
+.It Sy STIME
 If the service instance entered the current state within the last 24 hours,
 this column indicates the time that it did so. Otherwise, this column indicates
-the date on which it did so, printed with underscores (\fB_\fR) in place of
-blanks.
-.RE
-
-.SH EXAMPLES
-.LP
-\fBExample 1 \fRDisplaying the Default Output
-.sp
-.LP
+the date on which it did so, printed with underscores
+.Pq Sy _
+in place of blanks.
+.El
+.Sh EXIT STATUS
+The following exit values are returned:
+.Bl -tag -width "0"
+.It Sy 0
+Successful command invocation.
+.It Sy 1
+Fatal error.
+.It Sy 2
+Invalid command line options were specified.
+.El
+.Sh EXAMPLES
+.Bl -tag -width ""
+.It Sy Example 1 No Displaying the Default Output
 This example displays default output:
-
-.sp
-.in +2
-.nf
+.Bd -literal
 example% svcs
 STATE          STIME    FMRI
 \&...
@@ -627,54 +382,29 @@ online         13:25:03 svc:/milestone/multi-user:default
 \&...
 online         13:25:07 svc:/milestone/multi-user-server:default
 \&...
-.fi
-.in -2
-.sp
-
-.LP
-\fBExample 2 \fRListing All Local Instances
-.sp
-.LP
-This example lists all local instances of the \fBservice1\fR service.
-
-.sp
-.in +2
-.nf
+.Ed
+.It Sy Example 2 No Listing All Local Instances
+This example lists all local instances of the
+.Sy service1
+service:
+.Bd -literal
 example% svcs -o state,nstate,fmri service1
 STATE        NSTATE        FMRI
 online       -             svc:/service1:instance1
 disabled     -             svc:/service1:instance2
-.fi
-.in -2
-.sp
-
-.LP
-\fBExample 3 \fRListing Verbose Information
-.sp
-.LP
-This example lists verbose information.
-
-.sp
-.in +2
-.nf
+.Ed
+.It Sy Example 3 No Listing Verbose Information
+This example lists verbose information:
+.Bd -literal
 example% svcs -v network/rpc/rstat:udp
 STATE          NSTATE        STIME    CTID   FMRI
 online         -             Aug_09        - svc:/network/rpc/rstat:udp
-.fi
-.in -2
-.sp
-
-.LP
-\fBExample 4 \fRListing Detailed Information
-.sp
-.LP
+.Ed
+.It Sy Example 4 No Listing Detailed Information
 This example lists detailed information about all instances of
-\fBsystem/service3\fR. Additional fields can be displayed, as appropriate to
-the managing restarter.
-
-.sp
-.in +2
-.nf
+.Sy system/service3 .
+Additional fields can be displayed, as appropriate to the managing restarter.
+.Bd -literal
 example% svcs -l network/rpc/rstat:udp
 
 fmri         svc:/network/rpc/rstat:udp
@@ -684,38 +414,37 @@ next_state   none
 restarter    svc:/network/inetd:default
 contract_id
 dependency   require_all/error svc:/network/rpc/bind (online)
-.fi
-.in -2
-.sp
-
-.LP
-\fBExample 5 \fRListing Processes
-.sp
-.in +2
-.nf
+.Ed
+.It Sy Example 5 No Listing Processes
+.Bd -literal
 example% svcs -p sendmail
 STATE          STIME    FMRI
 online         13:25:13 svc:/network/smtp:sendmail
                13:25:15   100939 sendmail
-13:25:15   100940 sendmail
-.fi
-.in -2
-.sp
-
-.LP
-\fBExample 6 \fRExplaining Service States Using \fBsvcs\fR \fB-x\fR
-.sp
-.LP
-(a) In this example, \fBsvcs\fR \fB-x\fR has identified that the print/server
+               13:25:15   100940 sendmail
+.Ed
+.It Sy Example 6 No Explaining Service States Using Nm Fl x
+.Bl -enum
+.It
+In this example,
+.Nm
+.Fl x
+has identified that the
+.Sy print/server
 service being disabled is the root cause of two services which are enabled but
-not online. \fBsvcs\fR \fB-xv\fR shows that those services are
-\fBprint/rfc1179\fR and \fBprint/ipp-listener\fR. This situation can be
-rectified by either enabling \fBprint/server\fR or disabling \fBrfc1179\fR and
-\fBipp-listener\fR.
-
-.sp
-.in +2
-.nf
+not online.
+.Nm Fl xv
+shows that those services are
+.Sy print/rfc1179
+and
+.Sy print/ipp-listener .
+This situation can be rectified by either enabling
+.Sy print/server
+or disabling
+.Sy rfc1179
+and
+.Sy ipp-listener .
+.Bd -literal
 example% svcs -x
 svc:/application/print/server:default (LP print server)
  State: disabled since Mon Feb 13 17:56:21 2006
@@ -723,33 +452,23 @@ Reason: Disabled by an administrator.
    See: http://illumos.org/msg/SMF-8000-05
    See: lpsched(1M)
 Impact: 2 dependent services are not running. (Use -v for list.)
-.fi
-.in -2
-.sp
-
-.sp
-.LP
-(b) In this example, NFS is not working:
-
-.sp
-.in +2
-.nf
+.Ed
+.It
+In this example, NFS is not working:
+.Bd -literal
 example$ svcs nfs/client
 STATE          STIME    FMRI
 offline        16:03:23 svc:/network/nfs/client:default
-.fi
-.in -2
-.sp
-
-.sp
-.LP
-(c) The following example shows that the problem is \fBnfs/status\fR.
-\fBnfs/client\fR is waiting because it depends on \fBnfs/nlockmgr\fR, which
-depends on \fBnfs/status\fR:
-
-.sp
-.in +2
-.nf
+.Ed
+.It
+The following example shows that the problem is
+.Sy nfs/status .
+.Sy nfs/client
+is waiting because it depends on
+.Sy nfs/nlockmgr ,
+which depends on
+.Sy nfs/status :
+.Bd -literal
 example$ svcs -xv nfs/client
 svc:/network/nfs/client:default (NFS client)
  State: offline since Mon Feb 27 16:03:23 2006
@@ -762,63 +481,23 @@ Reason: Service svc:/network/nfs/status:default
    See: man -M /usr/share/man -s 1M mount_nfs
    See: /var/svc/log/network-nfs-client:default.log
 Impact: This service is not running.
-.fi
-.in -2
-.sp
-
-.SH EXIT STATUS
-.sp
-.LP
-The following exit values are returned:
-.sp
-.ne 2
-.na
-\fB\fB0\fR\fR
-.ad
-.RS 5n
-Successful command invocation.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB1\fR\fR
-.ad
-.RS 5n
-Fatal error.
-.RE
-
-.sp
-.ne 2
-.na
-\fB\fB2\fR\fR
-.ad
-.RS 5n
-Invalid command line options were specified.
-.RE
-
-.SH ATTRIBUTES
-.sp
-.LP
-See \fBattributes\fR(5) for descriptions of the following attributes:
-.sp
-
-.sp
-.TS
-box;
-c | c
-l | l .
-ATTRIBUTE TYPE	ATTRIBUTE VALUE
-_
-Interface Stability	See below.
-.TE
-
-.sp
-.LP
-Screen output is Uncommitted. The invocation is Committed.
-.SH SEE ALSO
-.sp
-.LP
-\fBps\fR(1), \fBsvcprop\fR(1), \fBsvcadm\fR(1M), \fBsvccfg\fR(1M),
-\fBsvc.startd\fR(1M), \fBstat\fR(2), \fBlibscf\fR(3LIB), \fBattributes\fR(5),
-\fBfnmatch\fR(5), \fBsmf\fR(5), \fBzones\fR(5)
+.Ed
+.El
+.El
+.Sh INTERFACE STABILITY
+Screen output is
+.Sy Uncommitted .
+The invocation is
+.Sy Committed .
+.Sh SEE ALSO
+.Xr ps 1 ,
+.Xr svcprop 1 ,
+.Xr svcadm 1M ,
+.Xr svccfg 1M ,
+.Xr svc.startd 1M ,
+.Xr stat 2 ,
+.Xr libscf 3LIB ,
+.Xr attributes 5 ,
+.Xr fnmatch 5 ,
+.Xr smf 5 ,
+.Xr zones 5

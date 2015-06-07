@@ -18,10 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
- * Copyright (c) 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/sysmacros.h>
@@ -38,7 +39,14 @@
 #include <sys/arc.h>
 #include <sys/ddt.h>
 #include <sys/blkptr.h>
+#include <sys/special.h>
 #include <sys/zfeature.h>
+#include <sys/dkioc_free_util.h>
+
+#include <sys/metaslab_impl.h>
+
+extern int zil_use_sdev;
+extern int zfs_txg_timeout;
 
 /*
  * ==========================================================================
@@ -63,9 +71,6 @@ kmem_cache_t *zio_data_buf_cache[SPA_MAXBLOCKSIZE >> SPA_MINBLOCKSHIFT];
 #ifdef _KERNEL
 extern vmem_t *zio_alloc_arena;
 #endif
-
-#define	ZIO_PIPELINE_CONTINUE		0x100
-#define	ZIO_PIPELINE_STOP		0x101
 
 /*
  * The following actions directly effect the spa's sync-to-convergence logic.
@@ -97,12 +102,29 @@ int zio_buf_debug_limit = 16384;
 int zio_buf_debug_limit = 0;
 #endif
 
+/*
+ * Fault insertion for stress testing
+ */
+int zio_faulty_vdev_enabled = 0;
+uint64_t zio_faulty_vdev_guid;
+uint64_t zio_faulty_vdev_delay_us = 1000000;	/* 1 second */
+
+/*
+ * Tunable to allow for debugging SCSI UNMAP/SATA TRIM calls. Disabling
+ * it will prevent ZFS from attempting to issue DKIOCFREE ioctls to the
+ * underlying storage. Synchronous write performance may degrade over
+ * time with zfs_trim set to B_FALSE.
+ */
+boolean_t zfs_trim = B_FALSE;	/* TODO: set to B_TRUE for shipping code */
+uint64_t zfs_trim_min_ext_sz = 1 << 20;	/* 1 MB */
+
 void
 zio_init(void)
 {
 	size_t c;
 	vmem_t *data_alloc_arena = NULL;
 
+	zio_parallel_checksum_init();
 #ifdef _KERNEL
 	data_alloc_arena = zio_alloc_arena;
 #endif
@@ -170,6 +192,7 @@ zio_init(void)
 	}
 
 	zio_inject_init();
+
 }
 
 void
@@ -197,6 +220,8 @@ zio_fini(void)
 	kmem_cache_destroy(zio_cache);
 
 	zio_inject_fini();
+
+	zio_parallel_checksum_fini();
 }
 
 /*
@@ -863,9 +888,10 @@ zio_claim(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 	return (zio);
 }
 
-zio_t *
-zio_ioctl(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
-    zio_done_func_t *done, void *private, enum zio_flag flags)
+static zio_t *
+zio_ioctl_with_pipeline(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
+    zio_done_func_t *done, void *private, enum zio_flag flags,
+    enum zio_stage pipeline)
 {
 	zio_t *zio;
 	int c;
@@ -873,18 +899,144 @@ zio_ioctl(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
 	if (vd->vdev_children == 0) {
 		zio = zio_create(pio, spa, 0, NULL, NULL, 0, done, private,
 		    ZIO_TYPE_IOCTL, ZIO_PRIORITY_NOW, flags, vd, 0, NULL,
-		    ZIO_STAGE_OPEN, ZIO_IOCTL_PIPELINE);
+		    ZIO_STAGE_OPEN, pipeline);
 
 		zio->io_cmd = cmd;
 	} else {
-		zio = zio_null(pio, spa, NULL, NULL, NULL, flags);
-
-		for (c = 0; c < vd->vdev_children; c++)
-			zio_nowait(zio_ioctl(zio, spa, vd->vdev_child[c], cmd,
-			    done, private, flags));
+		zio = zio_null(pio, spa, vd, done, private, flags);
+		/*
+		 * DKIOCFREE ioctl's need some special handling on interior
+		 * vdevs. If the device provides an ops function to handle
+		 * recomputing dkioc_free extents, then we call it.
+		 * Otherwise the default behavior applies, which simply fans
+		 * out the ioctl to all component vdevs.
+		 */
+		if (cmd == DKIOCFREE &&
+		    vd->vdev_ops->vdev_op_trim != NULL) {
+			vd->vdev_ops->vdev_op_trim(vd, zio, private);
+		} else {
+			for (c = 0; c < vd->vdev_children; c++)
+				zio_nowait(zio_ioctl_with_pipeline(zio,
+				    spa, vd->vdev_child[c], cmd, NULL,
+				    private, flags, pipeline));
+		}
 	}
 
 	return (zio);
+}
+
+zio_t *
+zio_ioctl(zio_t *pio, spa_t *spa, vdev_t *vd, int cmd,
+    zio_done_func_t *done, void *private, enum zio_flag flags)
+{
+	return (zio_ioctl_with_pipeline(pio, spa, vd, cmd, done,
+	    private, flags, ZIO_IOCTL_PIPELINE));
+}
+
+/*
+ * Callback for when a trim zio has completed. This simply frees the
+ * dkioc_free_list_t extent list of the DKIOCFREE ioctl.
+ */
+static void
+zio_trim_done(zio_t *zio)
+{
+	VERIFY(zio->io_private != NULL);
+	dfl_free(zio->io_private);
+}
+
+static void
+zio_trim_check(uint64_t start, uint64_t len, void *msp)
+{
+	metaslab_t *ms = msp;
+	boolean_t held = MUTEX_HELD(&ms->ms_lock);
+	if (!held)
+		mutex_enter(&ms->ms_lock);
+	ASSERT(ms->ms_trimming_ts != NULL);
+	ASSERT(range_tree_contains(ms->ms_trimming_ts->ts_tree,
+	    start - VDEV_LABEL_START_SIZE, len));
+	if (!held)
+		mutex_exit(&ms->ms_lock);
+}
+
+/*
+ * Takes a bunch of freed extents and tells the underlying vdevs that the
+ * space associated with these extents can be released.
+ * This is used by flash storage to pre-erase blocks for rapid reuse later
+ * and thin-provisioned block storage to reclaim unused blocks.
+ */
+zio_t *
+zio_trim(spa_t *spa, vdev_t *vd, struct range_tree *tree,
+    zio_done_func_t *done, void *private, enum zio_flag flags,
+    int trim_flags, metaslab_t *msp)
+{
+	dkioc_free_list_t *dfl = NULL;
+	range_seg_t *rs;
+	uint64_t rs_idx;
+	uint64_t num_exts;
+	/*
+	 * We need this to invoke the caller's `done' callback with the
+	 * correct io_private (not the dkioc_free_list_t, which is needed
+	 * by the underlying DKIOCFREE ioctl).
+	 */
+	zio_t *sub_pio = zio_root(spa, done, private, flags);
+
+	ASSERT(range_tree_space(tree) != 0);
+
+	/* Determine feature configuration and device support */
+	if (!zfs_trim)
+		return (sub_pio);
+
+	switch (spa_get_force_trim(spa)) {
+	case SPA_FORCE_TRIM_AUTO:
+		if (vd->vdev_notrim)
+			return (sub_pio);
+		break;
+	case SPA_FORCE_TRIM_ON:
+		break;
+	case SPA_FORCE_TRIM_OFF:
+		return (sub_pio);
+	}
+
+	num_exts = avl_numnodes(&tree->rt_root);
+	dfl = kmem_zalloc(DFL_SZ(num_exts), KM_SLEEP);
+	dfl->dfl_flags = trim_flags;
+	dfl->dfl_num_exts = num_exts;
+	dfl->dfl_offset = VDEV_LABEL_START_SIZE;
+	if (msp) {
+		dfl->dfl_ck_func = zio_trim_check;
+		dfl->dfl_ck_arg = msp;
+	}
+
+	for (rs = avl_first(&tree->rt_root), rs_idx = 0; rs != NULL;
+	    rs = AVL_NEXT(&tree->rt_root, rs)) {
+		if (rs->rs_end - rs->rs_start < zfs_trim_min_ext_sz)
+			continue;
+
+		dfl->dfl_exts[rs_idx].dfle_start = rs->rs_start;
+		dfl->dfl_exts[rs_idx].dfle_length = rs->rs_end - rs->rs_start;
+
+		// check we're a multiple of the vdev ashift
+		ASSERT0(dfl->dfl_exts[rs_idx].dfle_start &
+		    ((1 << vd->vdev_ashift) - 1));
+		ASSERT0(dfl->dfl_exts[rs_idx].dfle_length &
+		    ((1 << vd->vdev_ashift) - 1));
+
+		rs_idx++;
+	}
+
+	/* the zfs_trim_min_ext_sz filter may have shortened the list */
+	if (dfl->dfl_num_exts != rs_idx) {
+		dkioc_free_list_t *dfl2 = kmem_zalloc(DFL_SZ(rs_idx), KM_SLEEP);
+		bcopy(dfl, dfl2, DFL_SZ(rs_idx));
+		dfl2->dfl_num_exts = rs_idx;
+		dfl_free(dfl);
+		dfl = dfl2;
+	}
+
+	zio_nowait(zio_ioctl_with_pipeline(sub_pio, spa, vd, DKIOCFREE,
+	    zio_trim_done, dfl, ZIO_FLAG_CANFAIL | ZIO_FLAG_DONT_PROPAGATE |
+	    ZIO_FLAG_DONT_RETRY, ZIO_TRIM_PIPELINE));
+	return (sub_pio);
 }
 
 zio_t *
@@ -1060,7 +1212,7 @@ zio_read_bp_init(zio_t *zio)
 		ASSERT(!BP_IS_EMBEDDED(bp));
 	}
 
-	if (!DMU_OT_IS_METADATA(BP_GET_TYPE(bp)) && BP_GET_LEVEL(bp) == 0)
+	if (!BP_IS_METADATA(bp))
 		zio->io_flags |= ZIO_FLAG_DONT_CACHE;
 
 	if (BP_GET_TYPE(bp) == DMU_OT_DDT_ZAP)
@@ -1231,6 +1383,10 @@ zio_write_bp_init(zio_t *zio)
 		}
 		zio->io_pipeline = ZIO_INTERLOCK_PIPELINE;
 	} else {
+		if (zp->zp_dedup) {
+			/* check the best-effort dedup setting */
+			zio_best_effort_dedup(zio);
+		}
 		ASSERT(zp->zp_checksum != ZIO_CHECKSUM_GANG_HEADER);
 		BP_SET_LSIZE(bp, lsize);
 		BP_SET_TYPE(bp, zp->zp_type);
@@ -1372,6 +1528,7 @@ zio_execute(zio_t *zio)
 
 	while (zio->io_stage < ZIO_STAGE_DONE) {
 		enum zio_stage pipeline = zio->io_pipeline;
+		enum zio_stage old_stage = zio->io_stage;
 		enum zio_stage stage = zio->io_stage;
 		int rv;
 
@@ -1407,6 +1564,12 @@ zio_execute(zio_t *zio)
 
 		if (rv == ZIO_PIPELINE_STOP)
 			return;
+
+		if (rv == ZIO_PIPELINE_RESTART_STAGE) {
+			zio->io_stage = old_stage;
+			(void) zio_issue_async(zio);
+			return;
+		}
 
 		ASSERT(rv == ZIO_PIPELINE_CONTINUE);
 	}
@@ -1673,8 +1836,12 @@ zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 		 * this is just good hygiene.)
 		 */
 		if (gn != pio->io_gang_leader->io_gang_tree) {
-			zio_checksum_compute(zio, BP_GET_CHECKSUM(bp),
-			    data, BP_GET_PSIZE(bp));
+			/*
+			 * given that 'can_accumulate' argument is 0, we can
+			 * drop the error code
+			 */
+			(void) zio_checksum_compute(zio, BP_GET_CHECKSUM(bp),
+			    data, BP_GET_PSIZE(bp), 0);
 		}
 		/*
 		 * If we are here to damage data for testing purposes,
@@ -1917,8 +2084,9 @@ zio_write_gang_block(zio_t *pio)
 	int gbh_copies = MIN(copies + 1, spa_max_replication(spa));
 	zio_prop_t zp;
 	int error;
+	metaslab_class_t *mc = spa_select_class(spa, &pio->io_prop);
 
-	error = metaslab_alloc(spa, spa_normal_class(spa), SPA_GANGBLOCKSIZE,
+	error = metaslab_alloc(spa, mc, SPA_GANGBLOCKSIZE,
 	    bp, gbh_copies, txg, pio == gio ? NULL : gio->io_bp,
 	    METASLAB_HINTBP_FAVOR | METASLAB_GANG_HEADER);
 	if (error) {
@@ -2137,6 +2305,7 @@ zio_ddt_read_done(zio_t *zio)
 	return (ZIO_PIPELINE_CONTINUE);
 }
 
+/* ARGSUSED */
 static boolean_t
 zio_ddt_collision(zio_t *zio, ddt_t *ddt, ddt_entry_t *dde)
 {
@@ -2169,7 +2338,7 @@ zio_ddt_collision(zio_t *zio, ddt_t *ddt, ddt_entry_t *dde)
 
 			ddt_bp_fill(ddp, &blk, ddp->ddp_phys_birth);
 
-			ddt_exit(ddt);
+			dde_exit(dde);
 
 			error = arc_read(NULL, spa, &blk,
 			    arc_getbuf_func, &abuf, ZIO_PRIORITY_SYNC_READ,
@@ -2184,7 +2353,7 @@ zio_ddt_collision(zio_t *zio, ddt_t *ddt, ddt_entry_t *dde)
 				VERIFY(arc_buf_remove_ref(abuf, &abuf));
 			}
 
-			ddt_enter(ddt);
+			dde_enter(dde);
 			return (error != 0);
 		}
 	}
@@ -2196,7 +2365,6 @@ static void
 zio_ddt_child_write_ready(zio_t *zio)
 {
 	int p = zio->io_prop.zp_copies;
-	ddt_t *ddt = ddt_select(zio->io_spa, zio->io_bp);
 	ddt_entry_t *dde = zio->io_private;
 	ddt_phys_t *ddp = &dde->dde_phys[p];
 	zio_t *pio;
@@ -2204,7 +2372,7 @@ zio_ddt_child_write_ready(zio_t *zio)
 	if (zio->io_error)
 		return;
 
-	ddt_enter(ddt);
+	dde_enter(dde);
 
 	ASSERT(dde->dde_lead_zio[p] == zio);
 
@@ -2213,18 +2381,17 @@ zio_ddt_child_write_ready(zio_t *zio)
 	while ((pio = zio_walk_parents(zio)) != NULL)
 		ddt_bp_fill(ddp, pio->io_bp, zio->io_txg);
 
-	ddt_exit(ddt);
+	dde_exit(dde);
 }
 
 static void
 zio_ddt_child_write_done(zio_t *zio)
 {
 	int p = zio->io_prop.zp_copies;
-	ddt_t *ddt = ddt_select(zio->io_spa, zio->io_bp);
 	ddt_entry_t *dde = zio->io_private;
 	ddt_phys_t *ddp = &dde->dde_phys[p];
 
-	ddt_enter(ddt);
+	dde_enter(dde);
 
 	ASSERT(ddp->ddp_refcnt == 0);
 	ASSERT(dde->dde_lead_zio[p] == zio);
@@ -2237,7 +2404,7 @@ zio_ddt_child_write_done(zio_t *zio)
 		ddt_phys_clear(ddp);
 	}
 
-	ddt_exit(ddt);
+	dde_exit(dde);
 }
 
 static void
@@ -2251,7 +2418,7 @@ zio_ddt_ditto_write_done(zio_t *zio)
 	ddt_phys_t *ddp = &dde->dde_phys[p];
 	ddt_key_t *ddk = &dde->dde_key;
 
-	ddt_enter(ddt);
+	dde_enter(dde);
 
 	ASSERT(ddp->ddp_refcnt == 0);
 	ASSERT(dde->dde_lead_zio[p] == zio);
@@ -2266,8 +2433,10 @@ zio_ddt_ditto_write_done(zio_t *zio)
 		ddt_phys_fill(ddp, bp);
 	}
 
-	ddt_exit(ddt);
+	dde_exit(dde);
 }
+
+extern uint64_t zfs_ddts_msize;
 
 static int
 zio_ddt_write(zio_t *zio)
@@ -2288,9 +2457,69 @@ zio_ddt_write(zio_t *zio)
 	ASSERT(BP_GET_CHECKSUM(bp) == zp->zp_checksum);
 	ASSERT(BP_IS_HOLE(bp) || zio->io_bp_override);
 
-	ddt_enter(ddt);
 	dde = ddt_lookup(ddt, bp, B_TRUE);
-	ddp = &dde->dde_phys[p];
+
+	/*
+	 * If we're not using special tier, for each new DDE that's not on disk:
+	 * disable dedup if we have exhausted "allowed" DDT L2/ARC space
+	 */
+	if ((dde->dde_state & DDE_NEW) && !spa->spa_usesc &&
+	    (zfs_ddt_limit_type != DDT_NO_LIMIT || zfs_ddt_byte_ceiling != 0)) {
+		if (zfs_ddt_byte_ceiling != 0) {
+			if (zfs_ddts_msize > zfs_ddt_byte_ceiling) {
+				/* need to limit DDT to an in core bytecount */
+				dde->dde_state |= DDE_DONT_SYNC;
+			}
+		} else if (zfs_ddt_limit_type == DDT_LIMIT_TO_ARC) {
+			/* need to limit DDT to fit into ARC */
+			if (zfs_ddts_msize > *arc_ddt_evict_threshold) {
+				dde->dde_state |= DDE_DONT_SYNC;
+			}
+		} else if (zfs_ddt_limit_type == DDT_LIMIT_TO_L2ARC) {
+			/* need to limit DDT to fit into L2ARC DDT dev */
+			if (spa->spa_l2arc_ddt_devs_size != 0) {
+				if (spa_get_ddts_size(spa, B_TRUE) >
+				    spa->spa_l2arc_ddt_devs_size) {
+					dde->dde_state |= DDE_DONT_SYNC;
+				}
+			} else if (zfs_ddts_msize > *arc_ddt_evict_threshold) {
+				/* no L2ARC DDT dev - keep DDT in ARC */
+				dde->dde_state |= DDE_DONT_SYNC;
+			}
+		}
+
+		/* turn off dedup if we need to stop DDT growth */
+		if (dde->dde_state & DDE_DONT_SYNC) {
+			/*
+			 * do ordinary write by switching to the
+			 * regular write pipeline by disabling dedup
+			 */
+			zio_pop_transforms(zio);
+			zp->zp_dedup = zp->zp_dedup_verify = B_FALSE;
+			zio->io_stage = ZIO_STAGE_OPEN;
+			zio->io_pipeline = ZIO_WRITE_PIPELINE;
+			zio->io_bp_override = NULL;
+			BP_ZERO(bp);
+			dde_exit(dde);
+			/* notify that dedup is off */
+			if (spa->spa_dedup_percentage == 100) {
+				spa->spa_dedup_percentage = 0;
+				spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_OFF);
+			}
+
+			return (ZIO_PIPELINE_CONTINUE);
+		}
+
+		/*
+		 * dedup is still on:
+		 * check if we need to notify that it's back on
+		 */
+		if (spa->spa_dedup_percentage == 0) {
+			spa->spa_dedup_percentage = 100;
+			spa_event_notify(spa, NULL, ESC_ZFS_DEDUP_ON);
+		}
+	}
+	ASSERT(!(dde->dde_state & DDE_DONT_SYNC));
 
 	if (zp->zp_dedup_verify && zio_ddt_collision(zio, ddt, dde)) {
 		/*
@@ -2308,10 +2537,11 @@ zio_ddt_write(zio_t *zio)
 			zp->zp_dedup = B_FALSE;
 		}
 		zio->io_pipeline = ZIO_WRITE_PIPELINE;
-		ddt_exit(ddt);
+		dde_exit(dde);
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
+	ddp = &dde->dde_phys[p];
 	ditto_copies = ddt_ditto_copies_needed(ddt, dde, ddp);
 	ASSERT(ditto_copies < SPA_DVAS_PER_BP);
 
@@ -2334,7 +2564,7 @@ zio_ddt_write(zio_t *zio)
 			zio->io_pipeline = ZIO_WRITE_PIPELINE;
 			zio->io_bp_override = NULL;
 			BP_ZERO(bp);
-			ddt_exit(ddt);
+			dde_exit(dde);
 			return (ZIO_PIPELINE_CONTINUE);
 		}
 
@@ -2369,7 +2599,7 @@ zio_ddt_write(zio_t *zio)
 		dde->dde_lead_zio[p] = cio;
 	}
 
-	ddt_exit(ddt);
+	dde_exit(dde);
 
 	if (cio)
 		zio_nowait(cio);
@@ -2393,11 +2623,11 @@ zio_ddt_free(zio_t *zio)
 	ASSERT(BP_GET_DEDUP(bp));
 	ASSERT(zio->io_child_type == ZIO_CHILD_LOGICAL);
 
-	ddt_enter(ddt);
 	freedde = dde = ddt_lookup(ddt, bp, B_TRUE);
 	ddp = ddt_phys_select(dde, bp);
-	ddt_phys_decref(ddp);
-	ddt_exit(ddt);
+	if (ddp)
+		ddt_phys_decref(ddp);
+	dde_exit(dde);
 
 	return (ZIO_PIPELINE_CONTINUE);
 }
@@ -2411,7 +2641,8 @@ static int
 zio_dva_allocate(zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
-	metaslab_class_t *mc = spa_normal_class(spa);
+	metaslab_class_t *mc = spa_select_class(spa, &zio->io_prop);
+
 	blkptr_t *bp = zio->io_bp;
 	int error;
 	int flags = 0;
@@ -2514,6 +2745,17 @@ zio_alloc_zil(spa_t *spa, uint64_t txg, blkptr_t *new_bp, blkptr_t *old_bp,
 		    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
 	}
 
+	/*
+	 * If there is no dedicated log device and pool has a special device,
+	 * then ZIL should be allocated on the special device.
+	 */
+	if (zil_use_sdev && error && spa_has_special(spa) &&
+	    spa->spa_usesc) {
+		error = metaslab_alloc(spa, spa_special_class(spa), size,
+		    new_bp, 1, txg, old_bp,
+		    METASLAB_HINTBP_AVOID | METASLAB_GANG_AVOID);
+	}
+
 	if (error) {
 		error = metaslab_alloc(spa, spa_normal_class(spa), size,
 		    new_bp, 1, txg, old_bp,
@@ -2571,6 +2813,8 @@ zio_vdev_io_start(zio_t *zio)
 	vdev_t *vd = zio->io_vd;
 	uint64_t align;
 	spa_t *spa = zio->io_spa;
+	zio_type_t type = zio->io_type;
+	zio->io_vd_timestamp = gethrtime();
 
 	ASSERT(zio->io_error == 0);
 	ASSERT(zio->io_child_error[ZIO_CHILD_VDEV] == 0);
@@ -2614,7 +2858,7 @@ zio_vdev_io_start(zio_t *zio)
 		uint64_t asize = P2ROUNDUP(zio->io_size, align);
 		char *abuf = zio_buf_alloc(asize);
 		ASSERT(vd == vd->vdev_top);
-		if (zio->io_type == ZIO_TYPE_WRITE) {
+		if (type == ZIO_TYPE_WRITE) {
 			bcopy(zio->io_data, abuf, zio->io_size);
 			bzero(abuf + zio->io_size, asize - zio->io_size);
 		}
@@ -2637,7 +2881,7 @@ zio_vdev_io_start(zio_t *zio)
 		ASSERT0(P2PHASE(zio->io_size, SPA_MINBLOCKSIZE));
 	}
 
-	VERIFY(zio->io_type != ZIO_TYPE_WRITE || spa_writeable(spa));
+	VERIFY(type != ZIO_TYPE_WRITE || spa_writeable(spa));
 
 	/*
 	 * If this is a repair I/O, and there's no self-healing involved --
@@ -2656,15 +2900,14 @@ zio_vdev_io_start(zio_t *zio)
 	    !(zio->io_flags & ZIO_FLAG_SELF_HEAL) &&
 	    zio->io_txg != 0 &&	/* not a delegated i/o */
 	    !vdev_dtl_contains(vd, DTL_PARTIAL, zio->io_txg, 1)) {
-		ASSERT(zio->io_type == ZIO_TYPE_WRITE);
+		ASSERT(type == ZIO_TYPE_WRITE);
 		zio_vdev_io_bypass(zio);
 		return (ZIO_PIPELINE_CONTINUE);
 	}
 
 	if (vd->vdev_ops->vdev_op_leaf &&
-	    (zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE)) {
-
-		if (zio->io_type == ZIO_TYPE_READ && vdev_cache_read(zio))
+	    (type == ZIO_TYPE_READ || type == ZIO_TYPE_WRITE)) {
+		if (type == ZIO_TYPE_READ && vdev_cache_read(zio))
 			return (ZIO_PIPELINE_CONTINUE);
 
 		if ((zio = vdev_queue_io(zio)) == NULL)
@@ -2674,6 +2917,15 @@ zio_vdev_io_start(zio_t *zio)
 			zio->io_error = SET_ERROR(ENXIO);
 			zio_interrupt(zio);
 			return (ZIO_PIPELINE_STOP);
+		}
+
+		/*
+		 * Insert a fault simulation delay for a particular vdev.
+		 */
+		if (zio_faulty_vdev_enabled &&
+		    (zio->io_vd->vdev_guid == zio_faulty_vdev_guid)) {
+			delay(NSEC_TO_TICK(zio_faulty_vdev_delay_us *
+			    (NANOSEC / MICROSEC)));
 		}
 	}
 
@@ -2694,7 +2946,6 @@ zio_vdev_io_done(zio_t *zio)
 	ASSERT(zio->io_type == ZIO_TYPE_READ || zio->io_type == ZIO_TYPE_WRITE);
 
 	if (vd != NULL && vd->vdev_ops->vdev_op_leaf) {
-
 		vdev_queue_io_done(zio);
 
 		if (zio->io_type == ZIO_TYPE_WRITE)
@@ -2720,6 +2971,12 @@ zio_vdev_io_done(zio_t *zio)
 
 	if (unexpected_error)
 		VERIFY(vdev_probe(vd, zio) == NULL);
+
+	/*
+	 * Measure delta between start and end of the I/O in nanoseconds.
+	 * XXX: Handle overflow.
+	 */
+	zio->io_vd_timestamp = gethrtime() - zio->io_vd_timestamp;
 
 	return (ZIO_PIPELINE_CONTINUE);
 }
@@ -2876,9 +3133,8 @@ zio_checksum_generate(zio_t *zio)
 		}
 	}
 
-	zio_checksum_compute(zio, checksum, zio->io_data, zio->io_size);
-
-	return (ZIO_PIPELINE_CONTINUE);
+	return (zio_checksum_compute(zio, checksum, zio->io_data,
+	    zio->io_size, 1));
 }
 
 static int
@@ -2886,7 +3142,7 @@ zio_checksum_verify(zio_t *zio)
 {
 	zio_bad_cksum_t info;
 	blkptr_t *bp = zio->io_bp;
-	int error;
+	int error, zio_progress = ZIO_PIPELINE_CONTINUE;
 
 	ASSERT(zio->io_vd != NULL);
 
@@ -2901,7 +3157,7 @@ zio_checksum_verify(zio_t *zio)
 		ASSERT(zio->io_prop.zp_checksum == ZIO_CHECKSUM_LABEL);
 	}
 
-	if ((error = zio_checksum_error(zio, &info)) != 0) {
+	if ((error = zio_checksum_error(zio, &info, &zio_progress)) != 0) {
 		zio->io_error = error;
 		if (error == ECKSUM &&
 		    !(zio->io_flags & ZIO_FLAG_SPECULATIVE)) {
@@ -2911,7 +3167,7 @@ zio_checksum_verify(zio_t *zio)
 		}
 	}
 
-	return (ZIO_PIPELINE_CONTINUE);
+	return (zio_progress);
 }
 
 /*

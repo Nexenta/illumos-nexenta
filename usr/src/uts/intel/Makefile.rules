@@ -22,6 +22,7 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 # Copyright 2012 Joyent, Inc.  All rights reserved.
+# Copyright 2013 Nexenta Systems, Inc. All rights reserved.
 #
 
 #
@@ -101,47 +102,47 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/%.c
 $(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/%.s
 	$(COMPILE.s) -o $@ $<
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/debugger/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/debugger/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/events/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/disassembler/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/hardware/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/dispatcher/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/dispatcher/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/events/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/executer/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/executer/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/parser/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/hardware/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/namespace/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/namespace/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/resources/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/parser/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/tables/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/resources/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/utilities/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/tables/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
-$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/disassembler/%.c
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/acpica/components/utilities/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
@@ -274,6 +275,14 @@ $(OBJS_DIR)/%.o:		$(UTSBASE)/intel/zfs/%.c
 	$(COMPILE.c) -o $@ $<
 	$(CTFCONVERT_O)
 
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/scsi/adapters/pvscsi/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
+$(OBJS_DIR)/%.o:		$(UTSBASE)/intel/io/vmxnet3s/%.c
+	$(COMPILE.c) -o $@ $<
+	$(CTFCONVERT_O)
+
 #
 # krtld compiled into unix
 #
@@ -349,43 +358,43 @@ $(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/ia32/syscall/%.c
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/%.s
-	@($(LHEAD) $(LINT.s) $< $(LTAIL))
-
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/debugger/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/%.s
+	@($(LHEAD) $(LINT.s) $< $(LTAIL))
+
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/debugger/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/events/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/disassembler/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/hardware/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/events/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/dispatcher/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/executer/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/executer/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/hardware/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/parser/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/dispatcher/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/namespace/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/namespace/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/resources/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/parser/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/tables/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/resources/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/utilities/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/tables/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
-$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/disassembler/%.c
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/acpica/components/utilities/%.c
 	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/agpgart/%.c
@@ -486,6 +495,12 @@ $(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/kdi/$(SUBARCH_DIR)/%.s
 
 $(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/nskern/%.s
 	@($(LHEAD) $(LINT.s) $< $(LTAIL))
+
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/scsi/adapters/pvscsi/%.c
+	@($(LHEAD) $(LINT.c) $< $(LTAIL))
+
+$(LINTS_DIR)/%.ln:		$(UTSBASE)/intel/io/vmxnet3s/%.c
+	@($(LHEAD) $(LINT.c) $< $(LTAIL))
 
 #
 # krtld lints

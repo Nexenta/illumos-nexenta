@@ -18,10 +18,13 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
+
 #ifndef	_STMF_H
 #define	_STMF_H
 
@@ -203,6 +206,11 @@ typedef struct scsi_task {
  * PP sets this flag if it can process dbufs created by the LU.
  */
 #define	TASK_AF_ACCEPT_LU_DBUF		0x08
+
+/*
+ * Indicating a PPPT task
+ */
+#define	TASK_AF_PPPT_TASK		0x10
 
 /*
  * scsi_task_t extension identifiers
@@ -416,6 +424,9 @@ boolean_t stmf_scsilib_tptid_compare(struct scsi_transport_id *,
     struct scsi_transport_id *);
 struct stmf_remote_port *stmf_remote_port_alloc(uint16_t);
 void stmf_remote_port_free(struct stmf_remote_port *);
+struct stmf_lu *stmf_check_and_hold_lu(struct scsi_task *task, uint8_t *guid);
+void stmf_release_lu(struct stmf_lu *lu);
+int stmf_is_task_being_aborted(struct scsi_task *task);
 #ifdef	__cplusplus
 }
 #endif

@@ -1024,8 +1024,8 @@ extern void	(*mir_rele)(queue_t *, mblk_t *, bool_t);
 extern void	(*mir_start)(queue_t *);
 extern void	(*clnt_stop_idle)(queue_t *);
 
-clock_t	clnt_idle_timeout = MIR_CLNT_IDLE_TIMEOUT;
-clock_t	svc_idle_timeout = MIR_SVC_IDLE_TIMEOUT;
+volatile clock_t	clnt_idle_timeout = MIR_CLNT_IDLE_TIMEOUT;
+volatile clock_t	svc_idle_timeout = MIR_SVC_IDLE_TIMEOUT;
 
 /*
  * Timeout for subsequent notifications of idle connection.  This is

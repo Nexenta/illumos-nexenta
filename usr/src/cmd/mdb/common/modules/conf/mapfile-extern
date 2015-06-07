@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
 #
 # CDDL HEADER START
 #
@@ -43,6 +44,9 @@ SYMBOL_SCOPE {
 	global:
 #		Plwp_iter			{ FLAGS = EXTERN };
 #		Pmapping_iter			{ FLAGS = EXTERN };
+
+		list_head			{ FLAGS = EXTERN };
+		list_next			{ FLAGS = EXTERN };
 
 		_mdb_ks_ncpu			{ FLAGS = EXTERN };
 		_mdb_ks_pagemask		{ FLAGS = EXTERN };

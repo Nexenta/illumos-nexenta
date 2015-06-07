@@ -1,0 +1,77 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+# Copyright (c) 2014, Nexenta Systems, Inc. All rights reserved.
+
+PKGDEP_FLAGS=
+PKGRES_FLAGS=-mvS
+
+DEB_MAINTAINER= "Nexenta Systems <maintainer@nexenta.com>"
+DEB_VERSION= 40-0-0
+
+$(NOT_RELEASE_BUILD)DEB_DEBUG= d
+$(RELEASE_BUILD)DEB_DEBUG=
+
+IPS2DEB= $(ONBLD_TOOLS)/bin/ips2deb
+
+# No source packages, no signing
+DPKG_BUILD_FLAGS= -b -us -uc
+
+# APT repository
+APTDIR= $(PKGDEST)/apt
+
+PKGNAMES= $(PROC_PKGS:%.mog=%)
+PKGRES= $(PKGNAMES:%=-p%.res)
+PKGDEP= $(PKGNAMES:%=%.dep)
+PKGBLD= $(PKGNAMES:%=%.deb)
+
+install: $(ALL_TARGETS) debres
+
+debres: $(PKGBLD) $(APTDIR)/conf/distributions
+	for p in $(PDIR)/*.deb; do \
+		echo "processing $$p"; \
+		/usr/bin/reprepro -b $(APTDIR) includedeb nza-kernel $$p ; \
+	done
+	/usr/bin/reprepro -b $(APTDIR) export
+	touch $@
+
+$(PKGBLD): convert
+	d=$(@F:%.deb=%) ; \
+	if [ -d "$(PDIR)/$$d" ]; then \
+		echo "Building pkg: $$d" ; cd "$(PDIR)/$$d" ; \
+		PATH=/usr/gnu/bin:/usr/bin:$(GCC_ROOT)/bin:$$PATH \
+		    fakeroot dpkg-buildpackage $(DPKG_BUILD_FLAGS) ; \
+	fi
+
+.PARALLEL: $(PKGBLD)
+
+convert: $(PDIR) gendeps
+	# The following is a crude hack to make sure SUNWcsd has no dependencies.
+	# This is needed to make the apt-clone and onu-deb upgrade procedures work,
+	# although the right(TM) fix would be in our handling of name_to_major and
+	# minor_perm in the postinst/prerm scripts created by ips2deb.
+	cp $(PDIR)/SUNWcsd.mog $(PDIR)/SUNWcsd.res
+	$(IPS2DEB) -v $(PKGRES) -d $(PKGROOT) -d $(TOOLSROOT) -o $(PDIR) \
+		--mfg $(PDIR) --mfe res --maintainer $(DEB_MAINTAINER) \
+		--pv $(DEB_VERSION)$(DEB_DEBUG) -s "illumos"
+
+
+$(APTDIR)/conf:
+	$(INS.dir)
+
+$(APTDIR)/conf/%: $(APTDIR)/conf
+	rm -f $@
+	echo "Origin: Kernel APT" >> $@
+	echo "Codename: nza-kernel" >> $@
+	echo "Architectures: solaris-i386" >> $@
+	echo "Components: main" >> $@
+	echo "DebIndices: Packages Release . .gz .bz2" >> $@
+	echo "Description: Kernel repository" >> $@

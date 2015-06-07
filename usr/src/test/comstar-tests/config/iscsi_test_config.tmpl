@@ -1,0 +1,133 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+# COMSTAR TARGET TYPE
+TARGET_TYPE=ISCSI
+
+# Transport Type
+# SOCKETS       ie. only SOCKETS transportation
+# ISER          ie. only ISER transportation
+# ALL           ie. Both SOCKETS and ISER transportation
+TRANSPORT=ALL
+
+# TEST LOG Directory
+LOGDIR=/var/tmp/comstar_log/iscsi
+
+# EXPECT location
+EXPECT=/usr/bin/expect
+
+# ISCSI INITIATOR HOST IP ADDRESS
+# example: ISCSI_IHOST="172.20.236.163"
+ISCSI_IHOST=
+
+# ISCSI TARGET HOST IP ADDRESS
+# example: ISCSI_THOST="172.20.236.161"
+ISCSI_THOST=
+
+# ISNS SERVER HOST IP ADDRESS
+# example: ISNS_HOST="172.20.236.163"
+ISNS_HOST=
+
+# RADIUS SERVER HOST IP ADDRESS
+# example: RADIUS_HOST="172.20.236.163"
+RADIUS_HOST=
+
+# ZPOOL NAME
+ZP=comstar
+
+# Block DEVICE SLICE LIST. The total size of these slices should be larger
+# than 8G by default.
+# example: BDEVS="/dev/dsk/c0t1d0s1 /dev/dsk/c0t1d0s7"
+BDEVS=
+
+# Raw DEVICE SLICE LIST.The total size of these slices should be larger
+# than 8G by default.
+# example: RDEVS="/dev/rdsk/c0t1d0s1 /dev/rdsk/c0t1d0s7"
+RDEVS=
+
+# TIMEOUT for local or remote command line execution, default 180 seconds
+TIME_OUT=180
+
+# ZFS Volume Number for Stress Testing, default 8
+VOL_MAX=8
+# ZFS Volume Size for Stress Testing, default 1g
+VOL_SIZE=1g
+# ISCSI Target Node Number for Fault Injection Testing, default 2
+TARGET_MAX=2
+# Sessions Maximum of ISCSI Initiator support
+SESSION_MAX=4
+# FAULT INJECTION Mapping configuration, if set 0, each LUN is mapped to 
+# only one initiator host group
+# if set 1, each LUN is mapped to all the initiator host group 
+FULL_MAPPING=1
+# STANDALONE is 0, all the verification is running on target host
+STANDALONE=0
+
+# Fault Injection Parameters for ISCSI SWITCH CABLE PULL
+# $1: Switch Type, CISCO is supported
+# $2: Switch IP Address
+# $3: Administrator Username
+# $4: Administrator Pasword
+# $5: Switch Port Number
+# example:
+# ISCSI_TARGET_SWITCH_PORT="CISCO:127.0.0.1:super:super:1,2 CISCO:127.0.0.2:super:super:3"
+ISCSI_TARGET_SWITCH_PORT=
+
+# Fault Injection Parameters for ISER SWITCH CABLE PULL
+# $1: Switch Type, TOPSPIN is supported
+# $2: Switch IP Address
+# $3: Administrator Username
+# $4: Administrator Pasword
+# $5: Switch Port Number
+# example:
+# TOPSPIN 120: ISER_TARGET_SWITCH_PORT="TOPSPIN:127.0.0.1:super:super:4,5"
+# TOPSPIN 360: ISER_TARGET_SWITCH_PORT="TOPSPIN:127.0.0.1:super:super:16/4,16/5"
+ISER_TARGET_SWITCH_PORT=
+
+# FAULT INJECTION TEST REQUIREMENT FOR MPXIO DISABLE
+# number of seconds between host side cable pull and target side cable pull 
+# with I/O running, default 24
+TS_SNOOZE=24
+# number of seconds between stmf smf service online and offline operation
+# with I/O running, default 10 
+SS_SNOOZE=10
+# number of seconds between iscsi target port online and offline
+# without I/O operation, defalt 24
+FT_SNOOZE=24
+# number of cycles of test to run, default 2
+TS_MAX_ITER=2
+
+# FAULT INJECTION TEST REQUIREMENT FOR MPXIO ENABLE
+# number of seconds for enabled mpxio failover, must large than 180 seconds
+# due to that iscsi connection retry happens for I/O failure within 180 seconds 
+# by default. Once retry beyonds 180 seconds, mpxio will receive the path failure.
+FO_SNOOZE=240
+# number of cycles of test to run for failover, default 2
+FO_MAX_ITER=2
+
+# I/O Read/Write Running Duration on diverse backing store
+FS_SECONDS=300
+

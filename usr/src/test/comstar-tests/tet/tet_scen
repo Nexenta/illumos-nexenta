@@ -1,0 +1,448 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+#
+
+all
+	^comstar
+	^fc_target
+	^iscsi_target
+fc
+	^comstar
+	^fc_target
+
+iscsi
+	^iscsi_target
+
+comstar
+	^framework
+	^sbdadm 
+	^stmfadm 
+	^libstmf
+
+framework
+	^framework_smf
+
+libstmf
+	^add_to_host_group
+	^add_to_target_group
+	^add_view_entry
+	^clear_provider_data
+	^create_host_group
+	^create_target_group
+	^delete_host_group
+	^delete_target_group
+	^devid_from_iscsi_name
+	^devid_from_wwn
+	^get_host_group_list
+	^get_host_group_members
+	^get_logical_unit_list
+	^get_logical_unit_properties
+	^get_provider_data
+	^get_state
+	^get_target_group_list
+	^get_target_group_members
+	^get_target_list
+	^get_target_properties
+	^get_view_entry_list
+	^offline_logical_unit
+	^offline_target
+	^online_logical_unit
+	^online_target
+	^remove_from_host_group
+	^remove_from_target_group
+	^remove_view_entry
+	^set_provider_data
+
+sbdadm
+	^sbdadm_create 
+	^sbdadm_delete 
+	^sbdadm_import 
+	^sbdadm_modify 
+	^sbdadm_list
+
+stmfadm
+	^stmfadm_create 
+	^stmfadm_delete 
+	^stmfadm_add 
+	^stmfadm_remove 
+	^stmfadm_online 
+	^stmfadm_offline
+	^stmfadm_list 
+itadm
+	^itadm_create_target
+	^itadm_create_tpg
+	^itadm_delete_target
+	^itadm_delete_tpg
+	^itadm_list_defaults
+	^itadm_list_initiator
+	^itadm_list_target
+	^itadm_list_tpg
+	^itadm_modify_defaults
+	^itadm_modify_initiator
+	^itadm_modify_target
+
+itadm_create_target
+	^itadm_create_target_data
+	^itadm_create_target_n_syntax
+	^itadm_create_target_p_syntax	
+
+itadm_create_tpg
+	^itadm_create_tpg_data
+	^itadm_create_tpg_n_syntax
+	^itadm_create_tpg_p_syntax	
+
+itadm_delete_target
+	^itadm_delete_target_data
+	^itadm_delete_target_n_syntax
+	^itadm_delete_target_p_syntax	
+
+itadm_delete_tpg
+	^itadm_delete_tpg_data
+	^itadm_delete_tpg_n_syntax
+	^itadm_delete_tpg_p_syntax	
+
+itadm_list_defaults
+	^itadm_list_defaults_p_syntax	
+
+itadm_list_initiator
+	^itadm_list_initiator_n_syntax
+	^itadm_list_initiator_p_syntax	
+
+itadm_list_target
+	^itadm_list_target_n_syntax
+	^itadm_list_target_p_syntax	
+
+itadm_list_tpg
+	^itadm_list_tpg_data
+	^itadm_list_tpg_n_syntax
+	^itadm_list_tpg_p_syntax	
+
+itadm_modify_defaults
+	^itadm_modify_defaults_n_syntax
+	^itadm_modify_defaults_p_syntax	
+
+itadm_modify_initiator
+	^itadm_modify_initiator_n_syntax
+	^itadm_modify_initiator_p_syntax	
+
+itadm_modify_target
+	^itadm_modify_target_data
+	^itadm_modify_target_n_syntax
+	^itadm_modify_target_p_syntax	
+
+fc_target
+	^fc_fcinfo
+	^fc_visible
+	^fc_fault
+
+fc_fault
+	^fc_fault_forcelip
+	^fc_fault_stmfoffline
+	^fc_fault_tgtcablepull
+
+iscsi_target
+	^itadm
+	^iscsi_auth
+	^iscsi_discovery
+	^iscsi_io
+	^iscsi_fs
+	^iscsi_smf
+	^iscsi_visible
+	^iscsi_tgmember
+
+iscsi_io
+	^iscsi_io_mpxio_disable
+	^iscsi_io_mpxio_enable
+
+framework_smf
+	/tests/framework/smf/tc_stmf_smf
+
+sbdadm_create
+	/tests/sbdadm/create/tc_create_sbdadm
+
+sbdadm_delete
+	/tests/sbdadm/delete/tc_delete_sbdadm
+	
+sbdadm_import
+	/tests/sbdadm/import/tc_import_sbdadm
+
+sbdadm_modify
+	/tests/sbdadm/modify/tc_modify_sbdadm
+
+sbdadm_list
+	/tests/sbdadm/list/tc_list_sbdadm
+	
+stmfadm_create
+	/tests/stmfadm/create/tc_create_stmfadm
+
+stmfadm_delete
+	/tests/stmfadm/delete/tc_delete_stmfadm
+	
+stmfadm_add
+	/tests/stmfadm/add/tc_add_stmfadm
+
+stmfadm_remove
+	/tests/stmfadm/remove/tc_remove_stmfadm
+
+stmfadm_online
+	/tests/stmfadm/online/tc_online_stmfadm
+
+stmfadm_offline
+	/tests/stmfadm/offline/tc_offline_stmfadm
+
+stmfadm_list
+	/tests/stmfadm/list/tc_list_stmfadm
+
+stmfadm_visible
+	/tests/stmfadm/visible/tc_visible_stmfadm
+	
+fc_fcinfo
+	/tests/fc/fcinfo/tc_fcinfo
+
+fc_visible
+	/tests/fc/visible/tc_visible_fc
+
+fc_fault_forcelip
+	/tests/fc/fault/forcelip/tc_forcelip_fault
+
+fc_fault_stmfoffline
+	/tests/fc/fault/stmfoffline/tc_stmfoffline_fault
+
+fc_fault_tgtcablepull
+	/tests/fc/fault/tgtcablepull/tc_tgtcablepull_fault
+
+fc_configure
+        /tests/configure/fc_configure{1}
+        
+fc_unconfigure
+        /tests/configure/fc_configure{2}
+
+stress_load
+	/tests/fc/manual/load_max_lun{1}
+	
+stress_unload
+	/tests/fc/manual/load_max_lun{2}
+
+add_to_host_group
+	/tests/libstmf/add_to_host_group/tc_add_to_host_group
+
+add_to_target_group
+	/tests/libstmf/add_to_target_group/tc_add_to_target_group
+
+add_view_entry
+	/tests/libstmf/add_view_entry/tc_add_view_entry
+
+clear_provider_data
+	/tests/libstmf/clear_provider_data/tc_clear_provider_data
+
+create_host_group
+	/tests/libstmf/create_host_group/tc_create_host_group
+
+create_target_group
+	/tests/libstmf/create_target_group/tc_create_target_group
+
+delete_host_group
+	/tests/libstmf/delete_host_group/tc_delete_host_group
+
+delete_target_group
+	/tests/libstmf/delete_target_group/tc_delete_target_group
+
+devid_from_iscsi_name
+	/tests/libstmf/devid_from_iscsi_name/tc_devid_from_iscsi_name
+
+devid_from_wwn
+	/tests/libstmf/devid_from_wwn/tc_devid_from_wwn
+
+get_host_group_list
+	/tests/libstmf/get_host_group_list/tc_get_host_group_list
+
+get_host_group_members
+	/tests/libstmf/get_host_group_members/tc_get_host_group_members
+
+
+get_logical_unit_list
+	/tests/libstmf/get_logical_unit_list/tc_get_logical_unit_list
+
+
+get_logical_unit_properties
+	/tests/libstmf/get_logical_unit_properties/tc_get_logical_unit_properties
+
+get_provider_data
+	/tests/libstmf/get_provider_data/tc_get_provider_data
+
+get_state
+	/tests/libstmf/get_state/tc_get_state
+
+get_target_group_list
+	/tests/libstmf/get_target_group_list/tc_get_target_group_list
+
+get_target_group_members
+	/tests/libstmf/get_target_group_members/tc_get_target_group_members
+
+get_target_list
+	/tests/libstmf/get_target_list/tc_get_target_list
+
+get_target_properties
+	/tests/libstmf/get_target_properties/tc_get_target_properties
+
+get_view_entry_list
+	/tests/libstmf/get_view_entry_list/tc_get_view_entry_list
+
+offline_logical_unit
+	/tests/libstmf/offline_logical_unit/tc_offline_logical_unit
+
+offline_target
+	/tests/libstmf/offline_target/tc_offline_target
+
+online_logical_unit
+	/tests/libstmf/online_logical_unit/tc_online_logical_unit
+
+online_target
+	/tests/libstmf/online_target/tc_online_target
+
+remove_from_host_group
+	/tests/libstmf/remove_from_host_group/tc_remove_from_host_group
+
+remove_from_target_group
+	/tests/libstmf/remove_from_target_group/tc_remove_from_target_group
+
+remove_view_entry
+	/tests/libstmf/remove_view_entry/tc_remove_view_entry
+
+set_provider_data
+	/tests/libstmf/set_provider_data/tc_set_provider_data
+
+iscsi_configure
+        /tests/configure/iscsi_configure{1}
+        
+iscsi_unconfigure
+        /tests/configure/iscsi_configure{2}
+
+itadm_create_target_data
+	/tests/itadm/create_target/data/tc_itadm_create_target_data
+
+itadm_create_target_n_syntax
+	/tests/itadm/create_target/n_syntax/tc_itadm_create_target_n_syntax
+
+itadm_create_target_p_syntax
+	/tests/itadm/create_target/p_syntax/tc_itadm_create_target_p_syntax
+
+itadm_create_tpg_data
+	/tests/itadm/create_tpg/data/tc_itadm_create_tpg_data
+
+itadm_create_tpg_n_syntax
+	/tests/itadm/create_tpg/n_syntax/tc_itadm_create_tpg_n_syntax
+
+itadm_create_tpg_p_syntax
+	/tests/itadm/create_tpg/p_syntax/tc_itadm_create_tpg_p_syntax
+
+itadm_delete_target_data
+	/tests/itadm/delete_target/data/tc_itadm_delete_target_data
+
+itadm_delete_target_n_syntax
+	/tests/itadm/delete_target/n_syntax/tc_itadm_delete_target_n_syntax
+
+itadm_delete_target_p_syntax
+	/tests/itadm/delete_target/p_syntax/tc_itadm_delete_target_p_syntax
+
+itadm_delete_tpg_data
+	/tests/itadm/delete_tpg/data/tc_itadm_delete_tpg_data
+
+itadm_delete_tpg_n_syntax
+	/tests/itadm/delete_tpg/n_syntax/tc_itadm_delete_tpg_n_syntax
+
+itadm_delete_tpg_p_syntax
+	/tests/itadm/delete_tpg/p_syntax/tc_itadm_delete_tpg_p_syntax
+
+itadm_list_defaults_p_syntax
+	/tests/itadm/list_defaults/p_syntax/tc_itadm_list_defaults_p_syntax
+
+itadm_list_initiator_n_syntax
+	/tests/itadm/list_initiator/n_syntax/tc_itadm_list_initiator_n_syntax
+
+itadm_list_initiator_p_syntax
+	/tests/itadm/list_initiator/p_syntax/tc_itadm_list_initiator_p_syntax
+
+itadm_list_target_n_syntax
+	/tests/itadm/list_target/n_syntax/tc_itadm_list_target_n_syntax
+
+itadm_list_target_p_syntax
+	/tests/itadm/list_target/p_syntax/tc_itadm_list_target_p_syntax
+
+itadm_list_tpg_data
+	/tests/itadm/list_tpg/data/tc_itadm_list_tpg_data
+
+itadm_list_tpg_n_syntax
+	/tests/itadm/list_tpg/n_syntax/tc_itadm_list_tpg_n_syntax
+
+itadm_list_tpg_p_syntax
+	/tests/itadm/list_tpg/p_syntax/tc_itadm_list_tpg_p_syntax
+
+itadm_modify_defaults_n_syntax
+	/tests/itadm/modify_defaults/n_syntax/tc_itadm_modify_defaults_n_syntax
+
+itadm_modify_defaults_p_syntax
+	/tests/itadm/modify_defaults/p_syntax/tc_itadm_modify_defaults_p_syntax
+
+itadm_modify_initiator_n_syntax
+	/tests/itadm/modify_initiator/n_syntax/tc_itadm_modify_initiator_n_syntax
+
+itadm_modify_initiator_p_syntax
+	/tests/itadm/modify_initiator/p_syntax/tc_itadm_modify_initiator_p_syntax
+
+itadm_modify_target_data
+	/tests/itadm/modify_target/data/tc_itadm_modify_target_data
+
+itadm_modify_target_n_syntax
+	/tests/itadm/modify_target/n_syntax/tc_itadm_modify_target_n_syntax
+
+itadm_modify_target_p_syntax
+	/tests/itadm/modify_target/p_syntax/tc_itadm_modify_target_p_syntax
+
+iscsi_auth
+	/tests/iscsi/auth/tc_iscsi_auth
+
+iscsi_fs
+	/tests/iscsi/fs/tc_iscsi_fs
+
+iscsi_smf
+	/tests/iscsi/smf/tc_iscsi_smf
+
+iscsi_discovery
+	/tests/iscsi/discovery/tc_iscsi_discovery
+
+iscsi_io_mpxio_disable
+	/tests/iscsi/io/mpxio_disable/tc_iscsi_io_mpxio_disable
+
+iscsi_io_mpxio_enable
+	/tests/iscsi/io/mpxio_enable/tc_iscsi_io_mpxio_enable
+
+iscsi_visible
+	/tests/iscsi/visible/tc_iscsi_visible
+
+iscsi_tgmember
+	/tests/iscsi/tgmember/tc_tg_member

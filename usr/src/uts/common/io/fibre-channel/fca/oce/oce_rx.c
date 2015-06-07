@@ -19,7 +19,12 @@
  * CDDL HEADER END
  */
 
-/* Copyright © 2003-2011 Emulex. All rights reserved.  */
+/*
+ * Copyright (c) 2009-2012 Emulex. All rights reserved.
+ * Use is subject to license terms.
+ */
+
+
 
 /*
  * Source file containing the Receive Path handling
@@ -30,21 +35,22 @@
 
 void oce_rx_pool_free(char *arg);
 static void oce_rqb_dtor(oce_rq_bdesc_t *rqbd);
-static int oce_rqb_ctor(oce_rq_bdesc_t *rqbd, struct oce_rq *rq,
-    size_t size, int flags);
 
 static inline mblk_t *oce_rx(struct oce_dev *dev, struct oce_rq *rq,
     struct oce_nic_rx_cqe *cqe);
 static inline mblk_t *oce_rx_bcopy(struct oce_dev *dev,
 	struct oce_rq *rq, struct oce_nic_rx_cqe *cqe);
 static int oce_rq_charge(struct oce_rq *rq, uint32_t nbufs, boolean_t repost);
-static void oce_rx_insert_tag(mblk_t *mp, uint16_t vtag);
+static inline void oce_rx_insert_tag(struct oce_dev *dev, mblk_t *mp,
+    uint16_t vtag);
 static void oce_set_rx_oflags(mblk_t *mp, struct oce_nic_rx_cqe *cqe);
 static inline void oce_rx_drop_pkt(struct oce_rq *rq,
     struct oce_nic_rx_cqe *cqe);
 static oce_rq_bdesc_t *oce_rqb_alloc(struct oce_rq *rq);
 static void oce_rqb_free(struct oce_rq *rq, oce_rq_bdesc_t *rqbd);
 static void oce_rq_post_buffer(struct oce_rq *rq, int nbufs);
+static boolean_t oce_check_tagged(struct oce_dev *dev,
+    struct oce_nic_rx_cqe *cqe);
 
 #pragma	inline(oce_rx)
 #pragma	inline(oce_rx_bcopy)
@@ -68,7 +74,7 @@ static ddi_dma_attr_t oce_rx_buf_attr = {
 	0xFFFFFFFFFFFFFFFFull,	/* maximum segment size */
 	1,			/* scatter/gather list length */
 	0x00000001,		/* granularity */
-	DDI_DMA_FLAGERR|DDI_DMA_RELAXED_ORDERING		/* DMA flags */
+	DDI_DMA_RELAXED_ORDERING		/* DMA flags */
 };
 
 /*
@@ -83,28 +89,91 @@ static ddi_dma_attr_t oce_rx_buf_attr = {
 int
 oce_rqb_cache_create(struct oce_rq *rq, size_t buf_size)
 {
-	int size;
-	int cnt;
-	int ret;
 	oce_rq_bdesc_t *rqbd;
+	struct oce_dev *dev;
+	uint32_t size;
+	uint64_t paddr;
+	caddr_t vaddr;
+	int ncookies = 0;
+	int bufs_per_cookie = 0;
+	int ridx = 0;
+	int i = 0;
+	ddi_dma_cookie_t cookie;
+	int ret;
 
-	_NOTE(ARGUNUSED(buf_size));
 	rqbd = rq->rq_bdesc_array;
-	size = rq->cfg.frag_size + OCE_RQE_BUF_HEADROOM;
-	for (cnt = 0; cnt < rq->cfg.nbufs; cnt++, rqbd++) {
-		rq->rqb_freelist[cnt] = rqbd;
-		ret = oce_rqb_ctor(rqbd, rq,
-		    size, (DDI_DMA_RDWR|DDI_DMA_STREAMING));
+	size = buf_size * rq->cfg.nbufs;
+	dev = rq->parent;
+
+	oce_rx_buf_attr.dma_attr_granular = (uint32_t)buf_size;
+	if (DDI_FM_DMA_ERR_CAP(dev->fm_caps)) {
+		oce_rx_buf_attr.dma_attr_flags |= DDI_DMA_FLAGERR;
+	}
+
+	/* Try to get single big chunk With iommu normally cookie count is 1 */
+	oce_rx_buf_attr.dma_attr_sgllen = 1;
+	ret = oce_alloc_dma_buffer(dev, &rq->rqb, size, &oce_rx_buf_attr,
+	    (DDI_DMA_RDWR|DDI_DMA_STREAMING));
+	/* retry with single page allocation */
+	if (ret != DDI_SUCCESS) {
+		oce_rx_buf_attr.dma_attr_sgllen =
+		    size/ddi_ptob(dev->dip, (ulong_t)1) + 2;
+		ret = oce_alloc_dma_buffer(dev, &rq->rqb, size,
+		    &oce_rx_buf_attr, (DDI_DMA_RDWR | DDI_DMA_STREAMING));
 		if (ret != DDI_SUCCESS) {
-			goto rqb_fail;
+			return (DDI_FAILURE);
 		}
 	}
+
+	ncookies = rq->rqb.ncookies;
+	/* Set the starting phys and vaddr */
+	/* paddr = rq->rqb.addr; */
+	vaddr = rq->rqb.base;
+	cookie = rq->rqb.cookie;
+
+	do {
+		paddr = cookie.dmac_laddress;
+		bufs_per_cookie = cookie.dmac_size/buf_size;
+		for (i = 0; i < bufs_per_cookie; i++, rqbd++) {
+			rqbd->mp = desballoc((uchar_t *)vaddr, buf_size, 0,
+			    &rqbd->fr_rtn);
+			if (rqbd->mp == NULL) {
+				goto desb_fail;
+			}
+			/* Set the call back function parameters */
+			rqbd->fr_rtn.free_func = (void (*)())oce_rx_pool_free;
+			rqbd->fr_rtn.free_arg = (caddr_t)(void *)rqbd;
+			/* Populate the DMA object for each buffer */
+			rqbd->rqb.acc_handle = rq->rqb.acc_handle;
+			rqbd->rqb.dma_handle = rq->rqb.dma_handle;
+			rqbd->rqb.base = vaddr;
+			rqbd->rqb.addr = paddr;
+			rqbd->rqb.len  = buf_size;
+			rqbd->rqb.size = buf_size;
+			rqbd->rqb.off  = ridx * buf_size;
+			rqbd->rq = rq;
+			rqbd->frag_addr.dw.addr_lo = ADDR_LO(paddr);
+			rqbd->frag_addr.dw.addr_hi = ADDR_HI(paddr);
+			rq->rqb_freelist[ridx] = rqbd;
+			/* increment the addresses */
+			paddr += buf_size;
+			vaddr += buf_size;
+			ridx++;
+			if (ridx >= rq->cfg.nbufs) {
+				break;
+			}
+		}
+		if (--ncookies > 0) {
+			(void) ddi_dma_nextcookie(rq->rqb.dma_handle, &cookie);
+		}
+	} while (ncookies > 0);
+
 	rq->rqb_free = rq->cfg.nbufs;
 	rq->rqb_rc_head = 0;
 	rq->rqb_next_free = 0;
 	return (DDI_SUCCESS);
 
-rqb_fail:
+desb_fail:
 	oce_rqb_cache_destroy(rq);
 	return (DDI_FAILURE);
 } /* oce_rqb_cache_create */
@@ -126,6 +195,8 @@ oce_rqb_cache_destroy(struct oce_rq *rq)
 	for (cnt = 0; cnt < rq->cfg.nbufs; cnt++, rqbd++) {
 		oce_rqb_dtor(rqbd);
 	}
+
+	oce_free_dma_buffer(rq->parent, &rq->rqb);
 } /* oce_rqb_cache_destroy */
 
 /*
@@ -146,49 +217,8 @@ oce_rqb_dtor(oce_rq_bdesc_t *rqbd)
 		freemsg(rqbd->mp);
 		rqbd->mp = NULL;
 	}
-	oce_free_dma_buffer(rqbd->rq->parent, rqbd->rqb);
 } /* oce_rqb_dtor */
 
-/*
- * RQ buffer constructor function
- *
- * rqbd - pointer to rq buffer descriptor
- * rq - pointer to RQ structure
- * size - size of the buffer
- * flags - KM_SLEEP OR KM_NOSLEEP
- *
- * return DDI_SUCCESS => success, DDI_FAILURE otherwise
- */
-static int
-oce_rqb_ctor(oce_rq_bdesc_t *rqbd, struct oce_rq *rq, size_t size, int flags)
-{
-	struct oce_dev *dev;
-	oce_dma_buf_t *dbuf;
-
-	dev = rq->parent;
-
-	dbuf  = oce_alloc_dma_buffer(dev, size, &oce_rx_buf_attr, flags);
-	if (dbuf == NULL) {
-		return (DDI_FAILURE);
-	}
-
-	/* Set the call back function parameters */
-	rqbd->fr_rtn.free_func = (void (*)())oce_rx_pool_free;
-	rqbd->fr_rtn.free_arg = (caddr_t)(void *)rqbd;
-	rqbd->mp = desballoc((uchar_t *)(dbuf->base),
-	    dbuf->size, 0, &rqbd->fr_rtn);
-	if (rqbd->mp == NULL) {
-		oce_free_dma_buffer(dev, dbuf);
-		return (DDI_FAILURE);
-	}
-	rqbd->rqb = dbuf;
-	rqbd->rq = rq;
-	rqbd->frag_addr.dw.addr_lo = ADDR_LO(dbuf->addr + OCE_RQE_BUF_HEADROOM);
-	rqbd->frag_addr.dw.addr_hi = ADDR_HI(dbuf->addr + OCE_RQE_BUF_HEADROOM);
-	rqbd->mp->b_rptr = (uchar_t *)rqbd->rqb->base + OCE_RQE_BUF_HEADROOM;
-
-	return (DDI_SUCCESS);
-} /* oce_rqb_ctor */
 
 /*
  * RQ buffer allocator function
@@ -342,6 +372,7 @@ oce_rx(struct oce_dev *dev, struct oce_rq *rq, struct oce_nic_rx_cqe *cqe)
 	uint16_t cur_index;
 	oce_ring_buffer_t *ring;
 	int i;
+	uint32_t hdr_len;
 
 	frag_cnt  = cqe->u0.s.num_fragments & 0x7;
 	mblk_head = NULL;
@@ -352,17 +383,19 @@ oce_rx(struct oce_dev *dev, struct oce_rq *rq, struct oce_nic_rx_cqe *cqe)
 
 	/* Get the relevant Queue pointers */
 	pkt_len = cqe->u0.s.pkt_size;
+
+	if (pkt_len == 0) {
+		return (NULL);
+	}
+
 	for (i = 0; i < frag_cnt; i++) {
 		rqbd = rq->shadow_ring[cur_index];
 		if (rqbd->mp == NULL) {
-			rqbd->mp = desballoc((uchar_t *)rqbd->rqb->base,
-			    rqbd->rqb->size, 0, &rqbd->fr_rtn);
+			rqbd->mp = desballoc((uchar_t *)rqbd->rqb.base,
+			    rqbd->rqb.size, 0, &rqbd->fr_rtn);
 			if (rqbd->mp == NULL) {
 				return (NULL);
 			}
-
-			rqbd->mp->b_rptr =
-			    (uchar_t *)rqbd->rqb->base + OCE_RQE_BUF_HEADROOM;
 		}
 
 		mp = rqbd->mp;
@@ -374,7 +407,8 @@ oce_rx(struct oce_dev *dev, struct oce_rq *rq, struct oce_nic_rx_cqe *cqe)
 		/* Chain the message mblks */
 		*mblk_tail = mp;
 		mblk_tail = &mp->b_cont;
-		(void) DBUF_SYNC(rqbd->rqb, DDI_DMA_SYNC_FORCPU);
+		DBUF_SYNC(rqbd->rqb, rqbd->rqb.off, rqbd->rqb.len,
+		    DDI_DMA_SYNC_FORCPU);
 		cur_index = GET_Q_NEXT(cur_index, 1, ring->num_items);
 	}
 
@@ -382,11 +416,39 @@ oce_rx(struct oce_dev *dev, struct oce_rq *rq, struct oce_nic_rx_cqe *cqe)
 		oce_log(dev, CE_WARN, MOD_RX, "%s", "oce_rx:no frags?");
 		return (NULL);
 	}
+	/* coallesce headers + Vtag  to first mblk */
+	mp = allocb(OCE_HDR_LEN, BPRI_HI);
+	if (mp == NULL) {
+		return (NULL);
+	}
+	/* Align the IP header */
+	mp->b_rptr += OCE_IP_ALIGN;
 
+	if (oce_check_tagged(dev, cqe)) {
+		hdr_len = min(MBLKL(mblk_head), OCE_HDR_LEN) -
+		    VTAG_SIZE - OCE_IP_ALIGN;
+		(void) memcpy(mp->b_rptr, mblk_head->b_rptr, 2 * ETHERADDRL);
+		oce_rx_insert_tag(dev, mp, cqe->u0.s.vlan_tag);
+		(void) memcpy(mp->b_rptr + 16, mblk_head->b_rptr + 12,
+		    hdr_len - 12);
+		mp->b_wptr = mp->b_rptr + VTAG_SIZE + hdr_len;
+	} else {
+
+		hdr_len = min(MBLKL(mblk_head), OCE_HDR_LEN) - OCE_IP_ALIGN;
+		(void) memcpy(mp->b_rptr, mblk_head->b_rptr, hdr_len);
+		mp->b_wptr = mp->b_rptr + hdr_len;
+	}
+	mblk_head->b_rptr += hdr_len;
+	if (MBLKL(mblk_head) > 0) {
+		mp->b_cont = mblk_head;
+	} else {
+		mp->b_cont = mblk_head->b_cont;
+		freeb(mblk_head);
+	}
 	/* replace the buffer with new ones */
 	(void) oce_rq_charge(rq, frag_cnt, B_FALSE);
 	atomic_add_32(&rq->pending, frag_cnt);
-	return (mblk_head);
+	return (mp);
 } /* oce_rx */
 
 static inline mblk_t *
@@ -394,43 +456,59 @@ oce_rx_bcopy(struct oce_dev *dev, struct oce_rq *rq, struct oce_nic_rx_cqe *cqe)
 {
 	mblk_t *mp;
 	int pkt_len;
-	int alloc_len;
 	int32_t frag_cnt = 0;
 	int frag_size;
 	oce_rq_bdesc_t *rqbd;
-	unsigned char  *rptr;
 	uint32_t cur_index;
 	oce_ring_buffer_t *ring;
 	oce_rq_bdesc_t **shadow_rq;
 	int cnt = 0;
-
-	_NOTE(ARGUNUSED(dev));
-
-	shadow_rq = rq->shadow_ring;
 	pkt_len = cqe->u0.s.pkt_size;
-	alloc_len = pkt_len + OCE_RQE_BUF_HEADROOM;
-	frag_cnt = cqe->u0.s.num_fragments & 0x7;
 
-	mp = allocb(alloc_len, BPRI_HI);
+	if (pkt_len == 0) {
+		return (NULL);
+	}
+
+	mp = allocb(pkt_len + OCE_RQE_BUF_HEADROOM, BPRI_HI);
 	if (mp == NULL) {
 		return (NULL);
 	}
 
-	mp->b_rptr += OCE_RQE_BUF_HEADROOM;
-	rptr = mp->b_rptr;
-	mp->b_wptr = mp->b_rptr + pkt_len;
 	ring = rq->ring;
-
+	shadow_rq = rq->shadow_ring;
+	frag_cnt = cqe->u0.s.num_fragments & 0x7;
 	cur_index = ring->cidx;
-	for (cnt = 0; cnt < frag_cnt; cnt++) {
-		rqbd = shadow_rq[cur_index];
-		frag_size  = (pkt_len > rq->cfg.frag_size) ?
-		    rq->cfg.frag_size : pkt_len;
-		(void) DBUF_SYNC(rqbd->rqb, DDI_DMA_SYNC_FORCPU);
-		bcopy(rqbd->rqb->base + OCE_RQE_BUF_HEADROOM, rptr, frag_size);
-		rptr += frag_size;
-		pkt_len   -= frag_size;
+	rqbd = shadow_rq[cur_index];
+	frag_size  = min(pkt_len, rq->cfg.frag_size);
+	/* Align IP header */
+	mp->b_rptr += OCE_IP_ALIGN;
+
+	/* Sync the first buffer */
+	DBUF_SYNC(rqbd->rqb, rqbd->rqb.off, rqbd->rqb.len,
+	    DDI_DMA_SYNC_FORCPU);
+
+
+	if (oce_check_tagged(dev, cqe)) {
+		(void) memcpy(mp->b_rptr, rqbd->rqb.base, 2  * ETHERADDRL);
+		oce_rx_insert_tag(dev, mp, cqe->u0.s.vlan_tag);
+		(void) memcpy(mp->b_rptr + 16, rqbd->rqb.base + 12,
+		    frag_size - 12);
+		mp->b_wptr = mp->b_rptr + frag_size + VTAG_SIZE;
+	} else {
+		(void) memcpy(mp->b_rptr, rqbd->rqb.base, frag_size);
+		mp->b_wptr = mp->b_rptr + frag_size;
+	}
+
+	for (cnt = 1; cnt < frag_cnt; cnt++) {
 		cur_index = GET_Q_NEXT(cur_index, 1, ring->num_items);
+		pkt_len   -= frag_size;
+		rqbd = shadow_rq[cur_index];
+		frag_size  = min(rq->cfg.frag_size, pkt_len);
+		DBUF_SYNC(rqbd->rqb, rqbd->rqb.off, rqbd->rqb.len,
+		    DDI_DMA_SYNC_FORCPU);
+
+		(void) memcpy(mp->b_wptr, rqbd->rqb.base, frag_size);
+		mp->b_wptr += frag_size;
 	}
 	(void) oce_rq_charge(rq, frag_cnt, B_TRUE);
 	return (mp);
@@ -456,16 +534,17 @@ oce_set_rx_oflags(mblk_t *mp, struct oce_nic_rx_cqe *cqe)
 }
 
 static inline void
-oce_rx_insert_tag(mblk_t *mp, uint16_t vtag)
+oce_rx_insert_tag(struct oce_dev *dev, mblk_t *mp, uint16_t vtag)
 {
 	struct ether_vlan_header *ehp;
 
-	(void) memmove(mp->b_rptr - VTAG_SIZE,
-	    mp->b_rptr, 2 * ETHERADDRL);
-	mp->b_rptr -= VTAG_SIZE;
 	ehp = (struct ether_vlan_header *)voidptr(mp->b_rptr);
 	ehp->ether_tpid = htons(ETHERTYPE_VLAN);
-	ehp->ether_tci = LE_16(vtag);
+	if (LANCER_CHIP(dev))
+		ehp->ether_tci = htons(vtag);
+	else
+		ehp->ether_tci = LE_16(vtag);
+
 }
 
 static inline void
@@ -482,43 +561,67 @@ oce_rx_drop_pkt(struct oce_rq *rq, struct oce_nic_rx_cqe *cqe)
 	}
 }
 
-
-/*
- * function to process a Recieve queue
- *
- * arg - pointer to the RQ to charge
- *
- * return number of cqes processed
- */
-uint16_t
-oce_drain_rq_cq(void *arg)
+void *
+oce_drain_rq_cq(void *arg, int nbytes, int npkts)
 {
-	struct oce_nic_rx_cqe *cqe;
 	struct oce_rq *rq;
-	mblk_t *mp = NULL;
-	mblk_t *mblk_head;
-	mblk_t **mblk_tail;
-	uint16_t num_cqe = 0;
-	struct oce_cq  *cq;
 	struct oce_dev *dev;
+	struct oce_nic_rx_cqe *cqe;
+	mblk_t *mp = NULL;
+	struct oce_cq  *cq;
 	int32_t frag_cnt;
+	uint16_t num_cqe = 0;
+	uint16_t cqe_consumed = 0;
 	uint32_t nbufs = 0;
+	int pkt_len;
+	uint32_t poll = (nbytes || 0);
+	mblk_t *mp_head = NULL;
+	mblk_t **mp_tail = &mp_head;
 
 	rq = (struct oce_rq *)arg;
-	dev = rq->parent;
 	cq = rq->cq;
-	mblk_head = NULL;
-	mblk_tail = &mblk_head;
+	dev = rq->parent;
 
+	if (!poll) {
+		npkts = dev->rx_pkt_per_intr;
+	}
+
+	mutex_enter(&rq->rx_lock);
+	if ((!poll) && (rq->qmode == OCE_MODE_POLL)) {
+		/* reject any interrupt call in poll mode */
+		mutex_exit(&rq->rx_lock);
+		return (NULL);
+	}
+
+	if (rq->qstate == QDELETED) {
+		mutex_exit(&rq->rx_lock);
+		return (NULL);
+	}
+
+	DBUF_SYNC(cq->ring->dbuf, 0, 0, DDI_DMA_SYNC_FORKERNEL);
 	cqe = RING_GET_CONSUMER_ITEM_VA(cq->ring, struct oce_nic_rx_cqe);
 
-	(void) DBUF_SYNC(cq->ring->dbuf, DDI_DMA_SYNC_FORKERNEL);
 	/* dequeue till you reach an invalid cqe */
 	while (RQ_CQE_VALID(cqe)) {
 		DW_SWAP(u32ptr(cqe), sizeof (struct oce_nic_rx_cqe));
+
+		pkt_len = cqe->u0.s.pkt_size;
+
+
+		if (poll) {
+			if (nbytes < pkt_len) {
+				DW_SWAP(u32ptr(cqe),
+				    sizeof (struct oce_nic_rx_cqe));
+				break;
+			}
+			/* reduce the available budget */
+			nbytes -= pkt_len;
+		}
+
 		frag_cnt = cqe->u0.s.num_fragments & 0x7;
+
 		/* if insufficient buffers to charge then do copy */
-		if ((cqe->u0.s.pkt_size < dev->rx_bcopy_limit) ||
+		if ((pkt_len < dev->rx_bcopy_limit) ||
 		    (oce_atomic_reserve(&rq->rqb_free, frag_cnt) < 0)) {
 			mp = oce_rx_bcopy(dev, rq, cqe);
 		} else {
@@ -528,20 +631,13 @@ oce_drain_rq_cq(void *arg)
 				mp = oce_rx_bcopy(dev, rq, cqe);
 			}
 		}
+
 		if (mp != NULL) {
-			if (dev->function_mode & FLEX10_MODE) {
-				if (cqe->u0.s.vlan_tag_present &&
-				    cqe->u0.s.qnq) {
-					oce_rx_insert_tag(mp,
-					    cqe->u0.s.vlan_tag);
-				}
-			} else if (cqe->u0.s.vlan_tag_present) {
-				oce_rx_insert_tag(mp, cqe->u0.s.vlan_tag);
-			}
 			oce_set_rx_oflags(mp, cqe);
 
-			*mblk_tail = mp;
-			mblk_tail = &mp->b_next;
+			*mp_tail = mp;
+			mp_tail = &mp->b_next;
+
 		} else {
 			(void) oce_rq_charge(rq, frag_cnt, B_TRUE);
 		}
@@ -549,23 +645,46 @@ oce_drain_rq_cq(void *arg)
 		rq->buf_avail -= frag_cnt;
 		nbufs += frag_cnt;
 
-		oce_rq_post_buffer(rq, frag_cnt);
+		/* update the ring stats */
+		rq->stat_bytes += pkt_len;
+		rq->stat_pkts++;
+
 		RQ_CQE_INVALIDATE(cqe);
 		RING_GET(cq->ring, 1);
-		cqe = RING_GET_CONSUMER_ITEM_VA(cq->ring,
-		    struct oce_nic_rx_cqe);
 		num_cqe++;
-		/* process max ring size */
-		if (num_cqe > dev->rx_pkt_per_intr) {
+
+		cqe_consumed++;
+		if (nbufs >= OCE_DEFAULT_RECHARGE_THRESHOLD) {
+			oce_arm_cq(dev, cq->cq_id, cqe_consumed, B_FALSE);
+			oce_rq_post_buffer(rq, nbufs);
+			nbufs = 0;
+			cqe_consumed = 0;
+		}
+
+		if (!poll && (--npkts <= 0)) {
 			break;
 		}
+		cqe = RING_GET_CONSUMER_ITEM_VA(cq->ring,
+		    struct oce_nic_rx_cqe);
+
 	} /* for all valid CQEs */
 
-	if (mblk_head) {
-		mac_rx(dev->mac_handle, NULL, mblk_head);
+	if (cqe_consumed) {
+		oce_arm_cq(dev, cq->cq_id, cqe_consumed, rq->qmode);
+		oce_rq_post_buffer(rq, nbufs);
+	} else {
+		oce_arm_cq(dev, cq->cq_id, 0, rq->qmode);
 	}
-	oce_arm_cq(dev, cq->cq_id, num_cqe, B_TRUE);
-	return (num_cqe);
+
+	mutex_exit(&rq->rx_lock);
+
+	if (!poll && mp_head) {
+		mac_rx_ring(dev->mac_handle, rq->handle, mp_head,
+		    rq->gen_number);
+	}
+
+	return (mp_head);
+
 } /* oce_drain_rq_cq */
 
 /*
@@ -580,6 +699,7 @@ oce_rx_pool_free(char *arg)
 {
 	oce_rq_bdesc_t *rqbd;
 	struct oce_rq  *rq;
+	struct oce_dev  *dev;
 
 	/* During destroy, arg will be NULL */
 	if (arg == NULL) {
@@ -589,16 +709,20 @@ oce_rx_pool_free(char *arg)
 	/* retrieve the pointers from arg */
 	rqbd = (oce_rq_bdesc_t *)(void *)arg;
 	rq = rqbd->rq;
-	rqbd->mp = desballoc((uchar_t *)rqbd->rqb->base,
-	    rqbd->rqb->size, 0, &rqbd->fr_rtn);
-
-	if (rqbd->mp) {
-		rqbd->mp->b_rptr =
-		    (uchar_t *)rqbd->rqb->base + OCE_RQE_BUF_HEADROOM;
-	}
+	dev = rq->parent;
+	rqbd->mp = desballoc((uchar_t *)rqbd->rqb.base,
+	    rqbd->rqb.size, 0, &rqbd->fr_rtn);
 
 	oce_rqb_free(rq, rqbd);
 	(void) atomic_dec_32(&rq->pending);
+
+	if (rq->pending == 0) {
+		mutex_enter(&rq->rq_fini_lock);
+		if (rq->qstate == QFINI_PENDING) {
+			oce_rq_fini(dev, rq);
+		}
+		mutex_exit(&rq->rq_fini_lock);
+	}
 } /* rx_pool_free */
 
 /*
@@ -616,6 +740,7 @@ oce_clean_rq(struct oce_rq *rq)
 	struct oce_dev *dev;
 	struct oce_nic_rx_cqe *cqe;
 	int32_t ti = 0;
+	int frag_cnt;
 
 	dev = rq->parent;
 	cq = rq->cq;
@@ -625,6 +750,13 @@ oce_clean_rq(struct oce_rq *rq)
 
 		while (RQ_CQE_VALID(cqe)) {
 			DW_SWAP(u32ptr(cqe), sizeof (struct oce_nic_rx_cqe));
+			frag_cnt = cqe->u0.s.num_fragments & 0x7;
+			if (frag_cnt == 0) {
+				oce_log(dev, CE_NOTE, MOD_RX, "%s",
+				    "Got Rx Completion Marble Returning ...\n");
+				RQ_CQE_INVALIDATE(cqe);
+				return;
+			}
 			oce_rx_drop_pkt(rq, cqe);
 			atomic_add_32(&rq->buf_avail,
 			    -(cqe->u0.s.num_fragments & 0x7));
@@ -634,6 +766,13 @@ oce_clean_rq(struct oce_rq *rq)
 			cqe = RING_GET_CONSUMER_ITEM_VA(cq->ring,
 			    struct oce_nic_rx_cqe);
 			num_cqe++;
+		}
+		if (num_cqe == 0) {
+			/* arm the queue again to get completion marble */
+			oce_arm_cq(dev, cq->cq_id, 0, 1);
+		} else {
+			/* reset counter to reap valid completions again */
+			num_cqe = 0;
 		}
 		OCE_MSDELAY(1);
 	}
@@ -658,6 +797,7 @@ oce_start_rq(struct oce_rq *rq)
 	(void) oce_rq_charge(rq, to_charge, B_FALSE);
 	/* ok to do it here since Rx has not even started */
 	oce_rq_post_buffer(rq, to_charge);
+	rq->qmode = OCE_MODE_INTR;
 	oce_arm_cq(dev, rq->cq->cq_id, 0, B_TRUE);
 	return (ret);
 } /* oce_start_rq */
@@ -674,9 +814,34 @@ oce_rx_pending(struct oce_dev *dev, struct oce_rq *rq, int32_t timeout)
 			OCE_MSDELAY(10);
 			continue;
 		} else {
-			rq->pending = 0;
 			break;
 		}
 	}
+
+	if (rq->pending != 0) {
+		oce_log(dev, CE_NOTE, MOD_CONFIG,
+		    "%d pending RX buffers in rq=0x%p", rq->pending,
+		    (void *)rq);
+	}
 	return (rq->pending);
+}
+
+static boolean_t
+oce_check_tagged(struct oce_dev *dev, struct oce_nic_rx_cqe *cqe)
+{
+	boolean_t tagged = B_FALSE;
+	if (((dev->drvfn_caps & DRVFN_CAPAB_BE3_NATIVE) &&
+	    cqe->u0.s.vlan_tag_present) ||
+	    (!(dev->drvfn_caps & DRVFN_CAPAB_BE3_NATIVE) &&
+	    cqe->u0.v0.vlan_tag_present)) {
+		if (dev->function_mode & FLEX10_MODE) {
+			if (cqe->u0.s.qnq)
+				tagged = B_TRUE;
+		} else if (dev->pvid != 0) {
+			if (dev->pvid != cqe->u0.v0.vlan_tag)
+				tagged = B_TRUE;
+		} else
+			tagged = B_TRUE;
+	}
+	return (tagged);
 }

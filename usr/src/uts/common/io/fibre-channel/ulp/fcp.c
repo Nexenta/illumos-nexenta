@@ -23,6 +23,9 @@
  *
  * Fibre Channel SCSI ULP Mapping driver
  */
+/*
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ */
 
 #include <sys/scsi/scsi.h>
 #include <sys/types.h>
@@ -13084,15 +13087,10 @@ fcp_is_pip_present(struct fcp_lun *plun, mdi_pathinfo_t *pip)
 
 	(void) snprintf(uaddr, MAXNAMELEN, "w%s,%x", buf, plun->lun_num);
 
-	if (plun->lun_old_guid) {
-		if (mdi_pi_find(pdip, plun->lun_old_guid, uaddr) == pip) {
-			rval = FC_SUCCESS;
-		}
-	} else {
-		if (mdi_pi_find(pdip, plun->lun_guid, uaddr) == pip) {
-			rval = FC_SUCCESS;
-		}
+	if (mdi_pi_find(pdip, NULL, uaddr) == pip) {
+		rval = FC_SUCCESS;
 	}
+
 	return (rval);
 }
 

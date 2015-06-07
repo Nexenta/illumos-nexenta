@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2011, 2014 by Delphix. All rights reserved.
  */
 
@@ -68,7 +69,8 @@
 /*
  * Disable intent logging replay.  This global ZIL switch affects all pools.
  */
-int zil_replay_disable = 0;
+int zil_replay_disable = 0;    /* disable intent logging replay */
+int zil_use_sdev = 1;		/* Use Special device for ZIL */
 
 /*
  * Tunable parameter for debugging or performance analysis.  Setting

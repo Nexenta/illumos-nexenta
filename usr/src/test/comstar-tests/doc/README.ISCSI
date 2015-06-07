@@ -1,0 +1,173 @@
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+#
+#
+
+DESCRIPTION:
+===========
+This test suite is mainly designed to test the functionality of COMSTAR 
+(Common Multiprotocol SCSI Target) 
+
+PREREQUISITES:
+============
+1. Test configuration needs ISCSI Initiator and ISCSI Target hosts.
+
+   On both hosts, it is desirable to have an additional 2 NICs for test 
+   transports.  Hosts will have an on-board interface to house the host 
+   IP address being used for ssh communication between the target and 
+   initiator host.  The other two NICs should be configured with IPs
+   under different subnets for physical multi-path. 
+
+   The ISCSI Initiator host will reboot itself automatically during 
+   Fault Injection testing.
+
+2. ISCSI Target Host should NOT have any existing LUs and related
+   configuration information such as target group, host group, view 
+   entry and mapping association before test execution. 
+
+3. ISCSI Target Host should disable other target port providers,
+   for example by unloading FC target driver, disabling the SMF 
+   service /system/iscsitgt.  Otherwise unxepected failures will
+   be produced during test execution.
+
+4. ISCSI Initiator Host should NOT probe any LUs except the ISCSI 
+   Target Host and be bound with only one ISCSI Target Host for testing.
+
+5. The SUNWstc-tetlite test harness package is required to be installed
+   on the ISCSI Target host, or to be accessible via NFS.
+
+6. ISCSI Initiator and Target hosts should be set up to accept scp and 
+   ssh from test hosts (by root) and also allow root remote login.
+
+7. ISCSI Initiator Host requires that the following package(s) are 
+   installed on the test host:
+        - SUNWdiskomizer 
+	- The SunWdiskomizer pkg must be installed in the default directory:
+	  /opt/SUNWdiskomizer 
+
+It is assumed that the following INSTALLATION, CONFIGURATION, EXECUTION 
+steps are performed in a single shell environment, or, if they are performed
+in different shell environments, the environment variables CTI_ROOT and
+and PATH are set up properly.
+
+CTI-TET PACKAGE INSTALLATION:
+===========================
+For example, as root do the following :
+	pkgadd -d /ws/stcnv-gate/packages/`uname -p` SUNWstc-tetlite
+
+It is also acceptable to use an NFS-accessible location of the tetlite package.
+
+TEST SUITE INSTALLATION:
+=======================
+The test suite can be installed locally to the testing system or
+accessed via nfs over the network from a server.  For example, to install the
+test root, as root do:
+	pkgadd -d /ws/stcnv-gate/packages/`uname -p` SUNWstc-storage-comstar
+
+It is also acceptable to use an NFS accessible location of the test suite
+package.
+
+TEST SUITE CONFIGURATION :
+========================
+Test suite configuration must be done as root.
+	
+1. Set up the following environment variables
+	# CTI_ROOT=/opt/SUNWstc-tetlite/contrib/ctitools
+	# PATH=$CTI_ROOT/bin:$PATH
+
+2. To configure the test suite :
+
+# run_test \
+  -v TRANSPORT=SOCKETS
+  -v EXPECT=<EXPECT Script Parser Location>
+  -v ISCSI_THOST=<ISCSI Target IP Addr> \
+  -v ISCSI_IHOST=<ISCSI Initiator IP Addr> \
+  -v ISNS_HOST=<ISNS Target IP Addr> \
+  -v "BDEVS=\"<Block disk device separated by space>\"" \ 
+  	(Example: -v "BDEVS=\"/dev/dsk/c0t1d0s2 /dev/dsk/c0t2d0s2\"")
+  -v "RDEVS=\"<Raw disk device separated by space>\"" \ 
+  	(Example: -v "RDEVS=\"/dev/rdsk/c0t1d0s2 /dev/rdsk/c0t2d0s2\"")
+  comstar-tests iscsi_configure
+
+The configuration file will be created as a result of the arguments specified 
+in the run_test command line.  
+
+Other configurable variables that can be set in the configuration line :
+
+TRANSPORT	- [ SOCKETS or ALL transport can be specified ]
+		- SOCKETS transport goes through only the ethernet interfaces
+		- ALL transport goes through all the networking interfaces
+
+EXPECT		- [ Expect script parser location ] is optional
+		- default is /usr/bin/expect
+
+ISCSI_THOST	- [ iscsi target host ip address ] is a must
+		- only supports one target initiator host nowadays
+
+ISCSI_IHOST	- [ iscsi initiator host ip address ] is a must
+		- only supports one iscsi initiator host nowadays
+
+ISNS_HOST	- [ isns server host ip address ] is a must
+
+BDEVS		- [ block disk device list ] is a must
+
+RDEVS		- [ raw disk device list ] is a must
+
+ISCSI_TARGET_SWITCH_PORT
+		- [ ethernet interface topology on switch ] is obsolete 
+		  temporarily
+		- switch cable pull is unsupported currently
+
+RADIUS_HOST	- [ radius server host ip address ] is optional
+		- radius authentication feature is unsupported currently
+		- RADIUS_HOST defaults to ISCSI_IHOST implicitly for 
+		  itadm utility testing
+
+TEST SUITE EXECUTION :
+==================== 
+
+The following setup is required prior to the test run.
+
+   - Allow root to do ssh and scp to/from the remote initiator.  Require .ssh setup 
+     for root.
+
+   - Allow root to log in remotely.  Require changes to /etc/ssh/sshd_config file.
+     Make sure the following lines are in remote's sshd_config file.
+
+             PermitRootLogin yes
+             PermitRootLogin without-password
+
+     and restart the service.
+
+The test suite execution is required to be done as root.
+
+To run the entire test suite do the following.
+
+# run_test comstar-tests iscsi
+
+To execute individual scenarios (itadm iscsi_auth iscsi_discovery iscsi_io
+iscsi_fs iscsi_smf iscsi_visible)
+
+# run_test comstar-tests <scenario>
+
+# run_test comstar-tests itadm
+
+To execute Test Purposes within a scenario :
+
+# run_test comstar-tests iscsi/<test case dir>:<test purpose number>
+
+# run_test comstar-tests iscsi/auth:1
+# run_test comstar-tests iscsi/auth:1-2
+# run_test comstar-tests iscsi/auth:1,2
+
+Test case directories are iscsi,itadm
+
+TEST SUITE UNCONFIGURE :
+======================
+
+# run_test comstar-tests iscsi_unconfigure
+
+

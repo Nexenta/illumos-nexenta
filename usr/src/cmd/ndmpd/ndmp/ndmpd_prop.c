@@ -92,6 +92,8 @@ ndmpd_cfg_param_t ndmpd_cfg_table[] =
 	{"zfs-force-override",		"",	0, NDMP_CF_NOTINIT},
 	{"drive-type",			"",	0, NDMP_CF_NOTINIT},
 	{"debug-mode",			"",	0, NDMP_CF_NOTINIT},
+	{"vendor-name",			"",	0, NDMP_CF_NOTINIT},
+	{"product-name",		"",	0, NDMP_CF_NOTINIT},
 };
 
 /*
@@ -108,7 +110,7 @@ ndmpd_load_prop(void)
 	for (id = 0; id < NDMP_MAXALL; id++) {
 		cfg = &ndmpd_cfg_table[id];
 		if ((ndmp_get_prop(cfg->sc_name, &value)) == -1) {
-			syslog(LOG_DEBUG, "%s %s",
+			syslog(LOG_ERR, "%s %s",
 			    cfg->sc_name, ndmp_strerror(ndmp_errno));
 			continue;
 		}

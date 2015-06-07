@@ -1,0 +1,73 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2014, Nexenta Systems Inc. All rights reserved.
+#
+
+set name=pkg.fmri value=pkg:/system/test/lofitest@$(PKGVERS)
+set name=pkg.description value="lofi Test Suite"
+set name=pkg.summary value="lofi Functional and Stress Tests"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Development/System
+set name=variant.arch value=$(ARCH)
+dir path=opt/lofi-tests
+dir path=opt/lofi-tests/bin
+dir path=opt/lofi-tests/lib
+dir path=opt/lofi-tests/tests
+dir path=opt/lofi-tests/tests/add_dynamic
+dir path=opt/lofi-tests/tests/add_static
+dir path=opt/lofi-tests/tests/compression_dynamic
+dir path=opt/lofi-tests/tests/compression_static
+dir path=opt/lofi-tests/tests/delete
+dir path=opt/lofi-tests/tests/fs_dynamic
+dir path=opt/lofi-tests/tests/getsysinfo
+dir path=opt/lofi-tests/tests/zones_named
+file path=opt/lofi-tests/README mode=0444
+file path=opt/lofi-tests/STC.INFO mode=0444
+file path=opt/lofi-tests/bin/lofitest mode=0555
+file path=opt/lofi-tests/lib/fs_common mode=0555
+file path=opt/lofi-tests/lib/startup_cleanup_common mode=0555
+file path=opt/lofi-tests/lib/util_common mode=0555
+file path=opt/lofi-tests/tests/add_dynamic/tc_add_dynamic mode=0555
+file path=opt/lofi-tests/tests/add_dynamic/tp_add_dynamic mode=0555
+file path=opt/lofi-tests/tests/add_static/tc_add_static mode=0555
+file path=opt/lofi-tests/tests/add_static/tp_add_static_001 mode=0555
+file path=opt/lofi-tests/tests/compression_dynamic/tc_compression_dynamic \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_dynamic/tp_compression_dynamic_001 \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_static/tc_compression_static \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_static/tp_compression_static_001 \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_static/tp_compression_static_002 \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_static/tp_compression_static_003 \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_static/tp_compression_static_004 \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_static/tp_compression_static_005 \
+    mode=0555
+file path=opt/lofi-tests/tests/compression_static/tp_compression_static_006 \
+    mode=0555
+file path=opt/lofi-tests/tests/delete/tc_delete mode=0555
+file path=opt/lofi-tests/tests/delete/tp_delete_001 mode=0555
+file path=opt/lofi-tests/tests/delete/tp_delete_002 mode=0555
+file path=opt/lofi-tests/tests/fs_dynamic/tc_fs_dynamic mode=0555
+file path=opt/lofi-tests/tests/fs_dynamic/tp_fs_dynamic mode=0555
+file path=opt/lofi-tests/tests/getsysinfo/tc_getsysinfo mode=0555
+file path=opt/lofi-tests/tests/getsysinfo/tp_getsysinfo mode=0555
+file path=opt/lofi-tests/tests/zones_named/tc_zones_named mode=0555
+file path=opt/lofi-tests/tests/zones_named/tp_zones_named_001 mode=0555
+file path=opt/lofi-tests/tet_scen mode=0444
+license cr_Sun license=cr_Sun
+license lic_CDDL license=lic_CDDL

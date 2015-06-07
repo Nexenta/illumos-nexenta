@@ -31,6 +31,7 @@
 #define	_SYS_DMU_OBJSET_H
 
 #include <sys/spa.h>
+#include <sys/special_impl.h>
 #include <sys/arc.h>
 #include <sys/txg.h>
 #include <sys/zfs_context.h>
@@ -100,6 +101,8 @@ struct objset {
 	zfs_sync_type_t os_sync;
 	zfs_redundant_metadata_type_t os_redundant_metadata;
 	int os_recordsize;
+	spa_specialclass_t os_special_class;
+	uint64_t os_zpl_meta_to_special;
 
 	/* no lock needed: */
 	struct dmu_tx *os_synctx; /* XXX sketchy */
@@ -134,7 +137,8 @@ struct objset {
 
 #define	DMU_OS_IS_L2CACHEABLE(os)				\
 	((os)->os_secondary_cache == ZFS_CACHE_ALL ||		\
-	(os)->os_secondary_cache == ZFS_CACHE_METADATA)
+	(os)->os_secondary_cache == ZFS_CACHE_METADATA ||	\
+	(os)->os_secondary_cache == ZFS_CACHE_DATA)
 
 #define	DMU_OS_IS_L2COMPRESSIBLE(os)	(zfs_mdcomp_disable == B_FALSE)
 

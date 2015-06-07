@@ -221,7 +221,7 @@
  */
 #define	DEFAULT_SVC_RUN_STKSIZE		(0)	/* default kernel stack */
 
-int    svc_default_stksize = DEFAULT_SVC_RUN_STKSIZE;
+volatile int    svc_default_stksize = DEFAULT_SVC_RUN_STKSIZE;
 
 /*
  * Default polling timeout for service threads.
@@ -250,7 +250,7 @@ int    svc_default_maxthreads = DEFAULT_SVC_MAXTHREADS;
  */
 #define	DEFAULT_SVC_MAX_SAME_XPRT	(8)
 
-int    svc_default_max_same_xprt = DEFAULT_SVC_MAX_SAME_XPRT;
+volatile int    svc_default_max_same_xprt = DEFAULT_SVC_MAX_SAME_XPRT;
 
 
 /*

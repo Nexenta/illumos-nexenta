@@ -1,6 +1,7 @@
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
 #
 # CDDL HEADER START
 #
@@ -211,7 +212,7 @@ msgstr "Major"
 msgid "ZFS-8000-D3.description"
 msgstr "A ZFS device failed.  Refer to %s for more information."
 msgid "ZFS-8000-D3.response"
-msgstr "No automated response will occur."
+msgstr "A hot spare will be activated if available."
 msgid "ZFS-8000-D3.impact"
 msgstr "Fault tolerance of the pool may be compromised."
 msgid "ZFS-8000-D3.action"

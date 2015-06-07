@@ -65,6 +65,7 @@ extern "C" {
 #define	SHOPT_NOACLFAB	"noaclfab"
 #define	SHOPT_UIDMAP	"uidmap"
 #define	SHOPT_GIDMAP	"gidmap"
+#define	SHOPT_NOHIDE	"nohide"
 
 /* XXX The following are added for testing volatile fh's purposes only */
 #ifdef VOLATILE_FH_TEST

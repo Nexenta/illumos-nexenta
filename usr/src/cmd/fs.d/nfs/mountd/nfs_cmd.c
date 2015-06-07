@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -39,6 +40,7 @@
 #include <locale.h>
 #include <strings.h>
 #include <sharefs/share.h>
+#include "mountd.h"
 
 extern struct share *findentry(char *);
 /*
@@ -99,13 +101,11 @@ charmap_search(struct netbuf *nbuf, char *opts)
 	char *name;
 	char *result = NULL;
 	char *netid;
-	struct netconfig *nconf;
-	struct nd_hostservlist  *hl = NULL;
+	struct nd_hostservlist *hl;
 	struct sockaddr *sa;
 
 	/* eventually charopts should be dynamically setup */
 	if (charopts == NULL) {
-		free(copts);
 		return (NULL);
 	}
 
@@ -113,32 +113,22 @@ charmap_search(struct netbuf *nbuf, char *opts)
 
 	switch (sa->sa_family) {
 	case AF_INET:
-		nconf = getnetconfigent("tcp");
+		netid = "tcp";
 		break;
 	case AF_INET6:
-		nconf = getnetconfigent("tcp6");
+		netid = "tcp6";
 		break;
 	default:
 		return (NULL);
 	}
 
-	if (nconf == NULL) {
-		return (NULL);
-	}
-
-	/*
-	 * Use the this API instead of the netdir_getbyaddr()
-	 * to avoid service lookup.
-	 */
-	if (__netdir_getbyaddr_nosrv(nconf, &hl, nbuf)) {
-		syslog(LOG_ERR, "netdir: %s\n", netdir_sperror());
-		freenetconfigent(nconf);
+	if (getclientsnames_lazy(netid, &nbuf, &hl) != 0) {
 		return (NULL);
 	}
 
 	copts = strdup(opts);
 	if (copts == NULL) {
-		freenetconfigent(nconf);
+		netdir_free(hl, ND_HOSTSERVLIST);
 		return (NULL);
 	}
 
@@ -167,7 +157,7 @@ charmap_search(struct netbuf *nbuf, char *opts)
 		result = strdup(result);
 
 	free(copts);
-	freenetconfigent(nconf);
+	netdir_free(hl, ND_HOSTSERVLIST);
 
 	return (result);
 }
