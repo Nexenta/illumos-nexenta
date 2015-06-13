@@ -374,6 +374,7 @@ void	smb_dispatch_stats_update(smb_server_t *,
 		smb_kstat_req_t *, int, int);
 
 int	smb1sr_newrq(smb_request_t *);
+void	smb1sr_newrq_cancel(smb_request_t *);
 void	smb1sr_work(smb_request_t *);
 
 int	smbsr_encode_empty_result(smb_request_t *);

@@ -175,12 +175,21 @@ smb2_invalid_cmd(smb_request_t *sr)
 int
 smb2sr_newrq(smb_request_t *sr)
 {
-	uint32_t magic;
-	uint16_t command;
+	int save_offset;
 	int rc;
 
-	magic = LE_IN32(sr->sr_request_buf);
-	if (magic != SMB2_PROTOCOL_MAGIC) {
+	/*
+	 * Peek at the first header.  This verifies the SMB2 header,
+	 * and gets the first command and message ID.  We want the
+	 * command so we can give cancel requests special handling.
+	 * We need the message ID filled in now so this request will
+	 * be found if a cancel request comes in before a worker
+	 * begins servicing this request.
+	 */
+	save_offset = sr->command.chain_offset;
+	rc = smb2_decode_header(sr);
+	sr->command.chain_offset = save_offset;
+	if (rc != 0) {
 		smb_request_free(sr);
 		/* will drop the connection */
 		return (EPROTO);
@@ -194,8 +203,7 @@ smb2sr_newrq(smb_request_t *sr)
 	 * does not consume a sequence number.
 	 * [MS-SMB2] 3.2.4.24 Cancellation...
 	 */
-	command = LE_IN16((uint8_t *)sr->sr_request_buf + 12);
-	if (command == SMB2_CANCEL) {
+	if (sr->smb2_cmd_code == SMB2_CANCEL) {
 		rc = smb2sr_newrq_cancel(sr);
 		smb_request_free(sr);
 		return (rc);
@@ -229,9 +237,8 @@ smb2_tq_work(void *arg)
 	sr->sr_time_active = gethrtime();
 
 	/*
-	 * In contrast with SMB1, SMB2 must _always_ dispatch to
-	 * the handler function, because cancelled requests need
-	 * an error reply (NT_STATUS_CANCELLED).
+	 * Always dispatch to the work function, because cancelled
+	 * requests need an error reply (NT_STATUS_CANCELLED).
 	 */
 	mutex_enter(&sr->sr_mutex);
 	if (sr->sr_state == SMB_REQ_STATE_SUBMITTED)
@@ -294,9 +301,6 @@ cmd_start:
 	mutex_enter(&sr->sr_mutex);
 	switch (sr->sr_state) {
 	case SMB_REQ_STATE_ACTIVE:
-		break;
-	case SMB_REQ_STATE_CLEANED_UP:
-		sr->sr_state = SMB_REQ_STATE_ACTIVE;
 		break;
 	default:
 		ASSERT(0);
@@ -651,6 +655,8 @@ cmd_start:
 		/* NB: not using pre_op */
 		rc = (*sdd->sdt_function)(sr);
 		/* NB: not using post_op */
+	} else {
+		smb2sr_put_error(sr, sr->smb2_status);
 	}
 
 	MBC_FLUSH(&sr->raw_data);

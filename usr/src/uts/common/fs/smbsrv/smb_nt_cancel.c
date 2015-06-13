@@ -82,3 +82,23 @@ smb_com_nt_cancel(smb_request_t *sr)
 
 	return (SDRC_NO_REPLY);
 }
+
+
+/*
+ * This handles an SMB_COM_NT_CANCEL request when seen in the reader.
+ * (See smb1sr_newrq)  Handle this immediately, rather than
+ * going through the normal taskq dispatch mechanism.
+ * Note that Cancel does NOT get a response.
+ */
+void
+smb1sr_newrq_cancel(smb_request_t *sr)
+{
+
+	sr->sr_state = SMB_REQ_STATE_ACTIVE;
+
+	(void) smb_pre_nt_cancel(sr);
+	(void) smb_com_nt_cancel(sr);
+	smb_post_nt_cancel(sr);
+
+	sr->sr_state = SMB_REQ_STATE_COMPLETED;
+}

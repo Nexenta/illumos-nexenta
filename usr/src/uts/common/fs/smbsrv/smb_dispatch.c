@@ -527,24 +527,58 @@ smbsr_cleanup(smb_request_t *sr)
 int
 smb1sr_newrq(smb_request_t *sr)
 {
-	uint32_t magic;
+	int rc, save_offset;
+	uint16_t pid_hi, pid_lo;
 
-	magic = SMB_READ_PROTOCOL(sr->sr_request_buf);
-	if (magic != SMB_PROTOCOL_MAGIC) {
+	/*
+	 * Peek at the SMB header.  This validates the header,
+	 * and gets the UID, PID, TID, MID.  We need all of those
+	 * in the SR before we schedule the taskq job so the SR
+	 * can be found if a cancel comes in before a worker
+	 * starts servicing the SR.
+	 */
+	save_offset = sr->command.chain_offset;
+	rc = smb_mbc_decodef(&sr->command, SMB_HEADER_ED_FMT,
+	    &sr->smb_com,
+	    &sr->smb_rcls,
+	    &sr->smb_reh,
+	    &sr->smb_err,
+	    &sr->smb_flg,
+	    &sr->smb_flg2,
+	    &pid_hi,
+	    sr->smb_sig,
+	    &sr->smb_tid,
+	    &pid_lo,
+	    &sr->smb_uid,
+	    &sr->smb_mid);
+	sr->command.chain_offset = save_offset;
+
+	if (rc != 0) {
 		smb_request_free(sr);
 		return (EPROTO);
 	}
+	sr->smb_pid = (pid_hi << 16) | pid_lo;
 
-	if (sr->session->signing.flags & SMB_SIGNING_ENABLED) {
-		if (SMB_IS_NT_CANCEL(sr)) {
+	/*
+	 * Execute Cancel requests immediately, (here in the
+	 * reader thread) so they won't wait for any other
+	 * commands we might already have in the task queue.
+	 */
+	if (sr->smb_com == SMB_COM_NT_CANCEL) {
+		if (sr->session->signing.flags & SMB_SIGNING_ENABLED) {
 			sr->session->signing.seqnum++;
 			sr->sr_seqnum = sr->session->signing.seqnum + 1;
 			sr->reply_seqnum = 0;
-		} else {
-			sr->session->signing.seqnum += 2;
-			sr->sr_seqnum = sr->session->signing.seqnum;
-			sr->reply_seqnum = sr->sr_seqnum + 1;
 		}
+		smb1sr_newrq_cancel(sr);
+		smb_request_free(sr);
+		return (0);
+	}
+
+	if (sr->session->signing.flags & SMB_SIGNING_ENABLED) {
+		sr->session->signing.seqnum += 2;
+		sr->sr_seqnum = sr->session->signing.seqnum;
+		sr->reply_seqnum = sr->sr_seqnum + 1;
 	}
 
 	/*
@@ -574,25 +608,17 @@ smb1_tq_work(void *arg)
 	sr->sr_worker = curthread;
 	sr->sr_time_active = gethrtime();
 
+	/*
+	 * Always dispatch to the work function, because cancelled
+	 * requests need an error reply (NT_STATUS_CANCELLED).
+	 */
 	mutex_enter(&sr->sr_mutex);
-	switch (sr->sr_state) {
-	case SMB_REQ_STATE_SUBMITTED:
+	if (sr->sr_state == SMB_REQ_STATE_SUBMITTED)
 		sr->sr_state = SMB_REQ_STATE_ACTIVE;
-		mutex_exit(&sr->sr_mutex);
-		smb1sr_work(sr);
-		sr = NULL;
-		break;
+	mutex_exit(&sr->sr_mutex);
 
-	default:
-		/*
-		 * SMB1 requests that have been cancelled
-		 * have no reply.  Just free it.
-		 */
-		sr->sr_state = SMB_REQ_STATE_COMPLETED;
-		mutex_exit(&sr->sr_mutex);
-		smb_request_free(sr);
-		break;
-	}
+	smb1sr_work(sr);
+
 	smb_srqueue_runq_exit(srq);
 }
 
@@ -759,7 +785,10 @@ andx_more:
 		sr->sr_state = SMB_REQ_STATE_ACTIVE;
 		break;
 	case SMB_REQ_STATE_CANCELLED:
-		break;
+		mutex_exit(&sr->sr_mutex);
+		smbsr_error(sr, NT_STATUS_CANCELLED,
+		    ERRDOS, ERROR_OPERATION_ABORTED);
+		goto report_error;
 	default:
 		ASSERT(0);
 		break;
