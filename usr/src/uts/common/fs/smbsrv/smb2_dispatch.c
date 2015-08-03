@@ -18,12 +18,6 @@
 #include <smbsrv/smb_kstat.h>
 #include <smbsrv/smb2.h>
 
-#define	INHERIT_ID	((uint16_t)-1)
-
-#define	DROP_USER	4
-#define	DROP_TREE	2
-#define	DROP_FILE	1
-
 /*
  * Saved state for a command that "goes async".  When a compound request
  * contains a command that may block indefinitely, the compound reply is
@@ -226,7 +220,7 @@ smb2sr_newrq(smb_request_t *sr)
  * This function processes each SMB command in the current request
  * (which may be a compound request) building a reply containing
  * SMB reply messages, one-to-one with the SMB commands.  Some SMB
- * commands (change notify, blocking pipe read) may require both an
+ * commands (change notify, blocking locks) may require both an
  * "interim response" and a later "async response" at completion.
  * In such cases, we'll encode the interim response in the reply
  * compound we're building, and put the (now async) command on a
@@ -252,7 +246,6 @@ smb2sr_work(struct smb_request *sr)
 	uint32_t		msg_len;
 	uint16_t		cmd_idx;
 	int			rc = 0;
-	int			drop = 0;
 	boolean_t		disconnect = B_FALSE;
 	boolean_t		related;
 
@@ -262,6 +255,7 @@ smb2sr_work(struct smb_request *sr)
 	ASSERT(sr->uid_user == 0);
 	ASSERT(sr->fid_ofile == 0);
 	sr->smb_fid = (uint16_t)-1;
+	sr->smb2_status = 0;
 
 	/* temporary until we identify a user */
 	sr->user_cr = zone_kcred();
@@ -276,7 +270,8 @@ smb2sr_work(struct smb_request *sr)
 		ASSERT(0);
 		/* FALLTHROUGH */
 	case SMB_REQ_STATE_CANCELED:
-		goto complete_unlock_free;
+		sr->smb2_status = NT_STATUS_CANCELLED;
+		break;
 	}
 	mutex_exit(&sr->sr_mutex);
 
@@ -288,9 +283,19 @@ cmd_start:
 	 * STATUS_INVALID_PARAMETER.  If the decoding problem
 	 * prevents continuing, we'll close the connection.
 	 * [MS-SMB2] 3.3.5.2.6 Handling Incorrectly Formatted...
+	 *
+	 * We treat some status codes as if "sticky", meaning
+	 * once they're set after some command handler returns,
+	 * all remaining commands get this status without even
+	 * calling the command-specific handler. The cancelled
+	 * status is used above, and insufficient_resources is
+	 * used when smb2sr_go_async declines to "go async".
+	 * Otherwise initialize to zero (success).
 	 */
-	drop = 0;
-	sr->smb2_status = 0;
+	if (sr->smb2_status != NT_STATUS_CANCELLED &&
+	    sr->smb2_status != NT_STATUS_INSUFFICIENT_RESOURCES)
+		sr->smb2_status = 0;
+
 	sr->smb2_cmd_hdr = sr->command.chain_offset;
 	if ((rc = smb2_decode_header(sr)) != 0) {
 		cmn_err(CE_WARN, "clnt %s bad SMB2 header",
@@ -393,62 +398,29 @@ cmd_start:
 	 * clear out the UID, TID, FID state that might be
 	 * left over from the previous command.
 	 *
-	 * If the command IS related, either the same ID or
-	 * the special INHERIT_ID keeps the user and/or tree
-	 * from the previous command in the compound.
-	 *
-	 * Replace INHERIT_ID with the real (inherited) ID here,
-	 * even though we might not actually inherit if other
-	 * contraints forced dropping the user or tree.
-	 *
-	 * Careful with the hierarchy here: user, tree, file.
-	 * If we drop the user, also drop the tree and file.
-	 * If we drop the tree, also drop the file.
+	 * If the command IS related, any new IDs are ignored,
+	 * and we simply continue with the previous user, tree,
+	 * and open file.
 	 */
-	if (!related)
-		drop |= (DROP_USER | DROP_TREE | DROP_FILE);
-	if (related && sr->uid_user != NULL) {
-		if (sr->smb_uid == INHERIT_ID ||
-		    sr->smb_uid == sr->uid_user->u_uid)
-			sr->smb_uid = sr->uid_user->u_uid;
-		else
-			drop |= (DROP_USER | DROP_TREE | DROP_FILE);
-	}
-	if (related && sr->tid_tree != NULL) {
-		if (sr->smb_tid == INHERIT_ID ||
-		    sr->smb_tid == sr->tid_tree->t_tid)
-			sr->smb_tid = sr->tid_tree->t_tid;
-		else
-			drop |= (DROP_TREE | DROP_FILE);
-	}
-
-	/*
-	 * We won't know what FID the command might use until the
-	 * command-specific handler decodes it.  Similar logic in
-	 * smb2sr_lookup_fid takes care of dropping the old ofile
-	 * when we're not inheriting it.
-	 */
-
-	/*
-	 * Drop what needs to be dropped, carefully ordered to
-	 * avoid dangling references: file, tree, user
-	 */
-	if ((drop & DROP_FILE) != 0 &&
-	    sr->fid_ofile != NULL) {
-		smb_ofile_request_complete(sr->fid_ofile);
-		smb_ofile_release(sr->fid_ofile);
-		sr->fid_ofile = NULL;
-	}
-	if ((drop & DROP_TREE) != 0 &&
-	    sr->tid_tree != NULL) {
-		smb_tree_release(sr->tid_tree);
-		sr->tid_tree = NULL;
-	}
-	if ((drop & DROP_USER) != 0 &&
-	    sr->uid_user != NULL) {
-		smb_user_release(sr->uid_user);
-		sr->uid_user = NULL;
-		sr->user_cr = zone_kcred();
+	if (!related) {
+		/*
+		 * Drop user, tree, file; carefully ordered to
+		 * avoid dangling references: file, tree, user
+		 */
+		if (sr->fid_ofile != NULL) {
+			smb_ofile_request_complete(sr->fid_ofile);
+			smb_ofile_release(sr->fid_ofile);
+			sr->fid_ofile = NULL;
+		}
+		if (sr->tid_tree != NULL) {
+			smb_tree_release(sr->tid_tree);
+			sr->tid_tree = NULL;
+		}
+		if (sr->uid_user != NULL) {
+			smb_user_release(sr->uid_user);
+			sr->uid_user = NULL;
+			sr->user_cr = zone_kcred();
+		}
 	}
 
 	/*
@@ -460,31 +432,65 @@ cmd_start:
 		/*
 		 * This command requires a user session.
 		 */
-		if (sr->uid_user == NULL) {
+		if (related) {
+			/*
+			 * Previous command should have given us a user.
+			 * [MS-SMB2] 3.3.5.2 Handling Related Requests
+			 */
+			if (sr->uid_user == NULL) {
+				smb2sr_put_error(sr,
+				    NT_STATUS_INVALID_PARAMETER);
+				goto cmd_done;
+			}
+			sr->smb_uid = sr->uid_user->u_uid;
+		} else {
+			/*
+			 * Lookup the UID
+			 * [MS-SMB2] 3.3.5.2 Verifying the Session
+			 */
+			ASSERT(sr->uid_user == NULL);
 			sr->uid_user = smb_session_lookup_uid(session,
 			    sr->smb_uid);
+			if (sr->uid_user == NULL) {
+				smb2sr_put_error(sr,
+				    NT_STATUS_USER_SESSION_DELETED);
+				goto cmd_done;
+			}
+			sr->user_cr = smb_user_getcred(sr->uid_user);
 		}
-		if (sr->uid_user == NULL) {
-			/* [MS-SMB2] 3.3.5.2.9 Verifying the Session */
-			smb2sr_put_error(sr, NT_STATUS_USER_SESSION_DELETED);
-			goto cmd_done;
-		}
-		sr->user_cr = smb_user_getcred(sr->uid_user);
+		ASSERT(sr->uid_user != NULL);
 	}
 
 	if ((sdd->sdt_flags & SDDF_SUPPRESS_TID) == 0) {
 		/*
 		 * This command requires a tree connection.
 		 */
-		if (sr->tid_tree == NULL) {
+		if (related) {
+			/*
+			 * Previous command should have given us a tree.
+			 * [MS-SMB2] 3.3.5.2 Handling Related Requests
+			 */
+			if (sr->tid_tree == NULL) {
+				smb2sr_put_error(sr,
+				    NT_STATUS_INVALID_PARAMETER);
+				goto cmd_done;
+			}
+			sr->smb_tid = sr->tid_tree->t_tid;
+		} else {
+			/*
+			 * Lookup the TID
+			 * [MS-SMB2] 3.3.5.2 Verifying the Tree Connect
+			 */
+			ASSERT(sr->tid_tree == NULL);
 			sr->tid_tree = smb_session_lookup_tree(session,
 			    sr->smb_tid);
+			if (sr->tid_tree == NULL) {
+				smb2sr_put_error(sr,
+				    NT_STATUS_NETWORK_NAME_DELETED);
+				goto cmd_done;
+			}
 		}
-		if (sr->tid_tree == NULL) {
-			/* [MS-SMB2] 3.3.5.2.11 Verifying the Tree Connect */
-			smb2sr_put_error(sr, NT_STATUS_NETWORK_NAME_DELETED);
-			goto cmd_done;
-		}
+		ASSERT(sr->tid_tree != NULL);
 	}
 
 	/*
@@ -605,12 +611,16 @@ cmd_start:
 	}
 
 	/*
-	 * The real work: call the SMB2 command handler.
+	 * The real work: call the SMB2 command handler
+	 * (except for "sticky" smb2_status - see above)
 	 */
 	sr->sr_time_start = gethrtime();
-	/* NB: not using pre_op */
-	rc = (*sdd->sdt_function)(sr);
-	/* NB: not using post_op */
+	rc = SDRC_SUCCESS;
+	if (sr->smb2_status == 0) {
+		/* NB: not using pre_op */
+		rc = (*sdd->sdt_function)(sr);
+		/* NB: not using post_op */
+	}
 
 	MBC_FLUSH(&sr->raw_data);
 
@@ -752,7 +762,6 @@ cleanup:
 	}
 
 	mutex_enter(&sr->sr_mutex);
-complete_unlock_free:
 	sr->sr_state = SMB_REQ_STATE_COMPLETED;
 	mutex_exit(&sr->sr_mutex);
 
@@ -897,9 +906,17 @@ cmd_done:
  *	but resources are constrained, the server MAY choose to
  *	fail that operation with STATUS_INSUFFICIENT_RESOURCES.
  *
- * Therefore, if this is the first (only) request needing
- * async processing, this returns STATUS_PENDING. Otherwise
- * return STATUS_INSUFFICIENT_RESOURCES.
+ * For simplicity, we further restrict the cases where we're
+ * willing to "go async", and only allow the last command in a
+ * compound to "go async".  It happens that this is the only
+ * case where we're actually asked to go async anyway. This
+ * simplification also means there can be at most one command
+ * in a compound that "goes async" (the last one).
+ *
+ * If we agree to "go async", this should return STATUS_PENDING.
+ * Otherwise return STATUS_INSUFFICIENT_RESOURCES for this and
+ * all requests following this request.  (See the comments re.
+ * "sticky" smb2_status values in smb2sr_work).
  *
  * Note: the Async ID we assign here is arbitrary, and need only
  * be unique among pending async responses on this connection, so
@@ -914,9 +931,10 @@ smb2sr_go_async(smb_request_t *sr,
 {
 	smb2_async_req_t *ar;
 
-	if (sr->sr_async_req != NULL)
+	if (sr->smb2_next_command != 0)
 		return (NT_STATUS_INSUFFICIENT_RESOURCES);
 
+	ASSERT(sr->sr_async_req == NULL);
 	ar = kmem_zalloc(sizeof (*ar), KM_SLEEP);
 
 	/*
@@ -1135,22 +1153,20 @@ smb2sr_lookup_fid(smb_request_t *sr, smb2fid_t *fid)
 {
 	boolean_t related = sr->smb2_hdr_flags &
 	    SMB2_FLAGS_RELATED_OPERATIONS;
-	boolean_t drop_ofile = B_FALSE;
 
-	if (!related)
-		drop_ofile = B_TRUE;
-	if (related && sr->fid_ofile != NULL) {
-		if (fid->temporal == ~0LL ||
-		    fid->temporal == sr->fid_ofile->f_fid)
-			sr->smb_fid = sr->fid_ofile->f_fid;
-		else
-			drop_ofile = B_TRUE;
+	if (related) {
+		if (sr->fid_ofile == NULL)
+			return (NT_STATUS_INVALID_PARAMETER);
+		sr->smb_fid = sr->fid_ofile->f_fid;
+		return (0);
 	}
-	if (drop_ofile && sr->fid_ofile != NULL) {
-		smb_ofile_request_complete(sr->fid_ofile);
-		smb_ofile_release(sr->fid_ofile);
-		sr->fid_ofile = NULL;
-	}
+
+	/*
+	 * If we could be sure this is called only once per cmd,
+	 * we could simply ASSERT(sr->fid_ofile == NULL) here.
+	 * However, there are cases where it can be called again
+	 * handling the same command, so let's tolerate that.
+	 */
 	if (sr->fid_ofile == NULL) {
 		sr->smb_fid = (uint16_t)fid->temporal;
 		sr->fid_ofile = smb_ofile_lookup_by_fid(sr, sr->smb_fid);
