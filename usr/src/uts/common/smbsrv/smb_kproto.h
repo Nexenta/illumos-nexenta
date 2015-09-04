@@ -810,11 +810,6 @@ int	smb_idpool_alloc(smb_idpool_t *pool, uint16_t *id);
 void	smb_idpool_free(smb_idpool_t *pool, uint16_t id);
 
 /*
- * SMB thread function prototypes
- */
-void	smb_session_worker(void *arg);
-
-/*
  * SMB locked list function prototypes
  */
 void	smb_llist_init(void);

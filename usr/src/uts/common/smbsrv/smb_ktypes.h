@@ -1629,7 +1629,6 @@ typedef struct smb_request {
 	int32_t			sr_gmtoff;
 	smb_session_t		*session;
 	smb_kmod_cfg_t		*sr_cfg;
-	void			(*work_func)(struct smb_request *);
 
 	smb_notify_change_req_t	sr_ncr;
 

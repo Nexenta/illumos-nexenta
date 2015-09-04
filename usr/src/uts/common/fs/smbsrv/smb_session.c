@@ -838,37 +838,6 @@ smb_session_cancel_requests(
 	smb_slist_exit(&session->s_req_list);
 }
 
-void
-smb_session_worker(void	*arg)
-{
-	smb_request_t	*sr;
-	smb_srqueue_t	*srq;
-
-	sr = (smb_request_t *)arg;
-	SMB_REQ_VALID(sr);
-
-	srq = sr->session->s_srqueue;
-	smb_srqueue_waitq_to_runq(srq);
-	sr->sr_worker = curthread;
-	mutex_enter(&sr->sr_mutex);
-	sr->sr_time_active = gethrtime();
-	switch (sr->sr_state) {
-	case SMB_REQ_STATE_SUBMITTED:
-		mutex_exit(&sr->sr_mutex);
-		sr->work_func(sr);
-		sr = NULL;
-		break;
-
-	default:
-		ASSERT(sr->sr_state == SMB_REQ_STATE_CANCELED);
-		sr->sr_state = SMB_REQ_STATE_COMPLETED;
-		mutex_exit(&sr->sr_mutex);
-		smb_request_free(sr);
-		break;
-	}
-	smb_srqueue_runq_exit(srq);
-}
-
 /*
  * Find a user on the specified session by SMB UID.
  */

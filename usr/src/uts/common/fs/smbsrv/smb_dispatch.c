@@ -143,6 +143,7 @@
 
 static int is_andx_com(unsigned char);
 static int smbsr_check_result(struct smb_request *, int, int);
+static void smb1_tq_work(void *);
 
 static const smb_disp_entry_t const
 smb_disp_table[SMB_COM_NUM] = {
@@ -548,16 +549,50 @@ smb1sr_newrq(smb_request_t *sr)
 
 	/*
 	 * Submit the request to the task queue, which calls
-	 * smb_dispatch_request when the workload permits.
+	 * smb1_tq_work when the workload permits.
 	 */
 	sr->sr_time_submitted = gethrtime();
 	sr->sr_state = SMB_REQ_STATE_SUBMITTED;
-	sr->work_func = smb1sr_work;
 	smb_srqueue_waitq_enter(sr->session->s_srqueue);
-	(void) taskq_dispatch(sr->session->s_server->sv_worker_pool,
-	    smb_session_worker, sr, TQ_SLEEP);
+	(void) taskq_dispatch(sr->sr_server->sv_worker_pool,
+	    smb1_tq_work, sr, TQ_SLEEP);
 
 	return (0);
+}
+
+static void
+smb1_tq_work(void *arg)
+{
+	smb_request_t	*sr;
+	smb_srqueue_t	*srq;
+
+	sr = (smb_request_t *)arg;
+	SMB_REQ_VALID(sr);
+
+	srq = sr->session->s_srqueue;
+	smb_srqueue_waitq_to_runq(srq);
+	sr->sr_worker = curthread;
+	sr->sr_time_active = gethrtime();
+
+	mutex_enter(&sr->sr_mutex);
+	switch (sr->sr_state) {
+	case SMB_REQ_STATE_SUBMITTED:
+		mutex_exit(&sr->sr_mutex);
+		smb1sr_work(sr);
+		sr = NULL;
+		break;
+
+	default:
+		/*
+		 * SMB1 requests that have been cancelled
+		 * have no reply.  Just free it.
+		 */
+		sr->sr_state = SMB_REQ_STATE_COMPLETED;
+		mutex_exit(&sr->sr_mutex);
+		smb_request_free(sr);
+		break;
+	}
+	smb_srqueue_runq_exit(srq);
 }
 
 /*

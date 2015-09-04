@@ -66,6 +66,7 @@ typedef struct smb2_async_req {
 
 void smb2sr_do_async(smb_request_t *);
 smb_sdrc_t smb2_invalid_cmd(smb_request_t *);
+static void smb2_tq_work(void *);
 
 static const smb_disp_entry_t const
 smb2_disp_table[SMB2__NCMDS] = {
@@ -202,16 +203,39 @@ smb2sr_newrq(smb_request_t *sr)
 
 	/*
 	 * Submit the request to the task queue, which calls
-	 * smb2_dispatch_request when the workload permits.
+	 * smb2_tq_work when the workload permits.
 	 */
 	sr->sr_time_submitted = gethrtime();
 	sr->sr_state = SMB_REQ_STATE_SUBMITTED;
-	sr->work_func = smb2sr_work;
 	smb_srqueue_waitq_enter(sr->session->s_srqueue);
-	(void) taskq_dispatch(sr->session->s_server->sv_worker_pool,
-	    smb_session_worker, sr, TQ_SLEEP);
+	(void) taskq_dispatch(sr->sr_server->sv_worker_pool,
+	    smb2_tq_work, sr, TQ_SLEEP);
 
 	return (0);
+}
+
+static void
+smb2_tq_work(void *arg)
+{
+	smb_request_t	*sr;
+	smb_srqueue_t	*srq;
+
+	sr = (smb_request_t *)arg;
+	SMB_REQ_VALID(sr);
+
+	srq = sr->session->s_srqueue;
+	smb_srqueue_waitq_to_runq(srq);
+	sr->sr_worker = curthread;
+	sr->sr_time_active = gethrtime();
+
+	/*
+	 * In contrast with SMB1, SMB2 must _always_ dispatch to
+	 * the handler function, because cancelled requests need
+	 * an error reply (NT_STATUS_CANCELLED).
+	 */
+	smb2sr_work(sr);
+
+	smb_srqueue_runq_exit(srq);
 }
 
 /*
