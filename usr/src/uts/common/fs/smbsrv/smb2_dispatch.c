@@ -233,6 +233,11 @@ smb2_tq_work(void *arg)
 	 * the handler function, because cancelled requests need
 	 * an error reply (NT_STATUS_CANCELLED).
 	 */
+	mutex_enter(&sr->sr_mutex);
+	if (sr->sr_state == SMB_REQ_STATE_SUBMITTED)
+		sr->sr_state = SMB_REQ_STATE_ACTIVE;
+	mutex_exit(&sr->sr_mutex);
+
 	smb2sr_work(sr);
 
 	smb_srqueue_runq_exit(srq);
@@ -284,22 +289,24 @@ smb2sr_work(struct smb_request *sr)
 	/* temporary until we identify a user */
 	sr->user_cr = zone_kcred();
 
+cmd_start:
+	/* Re-check sr_state at the start of each command. */
 	mutex_enter(&sr->sr_mutex);
 	switch (sr->sr_state) {
-	case SMB_REQ_STATE_SUBMITTED:
+	case SMB_REQ_STATE_ACTIVE:
+		break;
 	case SMB_REQ_STATE_CLEANED_UP:
 		sr->sr_state = SMB_REQ_STATE_ACTIVE;
 		break;
 	default:
 		ASSERT(0);
 		/* FALLTHROUGH */
-	case SMB_REQ_STATE_CANCELED:
+	case SMB_REQ_STATE_CANCELLED:
 		sr->smb2_status = NT_STATUS_CANCELLED;
 		break;
 	}
 	mutex_exit(&sr->sr_mutex);
 
-cmd_start:
 	/*
 	 * Decode the request header
 	 *

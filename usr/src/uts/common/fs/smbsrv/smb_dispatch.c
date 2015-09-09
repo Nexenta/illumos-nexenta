@@ -503,7 +503,7 @@ smbsr_cleanup(smb_request_t *sr)
 	 * smbsr_cleanup for the same request indicate a bug.
 	 */
 	mutex_enter(&sr->sr_mutex);
-	if (sr->sr_state != SMB_REQ_STATE_CANCELED)
+	if (sr->sr_state != SMB_REQ_STATE_CANCELLED)
 		sr->sr_state = SMB_REQ_STATE_CLEANED_UP;
 	mutex_exit(&sr->sr_mutex);
 }
@@ -577,6 +577,7 @@ smb1_tq_work(void *arg)
 	mutex_enter(&sr->sr_mutex);
 	switch (sr->sr_state) {
 	case SMB_REQ_STATE_SUBMITTED:
+		sr->sr_state = SMB_REQ_STATE_ACTIVE;
 		mutex_exit(&sr->sr_mutex);
 		smb1sr_work(sr);
 		sr = NULL;
@@ -752,11 +753,12 @@ andx_more:
 
 	mutex_enter(&sr->sr_mutex);
 	switch (sr->sr_state) {
-	case SMB_REQ_STATE_SUBMITTED:
+	case SMB_REQ_STATE_ACTIVE:
+		break;
 	case SMB_REQ_STATE_CLEANED_UP:
 		sr->sr_state = SMB_REQ_STATE_ACTIVE;
 		break;
-	case SMB_REQ_STATE_CANCELED:
+	case SMB_REQ_STATE_CANCELLED:
 		break;
 	default:
 		ASSERT(0);

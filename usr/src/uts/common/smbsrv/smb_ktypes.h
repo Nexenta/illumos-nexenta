@@ -1499,11 +1499,11 @@ struct smb_async_req;
  * | COMPLETED |                                                        |
  * +-----------+
  *      ^                                                               |
- *      | T15                      +----------+                         v
- * +------------+        T6        |          |                 +--------------+
- * | CLEANED_UP |<-----------------| CANCELED |                 | INITIALIZING |
- * +------------+                  |          |                 +--------------+
- *      |    ^                     +----------+                         |
+ *      | T15                      +-----------+                        v
+ * +------------+        T6        |           |                +--------------+
+ * | CLEANED_UP |<-----------------| CANCELLED |                | INITIALIZING |
+ * +------------+                  |           |                +--------------+
+ *      |    ^                     +-----------+                        |
  *      |    |                        ^  ^ ^ ^                          |
  *      |    |          +-------------+  | | |                          |
  *      |    |    T3    |                | | |               T13        | T1
@@ -1618,7 +1618,8 @@ typedef enum smb_req_state {
 	SMB_REQ_STATE_EVENT_OCCURRED,
 	SMB_REQ_STATE_WAITING_LOCK,
 	SMB_REQ_STATE_COMPLETED,
-	SMB_REQ_STATE_CANCELED,
+	SMB_REQ_STATE_CANCEL_PENDING,
+	SMB_REQ_STATE_CANCELLED,
 	SMB_REQ_STATE_CLEANED_UP,
 	SMB_REQ_STATE_SENTINEL
 } smb_req_state_t;
@@ -1633,6 +1634,8 @@ typedef struct smb_request {
 	int32_t			sr_gmtoff;
 	smb_session_t		*session;
 	smb_kmod_cfg_t		*sr_cfg;
+	void			(*cancel_method)(struct smb_request *);
+	void			*cancel_arg2;
 
 	smb_notify_change_req_t	sr_ncr;
 
@@ -1642,7 +1645,6 @@ typedef struct smb_request {
 	/* Request buffer excluding NBT header */
 	void			*sr_request_buf;
 
-	smb_lock_t		*sr_awaiting;
 	struct mbuf_chain	command;
 	struct mbuf_chain	reply;
 	struct mbuf_chain	raw_data;
