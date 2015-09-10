@@ -37,10 +37,10 @@
 #include <smbsrv/smb_kproto.h>
 #include <smbsrv/smb_token.h>
 
-static uint32_t smb_authsock_open(smb_user_t *);
+static uint32_t smb_authsock_open(smb_request_t *);
 static int smb_authsock_send(ksocket_t, void *, size_t);
 static int smb_authsock_recv(ksocket_t, void *, size_t);
-static uint32_t smb_authsock_sendrecv(smb_user_t *, smb_lsa_msg_hdr_t *hdr,
+static uint32_t smb_authsock_sendrecv(smb_request_t *, smb_lsa_msg_hdr_t *hdr,
 				void *sndbuf, void **recvbuf);
 /* void smb_authsock_close(smb_user_t *); kproto.h */
 
@@ -75,7 +75,7 @@ smb_authenticate_old(smb_request_t *sr)
 	 * If we can't, it may be busy, or not running.
 	 * Don't log here - this may be frequent.
 	 */
-	if ((status = smb_authsock_open(user)) != 0)
+	if ((status = smb_authsock_open(sr)) != 0)
 		goto errout;
 
 	/*
@@ -114,7 +114,6 @@ smb_auth_do_oldreq(smb_request_t *sr)
 	smb_logon_t	user_info;
 	XDR		xdrs;
 	smb_arg_sessionsetup_t *sinfo = sr->sr_ssetup;
-	smb_user_t	*user = sr->uid_user;
 	void		*sbuf = NULL;
 	void		*rbuf = NULL;
 	uint32_t	slen = 0;
@@ -153,7 +152,7 @@ smb_auth_do_oldreq(smb_request_t *sr)
 
 	msg_hdr.lmh_msgtype = LSA_MTYPE_OLDREQ;
 	msg_hdr.lmh_msglen = slen;
-	status = smb_authsock_sendrecv(user, &msg_hdr, sbuf, &rbuf);
+	status = smb_authsock_sendrecv(sr, &msg_hdr, sbuf, &rbuf);
 	if (status != 0)
 		goto out;
 	rlen = msg_hdr.lmh_msglen;
@@ -252,7 +251,7 @@ smb_authenticate_ext(smb_request_t *sr)
 		 * If we can't, it may be busy, or not running.
 		 * Don't log here - this may be frequent.
 		 */
-		if ((status = smb_authsock_open(user)) != 0)
+		if ((status = smb_authsock_open(sr)) != 0)
 			goto errout;
 
 		/*
@@ -280,7 +279,7 @@ smb_authenticate_ext(smb_request_t *sr)
 	 * and send it up the authsock with either
 	 */
 	msg_hdr.lmh_msglen = sinfo->ssi_iseclen;
-	status = smb_authsock_sendrecv(user, &msg_hdr,
+	status = smb_authsock_sendrecv(sr, &msg_hdr,
 	    sinfo->ssi_isecblob, &rbuf);
 	if (status != 0)
 		goto errout;
@@ -350,7 +349,6 @@ smb_auth_do_clinfo(smb_request_t *sr)
 {
 	smb_lsa_msg_hdr_t msg_hdr;
 	smb_lsa_clinfo_t clinfo;
-	smb_user_t *user = sr->uid_user;
 	void *rbuf = NULL;
 	uint32_t status;
 
@@ -364,7 +362,7 @@ smb_auth_do_clinfo(smb_request_t *sr)
 	(void) memcpy(clinfo.lci_challenge_key,
 	    sr->session->challenge_key,
 	    sizeof (clinfo.lci_challenge_key));
-	status = smb_authsock_sendrecv(user, &msg_hdr, &clinfo, &rbuf);
+	status = smb_authsock_sendrecv(sr, &msg_hdr, &clinfo, &rbuf);
 	/* We don't use this response. */
 	if (rbuf != NULL) {
 		kmem_free(rbuf, msg_hdr.lmh_msglen);
@@ -395,7 +393,7 @@ smb_auth_get_token(smb_request_t *sr)
 	msg_hdr.lmh_msgtype = LSA_MTYPE_GETTOK;
 	msg_hdr.lmh_msglen = 0;
 
-	status = smb_authsock_sendrecv(user, &msg_hdr, NULL, &rbuf);
+	status = smb_authsock_sendrecv(sr, &msg_hdr, NULL, &rbuf);
 	if (status != 0)
 		goto errout;
 
@@ -507,6 +505,27 @@ smb_priv_xlate(smb_token_t *token)
 }
 
 /*
+ * Unblock a request that might be blocked reading some
+ * authentication socket.  We don't have an easy way to
+ * interrupt just the thread servicing this request, so
+ * we shutdown(3socket) the socket, waking all readers.
+ * That's a bit heavy-handed, making the socket unusable
+ * after this, so we do this only when disconnecting a
+ * session (i.e. stopping the SMB service), and not when
+ * handling an SMB2_cancel or SMB_nt_cancel request.
+ */
+static void
+smb_authsock_cancel(smb_request_t *sr)
+{
+	ksocket_t so;
+
+	if (sr->session->s_state == SMB_SESSION_STATE_DISCONNECTED &&
+	    (so = sr->cancel_arg2) != NULL) {
+		(void) ksocket_shutdown(so, SHUT_RDWR, sr->user_cr);
+	}
+}
+
+/*
  * Send/recv a request/reply sequence on the auth socket.
  * Returns zero or an NT status.
  *
@@ -514,9 +533,10 @@ smb_priv_xlate(smb_token_t *token)
  * With limited authsock instances, this should be rare.
  */
 static uint32_t
-smb_authsock_sendrecv(smb_user_t *user, smb_lsa_msg_hdr_t *hdr,
+smb_authsock_sendrecv(smb_request_t *sr, smb_lsa_msg_hdr_t *hdr,
 	void *sndbuf, void **recvbuf)
 {
+	smb_user_t *user = sr->uid_user;
 	ksocket_t so;
 	uint32_t status;
 	int rc;
@@ -533,14 +553,23 @@ smb_authsock_sendrecv(smb_user_t *user, smb_lsa_msg_hdr_t *hdr,
 	ksocket_hold(so);
 	mutex_exit(&user->u_mutex);
 
+	mutex_enter(&sr->sr_mutex);
+	if (sr->sr_state != SMB_REQ_STATE_ACTIVE) {
+		mutex_exit(&sr->sr_mutex);
+		status = NT_STATUS_CANCELLED;
+		goto out;
+	}
+	sr->sr_state = SMB_REQ_STATE_WAITING_AUTH;
+	sr->cancel_method = smb_authsock_cancel;
+	sr->cancel_arg2 = so;
+	mutex_exit(&sr->sr_mutex);
+
 	rc = smb_authsock_send(so, hdr, sizeof (*hdr));
 	if (rc == 0 && hdr->lmh_msglen != 0) {
 		rc = smb_authsock_send(so, sndbuf, hdr->lmh_msglen);
 	}
-	if (rc)
-		goto out;
-
-	rc = smb_authsock_recv(so, hdr, sizeof (*hdr));
+	if (rc == 0)
+		rc = smb_authsock_recv(so, hdr, sizeof (*hdr));
 	if (rc == 0 && hdr->lmh_msglen != 0) {
 		*recvbuf = kmem_alloc(hdr->lmh_msglen, KM_SLEEP);
 		rc = smb_authsock_recv(so, *recvbuf, hdr->lmh_msglen);
@@ -550,8 +579,6 @@ smb_authsock_sendrecv(smb_user_t *user, smb_lsa_msg_hdr_t *hdr,
 		}
 	}
 
-out:
-	ksocket_rele(so);
 	switch (rc) {
 	case 0:
 		status = 0;
@@ -566,6 +593,26 @@ out:
 		status = RPC_NT_CALL_FAILED;
 		break;
 	}
+
+	mutex_enter(&sr->sr_mutex);
+	sr->cancel_method = NULL;
+	sr->cancel_arg2 = NULL;
+	switch (sr->sr_state) {
+	case SMB_REQ_STATE_WAITING_AUTH:
+		sr->sr_state = SMB_REQ_STATE_ACTIVE;
+		break;
+	case SMB_REQ_STATE_CANCEL_PENDING:
+		sr->sr_state = SMB_REQ_STATE_CANCELLED;
+		status = NT_STATUS_CANCELLED;
+		break;
+	default:
+		status = NT_STATUS_INTERNAL_ERROR;
+		break;
+	}
+	mutex_exit(&sr->sr_mutex);
+
+out:
+	ksocket_rele(so);
 
 	return (status);
 }
@@ -589,11 +636,12 @@ struct timeval smb_auth_recv_tmo = { 45, 0 };
 struct timeval smb_auth_send_tmo = { 15, 0 };
 
 static uint32_t
-smb_authsock_open(smb_user_t *user)
+smb_authsock_open(smb_request_t *sr)
 {
-	smb_server_t *sv = user->u_server;
+	smb_user_t *user = sr->uid_user;
+	smb_server_t *sv = sr->sr_server;
 	ksocket_t so = NULL;
-	uint32_t status;
+	uint32_t status = 0;
 	int rc;
 
 	/*
@@ -625,13 +673,43 @@ smb_authsock_open(smb_user_t *user)
 	 * Would like to set the connect timeout too, but there's
 	 * apparently no easy way to do that for AF_UNIX.
 	 */
+	mutex_enter(&sr->sr_mutex);
+	if (sr->sr_state != SMB_REQ_STATE_ACTIVE) {
+		mutex_exit(&sr->sr_mutex);
+		status = NT_STATUS_CANCELLED;
+		goto errout;
+	}
+	sr->sr_state = SMB_REQ_STATE_WAITING_AUTH;
+	sr->cancel_method = smb_authsock_cancel;
+	sr->cancel_arg2 = so;
+	mutex_exit(&sr->sr_mutex);
+
 	rc = ksocket_connect(so, (struct sockaddr *)&smbauth_sockname,
 	    sizeof (smbauth_sockname), CRED());
 	if (rc != 0) {
 		DTRACE_PROBE1(error, int, rc);
 		status = NT_STATUS_NETLOGON_NOT_STARTED;
-		goto errout;
 	}
+
+	mutex_enter(&sr->sr_mutex);
+	sr->cancel_method = NULL;
+	sr->cancel_arg2 = NULL;
+	switch (sr->sr_state) {
+	case SMB_REQ_STATE_WAITING_AUTH:
+		sr->sr_state = SMB_REQ_STATE_ACTIVE;
+		break;
+	case SMB_REQ_STATE_CANCEL_PENDING:
+		sr->sr_state = SMB_REQ_STATE_CANCELLED;
+		status = NT_STATUS_CANCELLED;
+		break;
+	default:
+		status = NT_STATUS_INTERNAL_ERROR;
+		break;
+	}
+	mutex_exit(&sr->sr_mutex);
+
+	if (status != 0)
+		goto errout;
 
 	/* Note: u_authsock cleanup in smb_authsock_close() */
 	mutex_enter(&user->u_mutex);
