@@ -4807,7 +4807,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 		for (; ab; ab = ab_prev) {
 			l2arc_buf_hdr_t *l2hdr;
 			kmutex_t *hash_lock;
-			uint64_t buf_sz;
+			uint64_t buf_size, buf_asize;
 
 			if (arc_warm == B_FALSE)
 				ab_prev = list_next(list, ab);
@@ -4836,7 +4836,16 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 				continue;
 			}
 
-			if ((write_sz + ab->b_size) > target_sz) {
+			/*
+			 * Assume that the buffer is not going to be compressed
+			 * and could take more space on disk because of a larger
+			 * disk block size.
+			 */
+			buf_size = ab->b_size;
+			buf_asize = vdev_psize_to_asize(dev->l2ad_vdev,
+			    buf_size);
+
+			if ((write_asize + buf_asize) > target_sz) {
 				full = B_TRUE;
 				mutex_exit(hash_lock);
 				break;
@@ -4877,7 +4886,6 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 			l2hdr->b_asize = ab->b_size;
 			l2hdr->b_tmp_cdata = ab->b_buf->b_data;
 
-			buf_sz = ab->b_size;
 			ab->b_l2hdr = l2hdr;
 
 			list_insert_head(dev->l2ad_buflist, ab);
@@ -4891,7 +4899,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 
 			mutex_exit(hash_lock);
 
-			write_sz += buf_sz;
+			write_sz += buf_size;
+			write_asize += buf_asize;
 		}
 
 		mutex_exit(list_lock);
@@ -4907,6 +4916,18 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 		kmem_cache_free(hdr_cache, head);
 		return (0);
 	}
+
+	/*
+	 * Note that elsewhere in this file arcstat_l2_asize
+	 * and the used space on l2ad_vdev are updated using b_asize,
+	 * which is not necessarily rounded up to the device block size.
+	 * Too keep accounting consistent we do the same here as well:
+	 * stats_size accumulates the sum of b_asize of the written buffers,
+	 * while write_asize accumulates the sum of b_asize rounded up
+	 * to the device block size.
+	 * The latter sum is used only to validate the corectness of the code.
+	 */
+	write_asize = 0;
 
 	/*
 	 * Now start writing the buffers. We're starting at the write head
