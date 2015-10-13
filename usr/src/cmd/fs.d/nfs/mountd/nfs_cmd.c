@@ -20,8 +20,8 @@
  */
 
 /*
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -40,9 +40,10 @@
 #include <locale.h>
 #include <strings.h>
 #include <sharefs/share.h>
+#include <stdlib.h>
+#include "../lib/sharetab.h"
 #include "mountd.h"
 
-extern struct share *findentry(char *);
 /*
  * The following codesets must match what is in libshare_nfs.c until we can
  * request them from the kernel.
@@ -103,11 +104,6 @@ charmap_search(struct netbuf *nbuf, char *opts)
 	char *netid;
 	struct nd_hostservlist *hl;
 	struct sockaddr *sa;
-
-	/* eventually charopts should be dynamically setup */
-	if (charopts == NULL) {
-		return (NULL);
-	}
 
 	sa = (struct sockaddr *)nbuf->buf;
 
@@ -176,7 +172,6 @@ nfscmd_charmap_lookup(door_desc_t *dp, nfscmd_arg_t *args)
 	struct netbuf nb;
 	struct sockaddr sa;
 	struct share *sh = NULL;
-	char *opts;
 	char *name;
 
 	memset(&res, '\0', sizeof (res));

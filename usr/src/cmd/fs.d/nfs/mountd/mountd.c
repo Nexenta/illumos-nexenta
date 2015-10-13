@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
@@ -89,7 +89,9 @@
 #include <alloca.h>
 
 extern int daemonize_init(void);
-extern void daemonize_fini(int fd);
+extern void daemonize_fini(int);
+
+extern int _nfssys(int, void *);
 
 struct sh_list *share_list;
 
@@ -116,7 +118,6 @@ static int mount(struct svc_req *r);
 static void sh_free(struct sh_list *);
 static void umount(struct svc_req *);
 static void umountall(struct svc_req *);
-static void sigexit(int);
 static int newopts(char *);
 static tsol_tpent_t *get_client_template(struct sockaddr *);
 
@@ -124,10 +125,6 @@ static int verbose;
 static int rejecting;
 static int mount_vers_min = MOUNTVERS;
 static int mount_vers_max = MOUNTVERS3;
-
-/* Needs to be accessed by nfscmd.c */
-int  in_access_list(SVCXPRT *, struct netbuf **,
-	struct nd_hostservlist **, char *);
 
 extern void nfscmd_func(void *, char *, size_t, door_desc_t *, uint_t);
 
@@ -907,7 +904,7 @@ log_cant_reply(SVCXPRT *transp)
 {
 	int saverrno;
 	struct nd_hostservlist *clnames = NULL;
-	register char *host;
+	char *host;
 	struct netbuf *nb;
 
 	saverrno = errno;	/* save error code */
@@ -1491,7 +1488,6 @@ reply:
 	if (path != NULL)
 		svc_freeargs(transp, xdr_dirpath, (caddr_t)&path);
 
-done:
 	if (sh)
 		sharefree(sh);
 	netdir_free(clnames, ND_HOSTSERVLIST);
@@ -1565,7 +1561,7 @@ findentry(char *path)
 {
 	share_t *sh = NULL;
 	struct sh_list *shp;
-	register char *p1, *p2;
+	char *p1, *p2;
 
 	check_sharetab();
 
@@ -2406,7 +2402,7 @@ check_client_old(share_t *sh, SVCXPRT *transp, struct netbuf **nb,
 
 		case OPT_NONE:
 			/*
-			 * Check if  the client should have no access
+			 * Check if the client should have no access
 			 * to this share at all. This option behaves
 			 * more like "root" than either "rw" or "ro".
 			 */
@@ -2778,7 +2774,7 @@ check_client_new(share_t *sh, SVCXPRT *transp, struct netbuf **nb,
 
 		case OPT_NONE:
 			/*
-			 * Check if  the client should have no access
+			 * Check if the client should have no access
 			 * to this share at all. This option behaves
 			 * more like "root" than either "rw" or "ro".
 			 */
@@ -3118,7 +3114,7 @@ alloc_failed:
 static void
 sh_free(struct sh_list *shp)
 {
-	register struct sh_list *next;
+	struct sh_list *next;
 
 	while (shp) {
 		sharefree(shp->shl_sh);
@@ -3230,15 +3226,6 @@ exmalloc(size_t size)
 		exit(1);
 	}
 	return (ret);
-}
-
-static void
-sigexit(int signum)
-{
-
-	if (signum == SIGHUP)
-		_exit(0);
-	_exit(1);
 }
 
 static tsol_tpent_t *
