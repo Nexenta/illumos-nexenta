@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -293,7 +293,7 @@ smb_lock_range_access(
 			continue;
 
 		if (lock->l_type == SMB_LOCK_TYPE_READWRITE &&
-		    lock->l_session_kid == sr->session->s_kid &&
+		    lock->l_file->f_session == sr->session &&
 		    lock->l_pid == sr->smb_pid)
 			continue;
 
@@ -514,7 +514,7 @@ smb_lock_range_overlap(struct smb_lock *lock, uint64_t start, uint64_t length)
  *	   irrespective of pid of smb client issuing lock request.
  *
  *	2. Read lock in the overlapped region of write lock
- *	   are allowed if the pervious lock is performed by the
+ *	   are allowed if the previous lock is performed by the
  *	   same pid and connection.
  *
  * return status:
@@ -564,9 +564,7 @@ smb_lock_range_lckrules(
 		if ((dlock->l_type == SMB_LOCK_TYPE_READONLY) &&
 		    !(lock->l_type == SMB_LOCK_TYPE_READONLY)) {
 			if (lock->l_file == sr->fid_ofile &&
-			    lock->l_session_kid == sr->session->s_kid &&
-			    lock->l_pid == sr->smb_pid &&
-			    lock->l_uid == sr->smb_uid) {
+			    lock->l_pid == sr->smb_pid) {
 				continue;
 			}
 		}
@@ -739,9 +737,7 @@ smb_lock_range_ulckrules(
 		if ((start == lock->l_start) &&
 		    (length == lock->l_length) &&
 		    lock->l_file == sr->fid_ofile &&
-		    lock->l_session_kid == sr->session->s_kid &&
-		    lock->l_pid == sr->smb_pid &&
-		    lock->l_uid == sr->smb_uid) {
+		    lock->l_pid == sr->smb_pid) {
 			*nodelock = lock;
 			status = NT_STATUS_SUCCESS;
 			break;
@@ -766,11 +762,8 @@ smb_lock_create(
 
 	lock = kmem_zalloc(sizeof (smb_lock_t), KM_SLEEP);
 	lock->l_magic = SMB_LOCK_MAGIC;
-	lock->l_sr = sr; /* Invalid after lock is active */
-	lock->l_session_kid = sr->session->s_kid;
-	lock->l_session = sr->session;
 	lock->l_file = sr->fid_ofile;
-	lock->l_uid = sr->smb_uid;
+	/* l_file == fid_ofile implies same connection (see ofile lookup) */
 	lock->l_pid = sr->smb_pid;
 	lock->l_type = locktype;
 	lock->l_start = start;

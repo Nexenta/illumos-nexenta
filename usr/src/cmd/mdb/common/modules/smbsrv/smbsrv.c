@@ -2396,15 +2396,12 @@ smb_node_walk_step(mdb_walk_state_t *wsp)
 typedef struct mdb_smb_lock {
 	smb_slist_t		l_conflict_list;
 
-	smb_session_t		*l_session;
 	smb_ofile_t		*l_file;
-	struct smb_request	*l_sr;
 
 	uint32_t		l_flags;
 	struct smb_lock		*l_blocked_by; /* Debug info only */
 
 	uint32_t		l_pid;
-	uint16_t		l_uid;
 	uint32_t		l_type;
 	uint64_t		l_start;
 	uint64_t		l_length;
@@ -2471,12 +2468,8 @@ smblock_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 		    lock.l_start);
 		mdb_printf("Length           :\t%lx\n",
 		    lock.l_length);
-		mdb_printf("Session          :\t%p\n",
-		    lock.l_session);
 		mdb_printf("File             :\t%p\n",
 		    lock.l_file);
-		mdb_printf("User ID          :\t%u\n",
-		    lock.l_uid);
 		mdb_printf("Process ID       :\t%u\n",
 		    lock.l_pid);
 		mdb_printf("Conflicts        :\t%u\n",
@@ -2514,10 +2507,6 @@ smblock_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 typedef struct mdb_smb_oplock_grant {
 	uint8_t			og_breaking;
 	uint8_t			og_level;
-	uint16_t		og_fid;
-	uint16_t		og_tid;
-	uint16_t		og_uid;
-	struct smb_session	*og_session;
 	struct smb_ofile	*og_ofile;
 } mdb_smb_oplock_grant_t;
 
