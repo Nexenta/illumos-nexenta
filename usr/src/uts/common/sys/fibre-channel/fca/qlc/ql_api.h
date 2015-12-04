@@ -54,6 +54,10 @@ extern "C" {
 #include <sys/param.h>
 #include <ql_open.h>
 
+#ifdef __x86
+#include <sys/x86_archext.h>
+#endif
+
 #include <sys/fibre-channel/fc.h>
 #include <sys/fibre-channel/impl/fc_fcaif.h>
 

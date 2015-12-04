@@ -16494,6 +16494,13 @@ ql_setup_msix(ql_adapter_state_t *ha)
 		return (DDI_FAILURE);
 	}
 
+#ifdef __x86
+	if (get_hwenv() == HW_VMWARE) {
+		EL(ha, "running under hypervisor, disabling MSI-X\n");
+		return (DDI_FAILURE);
+	}
+#endif
+
 	/*
 	 * MSI-X support is only available on 24xx HBA's that have
 	 * rev A2 parts (revid = 3) or greater.
