@@ -22,50 +22,65 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# This makefile drives the production of qlc_fw_8100 firmware module.
 #
-
 # Path to the base of the uts directory tree (usually /usr/src/uts).
-UTSBASE	= ../../../../..
+#
+UTSBASE	= ../..
+
+#
+#	Define the module and object file sets.
+#
+MODULE		= qlc_fw_8301fc
+OBJECTS		= $(QLC_FW_8301FC_OBJS:%=$(OBJS_DIR)/%)
+LINTS		= $(QLC_FW_8301FC_OBJS:%.o=$(LINTS_DIR)/%.ln)
+ROOTMODULE	= $(ROOT_QLC_FW_DIR)/$(MODULE)
+CONF_SRCDIR	= $(UTSBASE)/common/io/fibre-channel/fca/qlc
+
 
 #
 #	Include common rules.
 #
-include $(SRC)/Makefile.master
+include $(UTSBASE)/Makefile.uts
+include $(UTSBASE)/sparc/Makefile.sparc
 
-FWTABLE          = ql_fw_table.c
-FWIMAGES         = 2200
-FWIMAGES        += 2300
-FWIMAGES        += 2400
-FWIMAGES        += 2500
-FWIMAGES        += 2700
-FWIMAGES        += 6322
-FWIMAGES        += 8100
-FWIMAGES        += 8301fc
+#
+#	Define targets
+#
+ALL_TARGET	= $(BINARY) $(CONFMOD) $(ITUMOD)
+LINT_TARGET	= $(MODULE).lint
+INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
 
-FWMODULES_SRC    = $(FWIMAGES:%=ql_fw_%.c)
+LDFLAGS		+= -dy -Nmisc/fctl
 
-all_h install_h : $(FWTABLE)
+#
+#	Lint tags
+#
+LINTTAGS	+= -DUNIQUE_FW_NAME
+LINTTAGS	+= -DFW_VERSION_STRING=\"5.00.00\"
 
-check:
-
-clean:
-	$(RM) $(FWTABLE)
-
-clobber: clean
-
-$(FWTABLE): $(FWMODULES_SRC)
-	$(RM) $@
-	echo '#include <ql_apps.h>'             >> $@
-	echo '#include <ql_api.h>'              >> $@
-	echo 'struct fw_table fw_table[] = {'   >> $@
-	grep FW_VERSION_STRING $(FWMODULES_SRC) |\
-	grep '#define'                          |\
-	sed 's/[0-9]"/& },/'                    |\
-	sed 's/.*ql_fw_/{ 0x/'                  |\
-	sed 's/.c:#define/,/'                   |\
-	sed 's/FW_VERSION_STRING//'             >> $@
-	echo '{ 0, NULL }'                      >> $@
-	echo '};'                               >> $@
-
+#
+#	Default build targets.
+#
 .KEEP_STATE:
+
+def:		$(DEF_DEPS)
+
+all:		$(ALL_DEPS)
+
+clean:		$(CLEAN_DEPS)
+
+clobber:	$(CLOBBER_DEPS)
+
+lint:		$(LINT_DEPS)
+
+modlintlib:	$(MODLINTLIB_DEPS)
+
+clean.lint:	$(CLEAN_LINT_DEPS)
+
+install:	$(INSTALL_DEPS)
+
+#
+#	Include common targets.
+#
+include $(UTSBASE)/sparc/Makefile.targ
