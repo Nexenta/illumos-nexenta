@@ -508,8 +508,12 @@ sbd_pgr_meta_write(sbd_lu_t *slu)
 			key = key->pgr_key_next;
 		}
 	}
-
+	rw_downgrade(&pgr->pgr_lock);
 	ret = sbd_write_meta_section(slu, (sm_section_hdr_t *)spi);
+	if (!rw_tryupgrade(&pgr->pgr_lock)) {
+		rw_exit(&pgr->pgr_lock);
+		rw_enter(&pgr->pgr_lock, RW_WRITER);
+	}
 	kmem_free(spi, totalsz);
 	if (ret != SBD_SUCCESS) {
 		sbd_pgr_key_t	*tmp_list;
