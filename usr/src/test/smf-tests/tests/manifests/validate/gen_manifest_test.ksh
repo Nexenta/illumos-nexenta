@@ -68,7 +68,7 @@ SERVICELIST=/var/tmp/scftest_servicelist.$$
 #
 cnt=1
 rm -f $SERVICELIST
-/bin/svcs -aH | grep -v legacy_run | awk '{print $3}' > $SERVICELIST 2>/dev/null
+/bin/svcs -aH | grep -v legacy_run | grep -v refresh | awk '{print $3}' > $SERVICELIST 2>/dev/null
 
 #
 # Get the list of manifesets and associate them with a known
