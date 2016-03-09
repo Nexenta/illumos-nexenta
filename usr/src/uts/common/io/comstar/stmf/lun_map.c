@@ -236,51 +236,6 @@ stmf_session_create_lun_map(stmf_i_local_port_t *ilport,
 }
 
 /*
- * destroy lun map for session
- */
-/* ARGSUSED */
-stmf_status_t
-stmf_session_destroy_lun_map(stmf_i_local_port_t *ilport,
-		stmf_i_scsi_session_t *iss)
-{
-	stmf_lun_map_t *sm;
-	stmf_i_lu_t *ilu;
-	uint16_t n;
-	stmf_lun_map_ent_t *ent;
-
-	ASSERT(mutex_owned(&stmf_state.stmf_lock));
-	/*
-	 * to avoid conflict with updating session's map,
-	 * which only grab stmf_lock
-	 */
-	sm = iss->iss_sm;
-	iss->iss_sm = NULL;
-	iss->iss_hg = NULL;
-	if (sm->lm_nentries) {
-		for (n = 0; n < sm->lm_nentries; n++) {
-			if ((ent = (stmf_lun_map_ent_t *)sm->lm_plus[n])
-			    != NULL) {
-				if (ent->ent_itl_datap) {
-					stmf_do_itl_dereg(ent->ent_lu,
-					    ent->ent_itl_datap,
-					    STMF_ITL_REASON_IT_NEXUS_LOSS);
-				}
-				ilu = (stmf_i_lu_t *)
-				    ent->ent_lu->lu_stmf_private;
-				atomic_add_32(&ilu->ilu_ref_cnt, -1);
-				kmem_free(sm->lm_plus[n],
-				    sizeof (stmf_lun_map_ent_t));
-			}
-		}
-		kmem_free(sm->lm_plus,
-		    sizeof (stmf_lun_map_ent_t *) * sm->lm_nentries);
-	}
-
-	kmem_free(sm, sizeof (*sm));
-	return (STMF_SUCCESS);
-}
-
-/*
  * Expects the session lock to be held.
  */
 stmf_xfer_data_t *

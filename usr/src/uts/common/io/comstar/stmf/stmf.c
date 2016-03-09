@@ -3620,6 +3620,10 @@ stmf_deregister_scsi_session(stmf_local_port_t *lport, stmf_scsi_session_t *ss)
 	int found = 0;
 	stmf_ic_msg_t *ic_session_dereg;
 	stmf_status_t ic_ret = STMF_FAILURE;
+	stmf_lun_map_t *sm;
+	stmf_i_lu_t *ilu;
+	uint16_t n;
+	stmf_lun_map_ent_t *ent;
 
 	DTRACE_PROBE2(session__offline, stmf_local_port_t *, lport,
 	    stmf_scsi_session_t *, ss);
@@ -3669,13 +3673,43 @@ try_dereg_ss_again:
 	ilport->ilport_nsessions--;
 
 	stmf_irport_deregister(iss->iss_irport);
-	(void) stmf_session_destroy_lun_map(ilport, iss);
+
+	/*
+	 * to avoid conflict with updating session's map,
+	 * which only grab stmf_lock
+	 */
+	sm = iss->iss_sm;
+	iss->iss_sm = NULL;
+	iss->iss_hg = NULL;
+
 	rw_exit(&ilport->ilport_lock);
-	mutex_exit(&stmf_state.stmf_lock);
+
+	if (sm->lm_nentries) {
+	for (n = 0; n < sm->lm_nentries; n++) {
+		if ((ent = (stmf_lun_map_ent_t *)sm->lm_plus[n])
+			!= NULL) {
+			if (ent->ent_itl_datap) {
+				stmf_do_itl_dereg(ent->ent_lu,
+					ent->ent_itl_datap,
+					STMF_ITL_REASON_IT_NEXUS_LOSS);
+			}
+			ilu = (stmf_i_lu_t *)
+				ent->ent_lu->lu_stmf_private;
+				atomic_add_32(&ilu->ilu_ref_cnt, -1);
+				kmem_free(sm->lm_plus[n],
+					sizeof (stmf_lun_map_ent_t));
+			}
+		}
+		kmem_free(sm->lm_plus,
+			sizeof (stmf_lun_map_ent_t *) * sm->lm_nentries);
+	}
+	kmem_free(sm, sizeof (*sm));
 
 	if (iss->iss_flags & ISS_NULL_TPTID) {
 		stmf_remote_port_free(ss->ss_rport);
 	}
+
+	mutex_exit(&stmf_state.stmf_lock);
 }
 
 stmf_i_scsi_session_t *
