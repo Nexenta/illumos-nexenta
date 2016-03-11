@@ -496,6 +496,8 @@ fct_get_adapter_port_attr(fct_i_local_port_t *ilport, uint8_t *pwwn,
 		port_attr->PortSupportedSpeed |= FC_HBA_PORTSPEED_8GBIT;
 	if (attr->supported_speed & PORT_SPEED_10G)
 		port_attr->PortSupportedSpeed |= FC_HBA_PORTSPEED_10GBIT;
+	if (attr->supported_speed & PORT_SPEED_16G)
+		port_attr->PortSupportedSpeed |= FC_HBA_PORTSPEED_16GBIT;
 	switch (iport->iport_link_info.port_speed) {
 		case PORT_SPEED_1G:
 			port_attr->PortSpeed = FC_HBA_PORTSPEED_1GBIT;
@@ -511,6 +513,9 @@ fct_get_adapter_port_attr(fct_i_local_port_t *ilport, uint8_t *pwwn,
 			break;
 		case PORT_SPEED_10G:
 			port_attr->PortSpeed = FC_HBA_PORTSPEED_10GBIT;
+			break;
+		case PORT_SPEED_16G:
+			port_attr->PortSpeed = FC_HBA_PORTSPEED_16GBIT;
 			break;
 		default:
 			port_attr->PortSpeed = FC_HBA_PORTSPEED_UNKNOWN;
