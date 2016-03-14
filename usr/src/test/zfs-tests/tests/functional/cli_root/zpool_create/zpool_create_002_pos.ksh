@@ -83,7 +83,7 @@ log_must $MKFILE $SIZE /var/tmp/$FILEDISK0
 log_must $MKFILE $SIZE /var/tmp/$FILEDISK1
 log_must $MKFILE $SIZE /var/tmp/$FILEDISK2
 
-log_must $ZPOOL export $TESTPOOL
+log_must export_pool $TESTPOOL
 log_note "'zpool create' without '-f' will fail " \
 	"while device is belong to an exported pool."
 log_mustnot $ZPOOL create "$TESTPOOL1" "${disk}s${SLICE0}"
@@ -114,7 +114,7 @@ log_note "'zpool create' without '-f' will fail " \
 create_pool "$TESTPOOL5"  "mirror" /var/tmp/$FILEDISK1 \
 	/var/tmp/$FILEDISK2
 log_must $ZPOOL offline $TESTPOOL5 /var/tmp/$FILEDISK2
-log_must $ZPOOL export $TESTPOOL5
+log_must export_pool $TESTPOOL5
 log_mustnot $ZPOOL create "$TESTPOOL6" /var/tmp/$FILEDISK2
 create_pool $TESTPOOL6 /var/tmp/$FILEDISK2
 log_must poolexists $TESTPOOL6

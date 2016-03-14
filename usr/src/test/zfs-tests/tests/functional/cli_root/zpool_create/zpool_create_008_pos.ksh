@@ -138,7 +138,7 @@ log_must $ZPOOL create -f $TESTPOOL $disk
 destroy_pool $TESTPOOL
 log_must partition_disk $SIZE $disk 6
 create_pool $TESTPOOL ${disk}s${SLICE0} ${disk}s${SLICE1}
-log_must $ZPOOL export $TESTPOOL
+log_must export_pool $TESTPOOL
 exported_pool=true
 log_mustnot $ZPOOL create $TESTPOOL1 ${disk}s${SLICE3} spare ${disk}s${SLICE1}
 create_pool $TESTPOOL1 ${disk}s${SLICE3} spare ${disk}s${SLICE1}
