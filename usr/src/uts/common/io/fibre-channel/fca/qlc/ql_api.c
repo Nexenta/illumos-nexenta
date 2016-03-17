@@ -10328,7 +10328,8 @@ ql_watchdog(ql_adapter_state_t *ha)
  *	Kernel context.
  */
 static void
-ql_wdg_tq_list(ql_adapter_state_t *ha, ql_tgt_t *tq) {
+ql_wdg_tq_list(ql_adapter_state_t *ha, ql_tgt_t *tq)
+{
 	ql_srb_t	*sp;
 	ql_link_t	*link, *next_cmd;
 	ql_lun_t	*lq;

@@ -20,7 +20,7 @@
 
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
-# Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+# Copyright (c) 2016 Nexenta Systems, Inc. All rights reserved.
 
 #
 #	This makefile contains the common definitions for all intel

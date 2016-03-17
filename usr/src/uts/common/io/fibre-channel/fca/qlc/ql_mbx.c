@@ -4337,7 +4337,8 @@ ql_set_xmit_parms(ql_adapter_state_t *ha)
  */
 int
 ql_fw_etrace(ql_adapter_state_t *ha, dma_mem_t *mem, uint16_t opt,
-    ql_mbx_data_t *mr) {
+    ql_mbx_data_t *mr)
+{
 	int		rval = QL_SUCCESS;
 	mbx_cmd_t	mc = {0};
 	mbx_cmd_t	*mcp = &mc;

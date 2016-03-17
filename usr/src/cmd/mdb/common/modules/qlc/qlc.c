@@ -1914,7 +1914,8 @@ ql_8021_dump_dcmd(ql_adapter_state_t *ha, uint_t flags, int argc,
 /*ARGSUSED*/
 static int
 ql_8300_dump_dcmd(ql_adapter_state_t *ha, uint_t flags, int argc,
-    const mdb_arg_t *argv) {
+    const mdb_arg_t *argv)
+{
 	ql_83xx_fw_dump_t	*fw;
 	ql_response_q_t		**rsp_queues, *rsp_q;
 	uint32_t		cnt, cnt1, *dp, *dp2;
@@ -1925,9 +1926,9 @@ ql_8300_dump_dcmd(ql_adapter_state_t *ha, uint_t flags, int argc,
 	rsp_q = mdb_alloc(sizeof (ql_response_q_t), UM_SLEEP);
 
 	if (mdb_vread(fw, ha->ql_dump_size,
-		(uintptr_t)ha->ql_dump_ptr) == -1 ||
+	    (uintptr_t)ha->ql_dump_ptr) == -1 ||
 	    mdb_vread(rsp_queues, ha->rsp_queues_cnt *
-		sizeof (ql_response_q_t *), (uintptr_t)ha->rsp_queues) == -1) {
+	    sizeof (ql_response_q_t *), (uintptr_t)ha->rsp_queues) == -1) {
 		mdb_warn("failed to read fw_dump_buffer (no f/w dump active?)");
 		mdb_free(rsp_q, sizeof (ql_response_q_t));
 		mdb_free(rsp_queues, ha->rsp_queues_cnt *
@@ -2329,7 +2330,7 @@ ql_8300_dump_dcmd(ql_adapter_state_t *ha, uint_t flags, int argc,
 
 	for (cnt = 0; cnt < ha->rsp_queues_cnt; cnt++) {
 		if (mdb_vread(rsp_q, sizeof (ql_response_q_t),
-			(uintptr_t)rsp_queues[cnt]) == -1) {
+		    (uintptr_t)rsp_queues[cnt]) == -1) {
 			mdb_warn("failed to read ha->rsp_queues[%d]", cnt);
 			break;
 		}

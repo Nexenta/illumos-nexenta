@@ -21,6 +21,7 @@
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright (c) 2016 Nexenta Systems, Inc. All rights reserved.
 #
 # This makefile drives the production of qlc_fw_8100 firmware module.
 #
