@@ -21,7 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2012 Nexenta Systems, Inc.  All rights reserved.
+ *
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -44,6 +45,8 @@
 
 #include <smbsrv/smb_kproto.h>
 
+static int smb1_cancel(smb_request_t *, int);
+
 smb_sdrc_t
 smb_pre_nt_cancel(smb_request_t *sr)
 {
@@ -57,11 +60,45 @@ smb_post_nt_cancel(smb_request_t *sr)
 	DTRACE_SMB_1(op__NtCancel__done, smb_request_t *, sr);
 }
 
+/*
+ * Dispatch handler for SMB_COM_NT_CANCEL.
+ * Note that Cancel does NOT get a response.
+ *
+ * SMB NT Cancel has an inherent race with the request being
+ * cancelled.  See comments at smb_request_cancel().
+ */
 smb_sdrc_t
 smb_com_nt_cancel(smb_request_t *sr)
 {
+	int		cnt;
+
+	cnt = smb1_cancel(sr, 0);
+	if (cnt == 0) {
+		/*
+		 * Did not find the request to be cancelled
+		 * (or it hasn't had a chance to run yet).
+		 * Delay a little and look again.
+		 */
+		delay(MSEC_TO_TICK(smb_cancel_delay));
+		cnt = smb1_cancel(sr, 1);
+	}
+
+	if (cnt != 1) {
+		cmn_err(CE_WARN, "SMB nt_cancel failed, "
+		    "client=%s, MID=0x%x",
+		    sr->session->ip_addr_str,
+		    (uint_t)sr->smb_mid);
+	}
+
+	return (SDRC_NO_REPLY);
+}
+
+static int
+smb1_cancel(smb_request_t *sr, int pass)
+{
 	struct smb_request *req;
 	struct smb_session *session;
+	int cnt = 0;
 
 	session = sr->session;
 
@@ -74,31 +111,12 @@ smb_com_nt_cancel(smb_request_t *sr)
 		    (req->smb_pid == sr->smb_pid) &&
 		    (req->smb_tid == sr->smb_tid) &&
 		    (req->smb_mid == sr->smb_mid)) {
-			smb_request_cancel(req);
+			if (smb_request_cancel(req, pass))
+				cnt++;
 		}
 		req = smb_slist_next(&session->s_req_list, req);
 	}
 	smb_slist_exit(&session->s_req_list);
 
-	return (SDRC_NO_REPLY);
-}
-
-
-/*
- * This handles an SMB_COM_NT_CANCEL request when seen in the reader.
- * (See smb1sr_newrq)  Handle this immediately, rather than
- * going through the normal taskq dispatch mechanism.
- * Note that Cancel does NOT get a response.
- */
-void
-smb1sr_newrq_cancel(smb_request_t *sr)
-{
-
-	sr->sr_state = SMB_REQ_STATE_ACTIVE;
-
-	(void) smb_pre_nt_cancel(sr);
-	(void) smb_com_nt_cancel(sr);
-	smb_post_nt_cancel(sr);
-
-	sr->sr_state = SMB_REQ_STATE_COMPLETED;
+	return (cnt);
 }

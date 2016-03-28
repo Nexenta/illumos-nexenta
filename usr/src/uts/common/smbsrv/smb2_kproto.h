@@ -65,7 +65,7 @@ smb_sdrc_t smb2_read(smb_request_t *);
 smb_sdrc_t smb2_write(smb_request_t *);
 smb_sdrc_t smb2_lock(smb_request_t *);
 smb_sdrc_t smb2_ioctl(smb_request_t *);
-/* No smb2_cancel() - see smb2_dispatch.c */
+smb_sdrc_t smb2_cancel(smb_request_t *);
 smb_sdrc_t smb2_echo(smb_request_t *);
 smb_sdrc_t smb2_query_dir(smb_request_t *);
 smb_sdrc_t smb2_change_notify(smb_request_t *);

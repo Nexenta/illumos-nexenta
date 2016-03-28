@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -19,36 +19,65 @@
 
 #include <smbsrv/smb2_kproto.h>
 
-static void smb2sr_cancel_async(smb_request_t *);
-static void smb2sr_cancel_sync(smb_request_t *);
+static int smb2_cancel_async(smb_request_t *);
+static int smb2_cancel_sync(smb_request_t *, int);
 
 /*
- * This handles an SMB2_CANCEL request when seen in the reader.
- * (See smb2sr_newrq)  Handle this immediately, rather than
- * going through the normal taskq dispatch mechanism.
+ * Dispatch handler for SMB2_CANCEL.
  * Note that Cancel does NOT get a response.
+ *
+ * SMB2 Cancel (sync) has an inherent race with the request being
+ * cancelled.  See comments at smb_request_cancel().
+ *
+ * Note that cancelling an async request doesn't have the race
+ * because the client doesn't learn about the async ID until we
+ * send it to them in an interim reply, and by that point the
+ * request has progressed to the point where cancel works.
  */
-int
-smb2sr_newrq_cancel(smb_request_t *sr)
+smb_sdrc_t
+smb2_cancel(smb_request_t *sr)
 {
-	int rc;
+	int cnt;
 
 	/*
-	 * Decode the header
+	 * If we get SMB2 cancel as part of a compound,
+	 * that's a protocol violation.  Drop 'em!
 	 */
-	if ((rc = smb2_decode_header(sr)) != 0)
-		return (rc);
+	if (sr->smb2_cmd_hdr != 0 || sr->smb2_next_command != 0)
+		return (SDRC_DROP_VC);
 
-	if (sr->smb2_hdr_flags & SMB2_FLAGS_ASYNC_COMMAND)
-		smb2sr_cancel_async(sr);
-	else
-		smb2sr_cancel_sync(sr);
+	if (sr->smb2_hdr_flags & SMB2_FLAGS_ASYNC_COMMAND) {
+		cnt = smb2_cancel_async(sr);
+		if (cnt != 1) {
+			cmn_err(CE_WARN, "SMB2 cancel failed, "
+			    "client=%s, AID=0x%llx",
+			    sr->session->ip_addr_str,
+			    (u_longlong_t)sr->smb2_async_id);
+		}
+	} else {
+		cnt = smb2_cancel_sync(sr, 0);
+		if (cnt == 0) {
+			/*
+			 * Did not find the request to be cancelled
+			 * (or it hasn't had a chance to run yet).
+			 * Delay a little and look again.
+			 */
+			delay(MSEC_TO_TICK(smb_cancel_delay));
+			cnt = smb2_cancel_sync(sr, 1);
+		}
+		if (cnt != 1) {
+			cmn_err(CE_WARN, "SMB2 cancel failed, "
+			    "client=%s, MID=0x%llx",
+			    sr->session->ip_addr_str,
+			    (u_longlong_t)sr->smb2_messageid);
+		}
+	}
 
-	return (0);
+	return (SDRC_NO_REPLY);
 }
 
-static void
-smb2sr_cancel_sync(smb_request_t *sr)
+static int
+smb2_cancel_sync(smb_request_t *sr, int pass)
 {
 	struct smb_request *req;
 	struct smb_session *session = sr->session;
@@ -60,20 +89,18 @@ smb2sr_cancel_sync(smb_request_t *sr)
 		ASSERT(req->sr_magic == SMB_REQ_MAGIC);
 		if ((req != sr) &&
 		    (req->smb2_messageid == sr->smb2_messageid)) {
-			smb_request_cancel(req);
-			cnt++;
+			if (smb_request_cancel(req, pass))
+				cnt++;
 		}
 		req = smb_slist_next(&session->s_req_list, req);
 	}
-	if (cnt != 1) {
-		DTRACE_PROBE2(smb2__cancel__error,
-		    uint64_t, sr->smb2_messageid, int, cnt);
-	}
 	smb_slist_exit(&session->s_req_list);
+
+	return (cnt);
 }
 
-static void
-smb2sr_cancel_async(smb_request_t *sr)
+static int
+smb2_cancel_async(smb_request_t *sr)
 {
 	struct smb_request *req;
 	struct smb_session *session = sr->session;
@@ -85,14 +112,12 @@ smb2sr_cancel_async(smb_request_t *sr)
 		ASSERT(req->sr_magic == SMB_REQ_MAGIC);
 		if ((req != sr) &&
 		    (req->smb2_async_id == sr->smb2_async_id)) {
-			smb_request_cancel(req);
-			cnt++;
+			if (smb_request_cancel(req, 1))
+				cnt++;
 		}
 		req = smb_slist_next(&session->s_req_list, req);
 	}
-	if (cnt != 1) {
-		DTRACE_PROBE2(smb2__cancel__error,
-		    uint64_t, sr->smb2_async_id, int, cnt);
-	}
 	smb_slist_exit(&session->s_req_list);
+
+	return (cnt);
 }

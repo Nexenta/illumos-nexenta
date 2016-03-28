@@ -116,6 +116,7 @@ extern	int smb_opipe_threshold;
 extern	int smb_ssetup_timeout;
 extern	int smb_tcon_timeout;
 extern	int smb_opipe_timeout;
+extern	int smb_cancel_delay;
 extern const uint32_t smb_vop_dosattr_settable;
 
 /* Thread priorities - see smb_init.c */
@@ -374,7 +375,6 @@ void	smb_dispatch_stats_update(smb_server_t *,
 		smb_kstat_req_t *, int, int);
 
 int	smb1sr_newrq(smb_request_t *);
-void	smb1sr_newrq_cancel(smb_request_t *);
 void	smb1sr_work(smb_request_t *);
 
 int	smbsr_encode_empty_result(smb_request_t *);
@@ -619,7 +619,7 @@ void smb2_sign_begin(smb_request_t *, smb_token_t *);
 
 boolean_t smb_sattr_check(uint16_t, uint16_t);
 
-void smb_request_cancel(smb_request_t *);
+boolean_t smb_request_cancel(smb_request_t *, int);
 void smb_request_wait(smb_request_t *);
 
 /*

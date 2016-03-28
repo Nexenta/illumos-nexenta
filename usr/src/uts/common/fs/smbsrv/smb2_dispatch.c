@@ -113,15 +113,9 @@ smb2_disp_table[SMB2__NCMDS] = {
 	{  "smb2_ioctl", NULL,
 	    smb2_ioctl, NULL, 0, 0 },
 
-	/*
-	 * Note: Cancel gets the "invalid command" handler because
-	 * that's always handled directly in the reader.  We should
-	 * never get to the function using this table, but note:
-	 * We CAN get here if a nasty client adds cancel to some
-	 * compound message, which is a protocol violation.
-	 */
 	{  "smb2_cancel", NULL,
-	    smb2_invalid_cmd, NULL, 0, 0 },
+	    smb2_cancel, NULL, 0, 0,
+	    SDDF_SUPPRESS_UID | SDDF_SUPPRESS_TID },
 
 	{  "smb2_echo", NULL,
 	    smb2_echo, NULL, 0, 0,
@@ -175,38 +169,13 @@ smb2_invalid_cmd(smb_request_t *sr)
 int
 smb2sr_newrq(smb_request_t *sr)
 {
-	int save_offset;
-	int rc;
+	uint32_t magic;
 
-	/*
-	 * Peek at the first header.  This verifies the SMB2 header,
-	 * and gets the first command and message ID.  We want the
-	 * command so we can give cancel requests special handling.
-	 * We need the message ID filled in now so this request will
-	 * be found if a cancel request comes in before a worker
-	 * begins servicing this request.
-	 */
-	save_offset = sr->command.chain_offset;
-	rc = smb2_decode_header(sr);
-	sr->command.chain_offset = save_offset;
-	if (rc != 0) {
+	magic = LE_IN32(sr->sr_request_buf);
+	if (magic != SMB2_PROTOCOL_MAGIC) {
 		smb_request_free(sr);
 		/* will drop the connection */
 		return (EPROTO);
-	}
-
-	/*
-	 * Execute Cancel requests immediately, (here in the
-	 * reader thread) so they won't wait for any other
-	 * commands we might already have in the task queue.
-	 * Cancel also skips signature verification and
-	 * does not consume a sequence number.
-	 * [MS-SMB2] 3.2.4.24 Cancellation...
-	 */
-	if (sr->smb2_cmd_code == SMB2_CANCEL) {
-		rc = smb2sr_newrq_cancel(sr);
-		smb_request_free(sr);
-		return (rc);
 	}
 
 	/*
@@ -736,6 +705,10 @@ cmd_done:
 		break;
 	case SDRC_DROP_VC:
 		disconnect = B_TRUE;
+		goto cleanup;
+
+	case SDRC_NO_REPLY:
+		/* will free sr */
 		goto cleanup;
 	}
 
