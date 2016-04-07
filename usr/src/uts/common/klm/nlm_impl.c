@@ -1786,18 +1786,20 @@ out:
  * any, it removes them.
  * NOTE: only unused hosts can be in idle state.
  */
-static void
-nlm_host_release_locked(struct nlm_globals *g, struct nlm_host *hostp)
+void
+nlm_host_release(struct nlm_globals *g, struct nlm_host *hostp)
 {
 	if (hostp == NULL)
 		return;
 
-	ASSERT(MUTEX_HELD(&g->lock));
+	mutex_enter(&g->lock);
 	ASSERT(hostp->nh_refs > 0);
 
 	hostp->nh_refs--;
-	if (hostp->nh_refs != 0)
+	if (hostp->nh_refs != 0) {
+		mutex_exit(&g->lock);
 		return;
+	}
 
 	/*
 	 * The very last reference to the host was dropped,
@@ -1810,16 +1812,6 @@ nlm_host_release_locked(struct nlm_globals *g, struct nlm_host *hostp)
 	ASSERT((hostp->nh_flags & NLM_NH_INIDLE) == 0);
 	TAILQ_INSERT_TAIL(&g->nlm_idle_hosts, hostp, nh_link);
 	hostp->nh_flags |= NLM_NH_INIDLE;
-}
-
-void
-nlm_host_release(struct nlm_globals *g, struct nlm_host *hostp)
-{
-	if (hostp == NULL)
-		return;
-
-	mutex_enter(&g->lock);
-	nlm_host_release_locked(g, hostp);
 	mutex_exit(&g->lock);
 }
 
@@ -2080,7 +2072,7 @@ nlm_slock_grant(struct nlm_globals *g,
  */
 int
 nlm_slreq_register(struct nlm_host *hostp, struct nlm_vhold *nvp,
-    struct flock64 *flp)
+	struct flock64 *flp)
 {
 	struct nlm_slreq *slr, *new_slr = NULL;
 	int ret = EEXIST;
@@ -2121,7 +2113,7 @@ out:
  */
 int
 nlm_slreq_unregister(struct nlm_host *hostp, struct nlm_vhold *nvp,
-    struct flock64 *flp)
+	struct flock64 *flp)
 {
 	struct nlm_slreq *slr;
 
@@ -2607,14 +2599,6 @@ nlm_unexport(struct exportinfo *exi)
 	while (hostp != NULL) {
 		struct nlm_vhold *nvp;
 
-		if (hostp->nh_flags & NLM_NH_INIDLE) {
-			TAILQ_REMOVE(&g->nlm_idle_hosts, hostp, nh_link);
-			hostp->nh_flags &= ~NLM_NH_INIDLE;
-		}
-		hostp->nh_refs++;
-
-		mutex_exit(&g->lock);
-
 		mutex_enter(&hostp->nh_lock);
 		TAILQ_FOREACH(nvp, &hostp->nh_vholds_list, nv_link) {
 			vnode_t *vp;
@@ -2639,11 +2623,8 @@ nlm_unexport(struct exportinfo *exi)
 			mutex_enter(&hostp->nh_lock);
 			nvp->nv_refcnt--;
 		}
+
 		mutex_exit(&hostp->nh_lock);
-
-		mutex_enter(&g->lock);
-		nlm_host_release_locked(g, hostp);
-
 		hostp = AVL_NEXT(&g->nlm_hosts_tree, hostp);
 	}
 
