@@ -20,7 +20,7 @@
  */
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 #ifndef	_FCT_IMPL_H
@@ -438,6 +438,7 @@ void fct_gft_cb(fct_i_cmd_t *icmd);
 void fct_gspn_cb(fct_i_cmd_t *icmd);
 void fct_rls_cb(fct_i_cmd_t *icmd);
 disc_action_t fct_process_link_init(fct_i_local_port_t *iport);
+void fct_cmd_unlink_els(fct_i_remote_port_t *irp, fct_i_cmd_t *icmd);
 
 #ifdef	__cplusplus
 }

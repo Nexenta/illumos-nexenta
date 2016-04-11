@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -1063,7 +1063,7 @@ fct_trigger_rport_cleanup(fct_i_remote_port_t *irp, int ttc)
 				fct_queue_scsi_task_for_termination(cmd,
 				    FCT_ABORTED);
 			} else {
-				/* ---- XXX Should icmd be dequeued? ---- */
+				fct_cmd_unlink_els(irp, icmd);
 				fct_q_for_termination_lock_held(iport, icmd,
 				    FCT_ABORTED);
 			}
@@ -2293,6 +2293,17 @@ fct_check_solcmd_queue(fct_i_local_port_t *iport)
 			}
 
 			icmd->icmd_cb = NULL;
+
+			/*
+			 * If the command has none-zero icmd_node pointers
+			 * it means it's been linked onto the iport_abort_queue.
+			 * Since the iport_worker_lock is held the command
+			 * can be removed before it's freed.
+			 */
+			if (icmd->icmd_node.list_next != NULL) {
+				list_remove(&iport->iport_abort_queue, icmd);
+			}
+
 			mutex_exit(&iport->iport_worker_lock);
 			fct_cmd_free(icmd->icmd_cmd);
 			mutex_enter(&iport->iport_worker_lock);
