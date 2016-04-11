@@ -24,6 +24,7 @@
  */
 /*
  * Copyright (c) 2013, Joyent, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SYS_SUNLDI_IMPL_H
@@ -62,6 +63,8 @@ extern "C" {
  * Flag for LDI handle's lh_flags field
  */
 #define	LH_FLAGS_NOTIFY	0x0001		/* invoked in context of a notify */
+#define	LH_FLAGS_NOTIFY_NOTIFY 0x0002	/* processed once in notify loop */
+#define	LH_FLAGS_NOTIFY_FINALIZE 0x0004	/* processed once in finalize loop */
 
 /*
  * LDI initialization function

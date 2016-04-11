@@ -23,6 +23,7 @@
  */
 /*
  * Copyright (c) 2013, Joyent, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -3319,7 +3320,8 @@ int
 ldi_invoke_notify(dev_info_t *dip, dev_t dev, int spec_type, char *event,
     void *ev_data)
 {
-	ldi_ev_callback_impl_t *lecp;
+	ldi_ev_callback_impl_t	*lecp,
+				*saved_lecp;
 	list_t	*listp;
 	int	ret;
 	char	*lec_event;
@@ -3340,6 +3342,7 @@ ldi_invoke_notify(dev_info_t *dip, dev_t dev, int spec_type, char *event,
 	ldi_ev_lock();
 
 	VERIFY(ldi_ev_callback_list.le_walker_next == NULL);
+restart_loop:
 	listp = &ldi_ev_callback_list.le_head;
 	for (lecp = list_head(listp); lecp; lecp =
 	    ldi_ev_callback_list.le_walker_next) {
@@ -3375,9 +3378,35 @@ ldi_invoke_notify(dev_info_t *dip, dev_t dev, int spec_type, char *event,
 			continue;
 		}
 
-		lecp->lec_lhp->lh_flags |= LH_FLAGS_NOTIFY;
-		if (lecp->lec_notify(lecp->lec_lhp, lecp->lec_cookie,
-		    lecp->lec_arg, ev_data) != LDI_EV_SUCCESS) {
+		/*
+		 * To keep the sematics of only calling the notify callback
+		 * once ignore this entry if during a previous loop start this
+		 * bit was set. This bit will be cleared from all entries
+		 * at the end of this routine.
+		 */
+		if (lecp->lec_lhp->lh_flags & LH_FLAGS_NOTIFY_NOTIFY)
+			continue;
+
+		lecp->lec_lhp->lh_flags |= LH_FLAGS_NOTIFY |
+		    LH_FLAGS_NOTIFY_NOTIFY;
+
+		/*
+		 * Need to drop the lock here before starting the notify
+		 * callback. A problem was found where the callback is
+		 * for ZFS which attempts to grab an internal lock of it's own.
+		 * Unfortunately there's another thread which starts with
+		 * ZFS that grabs the internal lock and then calls into the
+		 * LDI layer which attempts to grab this lock. Deadlock.
+		 * So, drop and reaquire later which means the loop must
+		 * be restarted since there's no telling what happened to
+		 * the linked list.
+		 */
+		ldi_ev_unlock();
+		ret = lecp->lec_notify(lecp->lec_lhp, lecp->lec_cookie,
+		    lecp->lec_arg, ev_data);
+		ldi_ev_lock();
+
+		if (ret != LDI_EV_SUCCESS) {
 			ret = LDI_EV_FAILURE;
 			LDI_EVDBG((CE_NOTE, "ldi_invoke_notify(): notify"
 			    " FAILURE"));
@@ -3385,22 +3414,24 @@ ldi_invoke_notify(dev_info_t *dip, dev_t dev, int spec_type, char *event,
 		}
 
 		/* We have a matching callback that allows the event to occur */
-		ret = LDI_EV_SUCCESS;
-
 		LDI_EVDBG((CE_NOTE, "ldi_invoke_notify(): 1 consumer success"));
+		goto restart_loop;
 	}
 
 	if (ret != LDI_EV_FAILURE)
 		goto out;
+
+	saved_lecp = list_prev(listp, lecp);
 
 	LDI_EVDBG((CE_NOTE, "ldi_invoke_notify(): undoing notify"));
 
 	/*
 	 * Undo notifies already sent
 	 */
-	lecp = list_prev(listp, lecp);
 	VERIFY(ldi_ev_callback_list.le_walker_prev == NULL);
-	for (; lecp; lecp = ldi_ev_callback_list.le_walker_prev) {
+restart_2nd_loop:
+	for (lecp = saved_lecp; lecp;
+	    lecp = ldi_ev_callback_list.le_walker_prev) {
 		ldi_ev_callback_list.le_walker_prev = list_prev(listp, lecp);
 
 		/*
@@ -3434,8 +3465,14 @@ ldi_invoke_notify(dev_info_t *dip, dev_t dev, int spec_type, char *event,
 
 		LDI_EVDBG((CE_NOTE, "ldi_invoke_notify(): calling finalize"));
 
+		if (lecp->lec_lhp->lh_flags & LH_FLAGS_NOTIFY_FINALIZE)
+			continue;
+		lecp->lec_lhp->lh_flags |= LH_FLAGS_NOTIFY_FINALIZE;
+
+		ldi_ev_unlock();
 		lecp->lec_finalize(lecp->lec_lhp, lecp->lec_cookie,
 		    LDI_EV_FAILURE, lecp->lec_arg, ev_data);
+		ldi_ev_lock();
 
 		/*
 		 * If LDI native event and LDI handle closed in context
@@ -3449,9 +3486,18 @@ ldi_invoke_notify(dev_info_t *dip, dev_t dev, int spec_type, char *event,
 			    "calling 1 finalize following ldi_close"));
 			lecp->lec_finalize = NULL;
 		}
+		goto restart_2nd_loop;
 	}
-
 out:
+	/*
+	 * Clear out the temporary flag for future runs.
+	 */
+	for (lecp = list_head(listp); lecp; lecp = list_next(listp, lecp)) {
+		if (lecp->lec_lhp == NULL)
+			continue;
+		lecp->lec_lhp->lh_flags &= ~(LH_FLAGS_NOTIFY_NOTIFY |
+					     LH_FLAGS_NOTIFY_FINALIZE);
+	}
 	ldi_ev_callback_list.le_walker_next = NULL;
 	ldi_ev_callback_list.le_walker_prev = NULL;
 	ldi_ev_unlock();
