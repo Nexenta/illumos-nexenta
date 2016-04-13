@@ -5170,12 +5170,12 @@ ql_setup_flash(ql_adapter_state_t *ha)
 	}
 
 	/*
-	 * hack for non std 2312 and 6312 boards. hardware people need to
-	 * use either the 128k flash chip (original), or something larger.
-	 * For driver purposes, we'll treat it as a 128k flash chip.
+	 * hack for non std 2312/2322 and 6312/6322 boards. hardware people
+	 * need to use either the 128k flash chip (original), or something
+	 * larger. For driver purposes, we'll treat it as a 128k flash chip.
 	 */
 	if ((ha->device_id == 0x2312 || ha->device_id == 0x6312 ||
-	    ha->device_id == 2322 || ha->device_id == 0x6322) &&
+	    ha->device_id == 0x2322 || ha->device_id == 0x6322) &&
 	    (xp->fdesc.flash_size > 0x20000) &&
 	    (CFG_IST(ha, CFG_SBUS_CARD) == 0)) {
 		EL(ha, "chip exceeds max size: %xh, using 128k\n",
