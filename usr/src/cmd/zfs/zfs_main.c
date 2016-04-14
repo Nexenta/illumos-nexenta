@@ -246,7 +246,7 @@ get_usage(zfs_help_t idx)
 	case HELP_PROMOTE:
 		return (gettext("\tpromote <clone-filesystem>\n"));
 	case HELP_RECEIVE:
-		return (gettext("\treceive [-vnFu] [-d | -e] "
+		return (gettext("\treceive [-vnFKu] [-d | -e] "
 		    "[-o <property=value>]... [-x <property>]...\n"
 		    "\t    [-l <filesystem|volume>]... <filesystem|volume"
 		    "|snapshot>\n"));
@@ -3834,7 +3834,7 @@ zfs_do_send(int argc, char **argv)
 }
 
 /*
- * zfs receive [-vnFu] [-d | -e] <fs@snap>
+ * zfs receive [-vnFKu] [-d | -e] <fs@snap>
  *
  * Restore a backup stream from stdin.
  */
@@ -3850,7 +3850,7 @@ zfs_do_receive(int argc, char **argv)
 		nomem();
 
 	/* check options */
-	while ((c = getopt(argc, argv, ":del:no:uvx:F")) != -1) {
+	while ((c = getopt(argc, argv, ":del:no:uvx:FK")) != -1) {
 		switch (c) {
 		case 'd':
 			flags.isprefix = B_TRUE;
@@ -3882,6 +3882,9 @@ zfs_do_receive(int argc, char **argv)
 			break;
 		case 'F':
 			flags.force = B_TRUE;
+			break;
+		case 'K':
+			flags.keepsnap = B_TRUE;
 			break;
 		case ':':
 			(void) fprintf(stderr, gettext("missing argument for "

@@ -2223,6 +2223,7 @@ again:
 		uint64_t stream_originguid = 0;
 		uint64_t parent_fromsnap_guid, stream_parent_fromsnap_guid;
 		char *fsname, *stream_fsname;
+		boolean_t stream_fs_exists = B_FALSE;
 
 		nextfselem = nvlist_next_nvpair(local_nv, fselem);
 
@@ -2244,6 +2245,7 @@ again:
 		/*
 		 * First find the stream's fs, so we can check for
 		 * a different origin (due to "zfs promote")
+		 * and for preserving snapshots on the receiving side
 		 */
 		for (snapelem = nvlist_next_nvpair(snaps, NULL);
 		    snapelem; snapelem = nvlist_next_nvpair(snaps, snapelem)) {
@@ -2252,8 +2254,10 @@ again:
 			VERIFY(0 == nvpair_value_uint64(snapelem, &thisguid));
 			stream_nvfs = fsavl_find(stream_avl, thisguid, NULL);
 
-			if (stream_nvfs != NULL)
+			if (stream_nvfs != NULL) {
+				stream_fs_exists = B_TRUE;
 				break;
+			}
 		}
 
 		/* check for promote */
@@ -2316,9 +2320,42 @@ again:
 			if (found == NULL) {
 				char name[ZFS_MAXNAMELEN];
 
+				/*
+				 * Conventional force-receive (-F) behavior
+				 * combines two different steps:
+				 * 1. rollback the destination dataset to the
+				 *    most recent received snapshot
+				 * 2. destroy all those destination snapshots
+				 *    that are not present at the source
+				 * The keepsnap flag allows to effectively
+				 * separate 1 from 2 and perform forced receive
+				 * while still maintaining the destination
+				 * snapshots as per the corresponding snapshot
+				 * retention policy (at the destination).
+				 */
+
+				/*
+				 * When -F (force-receive) is not specified we
+				 * always keep snapshots at the destination
+				 * (i.e., this has always been zfs conventional
+				 * behavior). See also 'keepsnap' comment below
+				 */
 				if (!flags->force)
 					continue;
 
+				/*
+				 * keepsnap flag modifies the conventional
+				 * force-receive behavior not to destroy
+				 * destination snapshots that are not present
+				 * at the replication source
+				 */
+				if (flags->keepsnap && stream_fs_exists)
+					continue;
+
+				/*
+				 * Destroy destination snapshot that do
+				 * not exist at the replication source
+				 */
 				(void) snprintf(name, sizeof (name), "%s@%s",
 				    fsname, nvpair_name(snapelem));
 

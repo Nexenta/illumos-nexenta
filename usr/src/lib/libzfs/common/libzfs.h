@@ -665,6 +665,9 @@ typedef struct recvflags {
 	/* rollback/destroy filesystems as necessary (eg, -F) */
 	boolean_t force;
 
+	/* when force-receiving, do not destroy snapshots (ie, -K) */
+	boolean_t keepsnap;
+
 	/* set "canmount=off" on all modified filesystems */
 	boolean_t canmountoff;
 

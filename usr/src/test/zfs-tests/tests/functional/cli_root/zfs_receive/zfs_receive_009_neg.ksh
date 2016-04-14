@@ -62,7 +62,8 @@ log_onexit cleanup
 
 set -A badopts "v" "n" "F" "d" "-V" "-N" "-f" "-D" "-VNfD" "-vNFd" "-vnFD" "-dVnF" \
 		"-vvvNfd" "-blah" "-12345" "-?" "-*" "-%"
-set -A validopts "" "-v" "-n" "-F" "-vn" "-nF" "-vnF" "-vd" "-nd" "-Fd" "-vnFd"
+set -A validopts "" "-v" "-n" "-F" "-vn" "-nF" "-vnF" "-vd" "-nd" "-Fd" \
+	"-vnFd" "-FK" "-vFK" "-vnFK"
 
 ctr1=$TESTPOOL/$TESTCTR1
 ctr2=$TESTPOOL/$TESTCTR2
