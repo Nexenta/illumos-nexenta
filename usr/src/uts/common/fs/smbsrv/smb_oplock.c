@@ -187,7 +187,7 @@ smb_oplock_acquire(smb_request_t *sr, smb_node_t *node, smb_ofile_t *ofile)
 		if ((!op->op_oplock_levelII) ||
 		    (!smb_session_levelII_oplocks(session)) ||
 		    (smb_oplock_exclusive_grant(grants) != NULL) ||
-		    (smb_lock_range_access(sr, node, 0, 0, B_FALSE))) {
+		    (smb_lock_range_access(sr, node, 0, ~0, B_FALSE))) {
 			/*
 			 * LevelII (shared) oplock not allowed,
 			 * so reply with "none".

@@ -664,7 +664,9 @@ typedef struct smb_node {
 	uint32_t		n_open_count;
 	uint32_t		n_opening_count;
 	smb_llist_t		n_ofile_list;
-	smb_llist_t		n_lock_list;
+	/* If entering both, go in order n_lock_list, n_wlock_list */
+	smb_llist_t		n_lock_list;	/* active locks */
+	smb_llist_t		n_wlock_list;	/* waiting locks */
 	uint32_t		n_pending_dosattr;
 	volatile int		flags;
 	u_offset_t		n_allocsz;
@@ -1339,14 +1341,12 @@ typedef struct smb_lock {
 	kmutex_t		l_mutex;
 	kcondvar_t		l_cv;
 
-	list_node_t		l_conflict_lnd;
-	smb_slist_t		l_conflict_list;
-
 	smb_ofile_t		*l_file;
 
-	uint32_t		l_flags;
 	struct smb_lock		*l_blocked_by; /* Debug info only */
 
+	uint32_t		l_conflicts;
+	uint32_t		l_flags;
 	uint32_t		l_pid;
 	uint32_t		l_type;
 	uint64_t		l_start;
@@ -1355,8 +1355,8 @@ typedef struct smb_lock {
 } smb_lock_t;
 
 #define	SMB_LOCK_FLAG_INDEFINITE	0x0004
-#define	SMB_LOCK_INDEFINITE_WAIT(lock) \
-	((lock)->l_flags & SMB_LOCK_FLAG_INDEFINITE)
+#define	SMB_LOCK_FLAG_CLOSED		0x0008
+#define	SMB_LOCK_FLAG_CANCELLED		0x0010
 
 #define	SMB_LOCK_TYPE_READWRITE		101
 #define	SMB_LOCK_TYPE_READONLY		102
@@ -1506,6 +1506,12 @@ typedef struct open_param {
 	uint8_t		op_oplock_level;	/* requested/granted level */
 	boolean_t	op_oplock_levelII;	/* TRUE if levelII supported */
 } smb_arg_open_t;
+
+typedef struct smb_arg_lock {
+	void		*lvec;
+	uint32_t	lcnt;
+	uint32_t	lseq;
+} smb_arg_lock_t;
 
 struct smb_async_req;
 
@@ -1753,6 +1759,7 @@ typedef struct smb_request {
 		smb_arg_tcon_t		tcon;
 		smb_arg_dirop_t		dirop;
 		smb_arg_open_t		open;
+		smb_arg_lock_t		lock;
 		smb_rw_param_t		*rw;
 		smb_oplock_grant_t	olbrk;	/* for async oplock break */
 		int32_t			timestamp;

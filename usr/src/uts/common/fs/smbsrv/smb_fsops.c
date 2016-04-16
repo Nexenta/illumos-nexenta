@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/sid.h>
@@ -2638,6 +2638,14 @@ smb_fsop_frlock(smb_node_t *node, smb_lock_t *lock, boolean_t unlock,
 	 *    bytes. Interestingly if the same lock (same offset and length) is
 	 *    resubmitted Windows will consider that there is an overlap and
 	 *    the granting rules will then apply.
+	 *
+	 * 3) The SMB-level process IDs (smb_pid) are not passed down to the
+	 *    POSIX level in l_pid because (a) the rules about lock PIDs are
+	 *    different in SMB, and (b) we're putting our ofile f_uniqid in
+	 *    the POSIX l_pid field to segregate locks per SMB ofile.
+	 *    (We're also using a "remote" system ID in l_sysid.)
+	 *    All SMB locking PIDs are handled at the SMB level and
+	 *    not exposed in POSIX locking.
 	 */
 	if ((lock->l_length == 0) ||
 	    ((lock->l_start + lock->l_length - 1) < lock->l_start))
