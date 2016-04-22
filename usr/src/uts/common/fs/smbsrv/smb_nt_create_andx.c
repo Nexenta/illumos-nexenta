@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -241,6 +241,18 @@ smb_com_nt_create_andx(struct smb_request *sr)
 	int			rc;
 	uint8_t			DirFlag;
 	uint32_t		status;
+
+	if (op->create_options & ~SMB_NTCREATE_VALID_OPTIONS) {
+		smbsr_error(sr, NT_STATUS_INVALID_PARAMETER,
+		    ERRDOS, ERROR_INVALID_PARAMETER);
+		return (SDRC_ERROR);
+	}
+
+	if (op->create_options & FILE_OPEN_BY_FILE_ID) {
+		smbsr_error(sr, NT_STATUS_NOT_SUPPORTED,
+		    ERRDOS, ERROR_NOT_SUPPORTED);
+		return (SDRC_ERROR);
+	}
 
 	if ((op->create_options & FILE_DELETE_ON_CLOSE) &&
 	    !(op->desired_access & DELETE)) {

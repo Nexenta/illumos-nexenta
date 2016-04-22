@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMBSRV_NTIFS_H
@@ -189,7 +191,7 @@ extern "C" {
 #define	FILE_RESERVED1				0x00400000
 #define	FILE_RESERVED2				0x00800000
 
-#define	FILE_VALID_OPTION_FLAGS			0x007fffff
+#define	FILE_VALID_OPTION_FLAGS			0x00ffffff
 #define	FILE_VALID_PIPE_OPTION_FLAGS		0x00000032
 #define	FILE_VALID_MAILSLOT_OPTION_FLAGS	0x00000032
 #define	FILE_VALID_SET_FLAGS			0x00000036

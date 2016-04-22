@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -314,7 +314,7 @@ smb_opipe_open(smb_request_t *sr, uint32_t uniqid)
 	op->dattr = ap->sa_dosattr;
 	op->fileid = ap->sa_vattr.va_nodeid;
 	op->ftype = SMB_FTYPE_MESG_PIPE;
-	op->action_taken = SMB_OACT_LOCK | SMB_OACT_OPENED; /* 0x8001 */
+	op->action_taken = SMB_OACT_OPLOCK | SMB_OACT_OPENED;
 	op->devstate = SMB_PIPE_READMODE_MESSAGE
 	    | SMB_PIPE_TYPE_MESSAGE
 	    | SMB_PIPE_UNLIMITED_INSTANCES; /* 0x05ff */

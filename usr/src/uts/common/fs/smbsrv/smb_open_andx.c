@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <smbsrv/smb_kproto.h>
@@ -317,6 +317,8 @@ errout:
 	return (SDRC_ERROR);
 }
 
+int smb_openx_enable_extended_response = 1;
+
 /*
  * smb_pre_open_andx
  * For compatibility with windows servers, the search attributes
@@ -326,7 +328,7 @@ smb_sdrc_t
 smb_pre_open_andx(smb_request_t *sr)
 {
 	struct open_param *op = &sr->arg.open;
-	uint16_t flags;
+	uint16_t openx_flags;
 	uint32_t alloc_size;
 	uint32_t creation_time;
 	uint16_t file_attr, sattr;
@@ -335,7 +337,7 @@ smb_pre_open_andx(smb_request_t *sr)
 	bzero(op, sizeof (sr->arg.open));
 
 	rc = smbsr_decode_vwv(sr, "b.wwwwwlwll4.", &sr->andx_com,
-	    &sr->andx_off, &flags, &op->omode, &sattr,
+	    &sr->andx_off, &openx_flags, &op->omode, &sattr,
 	    &file_attr, &creation_time, &op->ofun, &alloc_size, &op->timeo);
 
 	if (rc == 0) {
@@ -344,12 +346,18 @@ smb_pre_open_andx(smb_request_t *sr)
 		op->dattr = file_attr;
 		op->dsize = alloc_size;
 
-		if (flags & 2)
+		/*
+		 * The openx_flags use some "extended" flags that
+		 * happen to match some of the NtCreateX flags.
+		 */
+		if (openx_flags & NT_CREATE_FLAG_REQUEST_OPLOCK)
 			op->op_oplock_level = SMB_OPLOCK_EXCLUSIVE;
-		else if (flags & 4)
+		else if (openx_flags & NT_CREATE_FLAG_REQUEST_OPBATCH)
 			op->op_oplock_level = SMB_OPLOCK_BATCH;
 		else
 			op->op_oplock_level = SMB_OPLOCK_NONE;
+		if (openx_flags & NT_CREATE_FLAG_EXTENDED_RESPONSE)
+			op->nt_flags |= NT_CREATE_FLAG_EXTENDED_RESPONSE;
 
 		if ((creation_time != 0) && (creation_time != UINT_MAX))
 			op->crtime.tv_sec =
@@ -416,9 +424,9 @@ smb_com_open_andx(smb_request_t *sr)
 	of = sr->fid_ofile;
 
 	if (op->op_oplock_level != SMB_OPLOCK_NONE)
-		op->action_taken |= SMB_OACT_LOCK;
+		op->action_taken |= SMB_OACT_OPLOCK;
 	else
-		op->action_taken &= ~SMB_OACT_LOCK;
+		op->action_taken &= ~SMB_OACT_OPLOCK;
 
 	file_attr = op->dattr & FILE_ATTRIBUTE_MASK;
 	mtime_sec = smb_time_gmt_to_local(sr, ap->sa_vattr.va_mtime.tv_sec);
@@ -438,7 +446,8 @@ smb_com_open_andx(smb_request_t *sr)
 		goto errout;
 	}
 
-	if (op->nt_flags & NT_CREATE_FLAG_EXTENDED_RESPONSE) {
+	if ((op->nt_flags & NT_CREATE_FLAG_EXTENDED_RESPONSE) != 0 &&
+	    smb_openx_enable_extended_response != 0) {
 		uint32_t MaxAccess = 0;
 		if (of->f_node != NULL) {
 			smb_fsop_eaccess(sr, of->f_cr, of->f_node, &MaxAccess);
@@ -497,6 +506,7 @@ smb_com_trans2_open2(smb_request_t *sr, smb_xa_t *xa)
 	struct open_param *op = &sr->arg.open;
 	uint32_t	creation_time;
 	uint32_t	alloc_size;
+	uint32_t	ea_list_size;
 	uint16_t	flags;
 	uint16_t	file_attr;
 	uint32_t	status;
@@ -509,6 +519,24 @@ smb_com_trans2_open2(smb_request_t *sr, smb_xa_t *xa)
 	    &creation_time, &op->ofun, &alloc_size, &op->fqi.fq_path.pn_path);
 	if (rc != 0)
 		return (SDRC_ERROR);
+
+	/*
+	 * The data part of this transaction may contain an EA list.
+	 * See: SMB_FEA_LIST ExtendedAttributeList
+	 *
+	 * If we find a non-empty EA list payload, return the special
+	 * error that tells the caller this FS does not suport EAs.
+	 *
+	 * Note: the first word is the size of the whole data segment,
+	 * INCLUDING the size of that length word.  That means if
+	 * the length word specifies a size less than four, it's
+	 * invalid (and probably a client trying something fishy).
+	 */
+	rc = smb_mbc_decodef(&xa->req_data_mb, "l", &ea_list_size);
+	if (rc == 0 && ea_list_size > 4) {
+		smbsr_status(sr, NT_STATUS_EAS_NOT_SUPPORTED, 0, 0);
+		return (SDRC_ERROR);
+	}
 
 	if ((creation_time != 0) && (creation_time != UINT_MAX))
 		op->crtime.tv_sec = smb_time_local_to_gmt(sr, creation_time);
@@ -546,9 +574,9 @@ smb_com_trans2_open2(smb_request_t *sr, smb_xa_t *xa)
 	}
 
 	if (op->op_oplock_level != SMB_OPLOCK_NONE)
-		op->action_taken |= SMB_OACT_LOCK;
+		op->action_taken |= SMB_OACT_OPLOCK;
 	else
-		op->action_taken &= ~SMB_OACT_LOCK;
+		op->action_taken &= ~SMB_OACT_OPLOCK;
 
 	file_attr = op->dattr & FILE_ATTRIBUTE_MASK;
 
