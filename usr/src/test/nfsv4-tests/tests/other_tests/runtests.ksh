@@ -30,7 +30,7 @@
 
 NAME=`basename $0`
 DIR=`pwd`
-ALLTDIRS="i18n uidmapping domain dtrace_v4"
+ALLTDIRS="uidmapping domain"
 TDIRS=${TDIRS:-"$ALLTDIRS"}
 
 
