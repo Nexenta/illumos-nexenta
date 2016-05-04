@@ -1,0 +1,66 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# Test file list for NFSv4 numbered attributes tests
+#
+
+num_attrs_pos00
+num_attrs_pos01
+num_attrs_pos02
+num_attrs_pos03
+num_attrs_pos04
+num_attrs_pos05
+num_attrs_pos06
+num_attrs_pos07
+num_attrs_pos08
+num_attrs_pos09
+num_attrs_pos10
+num_attrs_neg10
+num_attrs_pos11
+num_attrs_pos12
+num_attrs_pos13
+num_attrs_pos14
+num_attrs_pos15
+num_attrs_pos16
+num_attrs_neg17
+num_attrs_pos17
+num_attrs_pos18
+num_attrs_neg18
+num_attrs_pos19
+num_attrs_pos20
+num_attrs_neg21
+num_attrs_pos22
+num_attrs_pos23
+num_attrs_pos24
+num_attrs_neg25
+num_attrs_pos26
+num_attrs_pos27
+num_attrs_pos28
+num_attrs_neg28
+num_attrs_pos29
+num_attrs_pos30
+
+# added userland quota query test
+quota_query01

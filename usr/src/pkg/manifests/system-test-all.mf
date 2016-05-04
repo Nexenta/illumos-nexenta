@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2014, Nexenta Systems Inc. All rights reserved.
+# Copyright 2016, Nexenta Systems Inc. All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/system/test/all@$(PKGVERS)
@@ -22,6 +22,7 @@ set name=variant.arch value=$(ARCH)
 depend fmri=system/test/comstar type=require
 depend fmri=system/test/lofitest type=require
 depend fmri=system/test/nfssharemnt type=require
+depend fmri=system/test/nfsv4 type=require
 depend fmri=system/test/sharefstest type=require
 depend fmri=system/test/smbclient type=require
 depend fmri=system/test/smf type=require

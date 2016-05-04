@@ -1,0 +1,50 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+
+nfsv4-test/server/README:
+=========================================================
+
+This directory consists of the following:
+
+mk_srvdir.sh:
+script to create test files/directories in the current
+directory based on variables in v4test.cfg file, which
+must be found in the same directory as the script. In
+nfsv4-test environment path used for mk_srvdir.sh is
+$BASEDIR variable. See top-level README file for details. 
+
+v4test.cfg:
+Consists of the types of test files/directories to be
+created on the server by mk_srvdir.sh script.
+
+Purpose:
+
+This is intentionally separate to allow server files to be
+installed in server systems which maybe outside the testing
+environment, e.g. outside firewall; and the tests can still
+be executed if NFS traffic is allowed between the client
+and the server. 
+----------------------------------------------------------

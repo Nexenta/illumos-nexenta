@@ -1,0 +1,199 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+Overview
+--------
+
+This "nfsv4" is a general test framework consists of different tests for 
+testing NFSv4 server and client.  Test sub-directories include :
+
+	acl		   - access control list tests
+	basic_ops 	   - server tests of basic operations for RFC3530
+	num_attrs	   - number attribute tests
+	named_attr	   - named attribute tests
+	other_tests	   - uidmapping and I18N 
+	recovery	   - client recovery and server unshare tests
+	srv_namespc	   - server namespace tests
+
+The tests under these subdirs are written in different programming languages, 
+including C, Shell(s) and TCL that uses "nfsv4sh" tool.  Makefiles are 
+provided to build and install the executables to the "proto" directory or
+package for execution.  Scripts are also included for automation of setup
+and cleanup.
+
+
+Requirements
+------------
+
+The following requirements must be met before running the tests:
+
+ 1) Require minimum of two systems, a localhost and a remote host.  Both
+    systems under test must be able to 'rsh' to each other as root.
+
+ 2) Must be "root" to run the setup and cleanup and the recovery tests.
+
+ 3) Define the following required environment variables.  For those
+    that are optional, if not set, the default value will be used:
+
+	setenv SERVER remote_host_w/NFSv4_available 		(required)
+		No default for this variable
+	setenv LOGDIR the_result_logs_directory			(optional)
+		default is /var/tmp/nfsv4-test/results
+	setenv DNS_SERVER a_DNS_server_accessed_by_all_systems	(optional)
+		default is jurassic.eng.sun.com
+
+ 4) TCL (Tools Command Language, tcl8.5), must be available or
+    installed in the localhost before building and running the tests.
+
+ 5) If run on opensolaris, please make sure the SUNWhea (SunOS Header Files)
+    package is installed or the related headers are available on the server,
+    otherwise, the uidmapping_stress01 test will fail.
+
+
+Other setup (optional)
+----------------------
+
+There are several test filesystems required for testing.  The tests
+currently support two types of filesystem, one is ZFS, the other is UFS.
+
+By default, tests itself will detect automatically the filesystem type of
+BASEDIR on SERVER.
+If filesystem type is ZFS, tests will run over ZFS;
+If filesystem type is UFS, tests will run over UFS;
+Otherwise, tests will print error message and exit. 
+	setenv BASEDIR a_base_testing_directory_in_server	(optional)
+		default is /NFSv4Test
+
+If SERVER is zfs boot, and you also want to run the tests over UFS,
+you must provide a dir based on UFS and define BASEDIR as the following:
+	setenv BASEDIR your_ufs_dir_in_server
+
+Similarly, if SERVER is ufs boot, and you also want to run the tests over ZFS,
+you must provide a dir based on ZFS and define BASEDIR as the following:
+	setenv BASEDIR your_zfs_dir_in_server
+
+If tests would be run over UFS, by default they will be setup using LOFI (but
+NOTE that the LOFI setup will be lost if you reboot the SERVER). If you prefer
+not to use LOFI setup, but to supply your own real filesystems, you must provide
+the following filesystems and UFS mount them to the correct directory names.
+	BASEDIR the base testing directory, default is /NFSv4Test
+	PUBTDIR to $BASEDIR/PublicFS, e.g. /NFSv4Test/PublicFS
+	ROOTDIR to $BASEDIR/RootFS, e.g. /NFSv4Test/RootFS
+	ROFSDIR to $BASEDIR/RoFS, e.g. /NFSv4Test/RoFS
+	NSPCDIR to $BASEDIR/NoSPC_FS, e.g. /NFSv4Test/NoSPC_FS
+		(where NSPCDIR must be a small filesystem, e.g. 3MB)
+	KRB5DIR to $BASEDIR/KRB5C_FS, e.g. /NFSv4Test/KRB5C_FS
+	SSPCDIR to $BASEDIR/SRVsp_FS, e.g. /NFSv4Test/SRVsp_FS
+	SSPCDIR2 to $SSPCDIR/hide/SRVsp_d2
+		e.g. /NFSv4Test/SRVsp_FS/hide/SRVsp_d2
+	SSPCDIR3 to $SSPCDIR2/hide2/SRVsp_d3
+		e.g. /NFSv4Test/SRVsp_FS/hide/SRVsp_d2/hide2/SRVsp_d3
+
+Tests may fail unexpectedly if these test filesystems are not pre-setup
+correctly when not using LOFI.  
+
+Sometimes during the recovery tests the server is not visible on the network
+for several minutes after the server has rebooted. This causes some of the
+tests that are intended to run in the grace period to fail. The solution to
+this problem is to add an /etc/defaultrouter file to the server.
+
+If your server takes a long time to reboot, e.g. a SunFire machine that has
+lots of memory/disk, you may want to set the following variable a bigger value
+(in seconds):
+	setenv REBOOTIMER 1800				(optional)
+		default is 480
+
+Note: the recovery tests will reboot the server.  It may ask for fsck
+	during the rebboot due to the LOFI setup.  Hence, it may help 
+	to turn on logging (via /etc/vfstab) of the filesystem that 
+	the BASEDIR, e.g. /NFSv4Test, is set to before running the tests.
+
+Note: This test suite now uses sharectl(1M) to change/reset the NFS properties,
+	which would restart the corresponding services. Any transient (or
+	temporary) exported filesystems in the test systems shared prior to the
+	test run would get lost/unshared. If these shares in the test systems
+	need to be available after running the suite, make sure they are shared
+	permanently, e.g. use sharemgr(1M) "share -p" to share the filesystems.
+
+IPv6 support
+------------
+   The test suite has IPv6 support turned on by default.  If your client and
+   server supports NFS over IPv6 and you want to run the tests over the IPv6
+   connection, please make sure the SERVER variable is set to the valid name
+   for IPv6 and set the following variable before running the tests:
+	setenv TRANSPORT tcp6
+		default is tcp
+
+Trusted Extensions over a CIPSO connection
+------------------------------------------
+   In order to successfully test NFS in Trusted Extensions over a CIPSO
+   connection, the NFS server MUST be configured with at least two IP
+   addresses, one of which is allocated solely for use by the global zone.
+   The following variable must also be defined:
+
+        setenv ZONE_PATH /zone/<zone name>                         (required)
+
+            where:
+                  /zone directory is where the non-global zone
+                  paths reside.
+
+     example:
+        setenv ZONE_PATH /zone/public
+
+        This would produce the resultant MNTPTR default of:
+                /zone/public/NFS4_Mnt
+        And would produce the resultant BASEDIR default of:
+                /zone/public/NFSv4Test
+        And would produce the resultant QUOTADIR variable to contain:
+                /zone/public/root/NFSv4Test/QUOTA_FS
+
+   NOTE:
+        For the NFS client, there is no need to allocate a unique IP to
+        the global zone; the entire system can be configured to have just
+        a single all-zones IP address.
+
+        The default for ZONE_PATH is NULL.
+
+
+A journal file of the test results will be created for each subdir, along 
+with a Summary file containing condensed test status under $LOGDIR directory.
+These Summary files can be compared against the baseline results.
+
+
+References:
+-----------
+
+Please check the NFSv4 specification for more information on NFS version 4
+protocols.
+  http://www.ietf.org/rfc/rfc3530.txt
+
+
+The nfsv4shell/nfsh/nfsh.man manpage details the usage of each NFSv4 
+operation in the nfsv4shell, which is used for most of the tests in 
+the basic_ops subdir, and a few tests in other subdirs as well.
+
+
+-------------
+End of README

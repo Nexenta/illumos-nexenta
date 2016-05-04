@@ -1,0 +1,83 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# nfsv4-test/tests/other_tests/domain/README
+#
+
+This sub-suite consists of tests for testing rules to get the domain for
+NFSv4 NFSMAPID.
+
+1. How to Run Assertions
+========================
+
+To run all assertions, just follow nfsv4-test suite convention and use the 
+following command:
+
+    ./runtests
+
+To run specific assertions, use the following command:
+	
+    TESTLIST=<test_file> ASSERTIONS="<assertion_name> ..." ./runtests
+
+Example 1: the following command runs nfsmapid01{a}
+
+    TESTLIST=nfsmapid01 ASSERTIONS="a" ./runtests
+
+Example 2: the following command runs libmapid01{a}, libmapid01{b}, and 
+libmapid01{c}
+
+    TESTLIST=libmapid01 ASSERTIONS="a b c" ./runtests
+
+Some assertions have dependencies among them. These assertions have the 
+same name, but with a different numeric character appended to it, for 
+example, nfsmapid01{d1} and nfsmapid01{d1}. To run these assertions, you
+need to remove the numeric postfix:
+
+Example 3: the following command runs nfsmapid01{d1} and nfsmapid02{d2}
+
+    TESTLIST=nfsmapid01 ASSERTIONS="d" ./runtests
+
+
+2. nfscfg_domain_tmout
+======================
+
+nfsmapid(1M) has a nfscfg_domain_tmout variable to control how long the 
+daemon thread waits before it checks domain configuration changes. Its value
+is 300 seconds by default. 
+
+Using that default value, it takes more than 1 hour to run all tests. So, 
+to make them run faster, the value is changed to 10 seconds during the test.
+
+User can customize this value with DOMAIN_TMOUT env variable, in the 
+following way:
+
+    DOMAIN_TMOUT=60 ./runtests
+
+Please note the above method only works in global zone and whole root zone.
+The reason is we do that by using mdb to modify nfsmapid(1M) binary file.
+In sparse root zone, however, the file is on a file system shared with
+read-only option, so the value of nfscfg_domain_tmout variable can't be 
+changed.
+
+So it takes much longer(more than 1 hour) to run all tests in sparse root zone.

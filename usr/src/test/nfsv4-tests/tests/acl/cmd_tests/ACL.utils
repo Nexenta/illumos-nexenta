@@ -1,0 +1,169 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# Utilities for ACL setfacl/getfacl tests
+#
+
+if [ -z "$DEBUG" ]; then
+	export DEBUG=0 
+else
+	[ "$DEBUG" != "0" ] && set -x
+fi
+
+# sourcing framework global environment variables created after go_setup
+# and for this purpose only this file should be sourced
+if [[ ! -f $CONFIGFILE ]]; then
+	echo "$NAME: CONFIGFILE[$CONFIGFILE] not found;"
+	echo "\texit UNINITIATED."
+	exit 6
+fi
+. $CONFIGFILE
+
+# Source for common functions
+. $TESTROOT/testsh
+
+
+#--------------------------------------------------------------
+# call setfacl(1) to set the ACL entries to the object
+# usage: set_acls OP TOBJ ALIST WHO [TATTR]
+#	OP:	setfacl option, supports 'm' (modify) or 'd' (delete)
+#	TOBJ:	test object to set ACLs
+#	ALIST:	the ACL entries
+#	WHO:	user, group, or none (mask)
+#	TATTR:	Optional; if provided, this is the obj-name for runat
+# 
+function set_acls
+{
+    [ "$DEBUG" != "0" ] && set -x
+    OP=${1}
+    TOBJ=${2}
+    ALIST=${3}
+    WHO=$4
+    [[ -n "$WHO" && "$WHO" != "none" ]] && WHO="${WHO}:" || WHO=""
+    TATTR=""
+    [ $# -eq 5 ] && TATTR=$5
+    EFILE=$TMPDIR/set_acls.err.$$
+
+    [ "$DEBUG" != "0" ] && echo "calling  set_acls() ..."
+    echo "\n" > $EFILE
+    for ac in $ALIST
+    do
+	CMD="setfacl -$OP $WHO$ac $TOBJ" 
+	[ "$DEBUG" != "0" ] && echo "CMD=<$CMD>"
+	if [ -n "$TATTR" ]; then
+		runat $TATTR "$CMD" > $EFILE 2>&1 
+	else
+		$CMD > $EFILE 2>&1
+	fi
+        ckreturn $? "<$CMD> failed" $EFILE
+	if [ $? -ne 0 ]; then
+		rm -f $EFILE
+		return $FAIL
+	fi
+    done
+    rm -f $EFILE
+}
+
+
+#--------------------------------------------------------------
+# call getfacl(1) to get the ACL entries to the object
+# usage: get_acls TOBJ OFILE [TATTR]
+#	TOBJ:	test object to set ACLs
+#	OFILE:	output file with ACL entries of TOBJ
+#	TATTR:	Optional; if provided, this is the obj-name for runat
+# 
+function get_acls
+{
+    [ "$DEBUG" != "0" ] && set -x
+    TOBJ=${1}
+    OFILE=${2}
+    TATTR=""
+    [ $# -eq 3 ] && TATTR=$3
+    EFILE=$TMPDIR/get_acls.err.$$
+
+    [ "$DEBUG" != "0" ] && echo "calling  get_acls() ..."
+    echo "\n" > $EFILE
+    CMD="getfacl $TOBJ"
+    [ "$DEBUG" != "0" ] && echo "CMD=<$CMD>"
+    if [ -n "$TATTR" ]; then
+	runat $TATTR "$CMD" 1> $OFILE 2> $EFILE 
+    else
+	$CMD 1> $OFILE 2> $EFILE
+    fi
+    ckreturn $? "<$CMD> failed" $EFILE
+    if [ $? -ne 0 ]; then
+	rm -f $EFILE
+	return $FAIL
+    fi
+    rm -f $EFILE
+}
+
+#--------------------------------------------------------------
+# checking on ACE list from the ACL output file from caller
+# usage: ck_aces OP ALIST ACLFILE
+#	OP:	Operation for ace to be verified, 
+#		e.g. d-delete, m-modify, me-modify effective
+#	ALIST:	List of ACEs to be verified
+#	ACLFILE:The ACL file from getfacl
+# 
+function ck_aces
+{
+    [ "$DEBUG" != "0" ] && set -x
+    OP=$1
+    ALIST=${2}
+    ACLFILE=${3}
+
+    [ "$DEBUG" != "0" ] && echo "calling  ck_aces() ..."
+    for ace in $ALIST
+    do
+	case "$OP" in
+    	'm' )		# ACL entry is modified
+	    egrep "$ace" $ACLFILE > /dev/null 2>&1
+    	    if [ $? -ne 0 ]; then	
+    	        echo "\t Test FAIL - didn't find <$ace> from $ACLFILE"
+		cat $ACLFILE
+		return $FAIL
+            fi ;;
+        'd' )		# ACL entry is deleted
+	    egrep "$ace" $ACLFILE > /dev/null 2>&1
+    	    if [ $? -eq 0 ]; then	
+    	        echo "\t Test FAIL - still see <$ace> from $ACLFILE, for OP=$OP"
+		cat $ACLFILE
+		return $FAIL
+            fi ;;
+        'me' )		# ACL effective field is modified
+	    user=$(echo $ace | nawk -F\: '{print $1}')
+	    perm=$(echo $ace | nawk -F\: '{print $2}')
+	    nbit=$(egrep "$user\:" $ACLFILE | nawk -F\: '{print $4}')
+    	    if [ "$nbit" != "$perm" ]; then	
+    	        echo "\t Test FAIL - didn't find effective for <$ace> from $ACLFILE"
+		cat $ACLFILE
+		return $FAIL
+            fi ;;
+        esac
+    done
+    [ "$DEBUG" != "0" ] && cat $ACLFILE
+    return $PASS
+}

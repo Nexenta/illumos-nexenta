@@ -1,0 +1,24 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+#
+# Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+#
+include $(SRC)/Makefile.master
+
+TEST = basic_ops/create
+SHRSRC = CREATE.env CREATE.flist
+TCS = runtests
+TCLSRC = create_neg01 create_neg02 create_neg03 create_neg04 \
+	create_neg05 create_pos01 create_pos02 create_pos03 \
+	create_pos04 create_pos05 CREATE_proc 
+
+include ../../Makefile.test

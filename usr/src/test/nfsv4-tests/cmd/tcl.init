@@ -1,0 +1,108 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+# convert all global environment variables to TCL
+
+#*********************************************************************
+# proc ext_eval (extended eval)
+# Allows the evaluation of <expression> as if done in caller, catching
+# errors. If successful, returns the output of the evaluation.
+# If error, displays <error_str> and evaluate <action>.
+
+proc ext_eval {expression {error_str "ERROR: $output"} {action {exit $result}}} {
+    set result [catch {uplevel $expression} output]
+    if {$result != 0} {
+        puts stderr "$error_str"
+        if {[string length $action] > 0} {
+        	eval {$action}
+        }
+    }
+    return $result
+}
+
+
+# Note: hardcoded return correct code in case environment not set
+set uninit 6
+
+# test result codes
+ext_eval {set ::PASS $env(PASS)}                \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::FAIL $env(FAIL)}                \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::UNRESOLVED $env(UNRESOLVED)}    \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::NOTINUSE $env(NOTINUSE)}        \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::UNSUPPORTED $env(UNSUPPORTED)}  \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::UNTESTED $env(UNTESTED)}        \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::UNINITIATED $env(UNINITIATED)}  \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::NORESULT $env(NORESULT)}        \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::WARNING $env(WARNING)}          \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::TIMED_OUT $env(TIMED_OUT)}      \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::OTHER $env(OTHER)}              \
+	"ERROR uninitialized environment" "exit $uninit"
+
+# test variables
+ext_eval {set ::TESTROOT $env(TESTROOT)}        \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::SERVER $env(SERVER)}            \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::BASEDIR $env(BASEDIR)}          \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::ROOTDIR $env(ROOTDIR)}          \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::MNTPTR $env(MNTPTR)}          \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::NOTICEDIR $env(NOTICEDIR)}          \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::TMPDIR $env(TMPDIR)}            \
+	"ERROR uninitialized environment" "exit $uninit"
+ext_eval {set ::PORT $env(PORT)}                \
+	""                              {set ::PORT \"2049\"; return 0}
+ext_eval {set ::TRANSPORT $env(TRANSPORT)}      \
+	""                              {set ::TRANSPORT \"tcp\"; return 0}
+ext_eval {set ::DELM $env(DELM)}                \
+	""                              {set ::DELM \"/\"; return 0}
+ext_eval {set ::DEBUG $env(DEBUG)}              \
+	"" {set ::DEBUG 0; return 0}
+
+ext_eval {set ::BASEDIRS [path2comp $::BASEDIR $::DELM]} \
+	"ERROR invalid BASEDIR" "exit $uninit"
+
+#assume lease time 90 seconds if env var not available
+ext_eval {set ::LEASE_TIME $env(LEASE_TIME)}	\
+	""				{set ::LEASE_TIME 90; return 0}
+
+
+set ::IsZFS [ string equal $env(TestZFS) "1" ]
+
+set ::NULL 0
+

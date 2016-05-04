@@ -1,0 +1,93 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+#
+# Test ASSERTIONs for NFSv4 server namespace
+
+
+# Section name: NFS Server Name Space
+# Description:  Test NFS v4 server name space implementation
+# RFC 3010: Section 7
+#
+#T  Key Index                                                           Expected
+#y  (filename)              Assertion brief description                   Result
+#-------------------------------------------------------------------------------
+A srvnspc_pos01{a}  Readdir on rootFH, only see pseudo nodes			OK
+A srvnspc_pos01{b}  Readdir on exported node, can see whole dir			OK
+A srvnspc_pos01{c}  Readdir on pseudo node has same results w/Lookupp		OK
+
+A srvnspc_pos02{a}  Walk down the path thru pseudo & exported nodes		OK
+A srvnspc_pos02{b}  Verify mount point crossing					OK
+A srvnspc_pos02{c}  Check fsid for crossing filesystems				OK
+
+A srvnspc_pos03{a}  pseudo node's attrs are subset of supported_attrs		OK
+A srvnspc_pos03{b}  Getattr unsupported_attr(named_attr) in pseudo node		OK
+
+A srvnspc_pos04{a}  Verify LOOKUPP across mount point				OK
+A srvnspc_pos04{b}  Verify LOOKUPP backward thru mnt/export/pseudo nodes	OK
+A srvnspc_pos04{c}  Verify LOOKUPP of FS unshared sees underlying dir		OK
+A srvnspc_pos04{d}  Verify SECINFO of FS unshared OK with underlying dir	OK
+
+A srvnspc_neg01{a}  Verify not able to Create dir in pseudo node		ROFS 
+A srvnspc_neg01{b}  Verify not able Setattr in pseudo node			ROFS 
+
+A clntspc_mnt01{a} Verify v4 mount of server's exported point			successful
+A clntspc_mnt01{b} Verify v4 mount of dir below exported point			successful
+A clntspc_mnt01{c} Verify v4 mount of dir above exported point			successful
+
+A clntspc_mnt02{a} Verify v2 mount of server's exported point			successful
+A clntspc_mnt02{b} Verify v3 mount of dir below exported point			successful
+A clntspc_mnt02{c} Verify v3 mount of dir above exported point			fail
+A clntspc_mnt02{d} Verify v3 public mount of dir below exported point		successful
+A clntspc_mnt02{e} Verify v3 public mount of dir above exported point		fail
+
+A clntspc_mnt03{a} Verify pseudo path still work if mid-node is unshared	successful
+
+A clntspc_mnt04{a} Verify v4 NFS url mount of server's exported FS		successful
+A clntspc_mnt04{b} Verify v4 NFS url mount of a file below exported FS		successful
+A clntspc_mnt04{c} Verify v4 NFS url mount of ..				successful
+
+A clntspc_mnt05{a} Verify client can mount '/'					successful
+A clntspc_mnt05{b} Verify client can mount '/' with public			successful
+
+A clntspc_mnt06{a} Verify mounting symlink dir in a shared FS			succeed
+A clntspc_mnt06{b} Verify mounting symlink file (w/no perm) in a shared FS	succeed
+A clntspc_mnt06{c} Verify mounting symlink to nosuchdir				fail
+A clntspc_mnt06{d} Verify mounting symlink to out-of namespace dir(usr/lib)	fail
+A clntspc_mnt06{e} Verify mounting symlink to file in unshared cross-mount	fail
+A clntspc_mnt06{h} Verify mounting symlink to another shared FS			succeed
+A clntspc_mnt06{i} Verify mounting symlink to a non-shared FS w/in shared node	succeed
+A clntspc_mnt06{m} Verify mounting symlink dir w/relative path			succeed
+A clntspc_mnt06{n} Verify mounting symlink file w/relative path (. & ..)	succeed
+A clntspc_mnt06{o} Verify mounting symlink dir w/.. of shared inside shared FS	succeed
+A clntspc_mnt06{p} Verify mounting symlink to an absolute syml in shared FS	succeed
+
+A srvnspc_share01{a} Server share/unshare a file				succeed
+A srvnspc_share01{f} Server share/unshare a file mount it w/v3&4		succeed
+A srvnspc_share01{g} Server share/unshare a file mount it w/v4&2		succeed
+A srvnspc_share01{i} Server share dir under shared FS and unshare		fail
+A srvnspc_share01{m} Server share/unshare a symlinked dir in namespace		succeed
+A srvnspc_share01{n} Server share/unshare a symlinked dir outside namespace	fail
+

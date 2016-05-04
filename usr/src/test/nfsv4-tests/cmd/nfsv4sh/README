@@ -1,0 +1,166 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+NFS v4 shell - NFS Version 4 TCL Test Client
+====================================
+
+This user-level test client is a Tcl-based C program that generates
+and verifies NFS version 4 calls.  It is a shell like tool which can
+generate a wide variety of version 4 calls that cannot be generated
+from kernel-based clients or clients that are implemented behind a
+generic filesystem API such as Win32 or POSIX.  For instance, no
+client supports all the v4 attributes.
+
+This test client was inspired by previous work on a Tcl-based
+test client for NFS version 2 by James Lau and Dave Hitz of
+Network Appliance, Inc.
+
+------------------------------------------------------------------
+
+Contents in this directory:
+==========================
+
+    README	- this file
+    Makefile	- top level Makefile
+    Makefile.master - Global definitions for including into other Makefiles
+    nfsh/	- source files for the nfsh tool
+    scripts/	- sample tcl scripts using 'nfsh' to test NFSv4 server
+    nfs4_prot.x - the current version of NFSv4 definitions (rfc3010updates)
+    
+
+Requirements:
+============
+
+1. TCL
+
+   NFS v4 shell provides a TCL environment; thus required TCL header
+   files and libraries to build and use.  The TCL version used for
+   development of this tool is 8.5.  A copy may be downloaded from the
+   website http://dev.scriptics.com/software/tcltk; and follow the TCL
+   instructions to build the TCL libraries.  Or a pre-compiled TCL
+   package may be used.
+
+   The following header files and libraries are needed for this nfsh
+   under the ${TCL_DIR}, e.g. /usr or /opt/TCL85:
+
+        ${TCL_DIR}/include/   
+			tcl.h, tclDecls.h, tclPlatDecls.h
+        ${TCL_DIR}/lib/
+			libtcl8.5.so
+        ${TCL_DIR}/lib/tcl8.5
+			init.tcl
+
+   If you install a different version of TCL, you may need to update
+   the ${TCL_LIB} in the Makefile.master to provide the correct
+   library.  The nfsh tool depends the above tcl files to build and
+   execute.
+
+   Important note:
+	
+	nfsh uses a file, tclprocs, to initialize shared procedures.
+	This file is installed in the same location as nfsh.  If
+	tclprocs is not located in the same directory as nfsh, then
+	the $PATH environment variable should include the directory
+	where the tclprocs file is located.
+
+2. Compiler
+
+   User should have their C compiler and make utilities in the PATH.
+
+3. RPCGEN
+
+   The "rpcgen" utility is used to generate the nfs4_prot.h and xdr*.c
+   files.  If you create your own xdr* programs and header files, you
+   can copy them to the "nfsh" directory and comment out the rpcgen
+   section from the nfsh/Makefile.
+
+
+To run the program:
+==================
+
+The nfsh program is installed in the bin directory.  To execute the
+program:
+
+  $ cd ../bin
+  $ ./nfsh
+     (or run any of the provided tcl scripts)
+
+Please refer to "nfsh.man" (manpage) under ./nfsh directory for
+details how to run "nfsh" tool; and the usage of each implemented NFS
+version 4 operation.
+
+The following is sample output from one of the tcl sample scripts:
+
+  $ cd ../bin
+  $ ./test dragonite export/v4/dir1
+  compound returned Status=[OK]
+	Putrootfh OK
+	Lookup OK
+	Getfh OK 0080000700000002000A000000005900099ACD63000A0000000016406A35C717
+	Readdir OK 0000000000000000 {{000000000000000C . {{type dir}
+  {size 512}}} {0000000000000018 .. {{type dir} {size 512}}} 
+  {0000000000000028 file1 {{type reg} {size 30}}} {0000000000000038 dir2 
+  {{type dir} {size 512}}} {000000000000004C file.empty {{type reg}
+  {size 0}}} {0000000000000060 file_noperm {{type reg} {size 30}}} 
+  {0000000000000200 file.bin {{type reg} {size 18204}}}} true
+	Access OK {supported=[MODIFY,EXTEND]} {access=[]}
+	Putrootfh OK
+	Getattr OK {{type dir} {change 4111984389472839712} {size 1024}
+  {link_support true} {cansettime true} {mode 755} {time_modify 
+  {957395972 410708000}}}
+  $
+
+------------------------------------------------------------------
+
+Bugs/Gotchas:
+============
+
+Please note, the nfsh is still under development.  Therefore, some
+NFSv4 operations have not yet been implemented.  Please see "nfsh.man"
+for more information on what features are currently available.
+
+  Bugs -
+
+  Gotchas -
+
+    1. compilation may fail if TCL_DIR is defined incorrectly.
+
+    2. When calling Setattr with a long list of attributes, the
+       program may dump core at some TCL_*() functions.  One
+       way to work around it is to set the arguments as variables
+       and use the variables in the compound call, e.g.:
+	% % set path "export v4 f1"
+	export v4 f1
+	% set now "[ clock seconds] 0"
+	961805699 0
+	%
+	% compound { ...; Setattr 0 {{time_modify_set $now}}}
+	{Putrootfh OK} {Lookup OK} {Setattr OK {time_modify_set}}
+
+    3. The "clock format" command can print "nicetimedate":
+	% clock format [clock seconds]
+	Fri Jun 23 17:18:34 PDT 2000
+	% 
+

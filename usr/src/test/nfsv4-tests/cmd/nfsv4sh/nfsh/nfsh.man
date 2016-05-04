@@ -1,0 +1,716 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+NFS Version 4 Test Client
+=========================
+
+The "nfsh" program provides a Tcl environment extended with the
+following commands:
+
+
+connect
+
+	[ -p port ] [ -t transport] [-s security mechanisms] <hostname> 
+		-> (null)
+
+	Creates an RPC client handle to the named server.
+	By default the connection is established over a
+	TCP connection to port 2049 with AUTH_SYS.
+	
+	The -p and -t options can be used to modify the port 
+	number or to provide an alternative transport: currently
+	"udp" or "tcp".  
+	
+	The -s option is used to specify the security mechanisms:
+	currently "sys", "krb5", "krb5i" or "krb5p".  The "nfsh"
+	needs to enable the "KRB5=_RPCGSS" flag in the Makefile.master
+	before compilation; and requires RPCSEC_GSS library.
+
+	The connection persists until the script completes, or 
+	the "disconnect" command is used, or a new connection 
+	is created with "connect".
+
+disconnect
+
+	(null) -> (null)
+
+	Disconnects a connection established by the "connect"
+	command. If the connection is over TCP, the client
+	will actively drop the TCP connection.
+
+exit
+	Exit the nfsv4shell.
+
+compound
+	{ op ; op ; ... } -> { {result} {result} ...}
+
+	The compound command accepts a list of compound
+	operations and returns a list of results. The
+	operations are listed below, each with their result.
+	On completion of the compound operation, the Tcl
+	variable "status" is set to the overall status
+	value for the v4 operation - normally "OK".
+	The compound command sets the compound "tag" string
+	to the contents of the Tcl "tag" variable.
+
+	Each op uses the same naming convention as the
+	operation, but with the first character capitalized.
+
+	Currently, the following compound ops are implemented:
+
+	Access
+		{ rlmtdxi } -> { supported access }
+
+		The argument is any of the "r,l,m,t,d,x" character,
+		representing the following:
+			r -> ACCESS4_READ
+			l -> ACCESS4_LOOKUP
+			m -> ACCESS4_MODIFY
+			t -> ACCESS4_EXTEND
+			d -> ACCESS4_DELETE
+			x -> ACCESS4_EXECUTE
+			i -> 0x00000100 (illegal access bit)
+
+		The result prints out the supported and the access
+		value returned by the server.
+
+	Close
+		{ seqid stateid{seqid other} } -> { stateid{seqid other} }
+
+		This operation requires 2 arguments, the seqid and 
+		stateid where stateid is a two fields argument consists
+		of {seqid other} returning by Open op, closes the file 
+		with <cfh> and prints out the stateid.
+
+	Commit
+		{ offset count } -> { writeverf }
+
+		This operation requires 2 arguments, the offset and
+		the count, which the data to be flushed out.
+
+		The result prints out the write verifier.
+	
+	Create
+		{ objname {{name val} ...} {s | f | d | l linkdata |
+			b specd1 specd2 | c specd1 specd2}
+			-> { {atomic before after} { {name val} {name val} ... }
+
+		This operation requires 2 arguments.  First argument
+		is the objname.  The second argument is a single
+		character from the following list:
+			l -> of type NF4LNK
+			b -> of type NF4BLK
+			c -> of type NF4CHR
+			s -> of type NF4SOCK
+			f -> of type NF4FIFO
+			d -> of type NF4DIR
+
+		Some type from the above list need more arguments.
+		Thus, the usage for each type looks like:
+			l -> Create objname l linkdata
+			b -> Create object b specd1 specd2
+			c -> Create object c specd1 specd2
+			s -> Create object
+			f -> Create object
+			d -> Create object
+
+		The result prints out true/false of atomic,
+		before and after ids.  The before and after
+		ids are 64-bit values represented as decimal
+		numbers.  It also returns the attribute list.
+
+	Delegpurge
+		{ clientid } -> (null)
+
+		This operation takes the clientid argument, purges
+		all of the delegations awaiting recovery for a 
+		given client.
+
+		The status of the operation will be printed.
+
+	Delegreturn
+		{ stateid{seqid other} } -> (null)
+
+		This operation takes the stateid (which is a two
+		fields) argument, returns the delegation represented
+		by the given stateid.
+
+		The status of the operation will be printed.
+
+	Getattr
+		{ name name ... } -> { {name val} {name val} ...}
+
+		The argument is a list of attribute names that
+		are to be retrieved.  The names are converted
+		to a protocol bitmap.
+
+		The result is a list of attributes, each as a 
+		name/value pair.  Each name/value pair is presented
+		as a sublist, e.g. "{ type dir }". More complex
+		attribute values are presented as sublists, e.g.
+		"{ time_modify { 1288560 0 }}"
+		Attribute names are string values derived from
+		the protocol spec.
+
+	Getfh
+		(null) -> filehandle
+
+		Returns the value of the current filehandle.
+		Most commonly follows an Lookup.
+		The filehandle value is presented as a
+		hexadecimal string.
+
+	Link
+		{ newname } -> { atomic before after }
+
+		The argument is the new name to be created.
+
+		The results prints out true/false of atomic,
+		before and after ids.  The before and after
+		ids are 64-bit values represented as decimal
+		numbers.
+
+	Lock
+		{ ltype reclaim(T|F) offset length newlock(T|F)
+		  stateid{seqid other} lseqid {oseqid clientid owner} }
+			-> { stateid access }
+
+		This operation requires 8 arguments, including
+		the locktype in numeric, with the following:
+			1 - READ_LT 
+			2 - WRITE_LT
+			3 - READW_LT  ( blocking read )
+			4 - WRITEW_LT ( blocking write) 
+
+		the reclaim, which would be a single letter of 'T' 
+		(true) or 'F' (false); the offset and length in the 
+		file from <cfh> to be locked; the stateid with 2 fields
+		{seqid other}, the lock_seqid; If this is new lock, 
+		the open_seqid, clientid and owner are also required.
+
+		If the operation is successful, the stateid will
+		be printed.  If the lock is denied, the owner,
+		offset and length of conflicted lock on file.
+
+	Lockt
+		{ type clientid owner_val offset length } -> { owner }
+
+		Similar to Lock operation, it takes the following
+		locktype as the first argument:
+			1 - READ_LT 
+			2 - WRITE_LT
+			3 - READW_LT  ( blocking read )
+			4 - WRITEW_LT ( blocking write) 
+
+		the other arguments includes clientid, the owner
+		name and the offset and length of the lock to be
+		tested.
+		
+		If the operation is successful, the stateid will
+		be printed.  If the lock is denied, the owner,
+		offset and length of conflicted lock on file.
+
+	Locku
+		{ type seqid stateid{seqid other} offset length }
+			-> { stateid }
+
+		Similar to Lockt operation, it takes the following
+		locktype as the first argument:
+			1 - READ_LT 
+			2 - WRITE_LT
+			3 - READW_LT  ( blocking read )
+			4 - WRITEW_LT ( blocking write) 
+
+		the other arguments includes lock_seqid, stateid with
+		2 fields {seqid other}, the offset and length in the
+		file to be unlocked.
+		
+		If the operation is successful, the stateid will
+		be printed.  If the lock is denied, the stateid
+		will be printed.
+
+	Lookup
+		{ name } -> (null)
+
+		Accepts the component name to be looked and sets the 
+		current filehandle to it.  The result status will be
+		returned.
+		
+	Lookupp
+		(null) -> (null)
+		
+		Returns the result status.
+
+	Nverify
+		{ {name val} {name {v1 v2}} ... } -> (null)
+		
+		Accepts a list of attributes in the form of
+		{name val} pairs.  Returns the result status.
+
+	Open
+		{ seqid access deny {clientid owner}
+		  {opentype createmode {{name val} {name val}...} | createverf}
+		  {claim {filename | delegate_type | delegate_stateid filename}}
+		}
+		    -> { stateid{seqid other} cinfo rflags {{name val} ...}
+			 delegation }
+
+		This operation takes 6 arguments with some
+		arguments have different fields. Basically
+		it needs:
+		  the open_seqid
+		  and the share_access (1-READ, 2-WRITE, 3-ACCESS_BOTH)
+		  and the share_deny   (0-DENY_NONE, 1-DENY_READ,
+					2-DENY_WRITE, and 3-DENY_BOTH)
+		  and { clientid owner } 		(the owner pair)
+		  and one of the following open_type(s):
+		    { 0 junkfield1 junkfield2 } 	(NOCREATE)
+		    { 1 
+			{ 0 { {name val} {name val} ... } } (CREATE/UNCHECKED)
+			{ 1 { {name val} {name val} ... } } (CREATE/GARDED)
+			{ 2 createverf } } 		(CREATE/EXCLUSIVE)
+		    } 					(CREATE)
+		  and one of the following claim_type(s):
+		    { 0 filename } 			(CLAIM_NULL)
+		    { 1 delegate_type } 		(CLAIM_PREVIOUS)
+		    { 2 {filename delegate_stateid } }  (CLAIM_DELEGATE_CUR)
+		    { 3 filename } 			(CLAIM_DELEGATE_PREV)
+		arguments.
+
+		The results returned from server will be printed 
+		based on the argument, including status, stateid
+		{seqid other}, change_info, rflags, attributes and the 
+		delegation_type.
+
+		See "Examples" section for the compound sample of Open call. 
+
+	Openattr
+		{ createdir } -> (null)
+
+		It takes an argument of createdir, "T" (true) or "F"
+		(false) value; sets the current filehandle of the named 
+		attribute directory associated with the current filehandle.
+
+	Open_confirm
+		{ open_stateid{seqid other} seqid } -> { stateid }
+
+		This operation takes the open_stateid and the sequence id 
+		confirms the stateid and owner.
+
+		If it is successful, the stateid will be printed.
+
+	Open_downgrade
+		{ stateid{seqid other} seqid access deny } 
+			-> { stateid{seqid other} }
+
+		  This operation takes the stateid, sequence id 
+		  access and deny, 4 arguments; and to reduce
+		  the Open file access.
+
+		  If it is successful, the stateid will be printed.
+
+	Putfh
+		{ filehandle } -> (null)
+
+		Accepts a hexadecimal encoded filehandle as
+		and argument and sets the current filehandle.
+
+	Putpubfh
+		(null) -> (null)
+
+		Sets the current filehandle to the public
+		filehandle.
+
+	Putrootfh
+		(null) -> (null)
+
+		Sets the current filehandle to the root
+		filehandle.
+
+	Read
+		{ stateid{seqid other}, offset, count } -> { eof len data }
+
+		It takes 3 arguments, the open_stateid (with 2 fields,
+		seqid and other), the offset and the length to read.
+
+		The result prints out the true/false value of eof,
+		the len and the data.  Right now the data is printed 
+		as binary string. 
+
+	Readdir
+		{ cookie verifier dircount maxcount { name name ...} }
+			-> { verifier { { cookie name 
+				{ {name val} {name val} ...} } ... } }
+
+		One of the more complex compound ops.  Readdir op
+		takes 5 arguments.  The cookie and verifier values
+		are given as hexadecimal strings. On the first
+		call a cookie of "0" is used.  The final argument
+		is a list of attributes to be returned for
+		each directory entry.
+
+		The result begins with a verifier, followed by
+		a list of entries.  Each entry begins with the
+		entry cookie followed by the entry name.  The
+		third element of each entry is a list of attribute
+		names and values - as would be returned by Getattr.
+		The final value returned is a boolean eof value.
+		if eof is set to "true" then the end of the
+		directory has been reached.  The readdir.tcl
+		script shows an example of readdir use.
+
+	Readlink
+		(null) -> { linkdata }
+
+		Reads the linkdata pointed by the <cfh>; 
+		Returns the result status and linkdata.
+
+	Release_lockowner
+		{ clientid lock_owner } -> { null }
+
+		It takes the clientid and lock_owner value to
+		the server to release the state related to this
+		lockowner.  The result status will be printed.
+
+	Remove 
+		{ target } -> (null)
+
+		Accepts the target name to be removed.
+		Returns the result status.
+
+	Rename
+		{ oldname newname } ->
+				{ source { atomic before after }
+				  target { atomic before after }}
+
+		This operation requires 2 arguments as string,
+		oldname and newname, which the oldname will be
+		renamed to the newname.
+
+		The results prints out true/false of atomic,
+		before and after ids.  The before and after
+		ids are 64-bit values represented as decimal
+		numbers.
+
+	Renew
+		{ clientid } -> (null)
+
+		This operation takes the clientid to renew the 
+		leased holds at the server.
+
+	Restorefh
+		(null) -> (null)
+
+		Restore the saved filehandle to the current
+		filehandle.
+
+	Savefh
+		(null) -> (null)
+	
+		Save the current filehandle.
+
+	Secinfo
+		{ name } -> { sec_favor_info }
+
+		Given the filename, this operation returns the 
+		security mechanisms information based on the 
+		favor.  If the favor is RPCSEC_GSS, the security
+		triple of the rpc_gss_svc will be printed out.
+
+	Setattr
+		{ stateid{seqid other} { {name val} {name {v1 v2}} ... } }
+			-> { attr_name attr_name }
+			
+		This operation sends the request to server
+		to set the attributes listed in the {name val}
+		pairs.  It requires 2 arguments.  The first
+		argument is the stateid with 2 fields (seqid other).  
+		The second argument is the sublist of {name val} 
+		pairs of the attributes to be set.  The "name" must
+		be all lower case and the same names as defined in 
+		the spec.  If the "val" portion has two values,
+		e.g. the seconds and nseconds in nfstime4 
+		structures for time attribute, the { } must be
+		used. An example of the Setattr command can be:
+		Setattr 0 { {mode 0666} {owner v4user}
+			    {time_modify_set {sec nsec}} }
+
+		You may use the "clock seconds" TCL command
+		to get the current time second value.
+
+		The result prints the names of the bits 
+		that are set by the server.
+
+	Setclientid
+		{ verifier id_string {cb_prog netid addr} } 
+			-> { clientid setclientid_confirm }
+
+		Given the verifier and client id_string pair,
+		this operation sets the client id.  
+		
+		Note: the callback function for delegation 
+		has not yet been implemented.  The callback
+		cb_program is currently set to 0, and same
+		as the callback_ident.
+
+	Setclientid_confirm
+		{ clientid setclientid_confirm } -> (null)
+
+		Given the clientid and the setclientid_confirm
+		verifier returned by the server from the 
+		Setclientid call as the argument, this operation 
+		confirms the clientid.
+		
+	Verify
+		{ {name val} {name {v1 v2}} ... } -> (null)
+		
+		Accepts a list of attributes in the form of
+		{name val} pairs.  Returns the result status.
+
+	Write
+		{ stateid{seqid other} offset stable_how datatype data } 
+			-> { count committed verifier }
+
+		Accepts regular list of 5 arguments, where the
+		"stable_how" is asking for one character with
+		the following representation:
+			u -> UNSTABLE
+			d -> DATA_SYNC
+			f -> FILE_SYNC
+		e.g. "Write {0 0} 2 f a {data to write}" means to
+		write (to cfh) the data starting at offset=2,
+		and stateid={0 0} and file_sync the 'ascii' data.
+
+		Currently it takes only ascii string for the data.
+		Hex string will be supported in the future.
+
+		The result prints out the count, committed level
+		and the verifier returned from the server.
+
+		Note: the writing of hex (UTF8) characters has not
+		yet been implemented.  Currently it only works for
+		ASCII characters.
+-----------------------------------------
+
+Other commands
+--------------
+
+If the "tclprocs" TCL procedures scripts is included
+in the currently directory, all procedures/commands
+can be freely used in 'nfsh'.  Please see the tclprocs
+script for the available procedures.
+
+-----------------------------------------
+
+Examples
+--------
+
+	There are tcl scripts under 'scripts' directory which
+	show how the tool is used in batch mode, including:
+	
+	  tclprocs    - commonly used TCL procedures 
+	  attributes  - prints the attributes of a file/dir
+	  ckerrors    - checks server error responses of ops
+	  lock_neg    - test some irregular conditions of Lock/Open/Close
+	  opensimple  - simple test for open ops
+	  pathhandles - evaluates a path and prints FH
+	  readdir     - reads a directory
+	  setattr     - set attributes on a file
+	  tcopy       - local-to-remote or remote-to-local file copy
+	  test        - a test for some basic ops
+	  trylock     - test Open/Lock/Locku/Lockt/Close operations
+	  walk        - walks down a directory
+
+	For example:
+
+	- Output of the "trylock" script:
+	  $./trylock wnfspc /export/test
+
+	  Setclientid 103129416501010 16746 ...
+	  Res: {Setclientid OK {3d77d559000000e2 0000000000000000}}
+
+	  Setclientid_confirm 3d77d559000000e2 0000000000000000 ...
+	  Res: {Setclientid_confirm OK}
+
+	  Open to create tfile.16746 ...
+	    Open 1 3 0 {3d77d559000000e2 16746} {1 0 {{mode 0664} {size 88}}} {0 tfile.16746}
+	    Res: {Putfh OK} {Open OK {0 3D77D559000000E800000000} {{atomic false} {before 3d784b4514a46c80} {after 3d784bda1f426160}} 6 {size mode} NONE} {Getfh OK 01D8000700000002000A0000000004EF2A51238A000A00000000000C0012BEA20000000000000000} {Getattr OK {{size 88} {mode 664}}}
+
+	    Lock 2 F 0 1024 T (0 3D77D559000000E800000000) 1 (2 3d77d559000000e2 16746)
+	    Res: {Putfh OK} {Lock OK {1 3D77D559400000E800000080}}
+
+	    first LOCKT with owner(3d77d559000000e2 fake_owner) of region 0-1024
+	    Res: {Putfh OK} {Lockt DENIED {0 1024 2} {3d77d559000000e2 16746}}
+
+	    second LOCKT with owner(3d77d559000000e2 fake_owner) of region 1025-2048
+	    Res: {Putfh OK} {Lockt OK}
+
+	    third LOCKT with owner(3d77d559000000e2 16746) of region 0-1024
+	    Res: {Putfh OK} {Lockt OK}
+
+	    Locku 2 2 (1 3D77D559400000E800000080) 0 1024
+	    Res: {Putfh OK} {Locku OK {2 3D77D559400000E800000080}}
+
+	    forth LOCKT with owner(3d77d559000000e2 fake_owner) of region 0-1024
+	    Res: {Putfh OK} {Lockt OK}
+
+	    Final Close 2 (0 3D77D559000000E800000000) ...
+	    Res: {Putfh OK} {Close OK {1 3D77D559000000E800000000}}
+
+	    Open with/non-CREATE tfile.16746 ...
+	      Open 2 3 0 {3d77d559000000e2 16746} {0 0 {{mode 0664} {size 88}}} {0 tfile.16746}
+	      Res: {Putfh OK} {Open OK {0 3D77D559000000E900000000} {{atomic true} {before 3d784bda1f6f7470} {after 3d784bda1f6f7470}} 6 {} NONE} {Getfh OK 01D8000700000002000A0000000004EF2A51238A000A00000000000C0012BEA20000000000000000}
+
+	      Final Close 2 (0 3D77D559000000E900000000) ...
+	      Res: {Putfh OK} {Close OK {1 3D77D559000000E900000000}}
+
+	      Remove tfile.16746 ...
+	      Res: {Putfh OK} {Remove OK {{atomic false} {before 3d784bda1f426160} {after 3d784bda26ec0128}}}
+
+
+	- Try another script "setattr":
+	  $ setattr javanfs2 /export/test
+	  Attributes Before Setattr (at Fri Jan 18 12:01:37 PST 2002): 
+		  File size        = 0
+		  Mode bits        = 640
+		  Owner            = tuser1@eng.sun.com
+		  Group            = staff@eng.sun.com
+		  Access time      = 1011383961 230000000 - Fri Jan 18 11:59:21 PST 2002
+		  Modified time    = 1011383961 230000000 - Fri Jan 18 11:59:21 PST 2002
+	  Now sleep for 30 seconds ...
+	  New attributes after Setattr (at Fri Jan 18 12:02:08 PST 2002): 
+		  File size        = 8888
+		  Mode bits        = 765
+		  Owner            = tuser1@eng.sun.com
+		  Group            = staff@eng.sun.com
+		  Access time      = 1011383910 0 - Fri Jan 18 11:58:30 PST 2002
+		  Modified time    = 1011383991 309992000 - Fri Jan 18 11:59:51 PST 2002
+	  $
+
+
+
+	The tool can also be used interactively from command line.
+	For example:
+
+	$ nfsh
+	% connect krbsec3
+	% compound {Putrootfh; Lookup {export v4}; Getattr {type}}
+	{Putrootfh OK} {Lookup OK} {Getattr OK {{type dir}}}
+	% 
+	% set fh [ get_fh {export v4 dir1} ]
+	0080000700000002000A000000005900099ACD63000A0000000016406A35C71700000000
+	% 
+	% set res [ compound {Putfh $fh; Readdir 0 0 1024 1024 {type size}} ]
+	{Putfh OK} {Readdir OK 0000000000000000 {{0000000000000028 file1 
+	{{type reg} {size 30}}} {0000000000000038 dir2 {{type dir} {size 512}}}
+	{000000000000004C file.empty {{type reg} {size 0}}} {0000000000000060
+	file_noperm {{type reg} {size 30}}} {0000000000000200 file.bin 
+	{{type reg} {size 18204}}}} true}
+	% 
+	% prn_dirlist [ lindex [lindex $res 1] 3 ]
+  	  file1
+        	File type        = file
+        	File size        = 30
+  	  dir2
+        	File type        = dir
+        	File size        = 512
+  	  file.empty
+        	File type        = file
+        	File size        = 0
+  	  file_noperm
+        	File type        = file
+        	File size        = 30
+  	  file.bin
+        	File type        = file
+        	File size        = 18204
+	% 
+	% disconnect
+	% exit
+
+
+	Results can also be verified and formatted with TCL
+	commands using the scripts.
+
+
+	Here is a simple example for the Open call to create
+	a file called "file.2" with mode=0644 under the sun-8 directory:
+
+	$ nfsh
+	% connect -t udp wnfspc
+	% compound {Setclientid 188888 aowner {0 0 0}}
+	{Setclientid OK {3d77d559000000e3 0000000000000000}}
+	%  compound {Setclientid_confirm 3d77d559000000e3 0000000000000000}
+	{Setclientid_confirm OK}
+	% set dfh [get_fh {export test}]
+	01D8000700000002000A00000000000C0012BEA2000A00000000000C0012BEA20000000000000000
+	% set res [compound {Putfh $dfh; Open 1 3 0 {3d77d559000000e3 aowner} {1 0 {{mode 0644}}} {0 file.2}; Getfh}]
+	{Putfh OK} {Open OK {0 3D77D559000000EA00000000} {{atomic false} {before 3d784bda26ec0128} {after 3d784d1405223968}} 6 {mode} NONE} {Getfh OK 01D8000700000002000A00000000091A3143D7C6000A00000000000C0012BEA20000000000000000}
+	% set stateid [lindex [lindex $res 1] 2]
+	0 3D77D559000000EA00000000
+	% set fh [lindex [lindex $res 2] 2]
+	01D8000700000002000A00000000091A3143D7C6000A00000000000C0012BEA20000000000000000
+	% compound {Putfh $fh; Open_confirm $stateid 2}
+	{Putfh OK} {Open_confirm OK {0 3D77D559000000EA00000000}}
+	% 
+
+
+Note - we can use variables inside NFS operation's parameters. Actually, this 
+shell support all normal TCL substitutions (backslash, variable and command).
+
+-----------------------------------------
+Variables
+---------
+
+The client uses sets some Tcl variables:
+
+	nfsh_version
+		The current version of nfsv4shell
+		tool.  If "Unknown" is returned,
+		the NFSH_VERS is not set at compile
+		time.
+
+	status
+		The status value returned by a
+		compound operation.  It will be
+		"OK" if the compound op completed
+		successfully.  Otherwise, it will
+		be the error code. The error code
+		is the same as the protocol spec
+		with the "NFS4ERR_" prefix removed,
+		e.g. "STALE".	
+	tag
+		If set, the tag string will be used
+		as the compound tag.  The variable
+		is set to the returned tag (in case
+		the server changed it).
+
+	opcount
+		A count of the number of compound
+		ops that were successfully executed
+		by the server.
+
+
+	

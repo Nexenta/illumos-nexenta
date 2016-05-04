@@ -1,0 +1,547 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2016, Nexenta Systems Inc. All rights reserved.
+#
+
+set name=pkg.fmri value=pkg:/system/test/nfsv4@$(PKGVERS)
+set name=pkg.description value="NFSv4 Test Suite"
+set name=pkg.summary value="NFSv4 Functional Tests"
+set name=info.classification \
+    value=org.opensolaris.category.2008:Development/System
+set name=variant.arch value=$(ARCH)
+dir path=opt/nfsv4-tests
+dir path=opt/nfsv4-tests/bin
+dir path=opt/nfsv4-tests/tests
+dir path=opt/nfsv4-tests/tests/acl
+dir path=opt/nfsv4-tests/tests/acl/cmd_tests
+dir path=opt/nfsv4-tests/tests/acl/srv_tests
+dir path=opt/nfsv4-tests/tests/basic_ops
+dir path=opt/nfsv4-tests/tests/basic_ops/access
+dir path=opt/nfsv4-tests/tests/basic_ops/close
+dir path=opt/nfsv4-tests/tests/basic_ops/commit
+dir path=opt/nfsv4-tests/tests/basic_ops/create
+dir path=opt/nfsv4-tests/tests/basic_ops/getattr
+dir path=opt/nfsv4-tests/tests/basic_ops/getfh
+dir path=opt/nfsv4-tests/tests/basic_ops/link
+dir path=opt/nfsv4-tests/tests/basic_ops/locksid
+dir path=opt/nfsv4-tests/tests/basic_ops/lookup
+dir path=opt/nfsv4-tests/tests/basic_ops/lookupp
+dir path=opt/nfsv4-tests/tests/basic_ops/nverify
+dir path=opt/nfsv4-tests/tests/basic_ops/open
+dir path=opt/nfsv4-tests/tests/basic_ops/openattr
+dir path=opt/nfsv4-tests/tests/basic_ops/openconfirm
+dir path=opt/nfsv4-tests/tests/basic_ops/putfh
+dir path=opt/nfsv4-tests/tests/basic_ops/putpubfh
+dir path=opt/nfsv4-tests/tests/basic_ops/putrootfh
+dir path=opt/nfsv4-tests/tests/basic_ops/read
+dir path=opt/nfsv4-tests/tests/basic_ops/readdir
+dir path=opt/nfsv4-tests/tests/basic_ops/readlink
+dir path=opt/nfsv4-tests/tests/basic_ops/release_lockowner
+dir path=opt/nfsv4-tests/tests/basic_ops/remove
+dir path=opt/nfsv4-tests/tests/basic_ops/rename
+dir path=opt/nfsv4-tests/tests/basic_ops/renew
+dir path=opt/nfsv4-tests/tests/basic_ops/restorefh
+dir path=opt/nfsv4-tests/tests/basic_ops/savefh
+dir path=opt/nfsv4-tests/tests/basic_ops/secinfo
+dir path=opt/nfsv4-tests/tests/basic_ops/setattr
+dir path=opt/nfsv4-tests/tests/basic_ops/setclientid
+dir path=opt/nfsv4-tests/tests/basic_ops/verify
+dir path=opt/nfsv4-tests/tests/basic_ops/write
+dir path=opt/nfsv4-tests/tests/named_attrs
+dir path=opt/nfsv4-tests/tests/named_attrs/attrops
+dir path=opt/nfsv4-tests/tests/named_attrs/cmds
+dir path=opt/nfsv4-tests/tests/num_attrs
+dir path=opt/nfsv4-tests/tests/other_tests
+dir path=opt/nfsv4-tests/tests/other_tests/domain
+dir path=opt/nfsv4-tests/tests/other_tests/uidmapping
+dir path=opt/nfsv4-tests/tests/recovery
+dir path=opt/nfsv4-tests/tests/srv_namespc
+file path=opt/nfsv4-tests/README mode=0444
+file path=opt/nfsv4-tests/bin/acltools mode=0555
+file path=opt/nfsv4-tests/bin/compile mode=0555
+file path=opt/nfsv4-tests/bin/fillDisk mode=0555
+file path=opt/nfsv4-tests/bin/getTestFSType mode=0555
+file path=opt/nfsv4-tests/bin/get_tunable mode=0555
+file path=opt/nfsv4-tests/bin/getleasetm mode=0555
+file path=opt/nfsv4-tests/bin/go_cleanup mode=0555
+file path=opt/nfsv4-tests/bin/go_setup mode=0555
+file path=opt/nfsv4-tests/bin/lcltools mode=0555
+file path=opt/nfsv4-tests/bin/libsmf.shlib mode=0444
+file path=opt/nfsv4-tests/bin/mk_srvdir mode=0555
+file path=opt/nfsv4-tests/bin/nfs4test.env mode=0444
+file path=opt/nfsv4-tests/bin/nfsh mode=0755
+file path=opt/nfsv4-tests/bin/nfsv4test mode=0555
+file path=opt/nfsv4-tests/bin/operate_dir mode=0555
+file path=opt/nfsv4-tests/bin/runit mode=0555
+file path=opt/nfsv4-tests/bin/runtests mode=0555
+file path=opt/nfsv4-tests/bin/set_nfstunable mode=0555
+file path=opt/nfsv4-tests/bin/setupFS mode=0555
+file path=opt/nfsv4-tests/bin/srv_setup mode=0555
+file path=opt/nfsv4-tests/bin/tcl.init mode=0444
+file path=opt/nfsv4-tests/bin/tclprocs mode=0555
+file path=opt/nfsv4-tests/bin/testproc mode=0555
+file path=opt/nfsv4-tests/bin/testsh mode=0555
+file path=opt/nfsv4-tests/bin/v4test.cfg mode=0444
+file path=opt/nfsv4-tests/tests/acl/README mode=0444
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/ACL.utils mode=0444
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/CMD_TESTS.flist mode=0444
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/README mode=0444
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/getfacl_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/runtests mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_pos05 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_pos06 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_pos07 mode=0555
+file path=opt/nfsv4-tests/tests/acl/cmd_tests/setfacl_pos09 mode=0555
+file path=opt/nfsv4-tests/tests/acl/runtests mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/README mode=0444
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl.flist mode=0444
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos00 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos04 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos05 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos06 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos07 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos08 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos09 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos10 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_dir_pos11 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_neg00 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_pos00 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_pos04 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_pos05 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/acl_pos06 mode=0555
+file path=opt/nfsv4-tests/tests/acl/srv_tests/data.cfg mode=0444
+file path=opt/nfsv4-tests/tests/acl/srv_tests/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/README mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/access/ACCESS.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/access/ACCESS.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/access/ACCESS_proc mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/access/access_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/access/access_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/access/access_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/access/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/close/CLOSE.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/close/close_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/close/close_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/close/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/commit/COMMIT.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/commit/COMMIT.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/commit/commit_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/commit/commit_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/commit/commit_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/commit/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/CREATE.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/create/CREATE.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/create/CREATE_proc mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_neg05 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_pos04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/create_pos05 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/create/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getattr/GETATTR.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/getattr/GETATTR.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/getattr/getattr_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getattr/getattr_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getattr/getattr_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getattr/getattr_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getattr/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getfh/GETFH.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/getfh/GETFH.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/getfh/getfh_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getfh/getfh_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/getfh/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/link/LINK.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/link/LINK.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/link/LINK_proc mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/link/link_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/link/link_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/link/link_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/link/link_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/link/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/LOCKsid.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/LOCKsid.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_neg05 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_neg06 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_neg07 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/locksid_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/srv_recov01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/srv_recov02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/srv_recov03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/locksid/srv_recov04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/lookup/LOOKUP.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/lookup/LOOKUP.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/lookup/lookup_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/lookup/lookup_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/lookup/lookup_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/lookup/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/lookupp/LOOKUPP.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/lookupp/LOOKUPP.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/lookupp/lookupp_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/lookupp/lookupp_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/lookupp/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/nverify/NVERIFY.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/nverify/NVERIFY.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/nverify/nverify_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/nverify/nverify_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/nverify/nverify_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/nverify/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/OPEN.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/open/OPEN.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/open/OPEN_proc mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg05 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg06 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg07 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg08 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg09 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_neg10 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/open_pos10 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/open/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/OPENATTR.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/OPENATTR.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/openattr_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/openattr_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/openattr_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/openattr_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/openattr_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/openattr_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openattr/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openconfirm/OPENCONFIRM.flist \
+    mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/openconfirm/openconfirm_neg01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openconfirm/openconfirm_pos01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/openconfirm/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putfh/PUTFH.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/putfh/PUTFH.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/putfh/putfh_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putfh/putfh_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putfh/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putpubfh/PUTPUBFH.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/putpubfh/PUTPUBFH.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/putpubfh/putpubfh_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putpubfh/putpubfh_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putpubfh/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putrootfh/PUTROOTFH.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/putrootfh/PUTROOTFH.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/putrootfh/putrootfh_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putrootfh/putrootfh_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/putrootfh/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/READ_proc mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/read_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/read_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/read_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/read_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/read_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/read_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/read/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readdir/READDIR.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/readdir/READDIR.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/readdir/readdir_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readdir/readdir_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readdir/readdir_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readdir/readdir_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readdir/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readlink/READLINK.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/readlink/READLINK.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/readlink/readlink_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readlink/readlink_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/readlink/runtests mode=0555
+file \
+    path=opt/nfsv4-tests/tests/basic_ops/release_lockowner/RELEASE_LOCKOWNER.env \
+    mode=0444
+file \
+    path=opt/nfsv4-tests/tests/basic_ops/release_lockowner/RELEASE_LOCKOWNER.flist \
+    mode=0444
+file \
+    path=opt/nfsv4-tests/tests/basic_ops/release_lockowner/releaselowner_neg01 \
+    mode=0555
+file \
+    path=opt/nfsv4-tests/tests/basic_ops/release_lockowner/releaselowner_pos01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/release_lockowner/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/remove/REMOVE.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/remove/REMOVE.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/remove/remove_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/remove/remove_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/remove/remove_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/remove/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/rename/RENAME.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/rename/RENAME.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/rename/rename_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/rename/rename_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/rename/rename_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/rename/rename_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/rename/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/renew/RENEW.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/renew/RENEW.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/renew/renew_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/renew/renew_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/renew/renew_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/renew/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/restorefh/RESTOREFH.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/restorefh/RESTOREFH.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/restorefh/restorefh_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/restorefh/restorefh_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/restorefh/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/savefh/SAVEFH.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/savefh/SAVEFH.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/savefh/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/savefh/savefh_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/savefh/savefh_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/secinfo/SECINFO.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/secinfo/SECINFO.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/secinfo/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/secinfo/secinfo_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/secinfo/secinfo_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/secinfo/secinfo_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/SETATTR.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/SETATTR.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_neg06 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setattr/setattr_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setclientid/SETCLIENTID.flist \
+    mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/setclientid/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setclientid/setclientid_neg01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setclientid/setclientid_pos01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/setclientid/setclientid_stress01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/verify/VERIFY.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/verify/VERIFY.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/verify/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/verify/verify_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/verify/verify_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/verify/verify_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/WRITE.env mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/write/WRITE.flist mode=0444
+file path=opt/nfsv4-tests/tests/basic_ops/write/WRITE_proc mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/runtests mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/rw_bnd01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/rw_bnd02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/write_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/write_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/write_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/write_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/write_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/basic_ops/write/write_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/README mode=0444
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/NAMED_ATTRS.flist \
+    mode=0444
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/READ_proc mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/WRITE_proc mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/named_attrs_neg06 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/named_attrs_neg07 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/named_attrs_pos01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/named_attrs_pos03 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/named_attrs_pos04 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/named_attrs_pos05 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/attrops/runtests mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/ATTRCMDS.flist mode=0444
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_funcs mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_neg04 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_neg05 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_neg08 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_pos06 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/attrcmds_pos07 mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/cmds/runtests mode=0555
+file path=opt/nfsv4-tests/tests/named_attrs/runtests mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/NUM_ATTRS.flist mode=0444
+file path=opt/nfsv4-tests/tests/num_attrs/README mode=0444
+file path=opt/nfsv4-tests/tests/num_attrs/ck_fattr mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/data.cfg mode=0444
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_neg10 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_neg17 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_neg18 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_neg21 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_neg25 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_neg28 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos00 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos04 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos05 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos06 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos07 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos08 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos09 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos10 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos11 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos12 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos13 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos14 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos15 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos16 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos17 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos18 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos19 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos20 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos22 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos23 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos24 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos26 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos27 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos28 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos29 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/num_attrs_pos30 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/quota_query01 mode=0555
+file path=opt/nfsv4-tests/tests/num_attrs/runtests mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/README mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/domain/README mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/domain/check_domain mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/check_domain_dl mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/check_domain_mt mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/derive_domain_dl mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/dns.test.nfs.master.tmpl \
+    mode=0444
+file \
+    path=opt/nfsv4-tests/tests/other_tests/domain/dns.test.nfs.reverse.master.tmpl \
+    mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/domain/dnscfg mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/dom_env mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/dom_functions mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/domain.flist mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/domain/get_domain mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/get_domain_mt mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/libmapid01 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/libmapid02 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/libmapid03 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/libmapid04 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/libmapid05 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/libmapid_syscfgd mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/named.conf.tmpl mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/domain/nfs.master.tmpl mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/domain/nfsmapid01 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/nfsmapid02 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/nfsmapid03 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/nfsmapid04 mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/reeval_callback mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/resolv mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/root.master.tmpl mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/domain/runtests mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/domain/test.nfs.master.tmpl \
+    mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/runtests mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/README mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/create_mapid_files.c \
+    mode=0444
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/runtests mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/send_setattr_reqs \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uid_proc mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_neg01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_neg02 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_neg03 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_neg04 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_pos01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_pos03 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_pos04 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_pos05 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_stress01 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/other_tests/uidmapping/uidmapping_stress02 \
+    mode=0555
+file path=opt/nfsv4-tests/tests/recovery/README mode=0444
+file path=opt/nfsv4-tests/tests/recovery/RECOV.flist mode=0444
+file path=opt/nfsv4-tests/tests/recovery/RECOV_proc mode=0555
+file path=opt/nfsv4-tests/tests/recovery/S99nfs4red mode=0555
+file path=opt/nfsv4-tests/tests/recovery/ck_unshareall01 mode=0555
+file path=opt/nfsv4-tests/tests/recovery/io_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/recovery/io_neg02 mode=0555
+file path=opt/nfsv4-tests/tests/recovery/io_neg03 mode=0555
+file path=opt/nfsv4-tests/tests/recovery/isserverup mode=0555
+file path=opt/nfsv4-tests/tests/recovery/nfs4red mode=0555
+file path=opt/nfsv4-tests/tests/recovery/recov_cleanup mode=0555
+file path=opt/nfsv4-tests/tests/recovery/recov_setup mode=0555
+file path=opt/nfsv4-tests/tests/recovery/recov_srv_setup mode=0555
+file path=opt/nfsv4-tests/tests/recovery/runtests mode=0555
+file path=opt/nfsv4-tests/tests/recovery/srv_ckshare mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/README mode=0444
+file path=opt/nfsv4-tests/tests/srv_namespc/SNSPC.assertions mode=0444
+file path=opt/nfsv4-tests/tests/srv_namespc/SNSPC.env mode=0444
+file path=opt/nfsv4-tests/tests/srv_namespc/SNSPC.flist mode=0444
+file path=opt/nfsv4-tests/tests/srv_namespc/clntspc_mnt01 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/clntspc_mnt02 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/clntspc_mnt03 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/clntspc_mnt04 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/clntspc_mnt05 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/clntspc_mnt06 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/doshare mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/runtests mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/srvnspc_neg01 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/srvnspc_pos01 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/srvnspc_pos02 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/srvnspc_pos03 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/srvnspc_pos04 mode=0555
+file path=opt/nfsv4-tests/tests/srv_namespc/srvnspc_share01 mode=0555
+license cr_Sun license=cr_Sun
+license lic_CDDL license=lic_CDDL

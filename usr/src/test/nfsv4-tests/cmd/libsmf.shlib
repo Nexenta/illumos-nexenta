@@ -1,0 +1,417 @@
+#
+# CDDL HEADER START
+#
+# The contents of this file are subject to the terms of the
+# Common Development and Distribution License (the "License").
+# You may not use this file except in compliance with the License.
+#
+# You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE
+# or http://www.opensolaris.org/os/licensing.
+# See the License for the specific language governing permissions
+# and limitations under the License.
+#
+# When distributing Covered Code, include this CDDL HEADER in each
+# file and include the License file at usr/src/OPENSOLARIS.LICENSE.
+# If applicable, add the following below this CDDL HEADER, with the
+# fields enclosed by brackets "[]" replaced with your own identifying
+# information: Portions Copyright [yyyy] [name of copyright owner]
+#
+# CDDL HEADER END
+#
+
+#
+# Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+#
+
+smf_installed_fn() { # void
+    #
+    #  		Will return 0 if smf appears to be installed and should be
+    #  		usable, otherwise it will return != 0.
+    #
+    #  		This function will check and rely on the presence or absence
+    #  		of /lib/svc/share/smf_include.sh.
+    #
+
+    # Some debugging stuff....
+
+    echo :${__DEBUG}: | /usr/xpg4/bin/grep -q ':smf_cmd_FMRI_wait:' && \
+	set -v && \
+	set -x
+
+    [ ! -r /lib/svc/share/smf_include.sh ] && return 1
+
+    . /lib/svc/share/smf_include.sh
+    smf_present
+
+}
+
+_scFw_children_of_fn() { # pid
+
+    /bin/ptree $1 | \
+	/bin/awk "BEGIN {seen=0;} { if ( \$1 == $1 ) seen=1;} \
+		(seen == 1) {print \$1}"
+
+}
+
+_scFw_cleanup_fn() {
+
+    ##########################################################
+    #
+    #		This function is private -- Hands off!
+    #
+    ##########################################################
+
+	# Some debugging stuff....
+
+	echo :${__DEBUG}: | /usr/xpg4/bin/grep -q 'smf_cmd_FMRI_wait::' && \
+	    set -v && \
+	    set -x
+
+	# Clean up whatever has been created.
+
+	if [ -n "$scFw_timeout_id" ]; then
+	    echo :${__DEBUG}: | /usr/xpg4/bin/grep -q ':smf_cmd_FMRI_wait:' && \
+		/bin/ptree $scFw_timeout_id
+
+	    pl=`_scFw_children_of_fn $scFw_timeout_id`
+	    [ -n "$pl" ] && kill -9 $pl > /dev/null 2>&1
+
+	fi
+	if [ -n "$scFw_svcprop_id" ]; then
+	    echo :${__DEBUG}: | /usr/xpg4/bin/grep -q 'smf_cmd_FMRI_wait::' && \
+		 /bin/ptree $scFw_svcprop_id
+
+	    pl=`_scFw_children_of_fn $scFw_svcprop_id`
+	    [ -n "$pl" ] && kill -9 $pl > /dev/null 2>&1
+
+	fi
+
+	[ -n "$scFw_FIFO" ] && /bin/rm -f $scFw_FIFO
+
+}
+
+smf_cmd_FMRI_wait_fn() { # [-v] "quoted command" FMRI status timeout
+    #
+    #		Will invoke the quoted command, then use svcprop -w to wait
+    #		for up to timeout seconds for the restarter/state property of
+    #		the FMRI named to have the status passed. The command may be
+    #		empty, and the timeout may be 0 to indicate not to wait or -1
+    #		to indicate a wait forever.
+    #
+    #		'$FMRI' embedded within the quoted command will be replaced
+    #		with the FMRI parameter passed to this function. Note: Since
+    #		'$FMRI' references a shell variable, the '$' must be suitably
+    #		escaped or redundantly quoted to ensure that it remains intact
+    #		until substitution occurs when the quoted command is
+    #		invoked. e.g. smf_cmd_FMRI_wait "svcadm enable \$FMRI" svc:."
+    #
+    #		-v will enable progress messages.
+    #
+    #		If the quoted command returns 0, and the FMRI named reaches
+    #		the state specified within the timeout allowed, then
+    #		smf_cmd_FMRI_wait will return 0.
+    #
+    #		If the quoted command does not return 0, then
+    #		smf_cmd_FMRI_wait will return the value returned by the
+    #		command.
+    #
+    #		If the FMRI status changes, but does not match the specified
+    #		status, then smf_cmd_FMRI_wait will return 35 (ENOMSG).
+    #
+    #		If the FMRI status does not change within the timeout
+    #		specified, then smf_cmd_FMRI_wait will return 62 (ETIME).
+    #
+    #		If SMF does not appear to be installed, then smf_cmd_FMRI_wait
+    #		will return 2 (ENOENT).
+    #
+    #		If invalid or insufficient parameters are passed, then
+    #		smf_cmd_FMRI_wait will return 22 (EINVAL).
+    #
+    #		If this routine is interrupted by the user then
+    #		smf_cmd_FMRI_wait will return 4 (EINTR).
+    #
+
+    # Some debugging stuff....
+
+    echo :${__DEBUG}: | /usr/xpg4/bin/grep -q ':smf_cmd_FMRI_wait:' && \
+	set -v && \
+	set -x
+
+    # Collect my parameters....
+
+    scFw_verbose=0
+    if [ x:-v = x:$1 ]; then
+	shift
+	scFw_verbose=1
+
+    fi
+
+    [ ${#} -ne 4 ] && return 22
+
+    cmd="$1"
+    FMRI=$2
+    FMRI_status=$3
+    timeout=$4
+
+    scFw_interrupted=0
+    export scFw_interrupted
+
+    svcprop_w_cmd="/bin/svcprop -w -p restarter/state $FMRI"
+    svcprop_cmd="/bin/svcprop -p restarter/state $FMRI"
+
+    # Make sure smf is installed, and usable...
+
+    smf_installed_fn || return 2
+
+    # Catch errors.
+
+    trap "_scFw_cleanup_fn; scFw_interrupted=1; trap 2" 2
+
+    # Execute the command. If it returns non-zero, then clean up and bail!
+
+    eval $cmd
+    status=$?
+
+    if [ $status -ne 0 ]; then
+	_scFw_cleanup_fn
+	return $status
+
+    fi
+
+    # Spawn a timer to wait for the status change.
+
+    scFw_FIFO=/tmp/smf_cmd_FMRI_wait.FIFO.$$
+
+    /bin/rm -f $scFw_FIFO
+    /bin/mkfifo $scFw_FIFO || return
+
+    (/bin/sleep $timeout; echo ETIME) > $scFw_FIFO < /dev/null &
+    status=$?
+    scFw_timeout_id=$!
+
+    if [ $status -ne 0 ]; then
+	_scFw_cleanup_fn
+	return $status
+
+    fi
+
+    # Start a svcprop -w to wait for the property to change.
+
+    $svcprop_w_cmd > $scFw_FIFO < /dev/null &
+    status=$?
+    scFw_svcprop_id=$!
+
+    if [ $status -ne 0 ]; then
+	_scFw_cleanup_fn
+	return $status
+
+    fi 
+
+    # Before waiting, see if the state is already what was expected. It might
+    # have changed before the svcprop -w, above, was started.
+
+    while smf_result=`$svcprop_cmd` && \
+	[ x:$FMRI_status != x:$smf_result ] && \
+	read smf_result < $scFw_FIFO; do
+
+	# Did the user try to kill this off?
+
+	if [ $scFw_interrupted -ne 0 ]; then
+	    [ $scFw_verbose -ne 0 ] && echo "Interrupted."
+	    return 4
+
+	fi
+
+	if [ x:$smf_result = "x:ETIME" ]; then
+	    _scFw_cleanup_fn
+
+	    # The sleep timer and svcprop -w may have been racing to the
+	    # pipe. So check for the result of the propery change before
+	    # actually declaring this a timeout condition.
+
+	    [ x:$FMRI_status = x:`$svcprop_cmd` ] && return 0
+	    [ $scFw_verbose -ne 0 ] && echo "Timeout."
+	    return 62
+
+	fi
+
+	[ $scFw_verbose -ne 0 ] && echo "$FMRI moved to $smf_result"
+
+	# So, we've read one status that was not from the timer, so it must
+	# have been from the svcprop -w -- need to start another one waiting
+	# for the property to change.
+
+	pl=`_scFw_children_of_fn $scFw_svcprop_id`
+	[ -n "$pl" ] && kill -9 $pl > /dev/null 2>&1
+	$svcprop_w_cmd > $scFw_FIFO < /dev/null &
+	status=$?
+	scFw_svcprop_id=$!
+
+	if [ $status -ne 0 ]; then
+	    _scFw_cleanup_fn
+	    return $status
+
+	fi
+
+    done
+    status=$?
+    [ $status -eq 0 ] && \
+	[ $scFw_verbose -ne 0 ] && \
+	echo "$FMRI status is `$svcprop_cmd`"
+
+    _scFw_cleanup_fn
+    return $status
+
+}
+
+smf_get_state() { # fmri
+	#
+	# prints the current state of the instance specified by the
+	# supplied FMRI.  Returns 22 if usage was incorrect.  Otherwise,
+	# returns the exit status of svcprop.
+
+	# Some debugging stuff....
+
+	echo :${__DEBUG}: | /usr/xpg4/bin/grep -q ':smf_get_state:' && \
+		set -v && \
+		set -x
+
+	# check the number of parameters
+	[ ${#} -ne 1 ] && return 22
+
+	fmri="$1"
+
+	echo "`/usr/bin/svcprop -p restarter/state ${fmri}`"
+	return $?
+}
+
+
+smf_fmri_transition_state() { # args
+	# Usage:
+	#	smf_fmri_state_transition "do" $fmri $state $timeout
+	# OR
+	#	smf_fmri_state_transition "check" $fmri $state $timeout
+	#
+	# For more details, see the detailed comments at the end of the
+	# function, or the README file in the parent directory
+
+	# Some debugging stuff....
+
+	echo :${__DEBUG}: | /usr/xpg4/bin/grep -q ':smf_fmri_transition_state:' && \
+		set -v && \
+		set -x
+
+	# check the number of parameters
+	[ ${#} -ne 4 ] && return 22
+
+	# Get the input parameters
+	sfts_do_or_check=$1
+	sfts_target_fmri=$2
+	sfts_target_state=$3
+	sfts_timeout=$4
+
+	# Short-circuit the proceedings if already in the target state
+	[ "`smf_get_state $sfts_target_fmri`" = "$sfts_target_state" ] && \
+		return 0
+
+	# if the user requested that we *do* (v/s *check*) the transition, then,
+	# just do it!
+	if [ "$sfts_do_or_check" != "check" ]; then
+		# determine the relevant svcadm subcommand to issue
+		sfts_svcadm_subcmd="disable"
+		case $sfts_target_state in
+			online) sfts_svcadm_subcmd="enable -s" ;;
+			offline|disabled) sfts_svcadm_subcmd="disable -s" ;;
+			maintenance|degraded)
+				sfts_svcadm_subcmd="mark -I $sfts_target_state"	;;
+			clear) sfts_svcadm_subcmd="clear" ;;
+			refresh) sfts_svcadm_subcmd="$sfts_target_state"
+				sfts_target_state="`smf_get_state $fmri`"
+				;;
+			restart) sfts_svcadm_subcmd="$sfts_target_state"
+				sfts_target_state="online"
+				if [ `smf_get_state $sfts_target_fmri` = "maintenance" ]; then
+					sfts_target_state="maintenance"
+				fi
+				;;
+			*) return 22 ;;
+		esac
+
+		# Invoke svcadm to perform the required state transition
+		/usr/sbin/svcadm $sfts_svcadm_subcmd $sfts_target_fmri
+		if [ $? -ne 0 ]; then
+            # svcadm invocation failed
+            return 2
+        fi
+
+    fi # if $stfs_do_or_check != check
+
+	# 'clear' subcommand needs special handling: we can't predict what
+	# the next state should be; just that it shouldn't be maintenance
+	if [ "$sfts_target_state" = "clear" ]; then
+		/bin/sleep 1
+		[ "`smf_get_state $sfts_target_fmri`" != "maintenance" ] && \
+			return 0 || return 1
+	fi
+
+	# For all other subcommands, loop until the desired state is reached
+	# or timeout expires
+    sfts_waited_time=0
+    while [ $sfts_waited_time -lt $sfts_timeout -a \
+        "`smf_get_state $sfts_target_fmri`" != "$sfts_target_state" ]
+    do
+        /bin/sleep 1
+        sfts_waited_time=`/bin/expr $sfts_waited_time + 1`
+    done
+
+    # Give the FMRI one more chance to complete the transition
+    if [ "`smf_get_state $sfts_target_fmri`" != "$sfts_target_state" ]; then
+		# timed out
+		return 1
+    fi
+
+    return 0
+	# END
+
+	# DEVELOPER NOTES:
+	# ================
+	# Usage:
+	#
+	# This function can be used in two modes: 
+	#	(1) as a utility that waits for the specified state transition to occur
+	#	(2) as a tool that affects the desired state transition
+	#
+	# Invocation:
+	# -----------
+	# (1) "check" (waiter-only) mode
+	#		smf_fmri_transition_state "check" $fmri $state $timeout
+	# (2) "do" mode: 
+	#		smf_fmri_transition_state "do" $fmri $state $timeout
+	#
+	# In the 'check' mode, the function merely waits for the target fmri
+	# to attain the desired state in the specified timeout (seconds).  It
+	# is up to the invoking process to ensure the issuance of appropriate
+	# svcadm commands to actually affect the desired state transition.
+	# In the 'do' mode, the function itself issues an svcadm command to 
+	# cause the state transition to the desired state and then waits for
+	# the fmri to reach the desired state in the specified timeout period
+	# (seconds).  In both cases, a return status of 0 (zero) indicates 
+	# success and a non-zero return status indicates failure.
+	#
+	# Note that this is a 'state transition' function, not a substitute
+	# for svcadm commands.  Specifically, this function does not issue
+	# *all* possible svcadm commands; only those that are needed for the
+	# desired state transition to be executed as immediately as possible.  
+	# For example, the function cannot be told to issue commands such as
+	# the following:
+	#	svcadm enable -r FMRI    # recursive enable
+ 	# 	svcadm {en,dis}able -t FMRI # temporary
+ 	#	svcadm mark -t maintenance FMRI # temporary
+	#
+	# However, for one thing, these types of invocations are quite rare,
+	# and, for another, when developers need to issue these svcadm sub-
+	# commands, they can invoke them explicitly and simply use this 
+	# function in the "check" mode.  Alternatively, users are invited to
+	# explore the smf_cmd_wait_FMRI function defined elsewhere in this file.
+}
