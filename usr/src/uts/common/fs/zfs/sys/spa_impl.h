@@ -253,6 +253,7 @@ struct spa {
 	uint8_t		spa_scrub_reopen;	/* scrub doing vdev_reopen */
 	uint64_t	spa_scan_pass_start;	/* start time per pass/reboot */
 	uint64_t	spa_scan_pass_exam;	/* examined bytes per pass */
+	uint64_t	spa_scan_pass_work;	/* actually processed bytes */
 	kmutex_t	spa_async_lock;		/* protect async state */
 	kthread_t	*spa_async_thread;	/* thread doing async task */
 	int		spa_async_suspended;	/* async tasks suspended */

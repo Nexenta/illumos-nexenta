@@ -3599,6 +3599,15 @@ kmem_cache_stat(kmem_cache_t *cp, char *name)
 }
 
 /*
+ * Returns the buffer size being allocated by this kmem cache.
+ */
+size_t
+kmem_cache_bufsize(const kmem_cache_t *cp)
+{
+	return (cp->cache_bufsize);
+}
+
+/*
  * Return an estimate of currently available kernel heap memory.
  * On 32-bit systems, physical memory may exceed virtual memory,
  * we just truncate the result at 1GB.

@@ -27,8 +27,6 @@
 #ifndef _UMEM_H
 #define	_UMEM_H
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <sys/types.h>
 #include <sys/vmem.h>
 #include <stdlib.h>
@@ -73,6 +71,7 @@ extern umem_cache_t *umem_cache_create(char *, size_t,
     size_t, umem_constructor_t *, umem_destructor_t *, umem_reclaim_t *,
     void *, vmem_t *, int);
 extern void umem_cache_destroy(umem_cache_t *);
+extern size_t umem_cache_bufsize(umem_cache_t *);
 
 extern void *umem_cache_alloc(umem_cache_t *, int);
 extern void umem_cache_free(umem_cache_t *, void *);

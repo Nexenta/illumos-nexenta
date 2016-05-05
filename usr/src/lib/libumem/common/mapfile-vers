@@ -61,6 +61,7 @@ SYMBOL_VERSION SUNW_1.1 {
 	umem_cache_alloc;
 	umem_cache_create;
 	umem_cache_destroy;
+	umem_cache_bufsize;
 	umem_cache_free;
 	umem_free;
 	umem_nofail_callback;

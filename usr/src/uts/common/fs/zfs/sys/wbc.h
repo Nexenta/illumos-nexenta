@@ -250,6 +250,7 @@ void wbc_activate(spa_t *spa, boolean_t pool_creation);
 void wbc_deactivate(spa_t *spa);
 
 int wbc_select_dva(wbc_data_t *wbc_data, zio_t *zio);
+boolean_t wbc_bp_is_migrated(wbc_data_t *wbc_data, const blkptr_t *bp);
 int wbc_first_valid_dva(const blkptr_t *bp,
     wbc_data_t *wbc_data, boolean_t removal);
 

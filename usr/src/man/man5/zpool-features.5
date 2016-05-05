@@ -27,6 +27,21 @@ the old on\-disk format numbers (the last supported on\-disk format number is
 \fBzpool\fR(1M) command, or set the \fBfeature@\fR\fIfeature_name\fR property
 to \fBenabled\fR.
 .sp
+
+.Bl -enum
+.It
+Allocating an identifier using the standard algorithm that attempts to
+use the next identifier first.
+.It
+Allocating an identifier using a first fit algorithm. These are
+functions with
+.Em ff
+in the name. Using this will tend to keep the allocated id space more
+compressed.
+.It
+Allocating a specific id.
+.El
+
 .LP
 The pool format does not affect file system version compatibility or the ability
 to send file systems between pools.

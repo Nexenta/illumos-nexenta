@@ -2076,6 +2076,8 @@ spa_init(int mode)
 	spa_config_load();
 	l2arc_start();
 	ddt_init();
+	metaslab_global_init();
+	dsl_scan_global_init();
 }
 
 void
@@ -2094,6 +2096,8 @@ spa_fini(void)
 	range_tree_fini();
 	unique_fini();
 	refcount_fini();
+	metaslab_global_fini();
+	dsl_scan_global_fini();
 
 	taskq_destroy(spa_sysevent_taskq);
 
@@ -2197,6 +2201,7 @@ spa_scan_stat_init(spa_t *spa)
 	/* data not stored on disk */
 	spa->spa_scan_pass_start = gethrestime_sec();
 	spa->spa_scan_pass_exam = 0;
+	spa->spa_scan_pass_work = 0;
 	vdev_scan_stat_init(spa->spa_root_vdev);
 }
 
@@ -2222,10 +2227,14 @@ spa_scan_get_stats(spa_t *spa, pool_scan_stat_t *ps)
 	ps->pss_processed = scn->scn_phys.scn_processed;
 	ps->pss_errors = scn->scn_phys.scn_errors;
 	ps->pss_state = scn->scn_phys.scn_state;
+	mutex_enter(&scn->scn_status_lock);
+	ps->pss_issued = scn->scn_bytes_issued;
+	mutex_exit(&scn->scn_status_lock);
 
 	/* data not stored on disk */
 	ps->pss_pass_start = spa->spa_scan_pass_start;
 	ps->pss_pass_exam = spa->spa_scan_pass_exam;
+	ps->pss_pass_work = spa->spa_scan_pass_work;
 
 	return (0);
 }

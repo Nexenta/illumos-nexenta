@@ -209,7 +209,7 @@ check_status(nvlist_t *config, boolean_t isimport)
 	(void) nvlist_lookup_uint64_array(nvroot, ZPOOL_CONFIG_SCAN_STATS,
 	    (uint64_t **)&ps, &psc);
 	if (ps && ps->pss_func == POOL_SCAN_RESILVER &&
-	    ps->pss_state == DSS_SCANNING)
+	    (ps->pss_state == DSS_SCANNING || ps->pss_state == DSS_FINISHING))
 		return (ZPOOL_STATUS_RESILVERING);
 
 	/*

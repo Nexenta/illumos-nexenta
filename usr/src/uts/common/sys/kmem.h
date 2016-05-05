@@ -128,6 +128,7 @@ extern void kmem_cache_destroy(kmem_cache_t *);
 extern void *kmem_cache_alloc(kmem_cache_t *, int);
 extern void kmem_cache_free(kmem_cache_t *, void *);
 extern uint64_t kmem_cache_stat(kmem_cache_t *, char *);
+extern size_t kmem_cache_bufsize(const kmem_cache_t *);
 extern void kmem_cache_reap_now(kmem_cache_t *);
 extern void kmem_cache_move_notify(kmem_cache_t *, void *);
 

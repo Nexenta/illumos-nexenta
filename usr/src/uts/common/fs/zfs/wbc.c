@@ -2091,6 +2091,23 @@ wbc_select_dva(wbc_data_t *wbc_data, zio_t *zio)
 }
 
 /*
+ * Checks if a special block has left the special device and has been fully
+ * migrated by WBC to the normal pool.
+ */
+boolean_t
+wbc_bp_is_migrated(wbc_data_t *wbc_data, const blkptr_t *bp)
+{
+	boolean_t result;
+
+	ASSERT(BP_IS_SPECIAL(bp));
+	mutex_enter(&wbc_data->wbc_lock);
+	result = BP_PHYSICAL_BIRTH(bp) < wbc_data->wbc_start_txg;
+	mutex_exit(&wbc_data->wbc_lock);
+
+	return (result);
+}
+
+/*
  * 3 cases can be here
  * 1st - birth_txg is less than window - only normal device should be free
  * 2nd - inside window both trees are checked and if both of the trees

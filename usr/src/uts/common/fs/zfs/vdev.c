@@ -361,6 +361,7 @@ vdev_alloc_common(spa_t *spa, uint_t id, uint64_t guid, vdev_ops_t *ops)
 	mutex_init(&vd->vdev_dtl_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&vd->vdev_stat_lock, NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&vd->vdev_probe_lock, NULL, MUTEX_DEFAULT, NULL);
+	mutex_init(&vd->vdev_scan_queue_lock, NULL, MUTEX_DEFAULT, NULL);
 	rw_init(&vd->vdev_tsd_lock, NULL, RW_DEFAULT, NULL);
 	for (int t = 0; t < DTL_TYPES; t++) {
 		vd->vdev_dtl[t] = range_tree_create(NULL, NULL,
@@ -675,6 +676,16 @@ vdev_free(vdev_t *vd)
 	spa_t *spa = vd->vdev_spa;
 
 	/*
+	 * Scan queues are normally destroyed at the end of a scan. If the
+	 * queue exists here, that implies the vdev is being removed while
+	 * the scan is still running.
+	 */
+	if (vd->vdev_scan_queue != NULL) {
+		dsl_scan_queue_destroy(vd->vdev_scan_queue);
+		vd->vdev_scan_queue = NULL;
+	}
+
+	/*
 	 * vdev_free() implies closing the vdev first.  This is simpler than
 	 * trying to ensure complicated semantics for all callers.
 	 */
@@ -749,10 +760,13 @@ vdev_free(vdev_t *vd)
 	mutex_destroy(&vd->vdev_dtl_lock);
 	mutex_destroy(&vd->vdev_stat_lock);
 	mutex_destroy(&vd->vdev_probe_lock);
+	mutex_destroy(&vd->vdev_scan_queue_lock);
 	rw_destroy(&vd->vdev_tsd_lock);
 
 	if (vd == spa->spa_root_vdev)
 		spa->spa_root_vdev = NULL;
+
+	ASSERT3P(vd->vdev_scan_queue, ==, NULL);
 
 	kmem_free(vd, sizeof (vdev_t));
 }
@@ -827,6 +841,9 @@ vdev_top_transfer(vdev_t *svd, vdev_t *tvd)
 	tvd->vdev_isspecial = svd->vdev_isspecial;
 	svd->vdev_isspecial = 0;
 	svd->vdev_isspecial_child = tvd->vdev_isspecial;
+
+	tvd->vdev_scan_queue = svd->vdev_scan_queue;
+	svd->vdev_scan_queue = NULL;
 }
 
 static void

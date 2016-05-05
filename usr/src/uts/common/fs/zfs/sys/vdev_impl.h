@@ -231,6 +231,15 @@ struct vdev {
 	uint64_t	vdev_trim_prog;	/* trim progress in bytes	*/
 
 	/*
+	 * Protects the vdev_scan_queue field itself as well as the structure's
+	 * contents (when present). The scn_status_lock in dsl_scan_t must
+	 * only ever be acquired stand-alone or inside of vdev_scan_queue_lock,
+	 * never in reverse.
+	 */
+	kmutex_t		vdev_scan_queue_lock;
+	struct dsl_scan_queue	*vdev_scan_queue;
+
+	/*
 	 * Leaf vdev state.
 	 */
 	range_tree_t	*vdev_dtl[DTL_TYPES]; /* dirty time logs	*/

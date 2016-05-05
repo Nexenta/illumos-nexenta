@@ -120,7 +120,47 @@ typedef struct dsl_scan {
 	uint64_t scn_visited_this_txg;
 
 	dsl_scan_phys_t scn_phys;
+	dsl_scan_phys_t scn_phys_cached;
+	avl_tree_t scn_queue;
+
+	/*
+	 * These signal how much work is pending from the scanner to the
+	 * reader. Whenever the queue of zios grows, scn_bytes_pending grows
+	 * the corresponding amount. Once a read for a block has been issued
+	 * (whether in-order or out-of-order later on), scn_bytes_issued is
+	 * incremented by the amount of data consumed from scn_bytes_pending.
+	 * After a scan has completed, scn_bytes_pending will be 0 and
+	 * scn_bytes_issued will have the total amount of data read.
+	 *
+	 * Lock ordering:
+	 * scn_status_lock may only be held on its own or AFTER grabbing
+	 * a vdev_scan_queue_lock, never BEFORE vdev_scan_queue_lock.
+	 */
+	kmutex_t scn_status_lock;
+	uint64_t scn_bytes_pending;
+	uint64_t scn_bytes_issued;
+
+	boolean_t scn_clearing;
+	boolean_t scn_checkpointing;
+	uint64_t scn_last_checkpoint;
+	taskq_t *scn_taskq;
+
+	uint64_t scn_last_queue_run_time;
+	uint64_t scn_last_dequeue_limit;
+
+	/* protects scn_is_sorted and scn_done_ds */
+	kmutex_t scn_sorted_lock;
+	/*
+	 * Flag denoting if we're running an out-of-order sorting scan or an
+	 * old non-sorting inline scan. This changes our checking behavior.
+	 */
+	boolean_t scn_is_sorted;
 } dsl_scan_t;
+
+typedef struct dsl_scan_queue dsl_scan_queue_t;
+
+void dsl_scan_global_init(void);
+void dsl_scan_global_fini(void);
 
 int dsl_scan_init(struct dsl_pool *dp, uint64_t txg);
 void dsl_scan_fini(struct dsl_pool *dp);
@@ -137,6 +177,8 @@ void dsl_scan_ds_snapshotted(struct dsl_dataset *ds, struct dmu_tx *tx);
 void dsl_scan_ds_clone_swapped(struct dsl_dataset *ds1, struct dsl_dataset *ds2,
     struct dmu_tx *tx);
 boolean_t dsl_scan_active(dsl_scan_t *scn);
+void dsl_scan_freed(spa_t *spa, const blkptr_t *bp);
+void dsl_scan_queue_destroy(dsl_scan_queue_t *queue);
 
 #ifdef	__cplusplus
 }

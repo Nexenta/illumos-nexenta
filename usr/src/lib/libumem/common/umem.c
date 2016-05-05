@@ -2993,6 +2993,12 @@ umem_cache_destroy(umem_cache_t *cp)
 	vmem_free(umem_cache_arena, cp, UMEM_CACHE_SIZE(umem_max_ncpus));
 }
 
+size_t
+umem_cache_bufsize(umem_cache_t *cp)
+{
+	return (cp->cache_bufsize);
+}
+
 void
 umem_alloc_sizes_clear(void)
 {

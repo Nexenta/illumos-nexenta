@@ -58,6 +58,10 @@
 
 #include "statcommon.h"
 
+#ifndef	MAX
+#define	MAX(x, y)	((x) > (y) ? (x) : (y))
+#endif	/* MAX */
+
 static int zpool_do_create(int, char **);
 static int zpool_do_destroy(int, char **);
 
@@ -1620,8 +1624,9 @@ print_status_config(zpool_handle_t *zhp, const char *name, nvlist_t *nv,
 	(void) nvlist_lookup_uint64_array(nv, ZPOOL_CONFIG_SCAN_STATS,
 	    (uint64_t **)&ps, &c);
 
-	if (ps && ps->pss_state == DSS_SCANNING &&
-	    vs->vs_scan_processed != 0 && children == 0) {
+	if (ps != NULL && (ps->pss_state == DSS_SCANNING ||
+	    ps->pss_state == DSS_FINISHING) && vs->vs_scan_processed != 0 &&
+	    children == 0) {
 		(void) printf(gettext("  (%s)"),
 		    (ps->pss_func == POOL_SCAN_RESILVER) ?
 		    "resilvering" : "repairing");
@@ -4272,10 +4277,11 @@ print_scan_status(pool_scan_stat_t *ps)
 {
 	time_t start, end;
 	uint64_t elapsed, mins_left, hours_left;
-	uint64_t pass_exam, examined, total;
-	uint_t rate;
+	uint64_t examined, total;
+	uint64_t rate, proc_rate;
 	double fraction_done;
-	char processed_buf[7], examined_buf[7], total_buf[7], rate_buf[7];
+	char processed_buf[7], examined_buf[7], total_buf[7], rate_buf[7],
+	    issued_buf[7];
 
 	(void) printf(gettext("  scan: "));
 
@@ -4338,7 +4344,7 @@ print_scan_status(pool_scan_stat_t *ps)
 		return;
 	}
 
-	assert(ps->pss_state == DSS_SCANNING);
+	assert(ps->pss_state == DSS_SCANNING || ps->pss_state == DSS_FINISHING);
 
 	/*
 	 * Scan is in progress.
@@ -4357,44 +4363,54 @@ print_scan_status(pool_scan_stat_t *ps)
 		    ctime(&start));
 	}
 
-	examined = ps->pss_examined ? ps->pss_examined : 1;
+	examined = ps->pss_examined;
 	total = ps->pss_to_examine;
-	fraction_done = (double)examined / total;
+	fraction_done = (double)ps->pss_issued / total;
 
 	/* elapsed time for this pass */
-	elapsed = time(NULL) - ps->pss_pass_start;
-	elapsed = elapsed ? elapsed : 1;
-	pass_exam = ps->pss_pass_exam ? ps->pss_pass_exam : 1;
-	rate = pass_exam / elapsed;
-	rate = rate ? rate : 1;
-	mins_left = ((total - examined) / rate) / 60;
+	elapsed = MAX(time(NULL) - ps->pss_start_time, 1);
+	if (ps->pss_func == POOL_SCAN_RESILVER) {
+		rate = MAX(((ps->pss_issued + ps->pss_processed) / 2) /
+		    elapsed, 1);
+	} else {
+		rate = MAX(ps->pss_issued / elapsed, 1);
+	}
+	proc_rate = MAX(ps->pss_processed / elapsed, 1);
+	if (ps->pss_func == POOL_SCAN_RESILVER)
+		mins_left = ((total - ps->pss_issued) / proc_rate) / 60;
+	else
+		mins_left = ((total - ps->pss_issued) / rate) / 60;
 	hours_left = mins_left / 60;
 
 	zfs_nicenum(examined, examined_buf, sizeof (examined_buf));
+	zfs_nicenum(ps->pss_issued, issued_buf, sizeof (issued_buf));
 	zfs_nicenum(total, total_buf, sizeof (total_buf));
 	zfs_nicenum(rate, rate_buf, sizeof (rate_buf));
 
 	/*
 	 * do not print estimated time if hours_left is more than 30 days
 	 */
-	(void) printf(gettext("    %s scanned out of %s at %s/s"),
-	    examined_buf, total_buf, rate_buf);
+	(void) printf(gettext("    %s scanned, %s verified out of %s at %s/s"
+	    ", %.2f%% done\n"), examined_buf, issued_buf, total_buf, rate_buf,
+	    100 * fraction_done);
+
+	if (ps->pss_func == POOL_SCAN_RESILVER) {
+		char proc_rate_buf[7];
+		zfs_nicenum(proc_rate, proc_rate_buf, sizeof (proc_rate_buf));
+		(void) printf(gettext("    %s resilvered at %s/s"),
+		    processed_buf, proc_rate_buf);
+	} else if (ps->pss_func == POOL_SCAN_SCRUB ||
+	    ps->pss_func == POOL_SCAN_MOS ||
+	    ps->pss_func == POOL_SCAN_META) {
+		(void) printf(gettext("    %s repaired"), processed_buf);
+	}
+
 	if (hours_left < (30 * 24)) {
 		(void) printf(gettext(", %lluh%um to go\n"),
 		    (u_longlong_t)hours_left, (uint_t)(mins_left % 60));
 	} else {
 		(void) printf(gettext(
 		    ", (scan is slow, no estimated time)\n"));
-	}
-
-	if (ps->pss_func == POOL_SCAN_RESILVER) {
-		(void) printf(gettext("    %s resilvered, %.2f%% done\n"),
-		    processed_buf, 100 * fraction_done);
-	} else if (ps->pss_func == POOL_SCAN_SCRUB ||
-	    ps->pss_func == POOL_SCAN_MOS ||
-	    ps->pss_func == POOL_SCAN_META) {
-		(void) printf(gettext("    %s repaired, %.2f%% done\n"),
-		    processed_buf, 100 * fraction_done);
 	}
 }
 

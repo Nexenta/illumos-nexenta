@@ -44,6 +44,7 @@
 #include <sys/blkptr.h>
 #include <sys/zfeature.h>
 #include <sys/dkioc_free_util.h>
+#include <sys/dsl_scan.h>
 
 #include <sys/metaslab_impl.h>
 
@@ -859,6 +860,7 @@ zio_free_sync(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 
 	metaslab_check_free(spa, bp);
 	arc_freed(spa, bp);
+	dsl_scan_freed(spa, bp);
 
 	/*
 	 * GANG and DEDUP blocks can induce a read (for the gang block header,
