@@ -60,7 +60,7 @@ fi
 . $UIDMAPENV
 
 # Also include common STC utility functions for SMF/Greenline
-. $TESTROOT/libsmf.sh
+. $TESTROOT/libsmf.shlib
 
 # This is the test directory for the files to be created/stat
 MYTESTDIR="$MNTPTR/$NAME"

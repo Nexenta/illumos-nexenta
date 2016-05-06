@@ -28,7 +28,7 @@
 
 [[ -n "$DEBUG" ]] && [[ $DEBUG != 0 ]] && set -x
 
-. $TESTROOT/libsmf.sh
+. $TESTROOT/libsmf.shlib
 
 NAME=$(basename $0)
 

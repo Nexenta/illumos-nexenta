@@ -33,7 +33,7 @@ NAME=`basename $0`
 CDIR=`pwd`
 TESTROOT=${TESTROOT:-"$CDIR/../"}
 DIR=`dirname $0`
-CFGFILE="$TESTROOT/num_attrs/data.cfg"
+CFGFILE="$TESTROOT/../tests/num_attrs/data.cfg"
 
 # sourcing framework global environment variables created after go_setup
 # and for this purpose only this file should be sourced

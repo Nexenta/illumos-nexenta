@@ -109,7 +109,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # copy server programs over to $SERVER for setup
-rcp -p $TMPDIR/recov_setserver $TMPDIR/nfs4red $SERVER:$CONFIGDIR \
+scp $TMPDIR/recov_setserver $TMPDIR/nfs4red root@$SERVER:$CONFIGDIR \
 	> $TMPDIR/rcp.out.$$ 2>&1
 if [ $? -ne 0 ]; then
 	echo "$NAME: copying setup files to $SERVER failed:"
@@ -117,7 +117,7 @@ if [ $? -ne 0 ]; then
 	exit $OTHER
 fi
 
-rcp -p $TMPDIR/S99nfs4red $SERVER:/etc/rc3.d > $TMPDIR/rcp.out.$$ 2>&1
+scp $TMPDIR/S99nfs4red root@$SERVER:/etc/rc3.d > $TMPDIR/rcp.out.$$ 2>&1
 if [ $? -ne 0 ]; then
         echo "$NAME: copying S99nfs4red file to $SERVER failed:"
         cat $TMPDIR/rcp.out.$$

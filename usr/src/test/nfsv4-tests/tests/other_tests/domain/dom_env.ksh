@@ -27,7 +27,7 @@
 # dom_env.sh - this file sets up script execution environment for domain
 # test scripts. It does the following:
 #
-#	1) source $CONFIGFILE $TESTROOT/{libsmf.sh, testsh} files
+#	1) source $CONFIGFILE $TESTROOT/{libsmf.shlib, testsh} files
 #	2) source ./dom_functions file
 #	3) define variables that can be used by domain testcases.
 # 
@@ -52,7 +52,7 @@ if [[ ! -f $CONFIGFILE ]]; then
 fi
 
 for i in $CONFIGFILE \
-	 $TESTROOT/libsmf.sh \
+	 $TESTROOT/libsmf.shlib \
 	 $TESTROOT/testsh \
 	 ./dom_functions
 do
