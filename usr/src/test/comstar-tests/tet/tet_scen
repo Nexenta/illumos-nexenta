@@ -176,7 +176,6 @@ iscsi_target
 
 iscsi_io
 	^iscsi_io_mpxio_disable
-	^iscsi_io_mpxio_enable
 
 framework_smf
 	/tests/framework/smf/tc_stmf_smf

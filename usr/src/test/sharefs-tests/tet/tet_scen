@@ -44,7 +44,6 @@ sharemgr
 	^unset_
 	^usage
 	^zfs
-	^zones
 
 short
 	^add
