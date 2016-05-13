@@ -611,7 +611,8 @@ typedef struct send_data {
 	 *	 "snaps" -> { name (lastname) -> number (guid) }
 	 *	 "snapprops" -> { name (lastname) -> { name -> value } }
 	 *
-	 *	 "origin" -> number (guid) (if clone)
+	 *	 "origin" -> number (guid of origin snapshot) (if clone)
+	 *	 "origin_fsname" -> string (full name of origin file system)
 	 *	 "sent" -> boolean (not on-disk)
 	 *	}
 	 *   }
@@ -821,6 +822,7 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 	    sd->parent_fromsnap_guid));
 
 	if (zhp->zfs_dmustats.dds_origin[0]) {
+		char origin_fsname[ZFS_MAXNAMELEN];
 		zfs_handle_t *origin = zfs_open(zhp->zfs_hdl,
 		    zhp->zfs_dmustats.dds_origin, ZFS_TYPE_SNAPSHOT);
 		if (origin == NULL) {
@@ -829,6 +831,12 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 		}
 		VERIFY(0 == nvlist_add_uint64(nvfs, "origin",
 		    origin->zfs_dmustats.dds_guid));
+		zfs_close(origin);
+		(void) strlcpy(origin_fsname, zhp->zfs_dmustats.dds_origin,
+		    sizeof (origin_fsname));
+		*strchr(origin_fsname, '@') = '\0';
+		VERIFY(0 == nvlist_add_string(nvfs, "origin_fsname",
+		    origin_fsname));
 	}
 
 	/* iterate over props */
@@ -2269,16 +2277,13 @@ again:
 			case 1: {
 				/* promote it! */
 				zfs_cmd_t zc = { 0 };
-				nvlist_t *origin_nvfs;
 				char *origin_fsname;
 
 				if (flags->verbose)
 					(void) printf("promoting %s\n", fsname);
 
-				origin_nvfs = fsavl_find(local_avl, originguid,
-				    NULL);
-				VERIFY(0 == nvlist_lookup_string(origin_nvfs,
-				    "name", &origin_fsname));
+				VERIFY(0 == nvlist_lookup_string(nvfs,
+				    "origin_fsname", &origin_fsname));
 				(void) strlcpy(zc.zc_value, origin_fsname,
 				    sizeof (zc.zc_value));
 				(void) strlcpy(zc.zc_name, fsname,
