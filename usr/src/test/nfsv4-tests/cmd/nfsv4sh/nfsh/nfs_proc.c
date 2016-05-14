@@ -456,7 +456,7 @@ nfs_compound(ClientData clientData, Tcl_Interp *interp, int argc, char *argv[])
 			    "debug nfs_compound: RPC error\n");
 #endif	/* DEBUG_PROC */
 			(void) snprintf(interp->result, sizeof (interp->result),
-	 		    "RPC error: %s\n", clnt_sperrno(rpc_err.re_status));
+			    "RPC error: %s\n", clnt_sperrno(rpc_err.re_status));
 			return (TCL_ERROR);
 		}
 		break;
