@@ -4428,15 +4428,14 @@ out:
 	return (error);
 }
 
-/*ARGSUSED*/
-static void
-zfs_inactive_impl(vnode_t *vp, cred_t *cr, caller_context_t *ct)
+static boolean_t
+zfs_znode_free_invalid(znode_t *zp)
 {
-	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	int error;
+	vnode_t *vp = ZTOV(zp);
 
-	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+	ASSERT(rw_read_held(&zfsvfs->z_teardown_inactive_lock));
+
 	if (zp->z_sa_hdl == NULL) {
 		/*
 		 * The fs has been unmounted, or we did a
@@ -4444,7 +4443,7 @@ zfs_inactive_impl(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 		 */
 		if (vn_has_cached_data(vp)) {
 			(void) pvn_vplist_dirty(vp, 0, zfs_null_putapage,
-			    B_INVAL, cr);
+			    B_INVAL, CRED());
 		}
 
 		mutex_enter(&zp->z_lock);
@@ -4455,8 +4454,22 @@ zfs_inactive_impl(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 		mutex_exit(&zp->z_lock);
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 		zfs_znode_free(zp);
-		return;
+		return (B_TRUE);
 	}
+	return (B_FALSE);
+}
+
+/*ARGSUSED*/
+static void
+zfs_inactive_impl(vnode_t *vp, cred_t *cr, caller_context_t *ct)
+{
+	znode_t	*zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int error;
+
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+	if (zfs_znode_free_invalid(zp))
+		return; /* z_teardown_inactive_lock already dropped */
 
 	/*
 	 * Attempt to push any data in the page cache.  If this fails
@@ -4515,12 +4528,19 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 {
 	znode_t	*zp = VTOZ(vp);
 
+	rw_enter(&zp->z_zfsvfs->z_teardown_inactive_lock, RW_READER);
+	if (zfs_znode_free_invalid(zp))
+		return; /* z_teardown_inactive_lock already dropped */
+
 	if (zp->z_size > zfs_inactive_async_multiplier * zfs_dirty_data_max) {
 		if (taskq_dispatch(dsl_pool_vnrele_taskq(
 		    dmu_objset_pool(zp->z_zfsvfs->z_os)), zfs_inactive_task,
-		    vp, TQ_SLEEP) != NULL)
+		    vp, TQ_NOSLEEP) != NULL) {
+			rw_exit(&zp->z_zfsvfs->z_teardown_inactive_lock);
 			return; /* task dispatched, we're done */
+		}
 	}
+	rw_exit(&zp->z_zfsvfs->z_teardown_inactive_lock);
 
 	/*
 	 * If the size of the vnode is <= than the threshold computed above
