@@ -11,8 +11,9 @@
 
 #
 # Copyright 2011, Richard Lowe
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
-# Copyright 2013 Garrett D'Amore <garrett@damore.org>
+# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2014 Garrett D'Amore <garrett@damore.org>
+# Copyright 2016 Joyent, Inc.
 #
 
 include		$(SRC)/Makefile.master
@@ -214,6 +215,7 @@ i386_MANFILES=	ahci.7d		\
 		dnet.7d		\
 		ecpp.7d		\
 		heci.7d		\
+		i40e.7d		\
 		i915.7d		\
 		ipmi.7d		\
 		ipw.7d		\

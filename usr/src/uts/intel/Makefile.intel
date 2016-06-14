@@ -20,7 +20,10 @@
 
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2013 Andrew Stormont.  All rights reserved.
-# Copyright (c) 2016 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2016 Joyent, Inc.
+# Copyright 2016 Garrett D'Amore <garrett@damore.org>
+# Copyright 2016 Nexenta Systems, Inc.
+#
 
 #
 #	This makefile contains the common definitions for all intel
@@ -395,6 +398,7 @@ DRV_KMODS	+= igb
 DRV_KMODS	+= ipmi
 DRV_KMODS	+= iprb
 DRV_KMODS	+= ixgbe
+DRV_KMODS	+= i40e
 DRV_KMODS	+= vr
 
 #

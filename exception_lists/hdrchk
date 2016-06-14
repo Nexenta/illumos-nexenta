@@ -279,5 +279,6 @@ usr/src/uts/common/io/bnxe/bnxe_debug.h
 usr/src/uts/common/io/bnxe/bnxe.h
 usr/src/uts/common/io/bnxe/version.h
 usr/src/uts/common/io/ixgbe/ixgbe_common.h
+usr/src/uts/common/io/i40e/core/i40e_adminq_cmd.h
 usr/src/uts/intel/io/acpica/compiler
 usr/src/uts/intel/sys/acpi
