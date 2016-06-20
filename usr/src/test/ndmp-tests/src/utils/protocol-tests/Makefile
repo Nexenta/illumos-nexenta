@@ -9,7 +9,7 @@
 # http://www.illumos.org/license/CDDL.
 #
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 include $(SRC)/cmd/Makefile.cmd
@@ -59,7 +59,7 @@ $(BLDPROG):	$(OBJS) $(LIBTARGET)
 $(LIBTARGET):
 	(cd ../../lib/C;make install)
 
-clean:
+clean clobber:
 	$(RM) $(BLDPROG) $(OBJS)
 
 install: $(CMDS)
