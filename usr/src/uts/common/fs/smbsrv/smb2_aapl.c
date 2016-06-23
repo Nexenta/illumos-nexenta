@@ -24,6 +24,21 @@
 
 /* SMB2 AAPL extensions: enabled? */
 int smb2_aapl_extensions = 1;
+uint64_t smb2_aapl_server_caps =
+	kAAPL_SUPPORTS_READ_DIR_ATTR;
+	/* | kAAPL_SUPPORTS_OSX_COPYFILE; (not yet) */
+	/* | kAAPL_UNIX_BASED; */
+/*
+ * We could turn on kAAPL_UNIX_BASED above and report UNIX modes in
+ * directory listings (see smb2_aapl_get_macinfo below) but don't
+ * because the modes ZFS presents with non-trivial ACLs cause mac
+ * clients to misbehave when copying files from the share to local.
+ * For example, we may have a file that we can read, but which has
+ * mode 0200.  When the mac copies such a file to the local disk,
+ * the copy cannot be opened for read.  For now just turn off the
+ * kAAPL_UNIX_BASED flag.  Later we might set this flag and return
+ * modes only when we have a trivial ACL.
+ */
 
 /*
  * Normally suppress file IDs for MacOS because it
@@ -108,13 +123,10 @@ smb2_aapl_srv_query(smb_request_t *sr,
 	(void) smb_mbc_encodef(mbcout, "q", server_bitmap);
 
 	if ((server_bitmap & kAAPL_SERVER_CAPS) != 0) {
-		uint64_t server_caps = 0;
-		if (client_caps & kAAPL_SUPPORTS_READ_DIR_ATTR) {
-			server_caps |= kAAPL_SUPPORTS_READ_DIR_ATTR;
+		uint64_t server_caps =
+		    smb2_aapl_server_caps & client_caps;
+		if (server_caps & kAAPL_SUPPORTS_READ_DIR_ATTR)
 			sr->session->s_flags |= SMB_SSN_AAPL_READDIR;
-		}
-		if (client_caps & kAAPL_UNIX_BASED)
-			server_caps |= kAAPL_UNIX_BASED;
 		(void) smb_mbc_encodef(mbcout, "q", server_caps);
 	}
 	if ((server_bitmap & kAAPL_VOLUME_CAPS) != 0) {
@@ -211,11 +223,17 @@ smb2_aapl_get_macinfo(smb_request_t *sr, smb_odir_t *od,
 		snode = NULL;
 	}
 
-	bzero(&attr, sizeof (attr));
-	attr.sa_mask = SMB_AT_MODE;
-	rc = smb_node_getattr(NULL, fnode, kcr, NULL, &attr);
-	if (rc == 0) {
-		mi->mi_unixmode = (uint16_t)attr.sa_vattr.va_mode;
+	/*
+	 * Later: Fill in the mode if we have a trivial ACL
+	 * (otherwise leaving it zero as we do now).
+	 */
+	if (smb2_aapl_server_caps & kAAPL_UNIX_BASED) {
+		bzero(&attr, sizeof (attr));
+		attr.sa_mask = SMB_AT_MODE;
+		rc = smb_node_getattr(NULL, fnode, kcr, NULL, &attr);
+		if (rc == 0) {
+			mi->mi_unixmode = (uint16_t)attr.sa_vattr.va_mode;
+		}
 	}
 
 	smb_node_release(fnode);
