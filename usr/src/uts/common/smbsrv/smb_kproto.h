@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2016 Syneto S.R.L.  All rights reserved.
  */
 
@@ -623,6 +623,8 @@ int smb_sign_check_secondary(smb_request_t *, unsigned int);
 void smb_sign_reply(smb_request_t *, mbuf_chain_t *);
 /* SMB2, but here because it's called from common code. */
 int smb2_sign_begin(smb_request_t *, smb_token_t *);
+int smb3_encrypt_begin(smb_request_t *, smb_token_t *);
+void smb3_encrypt_fini(smb_session_t *);
 
 boolean_t smb_sattr_check(uint16_t, uint16_t);
 

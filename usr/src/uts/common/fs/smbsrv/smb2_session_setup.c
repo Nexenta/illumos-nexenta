@@ -61,6 +61,24 @@ smb2_session_setup(smb_request_t *sr)
 		return (SDRC_ERROR);
 
 	/*
+	 * [MS-SMB2] 3.3.5.5 Receiving an SMB2 SESSION_SETUP Request
+	 *
+	 * If we support 3.x, RejectUnencryptedAccess is TRUE,
+	 * global EncryptData is TRUE, but we're not talking
+	 * 3.x or the client doesn't support encryption,
+	 * return ACCESS_DENIED.
+	 *
+	 * If RejectUnencryptedAccess is TRUE, we force max_protocol
+	 * to at least 3.0.
+	 */
+	if (sr->sr_server->sv_cfg.skc_encrypt == SMB_CONFIG_REQUIRED &&
+	    (sr->session->dialect < SMB_VERS_3_0 ||
+	    !SMB3_CLIENT_ENCRYPTS(sr))) {
+		status = NT_STATUS_ACCESS_DENIED;
+		goto errout;
+	}
+
+	/*
 	 * SMB3 multi-channel features are not supported.
 	 * Once they are, this will check the dialect and
 	 * whether multi-channel was negotiated, i.e.
@@ -106,10 +124,12 @@ smb2_session_setup(smb_request_t *sr)
 	switch (status) {
 
 	case NT_STATUS_SUCCESS:	/* Authenticated */
-		if (sr->uid_user->u_flags & SMB_USER_FLAG_GUEST)
+		if ((sr->uid_user->u_flags & SMB_USER_FLAG_GUEST) != 0)
 			SessionFlags |= SMB2_SESSION_FLAG_IS_GUEST;
-		if (sr->uid_user->u_flags & SMB_USER_FLAG_ANON)
+		if ((sr->uid_user->u_flags & SMB_USER_FLAG_ANON) != 0)
 			SessionFlags |= SMB2_SESSION_FLAG_IS_NULL;
+		if (sr->uid_user->u_encrypt != SMB_CONFIG_DISABLED)
+			SessionFlags |= SMB2_SESSION_FLAG_ENCRYPT_DATA;
 		smb2_ss_adjust_credits(sr);
 
 		/*

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -412,7 +412,7 @@ smb_auth_get_token(smb_request_t *sr)
 	uint32_t	rlen = 0;
 	uint32_t	privileges;
 	uint32_t	status;
-	int		rc;
+	int		rc = 0;
 	bool_t		ok;
 
 	msg_hdr.lmh_msgtype = LSA_MTYPE_GETTOK;
@@ -469,19 +469,37 @@ smb_auth_get_token(smb_request_t *sr)
 	crfree(cr);
 
 	/*
+	 * Some basic processing for encryption needs to be done,
+	 * even for anonymous/guest sessions. In particular,
+	 * we need to set Session.EncryptData.
+	 *
+	 * Windows handling of anon/guest and encryption is strange.
+	 * It allows these accounts to get through session setup,
+	 * even when they provide no key material.
+	 * Additionally, Windows somehow manages to have key material
+	 * for anonymous accounts under unknown circumstances.
+	 * As such, We set EncryptData on anon/guest to behave like Windows,
+	 * at least through Session Setup.
+	 */
+	if (sr->session->dialect >= SMB_VERS_3_0)
+		rc = smb3_encrypt_begin(sr, token);
+
+	/*
 	 * Save the session key, and (maybe) enable signing,
 	 * but only for real logon (not ANON or GUEST).
 	 */
-	if ((token->tkn_flags & (SMB_ATF_GUEST | SMB_ATF_ANON)) == 0) {
+	if (rc == 0 &&
+	    (token->tkn_flags & (SMB_ATF_GUEST | SMB_ATF_ANON)) == 0) {
 		if (sr->session->dialect >= SMB_VERS_2_BASE) {
 			rc = smb2_sign_begin(sr, token);
 		} else {
 			rc = smb_sign_begin(sr, token);
 		}
-		if (rc != 0) {
-			status = NT_STATUS_INTERNAL_ERROR;
-			goto errout;
-		}
+	}
+
+	if (rc != 0) {
+		status = NT_STATUS_INTERNAL_ERROR;
+		goto errout;
 	}
 
 	smb_token_free(token);
@@ -573,7 +591,7 @@ smb_authsock_cancel(smb_request_t *sr)
  */
 static uint32_t
 smb_authsock_sendrecv(smb_request_t *sr, smb_lsa_msg_hdr_t *hdr,
-	void *sndbuf, void **recvbuf)
+    void *sndbuf, void **recvbuf)
 {
 	smb_user_t *user = sr->uid_user;
 	ksocket_t so;

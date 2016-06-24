@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -243,6 +243,13 @@ smb_com_session_setup_andx(smb_request_t *sr)
 
 		sr->session->native_os = sinfo->ssi_native_os;
 		sr->session->native_lm = sinfo->ssi_native_lm;
+	}
+
+	/* RejectUnencryptedAccess precludes SMB1 access */
+	if (sr->sr_server->sv_cfg.skc_encrypt == SMB_CONFIG_REQUIRED) {
+		smbsr_error(sr, NT_STATUS_ACCESS_DENIED,
+		    ERRDOS, ERROR_ACCESS_DENIED);
+		return (SDRC_ERROR);
 	}
 
 	/*

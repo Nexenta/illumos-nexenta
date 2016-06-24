@@ -31,8 +31,13 @@ extern int smb2_aapl_use_file_ids;
 extern uint32_t smb2_dh_default_timeout;
 extern int smb2_enable_dh;
 
+#define	SMB2_KEYLEN	16
+#define	SMB3_KEYLEN	16	/* AES-128 keys */
+
 #define	DH_TIMEOUT_MS ((uint32_t)(smb2_dh_default_timeout * MILLISEC))
 #define	SMB2_PERSIST(flags) ((flags & SMB2_DHANDLE_FLAG_PERSISTENT) != 0)
+#define	SMB3_CLIENT_ENCRYPTS(sr) \
+	((sr->session->capabilities & SMB2_CAP_ENCRYPTION) != 0)
 
 void	smb2_dispatch_stats_init(smb_server_t *);
 void	smb2_dispatch_stats_fini(smb_server_t *);
@@ -43,9 +48,13 @@ int	smb2sr_newrq(smb_request_t *);
 int	smb2sr_newrq_async(smb_request_t *);
 int	smb2sr_newrq_cancel(smb_request_t *);
 void	smb2sr_work(smb_request_t *);
+void	smb2_network_disconnect(smb_session_t *);
 
 int smb2_decode_header(smb_request_t *);
 int smb2_encode_header(smb_request_t *, boolean_t);
+int smb3_decode_tform_header(smb_request_t *);
+int smb3_encode_tform_header(smb_request_t *, struct mbuf_chain *mbc);
+
 void smb2_send_reply(smb_request_t *);
 void smb2sr_put_error(smb_request_t *, uint32_t);
 void smb2sr_put_error_data(smb_request_t *, uint32_t, mbuf_chain_t *);
@@ -55,6 +64,9 @@ uint32_t smb2sr_lookup_fid(smb_request_t *, smb2fid_t *);
 /* SMB2 signing routines - smb2_signing.c */
 int smb2_sign_check_request(smb_request_t *);
 void smb2_sign_reply(smb_request_t *);
+
+int smb3_encrypt_sr(smb_request_t *, struct mbuf_chain *, struct mbuf_chain *);
+int smb3_decrypt_sr(smb_request_t *);
 
 uint32_t smb2_fsctl_fs(smb_request_t *, smb_fsctl_t *);
 uint32_t smb2_fsctl_netfs(smb_request_t *, smb_fsctl_t *);

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -23,7 +23,7 @@
 
 #include <stdlib.h>
 #include <smbsrv/smb_kproto.h>
-#include <smbsrv/smb_signing.h>
+#include <smbsrv/smb_kcrypt.h>
 #include <security/cryptoki.h>
 #include <security/pkcs11.h>
 
@@ -33,7 +33,7 @@
  */
 
 int
-smb_md5_getmech(smb_sign_mech_t *mech)
+smb_md5_getmech(smb_crypto_mech_t *mech)
 {
 	mech->mechanism = CKM_MD5;
 	mech->pParameter = NULL;
@@ -45,7 +45,7 @@ smb_md5_getmech(smb_sign_mech_t *mech)
  * Start PKCS#11 session.
  */
 int
-smb_md5_init(smb_sign_ctx_t *ctxp, smb_sign_mech_t *mech)
+smb_md5_init(smb_sign_ctx_t *ctxp, smb_crypto_mech_t *mech)
 {
 	CK_RV rv;
 
@@ -94,7 +94,7 @@ smb_md5_final(smb_sign_ctx_t ctx, uint8_t *digest16)
  */
 
 int
-smb2_hmac_getmech(smb_sign_mech_t *mech)
+smb2_hmac_getmech(smb_crypto_mech_t *mech)
 {
 	mech->mechanism = CKM_SHA256_HMAC;
 	mech->pParameter = NULL;
@@ -106,7 +106,7 @@ smb2_hmac_getmech(smb_sign_mech_t *mech)
  * Start PKCS#11 session, load the key.
  */
 int
-smb2_hmac_init(smb_sign_ctx_t *ctxp, smb_sign_mech_t *mech,
+smb2_hmac_init(smb_sign_ctx_t *ctxp, smb_crypto_mech_t *mech,
     uint8_t *key, size_t key_len)
 {
 	CK_OBJECT_HANDLE hkey = 0;
@@ -168,7 +168,7 @@ smb2_hmac_final(smb_sign_ctx_t ctx, uint8_t *digest16)
  */
 
 int
-smb3_cmac_getmech(smb_sign_mech_t *mech)
+smb3_cmac_getmech(smb_crypto_mech_t *mech)
 {
 	mech->mechanism = CKM_AES_CMAC;
 	mech->pParameter = NULL;
@@ -180,7 +180,7 @@ smb3_cmac_getmech(smb_sign_mech_t *mech)
  * Start PKCS#11 session, load the key.
  */
 int
-smb3_cmac_init(smb_sign_ctx_t *ctxp, smb_sign_mech_t *mech,
+smb3_cmac_init(smb_sign_ctx_t *ctxp, smb_crypto_mech_t *mech,
     uint8_t *key, size_t key_len)
 {
 	CK_OBJECT_HANDLE hkey = 0;

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -66,6 +66,16 @@ smb2_tree_connect(smb_request_t *sr)
 	if (rc)
 		return (SDRC_ERROR);
 
+	/*
+	 * [MS-SMB2] 3.3.5.7 Receiving an SMB2 TREE_CONNECT Request
+	 *
+	 * If RejectUnencryptedAccess is TRUE,
+	 * global EncryptData or Share.EncryptData is TRUE,
+	 * we support 3.x, and srv_cap doesn't indicate encryption support,
+	 * return ACCESS_DENIED.
+	 *
+	 * This also applies to SMB1, so do it in smb_tree_connect_core.
+	 */
 	status = smb_tree_connect(sr);
 	if (status) {
 		(void) smb2sr_put_error(sr, status);
@@ -92,7 +102,11 @@ smb2_tree_connect(smb_request_t *sr)
 	/*
 	 * XXX These need work..
 	 */
-	ShareFlags = 0;
+	if (tree->t_encrypt != SMB_CONFIG_DISABLED)
+		ShareFlags = SMB2_SHAREFLAG_ENCRYPT_DATA;
+	else
+		ShareFlags = 0;
+
 	Capabilities = 0;
 
 	/*

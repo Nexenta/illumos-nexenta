@@ -1,5 +1,6 @@
 '\" te
 .\" Copyright (c) 2008, Sun Microsystems, Inc. All Rights Reserved
+.\" Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 .\" The contents of this file are subject to the terms of the Common Development and Distribution License (the "License").  You may not use this file except in compliance with the License. You can obtain a copy of the license at usr/src/OPENSOLARIS.LICENSE or http://www.opensolaris.org/os/licensing.
 .\"  See the License for the specific language governing permissions and limitations under the License. When distributing Covered Code, include this CDDL HEADER in each file and include the License file at usr/src/OPENSOLARIS.LICENSE.  If applicable, add the following below this CDDL HEADER, with
 .\" the fields enclosed by brackets "[]" replaced with your own identifying information: Portions Copyright [yyyy] [name of copyright owner]
@@ -88,7 +89,6 @@ sharemgr \- configure and manage file sharing
 .fi
 
 .SH DESCRIPTION
-.sp
 .LP
 The \fBsharemgr\fR command configures share groups and the shares contained
 within them.
@@ -123,7 +123,6 @@ The options shown in the SYNOPSIS section are described in the context of each
 subcommand. All subcommands except \fBlist\fR and \fBshow\fR require root
 privileges or that you assume the Primary Administrator role.
 .SS "Subcommands"
-.sp
 .LP
 With no subcommand entered, a \fBsharemgr\fR command with the \fB-h\fR option
 displays a usage message for all subcommands.
@@ -630,7 +629,6 @@ across reboots.
 .RE
 
 .SS "Supported Properties"
-.sp
 .LP
 Properties are protocol-specific. Currently, only the NFS and SMB protocols are
 supported. Properties have the following characteristics:
@@ -1071,6 +1069,33 @@ The general properties supported for SMB are:
 .sp
 .ne 2
 .na
+\fB\fBencrypt=\fR\fIstring\fR\fR
+.ad
+.sp .6
+.RS 4n
+Controls SMB3 per-share encryption. This is similar to the global smbd/encrypt
+option. For requests on a particular share, the server's behavior is controlled
+by the stricter of this option and smbd/encrypt.
+.sp
+When set to \fBdisabled\fR, the server will not ask clients to encrypt requests.
+When set to \fBenabled\fR, the server will ask clients to encrypt requests,
+but will not require that they do so. Any message than can be encrypted
+will be encrypted.
+When set to \fBrequired\fR, the server will deny access to or disconnect
+any client that does not support encryption or fails to encrypt requests
+that they should.
+.sp
+In other words, the \fBenabled\fR behavior is that any message that CAN
+be encrypted SHOULD be encrypted, while the \fBrequired\fR behavior is that any
+message that CAN be encrypted MUST be encrypted.
+.sp
+This property is not defined by default.
+.sp
+.RE
+
+.sp
+.ne 2
+.na
 \fB\fBro=\fIaccess-list\fR\fR\fR
 .ad
 .sp .6
@@ -1105,7 +1130,6 @@ is when the access list is an asterisk (\fB*\fR), in which case \fBro\fR or
 .RE
 
 .SS "Access List Argument"
-.sp
 .LP
 The \fIaccess-list\fR argument is either the string \fB"*"\fR to represent all
 hosts or a colon-separated list whose components can be any number of the
@@ -1261,7 +1285,6 @@ rw=engineering:-terra
 .LP
 \&...grants access to \fBterra\fR.
 .SH EXIT STATUS
-.sp
 .ne 2
 .na
 \fB\fB0\fR\fR
@@ -1289,7 +1312,6 @@ Command failed.
 .RE
 
 .SH FILES
-.sp
 .ne 2
 .na
 \fB\fB/usr/include/libshare.h\fR\fR
@@ -1299,7 +1321,6 @@ Error codes used for exit status.
 .RE
 
 .SH ATTRIBUTES
-.sp
 .LP
 See \fBattributes\fR(5) for descriptions of the following attributes:
 .sp
@@ -1315,7 +1336,6 @@ Interface Stability	Committed
 .TE
 
 .SH SEE ALSO
-.sp
 .LP
 \fBidmap\fR(1M), \fBsharectl\fR(1M), \fBzfs\fR(1M), \fBattributes\fR(5),
 \fBnfssec\fR(5), \fBsmf\fR(5), \fBstandards\fR(5)

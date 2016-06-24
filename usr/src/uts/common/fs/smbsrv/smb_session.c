@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/atomic.h>
@@ -1042,6 +1042,9 @@ smb_session_delete(smb_session_t *session)
 		session_stats_fini(session);
 	}
 
+	if (session->enc_mech != NULL)
+		smb3_encrypt_fini(session);
+
 	if (session->sign_fini != NULL)
 		session->sign_fini(session);
 
@@ -1680,6 +1683,9 @@ smb_request_free(smb_request_t *sr)
 
 	if (sr->uid_user != NULL)
 		smb_user_release(sr->uid_user);
+
+	if (sr->tform_ssn != NULL)
+		smb_user_release(sr->tform_ssn);
 
 	smb_slist_remove(&sr->session->s_req_list, sr);
 	smb_session_release(sr->session);

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 /*
  * These routines provide the SMB MAC signing for the SMB2 server.
@@ -39,8 +39,8 @@
  */
 
 #include <sys/uio.h>
-#include <smbsrv/smb_kproto.h>
-#include <smbsrv/smb_signing.h>
+#include <smbsrv/smb2_kproto.h>
+#include <smbsrv/smb_kcrypt.h>
 #include <sys/isa_defs.h>
 #include <sys/byteorder.h>
 #include <sys/cmn_err.h>
@@ -49,7 +49,7 @@
 #define	SMB2_SIG_SIZE	16
 
 typedef struct mac_ops {
-	int (*mac_init)(smb_sign_ctx_t *, smb_sign_mech_t *,
+	int (*mac_init)(smb_sign_ctx_t *, smb_crypto_mech_t *,
 			uint8_t *, size_t);
 	int (*mac_update)(smb_sign_ctx_t, uint8_t *, size_t);
 	int (*mac_final)(smb_sign_ctx_t, uint8_t *);
@@ -57,8 +57,6 @@ typedef struct mac_ops {
 
 static int smb2_sign_calc_common(smb_request_t *, struct mbuf_chain *,
     uint8_t *, mac_ops_t *);
-
-static int smb3_do_kdf(void *, smb_buf32_t *);
 
 /*
  * SMB2 wrapper functions
@@ -89,7 +87,7 @@ smb2_sign_calc(smb_request_t *sr,
 static void
 smb2_sign_fini(smb_session_t *s)
 {
-	smb_sign_mech_t *mech;
+	smb_crypto_mech_t *mech;
 
 	if ((mech = s->sign_mech) != NULL) {
 		kmem_free(mech, sizeof (*mech));
@@ -121,6 +119,16 @@ smb3_sign_calc(smb_request_t *sr,
 }
 
 /*
+ * Input to KDF for SigningKey.
+ * See comment for smb3_do_kdf for content.
+ */
+static uint8_t sign_kdf_input[29] = {
+	0, 0, 0, 1, 'S', 'M', 'B', '2',
+	'A', 'E', 'S', 'C', 'M', 'A', 'C', 0,
+	0, 'S', 'm', 'b', 'S', 'i', 'g', 'n',
+	0, 0, 0, 0, 0x80 };
+
+/*
  * smb2_sign_begin
  * Handles both SMB2 & SMB3
  *
@@ -134,9 +142,9 @@ smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
 	smb_session_t *s = sr->session;
 	smb_user_t *u = sr->uid_user;
 	struct smb_key *sign_key = &u->u_sign_key;
-	int (*get_mech)(smb_sign_mech_t *);
+	int (*get_mech)(smb_crypto_mech_t *);
 	int (*sign_calc)(smb_request_t *, struct mbuf_chain *, uint8_t *);
-	smb_sign_mech_t *mech;
+	smb_crypto_mech_t *mech;
 	int rc;
 
 	/*
@@ -180,13 +188,15 @@ smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
 	 * Compute and store the signing key, which lives in
 	 * the user structure.
 	 */
-	sign_key->len = SMB2_SIG_SIZE;
 	if (s->dialect >= SMB_VERS_3_0) {
 		/*
 		 * For SMB3, the signing key is a "KDF" hash of the
-		 * sesion key.
+		 * session key.
 		 */
-		if (smb3_do_kdf(sign_key->key, &token->tkn_ssnkey) != 0)
+		sign_key->len = SMB3_KEYLEN;
+		if (smb3_do_kdf(sign_key->key, sign_kdf_input,
+		    sizeof (sign_kdf_input), token->tkn_ssnkey.val,
+		    token->tkn_ssnkey.len) != 0)
 			return (-1);
 	} else {
 		/*
@@ -194,14 +204,16 @@ smb2_sign_begin(smb_request_t *sr, smb_token_t *token)
 		 * of the session key (truncated or padded with zeros).
 		 * [MS-SMB2] 3.2.5.3.1
 		 */
+		sign_key->len = SMB2_KEYLEN;
 		bcopy(token->tkn_ssnkey.val, sign_key->key,
 		    MIN(token->tkn_ssnkey.len, sign_key->len));
 	}
 
 	mutex_enter(&u->u_mutex);
-	if (s->secmode & SMB2_NEGOTIATE_SIGNING_ENABLED)
+	if ((s->srv_secmode & SMB2_NEGOTIATE_SIGNING_ENABLED) != 0)
 		u->u_sign_flags |= SMB_SIGNING_ENABLED;
-	if (s->secmode & SMB2_NEGOTIATE_SIGNING_REQUIRED)
+	if ((s->srv_secmode & SMB2_NEGOTIATE_SIGNING_REQUIRED) != 0 ||
+	    (s->cli_secmode & SMB2_NEGOTIATE_SIGNING_REQUIRED) != 0)
 		u->u_sign_flags |=
 		    SMB_SIGNING_ENABLED | SMB_SIGNING_CHECK;
 	mutex_exit(&u->u_mutex);
@@ -419,10 +431,12 @@ smb2_sign_reply(smb_request_t *sr)
 }
 
 /*
- * generate signing key as described in [MS-SMB2] 3.1.4.2
+ * Derive SMB3 key as described in [MS-SMB2] 3.1.4.2
  * and [NIST SP800-108]
  *
  * r = 32, L = 128, PRF = HMAC-SHA256, key = (session key)
+ *
+ * Note that these describe pre-3.1.1 inputs.
  *
  * Session.SigningKey for binding a session:
  * - Session.SessionKey as K1
@@ -437,39 +451,40 @@ smb2_sign_reply(smb_request_t *sr)
  * - Session.SessionKey as K1
  * - label = SMB2APP (size 8)
  * - context = SmbRpc (size 7)
+ * Session.EncryptionKey for encrypting server messages
+ * - Session.SessionKey as K1
+ * - label = "SMB2AESCCM" (size 11)
+ * - context = "ServerOut" (size 10)
+ * Session.DecryptionKey for decrypting client requests
+ * - Session.SessionKey as K1
+ * - label = "SMB2AESCCM" (size 11)
+ * - context = "ServerIn " (size 10) (Note the space)
  */
-static uint8_t kdf_magic[29] = {
-	0, 0, 0, 1, 'S', 'M', 'B', '2',
-	'A', 'E', 'S', 'C', 'M', 'A', 'C', 0,
-	0, 'S', 'm', 'b', 'S', 'i', 'g', 'n',
-	0, 0, 0, 0, 0x80 };
-static int
-smb3_do_kdf(void *outbuf, smb_buf32_t *ssnkey)
+
+int
+smb3_do_kdf(void *outbuf, void *input, size_t input_len,
+    uint8_t *key, uint32_t key_len)
 {
 	uint8_t digest32[SHA256_DIGEST_LENGTH];
-	smb_sign_mech_t mech;
+	smb_crypto_mech_t mech;
 	smb_sign_ctx_t hctx = 0;
-	int kdf_len;
 	int rc;
-
-	kdf_len = sizeof (kdf_magic);
-	ASSERT3S(kdf_len, ==, 29);	/* per spec. */
 
 	bzero(&mech, sizeof (mech));
 	if ((rc = smb2_hmac_getmech(&mech)) != 0)
 		return (rc);
 
-	rc = smb2_hmac_init(&hctx, &mech, ssnkey->val, ssnkey->len);
+	rc = smb2_hmac_init(&hctx, &mech, key, key_len);
 	if (rc != 0)
 		return (rc);
 
-	if ((rc = smb2_hmac_update(hctx, kdf_magic, kdf_len)) != 0)
+	if ((rc = smb2_hmac_update(hctx, input, input_len)) != 0)
 		return (rc);
 
 	if ((rc = smb2_hmac_final(hctx, digest32)) != 0)
 		return (rc);
 
 	/* Output is first 16 bytes of digest. */
-	bcopy(digest32, outbuf, SMB2_SIG_SIZE);
+	bcopy(digest32, outbuf, SMB3_KEYLEN);
 	return (0);
 }

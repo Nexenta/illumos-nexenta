@@ -1993,6 +1993,13 @@ smb_server_store_cfg(smb_server_t *sv, smb_ioc_cfg_t *ioc)
 	if (ioc->maxconnections == 0)
 		ioc->maxconnections = 0xFFFFFFFF;
 
+	if (ioc->encrypt == SMB_CONFIG_REQUIRED &&
+	    ioc->max_protocol < SMB_VERS_3_0) {
+		cmn_err(CE_WARN, "Server set to require encryption; "
+		    "forcing max_protocol to 3.0");
+		ioc->max_protocol = SMB_VERS_3_0;
+	}
+
 	smb_session_correct_keep_alive_values(
 	    &sv->sv_session_list, ioc->keepalive);
 
@@ -2010,6 +2017,7 @@ smb_server_store_cfg(smb_server_t *sv, smb_ioc_cfg_t *ioc)
 	sv->sv_cfg.skc_print_enable = ioc->print_enable;
 	sv->sv_cfg.skc_traverse_mounts = ioc->traverse_mounts;
 	sv->sv_cfg.skc_max_protocol = ioc->max_protocol;
+	sv->sv_cfg.skc_encrypt = ioc->encrypt;
 	sv->sv_cfg.skc_execflags = ioc->exec_flags;
 	sv->sv_cfg.skc_negtok_len = ioc->negtok_len;
 	sv->sv_cfg.skc_version = ioc->version;

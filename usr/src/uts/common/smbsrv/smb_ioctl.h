@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB_IOCTL_H_
@@ -167,6 +167,7 @@ typedef struct smb_ioc_cfg {
 	int32_t		print_enable;
 	int32_t		traverse_mounts;
 	uint32_t	max_protocol;
+	uint32_t	encrypt;
 	uint32_t	exec_flags;
 	uint32_t	negtok_len;
 	smb_version_t	version;

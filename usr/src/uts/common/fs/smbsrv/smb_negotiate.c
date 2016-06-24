@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -436,9 +436,9 @@ smb_com_negotiate(smb_request_t *sr)
 		return (rc);
 	}
 
-	session->secmode = NEGOTIATE_ENCRYPT_PASSWORDS |
+	session->srv_secmode = NEGOTIATE_ENCRYPT_PASSWORDS |
 	    NEGOTIATE_USER_SECURITY;
-	secmode = session->secmode;
+	secmode = session->srv_secmode;
 	sesskey = session->sesskey;
 
 	negprot->ni_servertime.tv_sec = gethrestime_sec();
@@ -531,7 +531,7 @@ smb_com_negotiate(smb_request_t *sr)
 				secmode |=
 				    NEGOTIATE_SECURITY_SIGNATURES_REQUIRED;
 
-			session->secmode = secmode;
+			session->srv_secmode = secmode;
 		}
 
 		/*

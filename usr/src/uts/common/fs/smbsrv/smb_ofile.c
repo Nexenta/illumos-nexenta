@@ -400,7 +400,7 @@ smb_ofile_open(
 				    op->create_guid,
 				    UUID_LEN);
 
-				if ((of->f_session->capabilities &
+				if ((of->f_session->srv_cap &
 				    SMB2_CAP_PERSISTENT_HANDLES) != 0 &&
 				    of->f_tree->is_CA &&
 				    SMB2_PERSIST(op->dh_v2_flags))
