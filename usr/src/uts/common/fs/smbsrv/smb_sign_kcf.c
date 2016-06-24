@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -75,7 +75,12 @@ smb_md5_update(smb_sign_ctx_t ctx, void *buf, size_t len)
 
 	rv = crypto_digest_update(ctx, &data, 0);
 
-	return (rv == CRYPTO_SUCCESS ? 0 : -1);
+	if (rv != CRYPTO_SUCCESS) {
+		crypto_cancel_ctx(ctx);
+		return (-1);
+	}
+
+	return (0);
 }
 
 /*
@@ -152,7 +157,12 @@ smb2_hmac_update(smb_sign_ctx_t ctx, uint8_t *in, size_t len)
 
 	rv = crypto_mac_update(ctx, &data, 0);
 
-	return (rv == CRYPTO_SUCCESS ? 0 : -1);
+	if (rv != CRYPTO_SUCCESS) {
+		crypto_cancel_ctx(ctx);
+		return (-1);
+	}
+
+	return (0);
 }
 
 /*
@@ -233,7 +243,12 @@ smb3_cmac_update(smb_sign_ctx_t ctx, uint8_t *in, size_t len)
 
 	rv = crypto_mac_update(ctx, &data, 0);
 
-	return (rv == CRYPTO_SUCCESS ? 0 : -1);
+	if (rv != CRYPTO_SUCCESS) {
+		crypto_cancel_ctx(ctx);
+		return (-1);
+	}
+
+	return (0);
 }
 
 /*
