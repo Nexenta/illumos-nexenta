@@ -573,10 +573,6 @@ smb_authsock_sendrecv(smb_request_t *sr, smb_lsa_msg_hdr_t *hdr,
 	if (rc == 0 && hdr->lmh_msglen != 0) {
 		*recvbuf = kmem_alloc(hdr->lmh_msglen, KM_SLEEP);
 		rc = smb_authsock_recv(so, *recvbuf, hdr->lmh_msglen);
-		if (rc) {
-			kmem_free(*recvbuf, hdr->lmh_msglen);
-			*recvbuf = NULL;
-		}
 	}
 
 	switch (rc) {
@@ -614,6 +610,10 @@ smb_authsock_sendrecv(smb_request_t *sr, smb_lsa_msg_hdr_t *hdr,
 out:
 	ksocket_rele(so);
 
+	if (status != 0 && *recvbuf != NULL) {
+		kmem_free(*recvbuf, hdr->lmh_msglen);
+		*recvbuf = NULL;
+	}
 	return (status);
 }
 
