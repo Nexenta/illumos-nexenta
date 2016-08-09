@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 
@@ -387,7 +387,8 @@ void stmf_send_status_done(scsi_task_t *task, stmf_status_t s, uint32_t iof);
 void stmf_task_lu_done(scsi_task_t *task);
 void stmf_abort(int abort_cmd, scsi_task_t *task, stmf_status_t s, void *arg);
 void stmf_task_lu_aborted(scsi_task_t *task, stmf_status_t s, uint32_t iof);
-void stmf_task_lport_aborted(scsi_task_t *task, stmf_status_t s, uint32_t iof);
+void stmf_task_lport_aborted_unlocked(scsi_task_t *task, stmf_status_t s,
+    uint32_t iof);
 stmf_status_t stmf_task_poll_lu(scsi_task_t *task, uint32_t timeout);
 stmf_status_t stmf_task_poll_lport(scsi_task_t *task, uint32_t timeout);
 stmf_status_t stmf_ctl(int cmd, void *obj, void *arg);

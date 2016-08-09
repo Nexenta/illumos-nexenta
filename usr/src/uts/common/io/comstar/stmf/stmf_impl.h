@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
 #ifndef _STMF_IMPL_H
@@ -239,6 +239,7 @@ typedef struct stmf_i_scsi_task {
 	scsi_task_t		*itask_task;
 	uint32_t		itask_alloc_size;
 	uint32_t		itask_flags;
+	kmutex_t		itask_mutex; /* protects flags and lists */
 	uint64_t		itask_proxy_msg_id;
 	stmf_data_buf_t		*itask_proxy_dbuf;
 	struct stmf_worker	*itask_worker;
@@ -247,7 +248,6 @@ typedef struct stmf_i_scsi_task {
 	struct stmf_i_scsi_task	*itask_lu_next;
 	struct stmf_i_scsi_task	*itask_lu_prev;
 	struct stmf_i_scsi_task	*itask_lu_free_next;
-	struct stmf_i_scsi_task	*itask_abort_next;
 	struct stmf_itl_data	*itask_itl_datap;
 	clock_t			itask_start_time;	/* abort and normal */
 	/* For now we only support 4 parallel buffers. Should be enough. */
@@ -275,6 +275,41 @@ typedef struct stmf_i_scsi_task {
 } stmf_i_scsi_task_t;
 
 #define	ITASK_DEFAULT_ABORT_TIMEOUT	5
+
+/*
+ * Common code to encode an itask onto the worker_task queue is placed
+ * in this macro to simplify future maintenace activity.
+ */
+#define	STMF_ENQUEUE_ITASK(w, i) \
+	ASSERT((itask->itask_flags & ITASK_IN_FREE_LIST) == 0); \
+	ASSERT(mutex_owned(&itask->itask_mutex)); \
+	ASSERT(mutex_owned(&w->worker_lock)); \
+	i->itask_worker_next = NULL; \
+	if (w->worker_task_tail) { \
+		w->worker_task_tail->itask_worker_next = i; \
+	} else { \
+		w->worker_task_head = i; \
+	} \
+	w->worker_task_tail = i; \
+	if (++(w->worker_queue_depth) > w->worker_max_qdepth_pu) { \
+		w->worker_max_qdepth_pu = w->worker_queue_depth; \
+	} \
+	atomic_inc_32(&w->worker_ref_count); \
+	atomic_or_32(&itask->itask_flags, ITASK_IN_WORKER_QUEUE); \
+	i->itask_waitq_enter_timestamp = gethrtime(); \
+	if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0) \
+		cv_signal(&w->worker_cv);
+
+#define	STMF_DEQUEUE_ITASK(w, itask) \
+	ASSERT(mutex_owned(&w->worker_lock)); \
+	if ((itask = w->worker_task_head) != NULL) { \
+		w->worker_task_head = itask->itask_worker_next; \
+		if (w->worker_task_head == NULL) { \
+			w->worker_task_tail = NULL; \
+		} \
+	} else { \
+		w->worker_task_tail = NULL; \
+	}
 
 /*
  * itask_flags

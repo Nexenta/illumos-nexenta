@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -976,7 +976,7 @@ iscsit_task_aborted(idm_task_t *idt, idm_status_t status)
 			 * STMF_ABORTED, the code actually looks for
 			 * STMF_ABORT_SUCCESS.
 			 */
-			stmf_task_lport_aborted(itask->it_stmf_task,
+			stmf_task_lport_aborted_unlocked(itask->it_stmf_task,
 			    STMF_ABORT_SUCCESS, STMF_IOF_LPORT_DONE);
 			return;
 		} else {
@@ -1352,7 +1352,25 @@ iscsit_conn_lost(idm_conn_t *ic)
 	/*
 	 * Make sure there aren't any PDU's transitioning from the receive
 	 * handler to the dispatch taskq.
+	 *
+	 * There is a race condition between IO operations and aborts
+	 * where a command may be sending completion information on one
+	 * thread and  and is aborted on a different thread.  This causes
+	 * the refcnt to be double decremented (multiple idm_refcnt_rele
+	 * calls) and the refcnts to become negative.  Mostly this is
+	 * ok because task refcnts are just reset on completion. The
+	 * connection refcnt may become negative which will cause
+	 * logout to hang.  This problem can only be fixed by protecting
+	 * flags by a mutex which may impact performance and reliability.
+	 *
+	 * For now check to see if the condition exists and just clear it
+	 * to allow the logout state machine to run.  Since this is in the
+	 * logout phase it is unlikely that a new command will arrive between
+	 * the check, reset and wait operations.
 	 */
+	if (idm_refcnt_is_held(&ict->ict_dispatch_refcnt) < 0) {
+		cmn_err(CE_WARN, "Possible hang in iscsit_conn_lost");
+	}
 	idm_refcnt_wait_ref(&ict->ict_dispatch_refcnt);
 
 	return (IDM_STATUS_SUCCESS);
@@ -2416,9 +2434,10 @@ iscsit_op_scsi_task_mgmt(iscsit_conn_t *ict, idm_pdu_t *rx_pdu)
 			if (iscsit_cmdsn_in_window(ict, refcmdsn) &&
 			    iscsit_sna_lt(refcmdsn, cmdsn)) {
 				mutex_enter(&ict->ict_sess->ist_sn_mutex);
-				(void) iscsit_remove_pdu_from_queue(
-				    ict->ict_sess, refcmdsn);
-				iscsit_conn_dispatch_rele(ict);
+				if (iscsit_remove_pdu_from_queue(
+				    ict->ict_sess, refcmdsn)) {
+					iscsit_conn_dispatch_rele(ict);
+				}
 				mutex_exit(&ict->ict_sess->ist_sn_mutex);
 				iscsit_send_task_mgmt_resp(tm_resp_pdu,
 				    SCSI_TCP_TM_RESP_COMPLETE);

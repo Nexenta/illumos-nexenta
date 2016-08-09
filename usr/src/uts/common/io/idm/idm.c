@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -2262,6 +2263,30 @@ idm_refcnt_destroy_unref_obj(idm_refcnt_t *refcnt,
 	}
 	mutex_exit(&refcnt->ir_mutex);
 }
+
+/*
+ * used to determine the status of the refcnt.
+ *
+ * if refcnt is 0 return is 0
+ * if refcnt is negative return is -1
+ * if refcnt > 0 and no waiters return is 1
+ * if refcnt > 0 and waiters return is 2
+ */
+int
+idm_refcnt_is_held(idm_refcnt_t *refcnt)
+{
+	if (refcnt->ir_refcnt < 0)
+		return (-1);
+
+	if (refcnt->ir_refcnt == 0)
+		return (0);
+
+	if (refcnt->ir_waiting == REF_NOWAIT && refcnt->ir_refcnt > 0)
+		return (1);
+
+	return (2);
+}
+
 
 void
 idm_conn_hold(idm_conn_t *ic)

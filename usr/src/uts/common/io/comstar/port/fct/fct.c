@@ -2844,8 +2844,8 @@ fct_cmd_fca_aborted(fct_cmd_t *cmd, fct_status_t s, uint32_t ioflags)
 	/* For non FCP Rest of the work is done by the terminator */
 	/* For FCP stuff just call stmf */
 	if (cmd->cmd_type == FCT_CMD_FCP_XCHG) {
-		stmf_task_lport_aborted((scsi_task_t *)cmd->cmd_specific,
-		    s, STMF_IOF_LPORT_DONE);
+		stmf_task_lport_aborted_unlocked(
+		    (scsi_task_t *)cmd->cmd_specific, s, STMF_IOF_LPORT_DONE);
 	}
 }
 
