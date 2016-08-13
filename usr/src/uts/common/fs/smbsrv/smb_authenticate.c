@@ -506,22 +506,32 @@ smb_priv_xlate(smb_token_t *token)
 
 /*
  * Unblock a request that might be blocked reading some
- * authentication socket.  We don't have an easy way to
- * interrupt just the thread servicing this request, so
- * we shutdown(3socket) the socket, waking all readers.
- * That's a bit heavy-handed, making the socket unusable
- * after this, so we do this only when disconnecting a
- * session (i.e. stopping the SMB service), and not when
- * handling an SMB2_cancel or SMB_nt_cancel request.
+ * authentication socket.  This can happen when either the
+ * client cancels a session setup or closes the connection.
  */
 static void
 smb_authsock_cancel(smb_request_t *sr)
 {
-	ksocket_t so;
+	smb_user_t *user = sr->cancel_arg2;
+	ksocket_t authsock = NULL;
 
-	if (sr->session->s_state == SMB_SESSION_STATE_DISCONNECTED &&
-	    (so = sr->cancel_arg2) != NULL) {
-		(void) ksocket_shutdown(so, SHUT_RDWR, sr->user_cr);
+	if (user == NULL)
+		return;
+	ASSERT(user == sr->uid_user);
+
+	/*
+	 * Check user state, and get a hold on the auth socket.
+	 */
+	mutex_enter(&user->u_mutex);
+	if (user->u_state == SMB_USER_STATE_LOGGING_ON) {
+		if ((authsock = user->u_authsock) != NULL)
+			ksocket_hold(authsock);
+	}
+	mutex_exit(&user->u_mutex);
+
+	if (authsock != NULL) {
+		(void) ksocket_shutdown(authsock, SHUT_RDWR, sr->user_cr);
+		ksocket_rele(authsock);
 	}
 }
 
@@ -561,7 +571,7 @@ smb_authsock_sendrecv(smb_request_t *sr, smb_lsa_msg_hdr_t *hdr,
 	}
 	sr->sr_state = SMB_REQ_STATE_WAITING_AUTH;
 	sr->cancel_method = smb_authsock_cancel;
-	sr->cancel_arg2 = so;
+	sr->cancel_arg2 = user;
 	mutex_exit(&sr->sr_mutex);
 
 	rc = smb_authsock_send(so, hdr, sizeof (*hdr));
@@ -645,8 +655,13 @@ smb_authsock_open(smb_request_t *sr)
 	int rc;
 
 	/*
-	 * If the auth. service is busy, wait our turn.
-	 * This may be frequent, so don't log.
+	 * If the auth. service is busy, wait our turn.  This threshold
+	 * limits the number of auth sockets we might have trying to
+	 * communicate with the auth. service up in smbd.  Until we've
+	 * set u_authsock, we need to "exit this threshold" in any
+	 * error code paths after this "enter".
+	 *
+	 * Failure to "enter" may be frequent, so don't log.
 	 */
 	if ((rc = smb_threshold_enter(&sv->sv_ssetup_ct)) != 0)
 		return (NT_STATUS_NO_LOGON_SERVERS);
@@ -655,9 +670,27 @@ smb_authsock_open(smb_request_t *sr)
 	    KSOCKET_SLEEP, CRED());
 	if (rc != 0) {
 		cmn_err(CE_NOTE, "smb_authsock_open: socket, rc=%d", rc);
+		smb_threshold_exit(&sv->sv_ssetup_ct);
 		status = NT_STATUS_INSUFF_SERVER_RESOURCES;
 		goto errout;
 	}
+
+	/*
+	 * This (new) user object now gets an authsocket.
+	 * Note: u_authsock cleanup in smb_user_logoff.
+	 * After we've set u_authsock, smb_threshold_exit
+	 * is done in smb_authsock_close().
+	 */
+	mutex_enter(&user->u_mutex);
+	if (user->u_authsock != NULL) {
+		mutex_exit(&user->u_mutex);
+		(void) ksocket_close(so, CRED());
+		smb_threshold_exit(&sv->sv_ssetup_ct);
+		status = NT_STATUS_INTERNAL_ERROR;
+		goto errout;
+	}
+	user->u_authsock = so;
+	mutex_exit(&user->u_mutex);
 
 	/*
 	 * Set the send/recv timeouts.
@@ -681,7 +714,7 @@ smb_authsock_open(smb_request_t *sr)
 	}
 	sr->sr_state = SMB_REQ_STATE_WAITING_AUTH;
 	sr->cancel_method = smb_authsock_cancel;
-	sr->cancel_arg2 = so;
+	sr->cancel_arg2 = user;
 	mutex_exit(&sr->sr_mutex);
 
 	rc = ksocket_connect(so, (struct sockaddr *)&smbauth_sockname,
@@ -708,25 +741,7 @@ smb_authsock_open(smb_request_t *sr)
 	}
 	mutex_exit(&sr->sr_mutex);
 
-	if (status != 0)
-		goto errout;
-
-	/* Note: u_authsock cleanup in smb_authsock_close() */
-	mutex_enter(&user->u_mutex);
-	if (user->u_authsock != NULL) {
-		mutex_exit(&user->u_mutex);
-		status = NT_STATUS_INTERNAL_ERROR;
-		goto errout;
-	}
-	user->u_authsock = so;
-	mutex_exit(&user->u_mutex);
-	return (0);
-
 errout:
-	if (so != NULL)
-		(void) ksocket_close(so, CRED());
-	smb_threshold_exit(&sv->sv_ssetup_ct);
-
 	return (status);
 }
 
@@ -772,14 +787,15 @@ smb_authsock_recv(ksocket_t so, void *buf, size_t len)
 	return (rc);
 }
 
+/*
+ * Caller has cleared user->u_authsock, passing the last ref
+ * as the 2nd arg here.  This can block, so it's called
+ * after exiting u_mutex.
+ */
 void
-smb_authsock_close(smb_user_t *user)
+smb_authsock_close(smb_user_t *user, ksocket_t so)
 {
 
-	ASSERT(MUTEX_HELD(&user->u_mutex));
-	if (user->u_authsock == NULL)
-		return;
-	(void) ksocket_close(user->u_authsock, CRED());
-	user->u_authsock = NULL;
+	(void) ksocket_close(so, CRED());
 	smb_threshold_exit(&user->u_server->sv_ssetup_ct);
 }
