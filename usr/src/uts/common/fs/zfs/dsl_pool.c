@@ -144,12 +144,7 @@ hrtime_t zfs_throttle_resolution = MSEC2NSEC(10);
  * Tunable to control max number of tasks available for processing of
  * deferred deletes.
  */
-int zfs_vn_rele_max_tasks = 8192;
-
-/*
- * Tunable to control number of threads servicing the vn rele taskq
- */
-int zfs_vn_rele_threads = 256;
+int zfs_vn_rele_max_tasks = 256;
 
 int
 dsl_pool_open_special_dir(dsl_pool_t *dp, const char *name, dsl_dir_t **ddp)
@@ -193,9 +188,8 @@ dsl_pool_open_impl(spa_t *spa, uint64_t txg)
 	mutex_init(&dp->dp_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&dp->dp_spaceavail_cv, NULL, CV_DEFAULT, NULL);
 
-	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq",
-	    zfs_vn_rele_threads, minclsyspri, 1, zfs_vn_rele_max_tasks,
-	    TASKQ_DYNAMIC);
+	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq", 1, minclsyspri,
+	    1, zfs_vn_rele_max_tasks, TASKQ_DYNAMIC);
 
 	return (dp);
 }
