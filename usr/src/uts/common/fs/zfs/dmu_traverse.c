@@ -40,6 +40,8 @@
 #include <sys/zfeature.h>
 
 int zfs_pd_blks_max = 100;
+/* temporarily disable birth_hole feature */
+boolean_t send_holes_without_birth_time = B_TRUE;
 
 typedef struct prefetch_data {
 	kmutex_t pd_mtx;
@@ -245,7 +247,8 @@ traverse_visitbp(traverse_data_t *td, const dnode_phys_t *dnp,
 			uint64_t hole_birth_enabled_txg;
 			VERIFY(spa_feature_enabled_txg(td->td_spa,
 			    SPA_FEATURE_HOLE_BIRTH, &hole_birth_enabled_txg));
-			if (hole_birth_enabled_txg < td->td_min_txg)
+			if (!send_holes_without_birth_time &&
+			    hole_birth_enabled_txg < td->td_min_txg)
 				return (0);
 		}
 	} else if (bp->blk_birth <= td->td_min_txg) {
