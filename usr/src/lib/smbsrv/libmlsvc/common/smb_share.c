@@ -19,7 +19,7 @@
  * CDDL HEADER END
  *
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -2049,8 +2049,8 @@ smb_shr_publisher_flush(list_t *lst)
 
 /*
  * If the share path refers to a ZFS file system, add the
- * .zfs/shares/<share> object and call smb_quota_add_fs()
- * to initialize quota support for the share.
+ * .zfs/shares/<share> object and add or remove the special
+ * directory and file telling clients about quota support.
  */
 static void
 smb_shr_zfs_add(smb_share_t *si)
@@ -2077,14 +2077,16 @@ smb_shr_zfs_add(smb_share_t *si)
 		syslog(LOG_INFO, "share: failed to add ACL object: %s: %s\n",
 		    si->shr_name, strerror(errno));
 
-	if ((si->shr_flags & SMB_SHRF_QUOTAS) != 0) {
-		ret = zfs_prop_get(zfshd, ZFS_PROP_MOUNTPOINT,
-		    buf, MAXPATHLEN, NULL, NULL, 0, B_FALSE);
-		if (ret != 0) {
-			syslog(LOG_INFO, "share: failed to get mountpoint: "
-			    "%s\n", si->shr_name);
-		} else {
+	ret = zfs_prop_get(zfshd, ZFS_PROP_MOUNTPOINT,
+	    buf, MAXPATHLEN, NULL, NULL, 0, B_FALSE);
+	if (ret != 0) {
+		syslog(LOG_INFO, "share: failed to get mountpoint: "
+		    "%s\n", si->shr_name);
+	} else {
+		if ((si->shr_flags & SMB_SHRF_QUOTAS) != 0) {
 			smb_quota_add_fs(buf);
+		} else {
+			smb_quota_remove_fs(buf);
 		}
 	}
 
@@ -2094,14 +2096,12 @@ smb_shr_zfs_add(smb_share_t *si)
 
 /*
  * If the share path refers to a ZFS file system, remove the
- * .zfs/shares/<share> object, and call smb_quota_remove_fs()
- * to end quota support for the share.
+ * .zfs/shares/<share> object.
  */
 static void
 smb_shr_zfs_remove(smb_share_t *si)
 {
 	libzfs_handle_t *libhd;
-	zfs_handle_t *zfshd;
 	int ret;
 	char buf[MAXPATHLEN];	/* dataset or mountpoint */
 
@@ -2111,29 +2111,18 @@ smb_shr_zfs_remove(smb_share_t *si)
 	if ((libhd = libzfs_init()) == NULL)
 		return;
 
-	if ((zfshd = zfs_open(libhd, buf, ZFS_TYPE_FILESYSTEM)) == NULL) {
-		libzfs_fini(libhd);
-		return;
-	}
-
 	errno = 0;
 	ret = zfs_smb_acl_remove(libhd, buf, si->shr_path, si->shr_name);
 	if (ret != 0 && errno != EAGAIN)
 		syslog(LOG_INFO, "share: failed to remove ACL object: %s: %s\n",
 		    si->shr_name, strerror(errno));
 
-	if ((si->shr_flags & SMB_SHRF_QUOTAS) != 0) {
-		ret = zfs_prop_get(zfshd, ZFS_PROP_MOUNTPOINT,
-		    buf, MAXPATHLEN, NULL, NULL, 0, B_FALSE);
-		if (ret != 0) {
-			syslog(LOG_INFO, "share: failed to get mountpoint: "
-			    "%s\n", si->shr_name);
-		} else {
-			smb_quota_remove_fs(buf);
-		}
-	}
+	/*
+	 * We could remove the quotas directory here, but that adds
+	 * significantly to the time required for a zpool export,
+	 * so just leave it here and fixup when we share next.
+	 */
 
-	zfs_close(zfshd);
 	libzfs_fini(libhd);
 }
 
