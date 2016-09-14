@@ -676,24 +676,20 @@ zfs_rmnode(znode_t *zp)
 			zfs_znode_free(zp);
 			return;
 		}
+	}
+
+	/*
+	 * Free up all the data in the file.
+	 */
+	error = dmu_free_long_range(os, zp->z_id, 0, DMU_OBJECT_END);
+	if (error) {
 		/*
-		 * Free up all the data in the file.  We don't do this for
-		 * XATTR directories because we need truncate and remove to be
-		 * in the same tx, like in zfs_znode_delete(). Otherwise, if
-		 * we crash here we'll end up with an inconsistent truncated
-		 * zap object in the delete queue.  Note a truncated file is
-		 * harmless since it only contains user data.
+		 * Not enough space or we were interrupted by fs unmount.
+		 * Leave the file in the unlinked set.
 		 */
-		error = dmu_free_long_range(os, zp->z_id, 0, DMU_OBJECT_END);
-		if (error) {
-			/*
-			 * Not enough space or we were interrupted by unmount.
-			 * Leave the file in the unlinked set.
-			 */
-			zfs_znode_dmu_fini(zp);
-			zfs_znode_free(zp);
-			return;
-		}
+		zfs_znode_dmu_fini(zp);
+		zfs_znode_free(zp);
+		return;
 	}
 
 	/*

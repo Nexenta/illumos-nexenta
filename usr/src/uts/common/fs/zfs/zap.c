@@ -577,14 +577,7 @@ zap_deref_leaf(zap_t *zap, uint64_t h, dmu_tx_t *tx, krw_t lt, zap_leaf_t **lp)
 
 	ASSERT(zap->zap_dbuf == NULL ||
 	    zap->zap_f.zap_phys == zap->zap_dbuf->db_data);
-
-	/* Reality check for corrupt zap objects (leaf or header). */
-	if ((zap->zap_f.zap_phys->zap_block_type != ZBT_LEAF &&
-	    zap->zap_f.zap_phys->zap_block_type != ZBT_HEADER) ||
-	    zap->zap_f.zap_phys->zap_magic != ZAP_MAGIC) {
-		return (SET_ERROR(EIO));
-	}
-
+	ASSERT3U(zap->zap_f.zap_phys->zap_magic, ==, ZAP_MAGIC);
 	idx = ZAP_HASH_IDX(h, zap->zap_f.zap_phys->zap_ptrtbl.zt_shift);
 	err = zap_idx_to_blk(zap, idx, &blk);
 	if (err != 0)
