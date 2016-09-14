@@ -676,7 +676,6 @@ zfs_rmnode(znode_t *zp)
 			zfs_znode_free(zp);
 			return;
 		}
-	} else {
 		/*
 		 * Free up all the data in the file.  We don't do this for
 		 * XATTR directories because we need truncate and remove to be
