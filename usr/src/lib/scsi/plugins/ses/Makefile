@@ -27,6 +27,7 @@
 SUBDIRS = 			\
 	libses			\
 	ses2			\
+	HGST			\
 	LSILOGIC-SASX28-A.0	\
 	SUN			\
 	SUN-Storage-J4400	\

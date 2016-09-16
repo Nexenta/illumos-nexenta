@@ -649,6 +649,12 @@ fail:
 	return (ses_set_nverrno(nverr, NULL));
 }
 
+/*
+ * Parse the AES (0xa) SES diagnostic page.
+ *
+ * When making changes here, keep in mind that AES (re)parsing may be done by
+ * libses plugins (like HP and HGST) so those may need to be updated as well.
+ */
 static int
 elem_parse_aes_device(const ses2_aes_descr_eip_impl_t *dep, nvlist_t *nvl,
     size_t len)

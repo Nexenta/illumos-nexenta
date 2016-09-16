@@ -21,6 +21,7 @@
 
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/system/library/storage/scsi-plugins@$(PKGVERS)
@@ -36,10 +37,12 @@ dir path=usr/lib/scsi/plugins
 dir path=usr/lib/scsi/plugins/ses
 dir path=usr/lib/scsi/plugins/ses/vendor
 dir path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)
+file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HGST.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/LSILOGIC-SASX28-A.0.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SUN-Storage-J4400.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SUN-Storage-J4500.so
 file path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SUN.so
+file path=usr/lib/scsi/plugins/ses/vendor/HGST.so
 file path=usr/lib/scsi/plugins/ses/vendor/LSILOGIC-SASX28-A.0.so
 file path=usr/lib/scsi/plugins/ses/vendor/SUN-Storage-J4400.so
 file path=usr/lib/scsi/plugins/ses/vendor/SUN-Storage-J4500.so
