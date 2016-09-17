@@ -389,6 +389,7 @@ smb_shr_add(smb_share_t *si)
 	struct stat st;
 	smb_share_t *cached_si;
 	nvlist_t *shrlist;
+	boolean_t created_zfs = B_FALSE;
 	uint32_t status;
 	int rc;
 
@@ -416,8 +417,34 @@ smb_shr_add(smb_share_t *si)
 		/*
 		 * If share type is STYPE_DISKTREE then the path to the
 		 * share should exist so that we can add the share to cache.
+		 * If path is ZFS, add the .zfs/shares/<share> entry.
+		 *
+		 * Both actions may require privileges that main dropped,
+		 * so we need to temporarily make those effective.
 		 */
-		rc = stat(si->shr_path, &st);
+		if (smb_proc_takesem() == 0) {
+
+			(void) priv_set(PRIV_ON, PRIV_EFFECTIVE,
+			    PRIV_FILE_DAC_READ,
+			    PRIV_FILE_DAC_SEARCH,
+			    PRIV_FILE_DAC_WRITE,
+			    NULL);
+
+			rc = stat(si->shr_path, &st);
+			if (rc == 0) {
+				smb_shr_zfs_add(si);
+				created_zfs = B_TRUE;
+			}
+
+			(void) priv_set(PRIV_OFF, PRIV_EFFECTIVE,
+			    PRIV_FILE_DAC_READ,
+			    PRIV_FILE_DAC_SEARCH,
+			    PRIV_FILE_DAC_WRITE,
+			    NULL);
+			smb_proc_givesem();
+		} else {
+			rc = NERR_InternalError;
+		}
 		if (rc != 0) {
 			smb_shr_cache_unlock();
 			return (NERR_ItemNotFound);
@@ -425,6 +452,7 @@ smb_shr_add(smb_share_t *si)
 	}
 
 	if ((status = smb_shr_cache_addent(si)) != NERR_Success) {
+		/* This error should be impossible after findent above. */
 		smb_shr_cache_unlock();
 		return (status);
 	}
@@ -440,9 +468,6 @@ smb_shr_add(smb_share_t *si)
 		if (rc == 0) {
 			smb_shr_publish(si->shr_name, si->shr_container);
 
-			/* If path is ZFS, add the .zfs/shares/<share> entry. */
-			smb_shr_zfs_add(si);
-
 			if ((si->shr_flags & SMB_SHRF_DFSROOT) != 0)
 				dfs_namespace_load(si->shr_name);
 
@@ -450,9 +475,32 @@ smb_shr_add(smb_share_t *si)
 		}
 	}
 
+	/*
+	 * Error code path, i.e. when the kernel could not accept
+	 * the new share for some reason.
+	 */
 	if (smb_shr_cache_lock(SMB_SHR_CACHE_WRLOCK) == NERR_Success) {
 		smb_shr_cache_delent(si->shr_name);
 		smb_shr_cache_unlock();
+	}
+
+	if (created_zfs && smb_proc_takesem() == 0) {
+
+		(void) priv_set(PRIV_ON, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
+		smb_shr_zfs_remove(si);
+
+		(void) priv_set(PRIV_OFF, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
+		smb_proc_givesem();
 	}
 
 	/*
@@ -505,9 +553,28 @@ smb_shr_remove(char *sharename)
 
 	/*
 	 * If path is ZFS, remove the .zfs/shares/<share> entry.  Need
-	 * to remove before cleanup of cache occurs.
+	 * to remove before cleanup of cache occurs.  These actions
+	 * require temporary elevation of privileges.
 	 */
-	smb_shr_zfs_remove(si);
+	if (smb_proc_takesem() == 0) {
+
+		(void) priv_set(PRIV_ON, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
+		smb_shr_zfs_remove(si);
+
+		(void) priv_set(PRIV_OFF, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
+		smb_proc_givesem();
+	}
+
 	(void) smb_shr_encode(si, &shrlist);
 
 	(void) strlcpy(container, si->shr_container, sizeof (container));
@@ -570,9 +637,25 @@ smb_shr_rename(char *from_name, char *to_name)
 	bcopy(from_si, &to_si, sizeof (smb_share_t));
 	(void) strlcpy(to_si.shr_name, to_name, sizeof (to_si.shr_name));
 
-
 	/* If path is ZFS, rename the .zfs/shares/<share> entry. */
-	smb_shr_zfs_rename(from_si, &to_si);
+	if (smb_proc_takesem() == 0) {
+
+		(void) priv_set(PRIV_ON, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
+		smb_shr_zfs_rename(from_si, &to_si);
+
+		(void) priv_set(PRIV_OFF, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
+		smb_proc_givesem();
+	}
 
 	if ((status = smb_shr_cache_addent(&to_si)) != NERR_Success) {
 		smb_shr_cache_unlock();
@@ -730,9 +813,25 @@ smb_shr_modify(smb_share_t *new_si)
 		smb_shr_publish(new_si->shr_name, new_si->shr_container);
 	}
 
-	if (quota_flag_changed) {
+	/* The following required privileges we dropped. */
+	if (quota_flag_changed && smb_proc_takesem() == 0) {
+
+		(void) priv_set(PRIV_ON, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
 		smb_shr_zfs_remove(&old_si);
 		smb_shr_zfs_add(si);
+
+		(void) priv_set(PRIV_OFF, PRIV_EFFECTIVE,
+		    PRIV_FILE_DAC_READ,
+		    PRIV_FILE_DAC_SEARCH,
+		    PRIV_FILE_DAC_WRITE,
+		    NULL);
+
+		smb_proc_givesem();
 	}
 
 	return (NERR_Success);
