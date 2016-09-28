@@ -3643,6 +3643,8 @@ bge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	int retval;
 #endif
 #endif
+	int prop_len = 128;
+	char *prop_name, *prop_val;
 
 	instance = ddi_get_instance(devinfo);
 
@@ -3677,6 +3679,22 @@ bge_attach(dev_info_t *devinfo, ddi_attach_cmd_t cmd)
 	    DDI_PROP_DONTPASS, debug_propname, bge_debug);
 	(void) snprintf(bgep->ifname, sizeof (bgep->ifname), "%s%d",
 	    BGE_DRIVER_NAME, instance);
+
+	/*
+	 * Check whether this specific instance has been disabled.
+	 */
+	prop_name = kmem_zalloc(prop_len, KM_SLEEP);
+	(void) snprintf(prop_name, prop_len, "disable-%s", bgep->ifname);
+	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, devinfo, 0, prop_name,
+	    &prop_val) == DDI_SUCCESS) {
+		if (strcmp(prop_val, "true") == 0) {
+			ddi_prop_free(prop_val);
+			kmem_free(prop_name, prop_len);
+			goto attach_fail;
+		}
+		ddi_prop_free(prop_val);
+	}
+	kmem_free(prop_name, prop_len);
 
 	/*
 	 * Initialize for fma support
