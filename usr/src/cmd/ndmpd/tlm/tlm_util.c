@@ -37,6 +37,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+
 #include <syslog.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,17 +89,14 @@ cstack_delete(cstack_t *stk)
 	cstack_t *tmp;
 
 	if (stk == NULL) {
-		syslog(LOG_DEBUG, "cstack_delete: invalid stack");
 		return;
 	}
 
 	while ((tmp = stk->next) != NULL) {
 		stk->next = tmp->next;
-		syslog(LOG_DEBUG, "cstack_delete(element): 0x%p", tmp);
 		free(tmp);
 	}
 
-	syslog(LOG_DEBUG, "cstack_delete: 0x%p", stk);
 	free(stk);
 }
 
@@ -118,7 +117,6 @@ cstack_push(cstack_t *stk, void *data, int len)
 	cstack_t *stk_node;
 
 	if (stk == NULL) {
-		syslog(LOG_DEBUG, "cstack_push: invalid stack");
 		return (-1);
 	}
 
@@ -148,12 +146,10 @@ cstack_pop(cstack_t *stk, void **data, int *len)
 	cstack_t *stk_node;
 
 	if (stk == NULL) {
-		syslog(LOG_ERR, "cstack_pop: invalid stack");
 		return (-1);
 	}
 
 	if ((stk_node = stk->next) == NULL) {
-		syslog(LOG_DEBUG, "cstack_pop: underflow");
 		return (-1);
 	}
 
@@ -180,12 +176,10 @@ int
 cstack_top(cstack_t *stk, void **data, int *len)
 {
 	if (stk == NULL) {
-		syslog(LOG_ERR, "cstack_pop: invalid stack");
 		return (-1);
 	}
 
 	if (stk->next == NULL) {
-		syslog(LOG_DEBUG, "cstack_pop: underflow");
 		return (-1);
 	}
 

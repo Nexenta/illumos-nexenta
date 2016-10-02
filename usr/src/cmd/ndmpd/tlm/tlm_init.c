@@ -35,6 +35,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+
 #include <sys/errno.h>
 #include <sys/types.h>
 #include <syslog.h>
@@ -554,15 +556,11 @@ tlm_init(void)
 		if ((sa = scsi_get_adapter(i)))
 			(void) scan_bus(sa, add_lib, (void *)&nlibs);
 
-	syslog(LOG_DEBUG, "nlibs %d", nlibs);
-
 	/* Search through all SCSI adapters, look for tape drives. */
 	vlibs = 0;
 	for (i = 0; i < nsa; i++)
 		if ((sa = scsi_get_adapter(i)))
 			(void) scan_bus(sa, add_drv, (void *)&vlibs);
-
-	syslog(LOG_DEBUG, "vlibs %d", vlibs);
 
 	if (nlibs > 0 && vlibs > 0)
 		inaccbl_drv_warn(nlibs + 1, vlibs + nlibs + 1);

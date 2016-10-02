@@ -36,6 +36,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <syslog.h>
@@ -267,11 +269,11 @@ mark_cb(void *arg, fst_node_t *pnp, fst_node_t *enp)
 		syslog(LOG_ERR, "NULL argument passed");
 		rv = -1;
 	} else if (mpp->mp_session->ns_eof) {
-		syslog(LOG_INFO, "Connection to the client is closed");
+		syslog(LOG_ERR, "Connection to the client is closed");
 		rv = -1;
 	} else if (mpp->mp_session->ns_data.dd_abort ||
 	    (nlp && NLP_ISSET(nlp, NLPF_ABORTED))) {
-		syslog(LOG_INFO, "Processing directories aborted.");
+		syslog(LOG_ERR, "Processing directories aborted.");
 		rv = -1;
 	}
 
@@ -442,8 +444,6 @@ create_bitmap(char *path, int value)
 	char *livepath;
 	ulong_t ninode;
 
-	syslog(LOG_DEBUG, "path \"%s\"", path);
-
 	if (fs_is_chkpntvol(path))
 		livepath = (char *)tlm_remove_checkpoint(path, buf);
 	else
@@ -453,7 +453,7 @@ create_bitmap(char *path, int value)
 		return (-1);
 	(void) ndmpd_mk_temp(bm_fname);
 
-	syslog(LOG_DEBUG, "path \"%s\"ninode %u bm_fname \"%s\"",
+	syslog(LOG_DEBUG, "path \"%s\" ninode %u bm_fname \"%s\"",
 	    livepath, ninode, bm_fname);
 
 	return (dbm_alloc(bm_fname, (u_longlong_t)ninode, value));
@@ -478,10 +478,10 @@ create_allset_bitmap(ndmp_lbr_params_t *nlp)
 	int rv;
 
 	nlp->nlp_bkmap = create_bitmap(nlp->nlp_backup_path, 1);
-	syslog(LOG_DEBUG, "nlp_bkmap %d", nlp->nlp_bkmap);
 
 	if (nlp->nlp_bkmap < 0) {
-		syslog(LOG_ERR, "Failed to allocate bitmap in create_allset_bitmap");
+		syslog(LOG_ERR,
+		    "Failed to allocate bitmap in create_allset_bitmap");
 		rv = -1;
 	} else
 		rv = 0;
@@ -523,7 +523,6 @@ mark_common_v2(ndmpd_session_t *session, ndmp_lbr_params_t *nlp)
 
 	rv = 0;
 	nlp->nlp_bkmap = create_bitmap(nlp->nlp_backup_path, 0);
-	syslog(LOG_DEBUG, "nlp_bkmap %d", nlp->nlp_bkmap);
 
 	if (nlp->nlp_bkmap < 0) {
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_common_v2");
@@ -684,7 +683,6 @@ mark_tokv3(ndmpd_session_t *session, ndmp_lbr_params_t *nlp, char *path)
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_tokv3");
 		return (-1);
 	}
-	syslog(LOG_DEBUG, "nlp_bkmap %d", nlp->nlp_bkmap);
 
 	mp.mp_bmd = nlp->nlp_bkmap;
 	mp.mp_ddate = nlp->nlp_tokdate;
@@ -774,12 +772,12 @@ marklbrv3_cb(void *arg, fst_node_t *pnp, fst_node_t *enp)
 
 	/* sanity check on fh and stat of the entry passed */
 	if (estp->st_ino > bl) {
-		syslog(LOG_DEBUG, "Invalid entry inode #%u",
+		syslog(LOG_ERR, "Invalid entry inode #%u",
 		    (uint_t)estp->st_ino);
 		return (-1);
 	}
 	if (estp->st_ino != efhp->fh_fid) {
-		syslog(LOG_DEBUG, "Entry ino mismatch %u %u", estp->st_ino,
+		syslog(LOG_ERR, "Entry ino mismatch %u %u", estp->st_ino,
 		    (uint_t)pfhp->fh_fid);
 		return (-1);
 	}
@@ -830,7 +828,6 @@ mark_lbrv3(ndmpd_session_t *session, ndmp_lbr_params_t *nlp, char *path)
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_lbrv3");
 		return (-1);
 	}
-	syslog(LOG_DEBUG, "nlp_bkmap %d", nlp->nlp_bkmap);
 
 	mp.mp_bmd = nlp->nlp_bkmap;
 	mp.mp_ddate = 0;
@@ -883,7 +880,6 @@ mark_levelv3(ndmpd_session_t *session, ndmp_lbr_params_t *nlp, char *path)
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_levelv3");
 		return (-1);
 	}
-	syslog(LOG_DEBUG, "nlp_bkmap %d", nlp->nlp_bkmap);
 
 	/*
 	 * We do not want to allocate memory for acl every time we

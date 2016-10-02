@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2014 Nexenta Systems, Inc.  All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
 
 #include <dirent.h>
 #include <errno.h>
@@ -884,13 +884,13 @@ ndmpd_config_get_server_info_v3(ndmp_connection_t *connection, void *body)
 	if (connection->conn_authorized ||
 	    session->ns_protocol_version != NDMPV4) {
 		if ((vendor = ndmpd_get_prop(NDMP_VENDOR_NAME)) == NULL ||
-			*vendor == 0) {
+		    *vendor == 0) {
 			reply.vendor_name = VENDOR_NAME;
 		} else {
 			reply.vendor_name = vendor;
 		}
 		if ((product = ndmpd_get_prop(NDMP_PRODUCT_NAME)) == NULL ||
-			*product == 0) {
+		    *product == 0) {
 			reply.product_name = PRODUCT_NAME;
 		} else {
 			reply.product_name = product;
@@ -903,10 +903,6 @@ ndmpd_config_get_server_info_v3(ndmp_connection_t *connection, void *body)
 		reply.product_name = "\0";
 		reply.revision_number = "\0";
 	}
-
-	syslog(LOG_DEBUG,
-	    "vendor \"%s\", product \"%s\" rev \"%s\"",
-	    reply.vendor_name, reply.product_name, reply.revision_number);
 
 	auth_types[0] = NDMP_AUTH_TEXT;
 	auth_types[1] = NDMP_AUTH_MD5;

@@ -37,6 +37,7 @@
  */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
 
 /*
  * File history callback functions called by backup modules. NDMP file history
@@ -135,8 +136,6 @@ ndmpd_api_file_history_path_v2(void *cookie, char *name,
 	    PATH_NAMEBUF_SIZE) {
 		ndmp_fh_add_unix_path_request request;
 
-		syslog(LOG_DEBUG,
-		    "sending %ld entries", session->ns_fh.fh_path_index);
 
 		request.paths.paths_val = session->ns_fh.fh_path_entries;
 		request.paths.paths_len = session->ns_fh.fh_path_index;
@@ -227,9 +226,6 @@ ndmpd_api_file_history_dir_v2(void *cookie, char *name, ulong_t node,
 	    DIR_NAMEBUF_SIZE) {
 		ndmp_fh_add_unix_dir_request request;
 
-		syslog(LOG_DEBUG,
-		    "sending %ld entries", session->ns_fh.fh_dir_index);
-
 		request.dirs.dirs_val = session->ns_fh.fh_dir_entries;
 		request.dirs.dirs_len = session->ns_fh.fh_dir_index;
 		if (ndmp_send_request_lock(session->ns_connection,
@@ -313,9 +309,6 @@ ndmpd_api_file_history_node_v2(void *cookie, ulong_t node,
 	    (ndmp_syncfh && session->ns_fh.fh_node_index != 0) ||
 	    session->ns_fh.fh_node_index == N_NODE_ENTRIES) {
 		ndmp_fh_add_unix_node_request request;
-
-		syslog(LOG_DEBUG,
-		    "sending %ld entries", session->ns_fh.fh_node_index);
 
 		request.nodes.nodes_val = session->ns_fh.fh_node_entries;
 		request.nodes.nodes_len = session->ns_fh.fh_node_index;
@@ -409,9 +402,6 @@ ndmpd_api_file_history_file_v3(void *cookie, char *name,
 	    session->ns_fh_v3.fh_file_index == N_FILE_ENTRIES ||
 	    session->ns_fh_v3.fh_file_name_buf_index + strlen(name) + 1 >
 	    PATH_NAMEBUF_SIZE) {
-
-		syslog(LOG_DEBUG, "sending %ld entries",
-		    session->ns_fh_v3.fh_file_index);
 
 		request.files.files_len = session->ns_fh_v3.fh_file_index;
 		request.files.files_val = session->ns_fh_v3.fh_files;
@@ -540,9 +530,6 @@ ndmpd_api_file_history_dir_v3(void *cookie, char *name, ulong_t node,
 	    session->ns_fh_v3.fh_dir_name_buf_index + strlen(name) + 1 >
 	    DIR_NAMEBUF_SIZE) {
 
-		syslog(LOG_DEBUG, "sending %ld entries",
-		    session->ns_fh_v3.fh_dir_index);
-
 		request.dirs.dirs_val = session->ns_fh_v3.fh_dirs;
 		request.dirs.dirs_len = session->ns_fh_v3.fh_dir_index;
 
@@ -646,8 +633,6 @@ ndmpd_api_file_history_node_v3(void *cookie, ulong_t node,
 	 */
 	if (file_stat == NULL ||
 	    session->ns_fh_v3.fh_node_index == N_NODE_ENTRIES) {
-		syslog(LOG_DEBUG, "sending %ld entries",
-		    session->ns_fh_v3.fh_node_index);
 
 		/*
 		 * Need to send Dir entry as well. Since Dir entry is more
@@ -972,8 +957,6 @@ ndmpd_fhnode_v3_cb(lbr_fhlog_call_backs_t *cbp, char *dir, char *file,
 			off = 0LL;
 		if (stp->st_ino == nlp->nlp_bkdirino) {
 			ino = ROOT_INODE;
-			syslog(LOG_DEBUG,
-			    "bkroot %d -> %d", stp->st_ino, ROOT_INODE);
 		} else
 			ino = stp->st_ino;
 
@@ -1550,8 +1533,6 @@ ndmpd_file_history_node(lbr_fhlog_call_backs_t *cbp, char *dir, char *file,
 	if (fh_requested(cbp->fh_cookie) == TRUE) {
 		if (stp->st_ino == nlp->nlp_bkdirino) {
 			ino = ROOT_INODE;
-			syslog(LOG_DEBUG,
-			    "bkroot %d -> %d", stp->st_ino, ROOT_INODE);
 		} else {
 			ino = stp->st_ino;
 		}

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -260,8 +260,6 @@ ndmpd_data_stop_v2(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_data.dd_state != NDMP_DATA_STATE_HALTED) {
-		syslog(LOG_ERR, "Invalid state (%d) to process stop request.",
-			session->ns_data.dd_state);
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, &reply,
 		    "sending data_stop reply");
@@ -305,8 +303,6 @@ ndmpd_data_abort_v2(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_data.dd_state == NDMP_DATA_STATE_IDLE ||
 	    session->ns_data.dd_state == NDMP_DATA_STATE_HALTED) {
-		syslog(LOG_ERR, "Invalid state (%d) to process abort request.", 
-			session->ns_data.dd_state);
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, &reply,
 		    "sending data_abort reply");
@@ -405,9 +401,7 @@ ndmpd_data_start_backup_v3(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_data.dd_state != NDMP_DATA_STATE_CONNECTED) {
 		syslog(LOG_ERR,
-		    "Can't start new backup in current state.");
-		syslog(LOG_ERR,
-		    "Connection to the mover is not established.");
+		    "Can't start new backup in NOT CONNECTED state.");
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		goto _error;
 	}
@@ -579,8 +573,6 @@ ndmpd_data_abort_v3(ndmp_connection_t *connection, void *body)
 	switch (session->ns_data.dd_state) {
 	case NDMP_DATA_STATE_IDLE:
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_ERR, "Invalid state (%d) to process abort request (handler).",
-			session->ns_data.dd_state);
 		break;
 
 	case NDMP_DATA_STATE_ACTIVE:
@@ -634,8 +626,6 @@ ndmpd_data_stop_v3(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_data.dd_state != NDMP_DATA_STATE_HALTED) {
-		syslog(LOG_ERR, "Invalid state (%d) to process stop request (handler).",
-			session->ns_data.dd_state);
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, &reply,
 		    "sending data_stop_v3 reply");
@@ -766,8 +756,6 @@ ndmpd_data_connect_v3(ndmp_connection_t *connection, void *body)
 		    request->addr.addr_type);
 	} else if (session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_ERR, "Invalid state (%d) to process connect request.",
-			session->ns_data.dd_state);
 	} else {
 		reply.error = NDMP_NO_ERR;
 	}
@@ -844,8 +832,6 @@ ndmpd_data_get_env_v4(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_data.dd_state != NDMP_DATA_STATE_ACTIVE &&
 	    session->ns_data.dd_state != NDMP_DATA_STATE_HALTED) {
-		syslog(LOG_ERR, "Invalid state (%d) for the data server.",
-			session->ns_data.dd_state);
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		reply.env.env_len = 0;
 	} else if (session->ns_data.dd_operation != NDMP_DATA_OP_BACKUP) {
@@ -941,8 +927,6 @@ ndmpd_data_connect_v4(ndmp_connection_t *connection, void *body)
 		    request->addr.addr_type);
 	} else if (session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_ERR, "Invalid state (%d) to process connect request.",
-			session->ns_data.dd_state);
 	} else {
 		reply.error = NDMP_NO_ERR;
 	}

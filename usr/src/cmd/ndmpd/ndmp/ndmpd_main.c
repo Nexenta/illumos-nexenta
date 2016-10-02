@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -48,6 +48,8 @@
 #include <zone.h>
 #include <tsol/label.h>
 #include <dlfcn.h>
+#include <sys/mount.h>
+#include <libzfs.h>
 #include "ndmpd.h"
 #include "ndmpd_common.h"
 
@@ -185,6 +187,230 @@ daemonize_init(void)
 }
 
 /*
+ * Utility routine to check if a zpool is bootable. For the purposes
+ * of cleaning up ndmp backup clones and snapshots, shouldn't consider
+ * the 'boot' volume.
+ *
+ * Parameters:
+ *   zhp (input) - the zfs handle of the zpool dataset.
+ *
+ * Returns:
+ *   B_TRUE : If the given zpool has a boot record
+ *   B_FALSE: otherwise
+ */
+boolean_t
+ndmp_zpool_is_bootable(zpool_handle_t *zhp)
+{
+	char bootfs[ZFS_MAXNAMELEN];
+
+	return (zpool_get_prop(zhp, ZPOOL_PROP_BOOTFS, bootfs,
+	    sizeof (bootfs), NULL, B_FALSE) == 0 && strncmp(bootfs, "-",
+	    sizeof (bootfs)) != 0);
+}
+
+/*
+ * This is the zpool_iter() callback routine specifically for
+ * ZFS_TYPE_SNAPSHOTS and is passed in a zfs handle to each one
+ * it finds during iteration.  If this callback returns zero
+ * the iterator keeps going, if it returns non-sero the
+ * iteration stops.
+ *
+ * Parameters:
+ *   zhp (input) - the zfs handle of the ZFS_TYPE_SNAPSHOTS dataset.
+ *   arg (input) - optional parameter (not used in this case)
+ *
+ * Returns:
+ *   0: on success
+ *  -1: otherwise
+ */
+/*ARGSUSED*/
+int
+ndmp_match_and_destroy_snapshot(zfs_handle_t *zhp, void *arg)
+{
+	int err = 0;
+	char *dataset_name;
+	char *snap_name;
+	char *snap_delim;
+	zfs_handle_t *dszhp;
+
+	dataset_name = strdup(zfs_get_name(zhp));
+	if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT) {
+		if (strstr(dataset_name, NDMP_RCF_BASENAME) != NULL) {
+			snap_delim = strchr(dataset_name, '@');
+			snap_name = snap_delim + 1;
+			*snap_delim = '\0';
+
+			syslog(LOG_DEBUG,
+			    "Remove snap [%s] from dataset [%s] tag [%s]\n",
+			    snap_name, dataset_name, NDMP_RCF_BASENAME);
+
+			if ((dszhp = zfs_open(zlibh, dataset_name,
+			    ZFS_TYPE_DATASET)) != NULL) {
+				if ((err = zfs_release(dszhp, snap_name,
+				    NDMP_RCF_BASENAME, B_FALSE)) != 0) {
+					if (libzfs_errno(zlibh)
+					    != EZFS_REFTAG_RELE) {
+						syslog(LOG_DEBUG,
+						    "(%d) problem zfs_release "
+						    "error:%s action:"
+						    "%s errno:%d\n",
+						    err,
+						    libzfs_error_description(
+						    zlibh),
+						    libzfs_error_action(
+						    zlibh),
+						    libzfs_errno(
+						    zlibh));
+						zfs_close(dszhp);
+						goto _out;
+					}
+				}
+				if ((err = zfs_destroy(zhp, B_FALSE)) != 0) {
+					syslog(LOG_DEBUG,
+					    "(%d)snapshot: problem zfs_destroy "
+					    "error:%s action:%s errno:%d\n",
+					    err,
+					    libzfs_error_description(zlibh),
+					    libzfs_error_action(zlibh),
+					    libzfs_errno(zlibh));
+				}
+				zfs_close(dszhp);
+			} else {
+				err = -1;
+				goto _out;
+			}
+		}
+	}
+_out:
+	free(dataset_name);
+	zfs_close(zhp);
+	return (err);
+}
+
+/*
+ * This is the zpool_iter() callback routine specifically for
+ * ZFS_TYPE_FILESYSTEM and is passed in a zfs handle to each one
+ * it finds during iteration.  If this callback returns zero
+ * the iterator keeps going, if it returns non-sero the
+ * iteration stops.
+ *
+ * Parameters:
+ *   zhp (input) - the zfs handle of the ZFS_TYPE_FILESYSTEM dataset.
+ *   arg (input) - optional parameter (not used in this case)
+ *
+ * Returns:
+ *   0: on success
+ *  -1: otherwise
+ */
+/*ARGSUSED*/
+int
+ndmp_match_and_destroy_filesystem(zfs_handle_t *zhp, void *arg)
+{
+	int err = 0;
+	char *mntpt = NULL;
+	char *dataset_name;
+
+	dataset_name = strdup(zfs_get_name(zhp));
+	if (zfs_get_type(zhp) == ZFS_TYPE_FILESYSTEM)  {
+		if (strstr(dataset_name, NDMP_RCF_BASENAME) != NULL) {
+
+			syslog(LOG_DEBUG,
+			    "Remove filesystem [%s]", dataset_name);
+			if (zfs_is_mounted(zhp, &mntpt)) {
+				syslog(LOG_DEBUG,
+				    "mountpoint for snapshot is [%s]\n", mntpt);
+				if (zfs_unmount(zhp, NULL, MS_FORCE) != 0) {
+					syslog(LOG_DEBUG, "Failed to unmount "
+					    "mount point [%s]", mntpt);
+					err = -1;
+					goto _out;
+				}
+			}
+			if (rmdir(mntpt) != 0) {
+				if (errno != ENOENT) {
+					syslog(LOG_DEBUG, "Failed to remove "
+					    "mount point [%s]", mntpt);
+					err = -1;
+					goto _out;
+				}
+			}
+
+			if ((err = zfs_destroy(zhp, B_FALSE)) != 0) {
+				syslog(LOG_DEBUG,
+				    "(%d)filesystem: problem zfs_destroy "
+				    "error:%s action:%s errno:%d\n",
+				    err, libzfs_error_description(zlibh),
+				    libzfs_error_action(zlibh),
+				    libzfs_errno(zlibh));
+			}
+		}
+	}
+_out:
+	free(dataset_name);
+	zfs_close(zhp);
+	return (err);
+}
+
+/*
+ * This is the zpool iterator callback routine.  For each pool on
+ * the system iterate filesystem dependents first then iterate snapshot
+ * dependents and run the corresponding ndmp_match_and_destroy_XXX()
+ * callback. The 'snapshot' are removed second because 'filesystem'
+ * is dependend on its parent 'snapshot'.  If this callback returns
+ * zero the iterator keeps going, if it returns non-sero the
+ * iteration stops.
+ *
+ * Parameters:
+ *   zhp (input) - the zfs handle of the zpool dataset.
+ *   arg (input) - optional parameter (not used in this case)
+ *
+ * Returns:
+ *   0: on success
+ *  -1: otherwise
+ */
+/*ARGSUSED*/
+int
+ndmp_cleanup_snapshots_inpool(zfs_handle_t *zhp, void *arg)
+{
+	const char *zpool_name;
+	int err = 0;
+	zpool_handle_t *php;
+
+	/*
+	 * Check for pools with bootfs entries and skip them
+	 */
+	zpool_name = zfs_get_name(zhp);
+	if ((php = zpool_open(zlibh, zpool_name)) != NULL) {
+		if (!ndmp_zpool_is_bootable(php)) {
+			syslog(LOG_DEBUG,
+			    "Working on pool [%s]\n", zfs_get_name(zhp));
+
+			err = zfs_iter_dependents(zhp, B_FALSE,
+			    ndmp_match_and_destroy_filesystem, (void *)NULL);
+			if (err) {
+				syslog(LOG_ERR,
+				    "cleanup filesystems error: "
+				    "%d on pool [%s]",
+				    err, zpool_name);
+				goto _out;
+			}
+			err = zfs_iter_dependents(zhp,
+			    B_FALSE, ndmp_match_and_destroy_snapshot,
+			    (void *)NULL);
+			if (err) {
+				syslog(LOG_ERR,
+				    "cleanup snapshots error: %d on pool",
+				    err, zpool_name);
+			}
+		}
+	}
+_out:
+	zpool_close(php);
+	zfs_close(zhp);
+	return (err);
+}
+
+/*
  * main
  *
  * The main NDMP daemon function
@@ -294,6 +520,16 @@ main(int argc, char *argv[])
 
 	if (tlm_init() == -1) {
 		syslog(LOG_ERR, "Failed to initialize tape manager.");
+		exit(SMF_EXIT_ERR_CONFIG);
+	}
+
+	/*
+	 * Use libzfs iterator routine to list through all the pools and
+	 * invoke cleanup callback routine on each.
+	 */
+	if (zfs_iter_root(zlibh,
+	    ndmp_cleanup_snapshots_inpool, (void *)NULL) != 0) {
+		syslog(LOG_ERR, "Failed to cleanup leftover snapshots.");
 		exit(SMF_EXIT_ERR_CONFIG);
 	}
 

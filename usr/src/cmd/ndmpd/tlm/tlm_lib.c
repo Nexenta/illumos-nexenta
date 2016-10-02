@@ -35,6 +35,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+
 #include <sys/errno.h>
 #include <syslog.h>
 #include <ctype.h>
@@ -648,10 +650,6 @@ tlm_get_chkpnt_time(char *path, int auto_checkpoint, time_t *tp, char *jname)
 {
 	char volname[TLM_VOLNAME_MAX_LENGTH];
 	char chk_name[PATH_MAX];
-	char *cp_nm;
-
-	syslog(LOG_DEBUG, "path [%s] auto_checkpoint: %d",
-	    path, auto_checkpoint);
 
 	if (path == NULL || *path == '\0' || tp == NULL)
 		return (-1);
@@ -661,14 +659,11 @@ tlm_get_chkpnt_time(char *path, int auto_checkpoint, time_t *tp, char *jname)
 		return (-1);
 
 	if (auto_checkpoint) {
-		syslog(LOG_DEBUG, "volname [%s]", volname);
 		(void) snprintf(chk_name, PATH_MAX, "%s", jname);
 		return (chkpnt_creationtime_bypattern(volname, chk_name, tp));
 	}
-	cp_nm = strchr(volname, '@');
-	syslog(LOG_DEBUG, "volname [%s] cp_nm [%s]", volname, cp_nm);
 
-	return (chkpnt_creationtime_bypattern(volname, cp_nm, tp));
+	return (chkpnt_creationtime_bypattern(volname, jname, tp));
 }
 
 /*
@@ -721,9 +716,10 @@ char *
 tlm_build_snapshot_name(char *name, char *sname, char *jname)
 {
 	zfs_handle_t *zhp;
-	char *rest;
-	char volname[ZFS_MAXNAMELEN];
-	char mountpoint[PATH_MAX];
+	char volname[ZFS_MAXNAMELEN] = {'\0'};
+	char mountpoint[PATH_MAX] = {'\0'};
+	char zpoolname[ZFS_MAXNAMELEN] = {'\0'};
+	char *slash, *rest;
 
 	if (get_zfsvolname(volname, ZFS_MAXNAMELEN, name) == -1)
 		goto notzfs;
@@ -745,9 +741,15 @@ tlm_build_snapshot_name(char *name, char *sname, char *jname)
 	zfs_close(zhp);
 	(void) mutex_unlock(&zlib_mtx);
 
+	(void) strlcpy(zpoolname, volname, ZFS_MAXNAMELEN);
+	slash = strchr(zpoolname, '/');
+	if (slash != 0) {
+		*slash = '\0';
+	}
+
 	rest = name + strlen(mountpoint);
-	(void) snprintf(sname, TLM_MAX_PATH_NAME, "%s/%s/%s%s", mountpoint,
-	    TLM_SNAPSHOT_DIR, jname, rest);
+	(void) snprintf(sname,
+	    TLM_MAX_PATH_NAME, "/%s/%s%s", zpoolname, jname, rest);
 
 	return (sname);
 
@@ -1236,14 +1238,17 @@ get_zfsvolname(char *volname, int len, char *path)
 	struct stat64 stbuf;
 	struct extmnttab ent;
 	FILE *mntfp;
-	int rv;
+	int rv = 0;
 
 	*volname = '\0';
 	if (stat64(path, &stbuf) != 0) {
+		syslog(LOG_DEBUG, "stat64 failed open %s - %s",
+		    volname, path);
 		return (-1);
 	}
 
 	if ((mntfp = fopen(MNTTAB, "r")) == NULL) {
+		syslog(LOG_DEBUG, "failed open mnttab");
 		return (-1);
 	}
 	while ((rv = getextmntent(mntfp, &ent, 0)) == 0) {
@@ -1253,11 +1258,11 @@ get_zfsvolname(char *volname, int len, char *path)
 	}
 
 	if (rv == 0 &&
-	    strcmp(ent.mnt_fstype, MNTTYPE_ZFS) == 0)
+	    strcmp(ent.mnt_fstype, MNTTYPE_ZFS) == 0) {
 		(void) strlcpy(volname, ent.mnt_special, len);
-	else
+	} else {
 		rv = -1;
-
+	}
 	(void) fclose(mntfp);
 	return (rv);
 }

@@ -38,6 +38,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
 
 #include <sys/types.h>
 #include <syslog.h>
@@ -235,8 +236,6 @@ ndmpd_scsi_reset_device_v2(ndmp_connection_t *connection, void *body)
 		cmd.uscsi_flags |= USCSI_RESET;
 		if (ioctl(session->ns_scsi.sd_devid, USCSICMD, &cmd) < 0) {
 			syslog(LOG_ERR, "USCSI reset failed: %m.");
-			syslog(LOG_DEBUG,
-			    "ioctl(USCSICMD) USCSI_RESET failed: %m.");
 			reply.error = NDMP_IO_ERR;
 		}
 	}
@@ -266,7 +265,6 @@ ndmpd_scsi_reset_bus_v2(ndmp_connection_t *connection, void *body)
 {
 	ndmp_scsi_reset_bus_reply reply;
 
-	syslog(LOG_DEBUG, "request not supported");
 	reply.error = NDMP_NOT_SUPPORTED_ERR;
 
 	ndmp_send_reply(connection, (void *) &reply,
@@ -297,7 +295,6 @@ ndmpd_scsi_execute_cdb_v2(ndmp_connection_t *connection, void *body)
 	    !session->ns_scsi.sd_valid_target_set) {
 		(void) memset((void *) &reply, 0, sizeof (reply));
 
-		syslog(LOG_ERR, "SCSI device is not open.");
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
 		    "sending scsi_execute_cdb reply");
@@ -422,11 +419,8 @@ common_open(ndmp_connection_t *connection, char *devname)
 	err = NDMP_NO_ERR;
 
 	if (session->ns_tape.td_fd != -1 || session->ns_scsi.sd_is_open != -1) {
-		syslog(LOG_ERR,
-		    "Session already has a tape or scsi device open.");
 		err = NDMP_DEVICE_OPENED_ERR;
 	} else if ((sa = scsi_get_adapter(0)) != NULL) {
-		syslog(LOG_DEBUG, "Adapter device found: %s", devname);
 		(void) strlcpy(adptnm, devname, SCSI_MAX_NAME-2);
 		adptnm[SCSI_MAX_NAME-1] = '\0';
 		sid = lun = -1;
@@ -558,7 +552,6 @@ common_set_target(ndmp_connection_t *connection, char *device,
 	}
 
 	if (reply.error == NDMP_NO_ERR) {
-		syslog(LOG_DEBUG, "Updated sid %d lun %d", sid, lun);
 		session->ns_scsi.sd_sid = sid;
 		session->ns_scsi.sd_lun = lun;
 		session->ns_scsi.sd_valid_target_set = TRUE;

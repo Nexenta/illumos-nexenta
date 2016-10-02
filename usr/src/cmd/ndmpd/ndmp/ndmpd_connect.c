@@ -3,10 +3,6 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
- */
-
-/*
  * BSD 3 Clause License
  *
  * Copyright (c) 2007, The Storage Networking Industry Association.
@@ -41,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2014 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/types.h>
 #include <errno.h>
@@ -170,8 +166,6 @@ ndmpd_connect_open_v2(ndmp_connection_t *connection, void *body)
 	 * to process the request.
 	 */
 	if (reply.error == NDMP_NO_ERR) {
-		syslog(LOG_DEBUG, "set ver to: %d",
-		    request->protocol_version);
 		ndmp_set_version(connection, request->protocol_version);
 		session->ns_protocol_version = request->protocol_version;
 	}
@@ -203,11 +197,6 @@ ndmpd_connect_client_auth_v2(ndmp_connection_t *connection, void *body)
 	char *uname;
 
 	request = (ndmp_connect_client_auth_request *)body;
-	syslog(LOG_DEBUG, "auth_type:%s",
-	    request->auth_data.auth_type == NDMP_AUTH_NONE ? "None" :
-	    (request->auth_data.auth_type == NDMP_AUTH_TEXT ? "Text" :
-	    (request->auth_data.auth_type == NDMP_AUTH_MD5 ? "MD5" :
-	    "Invalid")));
 
 	reply.error = NDMP_NO_ERR;
 
@@ -267,8 +256,6 @@ ndmpd_connect_client_auth_v2(ndmp_connection_t *connection, void *body)
 			syslog(LOG_ERR,
 			    "Authorization denied. Invalid password.");
 			reply.error = NDMP_NOT_AUTHORIZED_ERR;
-		} else {
-			syslog(LOG_DEBUG, "Authorization granted.");
 		}
 		ndmpd_audit_connect(connection, reply.error ?
 		    ADT_FAIL_PAM + PAM_AUTH_ERR : 0);
@@ -318,8 +305,6 @@ ndmpd_connect_client_auth_v2(ndmp_connection_t *connection, void *body)
 			syslog(LOG_ERR,
 			    "Authorization denied. Invalid password.");
 			reply.error = NDMP_NOT_AUTHORIZED_ERR;
-		} else {
-			syslog(LOG_DEBUG, "Authorization granted");
 		}
 		ndmpd_audit_connect(connection, reply.error ?
 		    ADT_FAIL_PAM + PAM_AUTH_ERR : 0);
@@ -360,12 +345,6 @@ ndmpd_connect_server_auth_v2(ndmp_connection_t *connection, void *body)
 	ndmp_connect_server_auth_reply reply;
 
 	request = (ndmp_connect_server_auth_request *)body;
-
-	syslog(LOG_DEBUG, "auth_type:%s",
-	    request->client_attr.auth_type == NDMP_AUTH_NONE ? "None" :
-	    (request->client_attr.auth_type == NDMP_AUTH_TEXT ? "Text" :
-	    (request->client_attr.auth_type == NDMP_AUTH_MD5 ? "MD5" :
-	    "Invalid")));
 
 	reply.error = NDMP_NO_ERR;
 	reply.auth_result.auth_type = request->client_attr.auth_type;
@@ -447,10 +426,6 @@ ndmpd_connect_client_auth_v3(ndmp_connection_t *connection, void *body)
 	char *type;
 
 	request = (ndmp_connect_client_auth_request_v3 *)body;
-	syslog(LOG_DEBUG, "auth_type %s",
-	    request->auth_data.auth_type == NDMP_AUTH_NONE ? "None" :
-	    request->auth_data.auth_type == NDMP_AUTH_TEXT ? "Text" :
-	    request->auth_data.auth_type == NDMP_AUTH_MD5 ? "MD5" : "Invalid");
 
 	reply.error = NDMP_NO_ERR;
 
@@ -554,9 +529,6 @@ ndmpd_connect_close_v3(ndmp_connection_t *connection, void *body)
 		return;
 	if ((nlp = ndmp_get_nlp(session)) == NULL)
 		return;
-
-	syslog(LOG_DEBUG, "ver: %u",
-	    session->ns_protocol_version);
 
 	/* Send the SHUTDOWN message before closing the connection. */
 	req.reason = NDMP_SHUTDOWN;
@@ -1183,9 +1155,7 @@ ndmpd_connect_auth_text(char *uname, char *auth_id, char *auth_password)
 		}
 	}
 
-	if (rv == NDMP_NO_ERR) {
-		syslog(LOG_DEBUG, "Authorization granted.");
-	} else {
+	if (rv != NDMP_NO_ERR) {
 		syslog(LOG_ERR, "Authorization denied.");
 	}
 
@@ -1241,12 +1211,6 @@ ndmpd_connect_auth_md5(char *uname, char *auth_id, char *auth_digest,
 			}
 			free(dec_passwd);
 		}
-	}
-
-	if (rv == NDMP_NO_ERR) {
-		syslog(LOG_DEBUG, "Authorization granted.");
-	} else {
-		syslog(LOG_ERR, "Authorization denied.");
 	}
 
 	return (rv);

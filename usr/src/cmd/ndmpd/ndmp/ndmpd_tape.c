@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2014 Nexenta Systems, Inc.  All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
 
 #include <sys/param.h>
 #include <syslog.h>
@@ -131,8 +131,6 @@ ndmpd_tape_open_v2(ndmp_connection_t *connection, void *body)
 	}
 
 	if ((sa = scsi_get_adapter(0)) != NULL) {
-		syslog(LOG_DEBUG,
-		    "Adapter device opened: %s", request->device.name);
 		(void) strlcpy(adptnm, request->device.name, SCSI_MAX_NAME-2);
 		adptnm[SCSI_MAX_NAME-1] = '\0';
 		sid = lun = -1;
@@ -220,8 +218,6 @@ ndmpd_tape_open_v2(ndmp_connection_t *connection, void *body)
 	session->ns_tape.td_lun = lun;
 	(void) strlcpy(session->ns_tape.td_adapter_name, adptnm, SCSI_MAX_NAME);
 	session->ns_tape.td_record_count = 0;
-
-	syslog(LOG_DEBUG, "Tape is opened fd: %d", session->ns_tape.td_fd);
 
 	tape_open_send_reply(connection, NDMP_NO_ERR);
 }
@@ -323,10 +319,6 @@ ndmpd_tape_get_state_v2(ndmp_connection_t *connection, void *body)
 	reply.total_space = long_long_to_quad(0);	/* not supported */
 	reply.space_remain = long_long_to_quad(0);	/* not supported */
 
-	syslog(LOG_DEBUG,
-	    "flags: 0x%x, file_num: %d, block_size: %d, blockno: %d",
-	    reply.flags, reply.file_num, reply.block_size, reply.blockno);
-
 	reply.error = NDMP_NO_ERR;
 	ndmp_send_reply(connection, (void *) &reply,
 	    "sending tape_get_state reply");
@@ -413,9 +405,6 @@ ndmpd_tape_mtio_v2(ndmp_connection_t *connection, void *body)
 			errno = 0;
 			rc = ioctl(session->ns_tape.td_fd, MTIOCTOP, &tapeop);
 			NS_UPD(trun, twait);
-			syslog(LOG_DEBUG,
-			    "ioctl MTIO rc:%d, cmd:%d, retry:%d, error: %d",
-			    rc, tapeop.mt_op, retry, errno);
 		} while (rc < 0 && errno == EIO &&
 		    retry++ < 5);
 
@@ -457,8 +446,6 @@ ndmpd_tape_mtio_v2(ndmp_connection_t *connection, void *body)
 		}
 	}
 
-	syslog(LOG_DEBUG, "resid_count: %d",
-	    reply.resid_count);
 	ndmp_send_reply(connection, (void *) &reply, "sending tape_mtio reply");
 }
 
@@ -658,10 +645,6 @@ ndmpd_tape_get_state_v3(ndmp_connection_t *connection, void *body)
 	    NDMP_TAPE_STATE_TOTAL_SPACE_INVALID |
 	    NDMP_TAPE_STATE_SPACE_REMAIN_INVALID |
 	    NDMP_TAPE_STATE_PARTITION_INVALID;
-
-
-	syslog(LOG_DEBUG, "f 0x%x, fnum %d, bsize %d, bno: %d",
-	    reply.flags, reply.file_num, reply.block_size, reply.blockno);
 
 	reply.error = NDMP_NO_ERR;
 	ndmp_send_reply(connection, (void *) &reply,
@@ -1015,9 +998,6 @@ ndmpd_tape_get_state_v4(ndmp_connection_t *connection, void *body)
 	    NDMP_TAPE_STATE_SPACE_REMAIN_INVALID |
 	    NDMP_TAPE_STATE_PARTITION_INVALID;
 
-	syslog(LOG_DEBUG, "f 0x%x, fnum %d, bsize %d, bno: %d",
-	    reply.flags, reply.file_num, reply.block_size, reply.blockno);
-
 	reply.error = NDMP_NO_ERR;
 	ndmp_send_reply(connection, (void *) &reply,
 	    "sending tape_get_state reply");
@@ -1125,8 +1105,6 @@ unbuffered_read(ndmpd_session_t *session, char *buf, long wanted,
 			reply->error = NDMP_IO_ERR;
 		}
 	} else if (n == 0) {
-		syslog(LOG_DEBUG, "NDMP_EOF_ERR");
-
 		reply->error = NDMP_EOF_ERR;
 
 		(void) ndmp_mtioctl(session->ns_tape.td_fd, MTFSF, 1);
@@ -1135,8 +1113,6 @@ unbuffered_read(ndmpd_session_t *session, char *buf, long wanted,
 		(void) memset(buf, 0, len);
 		n = read(session->ns_tape.td_fd, buf, len);
 		buf[len] = '\0';
-
-		syslog(LOG_DEBUG, "Checking EOM: nread %d [%s]", n, buf);
 
 		(void) ndmp_mtioctl(session->ns_tape.td_fd, MTBSF, 1);
 
@@ -1210,7 +1186,6 @@ common_tape_open(ndmp_connection_t *connection, char *devname, int ndmpmode)
 	} else if (!validmode(ndmpmode))
 		err = NDMP_ILLEGAL_ARGS_ERR;
 	if ((sa = scsi_get_adapter(0)) != NULL) {
-		syslog(LOG_DEBUG, "Adapter device opened: %s", devname);
 		(void) strlcpy(adptnm, devname, SCSI_MAX_NAME-2);
 		adptnm[SCSI_MAX_NAME-1] = '\0';
 		sid = lun = -1;
@@ -1308,8 +1283,6 @@ common_tape_open(ndmp_connection_t *connection, char *devname, int ndmpmode)
 	session->ns_tape.td_lun = lun;
 	(void) strlcpy(session->ns_tape.td_adapter_name, adptnm, SCSI_MAX_NAME);
 	session->ns_tape.td_record_count = 0;
-
-	syslog(LOG_DEBUG, "Tape is opened fd: %d", session->ns_tape.td_fd);
 
 	tape_open_send_reply(connection, NDMP_NO_ERR);
 }

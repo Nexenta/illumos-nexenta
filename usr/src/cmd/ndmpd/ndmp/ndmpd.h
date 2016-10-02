@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2014 Nexenta Systems, Inc.  All rights reserved.  */
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved.  */
 
 #ifndef _NDMPD_H
 #define	_NDMPD_H
@@ -924,7 +924,7 @@ extern void ndmp_free_reader_writer_ipc(ndmpd_session_t *);
 extern void ndmp_waitfor_op(ndmpd_session_t *);
 
 extern char *cctime(time_t *);
-extern char *ndmp_new_job_name(char *);
+extern int ndmp_new_job_name(char *, size_t);
 extern char *ndmpd_mk_temp(char *);
 extern char *ndmpd_make_bk_dir_path(char *, char *);
 extern boolean_t ndmp_is_chkpnt_root(char *);
@@ -975,11 +975,12 @@ extern int ndmp_get_max_tok_seq(void);
 
 extern int get_zfsvolname(char *, int, char *);
 extern int ndmp_create_snapshot(char *, char *);
-extern int ndmp_remove_snapshot(char *, char *);
+extern int ndmp_remove_snapshot(ndmp_bkup_size_arg_t *);
 extern int ndmpd_mark_inodes_v2(ndmpd_session_t *, ndmp_lbr_params_t *);
 extern void ndmpd_abort_marking_v2(ndmpd_session_t *);
 extern int ndmpd_mark_inodes_v3(ndmpd_session_t *, ndmp_lbr_params_t *);
 extern ndmp_lbr_params_t *ndmp_get_nlp(void *);
+extern int ndmp_clone_snapshot(char *, char *);
 
 module_start_func_t ndmpd_tar_backup_starter;
 module_abort_func_t ndmpd_tar_backup_abort;
@@ -1016,8 +1017,8 @@ extern char *gethostaddr(void);
 extern char *get_default_nic_addr(void);
 extern int tlm_init(void);
 
-extern int snapshot_create(char *, char *, boolean_t, boolean_t);
-extern int snapshot_destroy(char *, char *, boolean_t, boolean_t, int *);
+extern int backup_dataset_create(char *, char *, boolean_t, boolean_t);
+extern int backup_dataset_destroy(char *, char *, boolean_t, boolean_t, int *);
 
 extern boolean_t fs_is_chkpntvol(char *);
 extern boolean_t fs_is_chkpnt_enabled(char *);

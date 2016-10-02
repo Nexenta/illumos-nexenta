@@ -39,7 +39,7 @@
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
 /*
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/types.h>
@@ -345,7 +345,8 @@ ndmpd_zfs_header_write(ndmpd_session_t *session)
 
 	buf = ndmp_malloc(bufsize);
 	if (buf == NULL) {
-		syslog(LOG_ERR, "buf NULL in ndmpd_zfs_header_write errno (%m)");
+		syslog(LOG_ERR,
+		    "buf NULL in ndmpd_zfs_header_write errno (%m)");
 		return (-1);
 	}
 
@@ -689,7 +690,8 @@ ndmpd_zfs_backup_tape_write(ndmpd_zfs_args_t *ndmpd_zfs_args)
 
 	buf = ndmp_malloc(bufsize);
 	if (buf == NULL) {
-		syslog(LOG_ERR, "buf NULL in ndmpd_zfs_backup_tape_write errno (%m)");
+		syslog(LOG_ERR,
+		    "buf NULL in ndmpd_zfs_backup_tape_write errno (%m)");
 		return (-1);
 	}
 
@@ -847,7 +849,8 @@ ndmpd_zfs_restore_tape_read(ndmpd_zfs_args_t *ndmpd_zfs_args)
 
 	buf = ndmp_malloc(bufsize);
 	if (buf == NULL) {
-		syslog(LOG_ERR, "buf NULL in ndmpd_zfs_restore_tape_read errno (%m)");
+		syslog(LOG_ERR,
+		    "buf NULL in ndmpd_zfs_restore_tape_read errno (%m)");
 		return (-1);
 	}
 
@@ -1743,7 +1746,8 @@ ndmpd_zfs_snapshot_prepare(ndmpd_zfs_args_t *ndmpd_zfs_args)
 			if (ndmpd_zfs_args->nz_zfs_mode != 'd')
 				recursive = B_TRUE;
 
-			(void) snapshot_destroy(ndmpd_zfs_args->nz_dataset,
+			(void) backup_dataset_destroy(
+			    ndmpd_zfs_args->nz_dataset,
 			    ndmpd_zfs_args->nz_snapname, recursive, B_FALSE,
 			    &zfs_err);
 		}
@@ -1852,7 +1856,7 @@ ndmpd_zfs_snapshot_create(ndmpd_zfs_args_t *ndmpd_zfs_args)
 	if (ndmpd_zfs_args->nz_zfs_mode != 'd')
 		recursive = B_TRUE;
 
-	if (snapshot_create(ndmpd_zfs_args->nz_dataset,
+	if (backup_dataset_create(ndmpd_zfs_args->nz_dataset,
 	    ndmpd_zfs_args->nz_snapname, recursive, B_FALSE) != 0) {
 		syslog(LOG_ERR, "could not create snapshot %s@%s",
 		    ndmpd_zfs_args->nz_dataset, ndmpd_zfs_args->nz_snapname);
@@ -1891,11 +1895,11 @@ ndmpd_zfs_snapshot_unuse(ndmpd_zfs_args_t *ndmpd_zfs_args,
 		if (ndmpd_zfs_args->nz_zfs_mode != 'd')
 			recursive = B_TRUE;
 
-		err = snapshot_destroy(ndmpd_zfs_args->nz_dataset,
+		err = backup_dataset_destroy(ndmpd_zfs_args->nz_dataset,
 		    snapdata_p->nzs_snapname, recursive, B_FALSE, &zfs_err);
 
 		if (err) {
-			syslog(LOG_ERR, "snapshot_destroy: %s@%s;"
+			syslog(LOG_ERR, "backup_dataset_destroy: %s@%s;"
 			    " err: %d; zfs_err: %d",
 			    ndmpd_zfs_args->nz_dataset,
 			    snapdata_p->nzs_snapname, err, zfs_err);

@@ -38,7 +38,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2014 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -974,8 +974,6 @@ ndmp_tar_writer(ndmpd_session_t *session, ndmpd_module_params_t *mod_params,
 		} else {
 			if (lcmd->tc_writer != TLM_BACKUP_RUN) {
 				/* No more data is comming; time to exit. */
-				syslog(LOG_DEBUG,
-				    "tc_writer!=TLM_BACKUP_RUN; time to exit");
 				break;
 			} else {
 				tlm_buffer_in_buf_timed_wait(bufs, 100);
@@ -983,17 +981,6 @@ ndmp_tar_writer(ndmpd_session_t *session, ndmpd_module_params_t *mod_params,
 		}
 	}
 
-	if (cmds->tcs_writer != (int)TLM_ABORT) {
-		syslog(LOG_DEBUG, "tcs_writer != TLM_ABORT");
-	} else {
-		syslog(LOG_DEBUG, "tcs_writer == TLM_ABORT");
-	}
-
-	if (lcmd->tc_writer != (int)TLM_ABORT) {
-		syslog(LOG_DEBUG, "tc_writer != TLM_ABORT");
-	} else {
-		syslog(LOG_DEBUG, "tc_writer == TLM_ABORT");
-	}
 	cmds->tcs_writer_count--;
 	lcmd->tc_reader = TLM_STOP;
 	lcmd->tc_ref--;
@@ -1156,10 +1143,12 @@ ndmpd_tar_backup(ndmpd_session_t *session, ndmpd_module_params_t *mod_params,
 	if (err != 0)
 		return (err);
 
-	(void) ndmp_new_job_name(jname);
-	if (backup_create_structs(session, jname) < 0)
+	if (ndmp_new_job_name(jname, sizeof (jname)) <= 0) {
 		return (-1);
-
+	}
+	if (backup_create_structs(session, jname) < 0) {
+		return (-1);
+	}
 	nlp->nlp_jstat->js_start_ltime = time(NULL);
 	nlp->nlp_jstat->js_start_time = nlp->nlp_jstat->js_start_ltime;
 	nlp->nlp_jstat->js_chkpnt_time = nlp->nlp_cdate;
@@ -1253,9 +1242,12 @@ ndmpd_tar_restore(ndmpd_session_t *session, ndmpd_module_params_t *mod_params,
 	else
 		rspath = "";
 
-	(void) ndmp_new_job_name(jname);
-	if (restore_create_structs(session, jname) < 0)
+	if (ndmp_new_job_name(jname, sizeof (jname)) <= 0) {
 		return (-1);
+	}
+	if (restore_create_structs(session, jname) < 0) {
+		return (-1);
+	}
 
 	nlp->nlp_jstat->js_start_ltime = time(NULL);
 	nlp->nlp_jstat->js_start_time = time(NULL);
@@ -1301,9 +1293,9 @@ ndmpd_tar_restore(ndmpd_session_t *session, ndmpd_module_params_t *mod_params,
 		tlm_arg.ba_dir = nlp->nlp_restore_path;
 		for (i = 0; i < nlp->nlp_nfiles; i++) {
 			ent = (ndmp_name *)MOD_GETNAME(mod_params, i);
-			tlm_arg.ba_sels[i] = ent->name;
+			tlm_arg.ba_sels[i] = strdup(ent->name);
 		}
-
+		tlm_arg.ba_count = i;
 
 		if (tm_tar_ops.tm_getfile != NULL) {
 			err = pthread_create(&wrtp, NULL,
@@ -1825,10 +1817,15 @@ ndmpd_tar_backup_starter(void *arg)
 	int err;
 	ndmpd_session_t *session;
 	ndmp_lbr_params_t *nlp;
+	ndmp_bkup_size_arg_t sarg;
 
 	session = (ndmpd_session_t *)(mod_params->mp_daemon_cookie);
 	*(mod_params->mp_module_cookie) = nlp = ndmp_get_nlp(session);
 	ndmp_session_ref(session);
+
+	sarg.bs_session = session;
+	sarg.bs_jname = nlp->nlp_jstat->js_job_name;
+	sarg.bs_path = nlp->nlp_backup_path;
 
 	err = 0;
 	if (fs_is_chkpntvol(nlp->nlp_backup_path) ||
@@ -1869,8 +1866,7 @@ ndmpd_tar_backup_starter(void *arg)
 	}
 
 	if (!NLP_ISCHKPNTED(nlp))
-		(void) ndmp_remove_snapshot(nlp->nlp_backup_path,
-		    nlp->nlp_jstat->js_job_name);
+		(void) ndmp_remove_snapshot(&sarg);
 
 	syslog(LOG_DEBUG, "err %d, update %c",
 	    err, NDMP_YORN(NLP_SHOULD_UPDATE(nlp)));

@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
 #
+# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+#
 
 #
 # BSD 3 Clause License
@@ -79,6 +81,7 @@ OBJS= \
 NDMP_OBJ = \
 	ndmpd_callbacks.o \
 	ndmpd_chkpnt.o \
+	ndmpd_clone.o \
 	ndmpd_comm.o \
 	ndmpd_config.o \
 	ndmpd_connect.o \

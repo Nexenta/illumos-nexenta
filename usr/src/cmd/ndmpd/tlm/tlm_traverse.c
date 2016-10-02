@@ -35,6 +35,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+
 /*
  * This file implemets the post-order, pre-order and level-order
  * traversing of the file system.  The related macros and constants
@@ -201,8 +203,11 @@ new_tsp(char *path)
 int
 fs_getstat(char *path, fs_fhandle_t *fh, struct stat64 *st)
 {
-	if (lstat64(path, st) == -1)
+	if (lstat64(path, st) == -1) {
+		syslog(LOG_INFO,
+		    "lstat64() says [%s] not found errno=(%d)", path, errno);
 		return (errno);
+	}
 
 	fh->fh_fid = st->st_ino;
 
@@ -337,7 +342,6 @@ traverse_post(struct fs_traverse *ftp)
 	struct fst_node pn, en; /* parent and entry nodes */
 
 	if (!ftp || !ftp->ft_path || !*ftp->ft_path || !ftp->ft_callbk) {
-		syslog(LOG_ERR, "Invalid argument");
 		errno = EINVAL;
 		return (-1);
 	}
@@ -727,7 +731,6 @@ traverse_level(struct fs_traverse *ftp)
 	dent_arg_t darg;
 
 	if (!ftp || !ftp->ft_path || !*ftp->ft_path || !ftp->ft_callbk) {
-		syslog(LOG_ERR, "Invalid argument");
 		errno = EINVAL;
 		return (-1);
 	}
@@ -753,7 +756,7 @@ traverse_level(struct fs_traverse *ftp)
 	rv = fs_getstat(ftp->ft_lpath, &pfh, &pst);
 	if (rv != 0) {
 		syslog(LOG_DEBUG,
-		    "Error %d on fs_getstat(%s)", rv, ftp->ft_path);
+		    "Error %d on fs_getstat(%s)", rv, ftp->ft_lpath);
 		return (-1);
 	}
 

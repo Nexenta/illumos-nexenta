@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -304,7 +304,6 @@ ndmp_run(ulong_t port, ndmp_con_handler_func_t con_handler_func)
 			syslog(LOG_ERR, "tcp_accept error: %m");
 			continue;
 		}
-		syslog(LOG_DEBUG, "Accept on connection descriptor: %d", ns);
 		set_socket_options(ns);
 
 		if ((argp = ndmp_malloc(sizeof (ndmpd_worker_arg_t))) != NULL) {
@@ -863,8 +862,6 @@ connection_handler(ndmp_connection_t *connection)
 	}
 	connection_fd = ndmp_get_fd(connection);
 
-	syslog(LOG_DEBUG, "New connection on descriptor: %d", connection_fd);
-
 	/*
 	 * Add the handler function for the connection to the DMA.
 	 */
@@ -890,8 +887,6 @@ connection_handler(ndmp_connection_t *connection)
 		(void) ndmpd_select(&session, TRUE, HC_ALL);
 
 	hardlink_q_cleanup(session.hardlink_q);
-
-	syslog(LOG_DEBUG, "Connection terminated on descriptor: %d", connection_fd);
 
 	(void) ndmpd_remove_file_handler(&session, connection_fd);
 
@@ -1103,7 +1098,11 @@ ndmp_recv_msg(ndmp_connection_t *connection)
 		if (!(*xdr_func)(&connection->conn_xdrs,
 		    connection->conn_msginfo.mi_body)) {
 			syslog(LOG_ERR,
-			    "Processing message 0x%x: error decoding arguments",
+			    "Processing %s message 0x%x: "
+			    "error decoding arguments",
+			    connection->conn_msginfo.mi_hdr.message_type ==
+			    NDMP_MESSAGE_REQUEST ?
+			    "Request" : "Reply",
 			    connection->conn_msginfo.mi_hdr.message);
 			free(connection->conn_msginfo.mi_body);
 			connection->conn_msginfo.mi_body = 0;
@@ -1176,7 +1175,6 @@ ndmp_process_messages(ndmp_connection_t *connection, boolean_t reply_expected)
 
 		if ((err = ndmp_recv_msg(connection)) != NDMP_NO_ERR) {
 			if (connection->conn_eof) {
-				syslog(LOG_DEBUG, "detected eof");
 				return (NDMP_PROC_ERR);
 			}
 			if (err < 1) {

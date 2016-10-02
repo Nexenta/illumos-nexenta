@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2014 Nexenta Systems, Inc.  All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
 
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -187,7 +187,6 @@ ndmpd_mover_listen_v2(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE ||
 	    session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
-		syslog(LOG_DEBUG, "Invalid state");
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
 		    "sending mover_listen reply");
@@ -246,7 +245,6 @@ ndmpd_mover_continue_v2(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
-		syslog(LOG_DEBUG, "Invalid state");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -281,7 +279,6 @@ ndmpd_mover_abort_v2(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid state");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -318,7 +315,6 @@ ndmpd_mover_stop_v2(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid state");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -371,12 +367,10 @@ ndmpd_mover_set_window_v2(ndmp_connection_t *connection, void *body)
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED &&
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_LISTEN) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d",
-		    session->ns_mover.md_state);
 	} else {
 		if (quad_to_long_long(request->length) == 0) {
 			reply.error = NDMP_ILLEGAL_ARGS_ERR;
-			syslog(LOG_DEBUG, "Invalid window size %d",
+			syslog(LOG_ERR, "Illegal window size %d",
 			    quad_to_long_long(request->length));
 		} else {
 			reply.error = NDMP_NO_ERR;
@@ -423,14 +417,13 @@ ndmpd_mover_read_v2(ndmp_connection_t *connection, void *body)
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_ACTIVE ||
 	    session->ns_mover.md_bytes_left_to_read != 0 ||
 	    session->ns_mover.md_mode != NDMP_MOVER_MODE_WRITE) {
-		syslog(LOG_DEBUG, "Invalid state");
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, &reply,
 		    "sending mover_read reply");
 		return;
 	}
 	if (session->ns_tape.td_fd == -1) {
-		syslog(LOG_DEBUG, "Tape device is not open");
+		syslog(LOG_ERR, "Tape device is not open");
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
 		ndmp_send_reply(connection, &reply,
 		    "sending mover_read reply");
@@ -481,7 +474,6 @@ ndmpd_mover_close_v2(ndmp_connection_t *connection, void *body)
 	ndmpd_session_t *session = ndmp_get_client_data(connection);
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
-		syslog(LOG_DEBUG, "Invalid state");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, &reply,
@@ -614,22 +606,15 @@ ndmpd_mover_listen_v3(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
-		    request->addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG,
-		    "Invalid mover state to process listen request");
 	} else if (session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG,
-		    "Invalid data state to process listen request");
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
-		syslog(LOG_DEBUG, "No tape device open");
+		syslog(LOG_ERR, "No tape device open");
 	} else if (request->mode == NDMP_MOVER_MODE_READ &&
 	    session->ns_tape.td_mode == NDMP_TAPE_READ_MODE) {
 		reply.error = NDMP_PERMISSION_ERR;
@@ -665,8 +650,6 @@ ndmpd_mover_listen_v3(ndmp_connection_t *connection, void *body)
 		break;
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type: %d",
-		    request->addr_type);
 	}
 
 	if (reply.error == NDMP_NO_ERR) {
@@ -703,7 +686,6 @@ ndmpd_mover_continue_v3(ndmp_connection_t *connection, void *body)
 	(void) memset((void*)&reply, 0, sizeof (reply));
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
-		syslog(LOG_DEBUG, "Invalid state");
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
 		    "sending mover_continue reply");
@@ -755,7 +737,6 @@ ndmpd_mover_continue_v3(ndmp_connection_t *connection, void *body)
 			 * right window. This means that DMA does not follow
 			 * the V3 spec.
 			 */
-			syslog(LOG_DEBUG, "DMA Error.");
 			ndmpd_mover_error(session,
 			    NDMP_MOVER_HALT_INTERNAL_ERROR);
 			return;
@@ -797,7 +778,6 @@ ndmpd_mover_abort_v3(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid state");
 
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
 		ndmp_send_reply(connection, (void *) &reply,
@@ -845,21 +825,16 @@ ndmpd_mover_set_window_v3(ndmp_connection_t *connection, void *body)
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_LISTEN &&
 	    session->ns_mover.md_state != NDMP_MOVER_STATE_PAUSED) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d",
-		    session->ns_mover.md_state);
 	} else if (session->ns_mover.md_record_size == 0) {
 		if (session->ns_protocol_version == NDMPV4)
 			reply.error = NDMP_PRECONDITION_ERR;
 		else
 			reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid record size 0");
 	} else
 		reply.error = NDMP_NO_ERR;
 
 	if (quad_to_long_long(request->length) == 0) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid window size %d",
-		    quad_to_long_long(request->length));
 	}
 
 	if (reply.error != NDMP_NO_ERR) {
@@ -926,18 +901,15 @@ ndmpd_mover_read_v3(ndmp_connection_t *connection, void *body)
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_ACTIVE ||
 	    session->ns_mover.md_mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state");
 	} else if (session->ns_mover.md_bytes_left_to_read != 0) {
 		reply.error = NDMP_READ_IN_PROGRESS_ERR;
-		syslog(LOG_DEBUG, "In progress");
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
-		syslog(LOG_DEBUG, "Tape device is not open");
+		syslog(LOG_ERR, "Tape device is not open");
 	} else if (quad_to_long_long(request->length) == 0 ||
 	    (quad_to_long_long(request->length) == MAX_WINDOW_SIZE &&
 	    quad_to_long_long(request->offset) != 0)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Illegal args");
 	} else {
 		reply.error = NDMP_NO_ERR;
 	}
@@ -997,13 +969,8 @@ ndmpd_mover_set_record_size_v3(ndmp_connection_t *connection, void *body)
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid mover state %d",
-		    session->ns_mover.md_state);
 	} else if (request->len > (unsigned int)ndmp_max_mover_recsize) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG,
-		    "Invalid argument %d, should be > 0 and <= %d",
-		    request->len, ndmp_max_mover_recsize);
 	} else if (request->len == session->ns_mover.md_record_size) {
 		reply.error = NDMP_NO_ERR;
 		session->ns_mover.md_pre_cond = TRUE;
@@ -1048,18 +1015,13 @@ ndmpd_mover_connect_v3(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr.addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
-		    request->addr.addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d: mover is not idle",
-		    session->ns_mover.md_state);
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
-		syslog(LOG_DEBUG, "No tape device open");
+		syslog(LOG_ERR, "No tape device open");
 	} else if (request->mode == NDMP_MOVER_MODE_READ &&
 	    session->ns_tape.td_mode == NDMP_TAPE_READ_MODE) {
 		reply.error = NDMP_WRITE_PROTECT_ERR;
@@ -1081,8 +1043,6 @@ ndmpd_mover_connect_v3(ndmp_connection_t *connection, void *body)
 		 */
 		if (session->ns_data.dd_state != NDMP_DATA_STATE_LISTEN ||
 		    session->ns_data.dd_listen_sock != -1) {
-			syslog(LOG_DEBUG,
-			    "Data server is not in local listen state");
 			reply.error = NDMP_ILLEGAL_STATE_ERR;
 		} else
 			session->ns_data.dd_state = NDMP_DATA_STATE_CONNECTED;
@@ -1095,8 +1055,6 @@ ndmpd_mover_connect_v3(ndmp_connection_t *connection, void *body)
 
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
-		    request->addr.addr_type);
 	}
 
 	if (reply.error == NDMP_NO_ERR) {
@@ -1199,25 +1157,17 @@ ndmpd_mover_listen_v4(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
-		    request->addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG,
-		    "Invalid mover state to process listen request");
 	} else if (session->ns_data.dd_state != NDMP_DATA_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG,
-		    "Invalid data state to process listen request");
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
-		syslog(LOG_DEBUG, "No tape device open");
+		syslog(LOG_ERR, "No tape device open");
 	} else if (session->ns_mover.md_record_size == 0) {
 		reply.error = NDMP_PRECONDITION_ERR;
-		syslog(LOG_DEBUG, "Invalid record size 0");
 	} else if (request->mode == NDMP_MOVER_MODE_READ &&
 	    session->ns_tape.td_mode == NDMP_TAPE_READ_MODE) {
 		reply.error = NDMP_PERMISSION_ERR;
@@ -1263,8 +1213,6 @@ ndmpd_mover_listen_v4(ndmp_connection_t *connection, void *body)
 		break;
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type: %d",
-		    request->addr_type);
 	}
 
 	if (reply.error == NDMP_NO_ERR) {
@@ -1302,25 +1250,19 @@ ndmpd_mover_connect_v4(ndmp_connection_t *connection, void *body)
 	if (request->mode != NDMP_MOVER_MODE_READ &&
 	    request->mode != NDMP_MOVER_MODE_WRITE) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid mode %d", request->mode);
 	} else if (!ndmp_valid_v3addr_type(request->addr.addr_type)) {
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
-		    request->addr.addr_type);
 	} else if (session->ns_mover.md_state != NDMP_MOVER_STATE_IDLE) {
 		reply.error = NDMP_ILLEGAL_STATE_ERR;
-		syslog(LOG_DEBUG, "Invalid state %d: mover is not idle",
-		    session->ns_mover.md_state);
 	} else if (session->ns_tape.td_fd == -1) {
 		reply.error = NDMP_DEV_NOT_OPEN_ERR;
-		syslog(LOG_DEBUG, "No tape device open");
+		syslog(LOG_ERR, "No tape device open");
 	} else if (request->mode == NDMP_MOVER_MODE_READ &&
 	    session->ns_tape.td_mode == NDMP_TAPE_READ_MODE) {
 		reply.error = NDMP_PERMISSION_ERR;
 		syslog(LOG_ERR, "Write protected device.");
 	} else if (session->ns_mover.md_record_size == 0) {
 		reply.error = NDMP_PRECONDITION_ERR;
-		syslog(LOG_DEBUG, "Invalid record size 0");
 	} else
 		reply.error = NDMP_NO_ERR;
 
@@ -1338,8 +1280,6 @@ ndmpd_mover_connect_v4(ndmp_connection_t *connection, void *body)
 		 */
 		if (session->ns_data.dd_state != NDMP_DATA_STATE_LISTEN ||
 		    session->ns_data.dd_listen_sock != -1) {
-			syslog(LOG_DEBUG,
-			    "Data server is not in local listen state");
 			reply.error = NDMP_ILLEGAL_STATE_ERR;
 		} else
 			session->ns_data.dd_state = NDMP_DATA_STATE_CONNECTED;
@@ -1352,8 +1292,6 @@ ndmpd_mover_connect_v4(ndmp_connection_t *connection, void *body)
 
 	default:
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
-		syslog(LOG_DEBUG, "Invalid address type %d",
-		    request->addr.addr_type);
 	}
 
 	if (reply.error == NDMP_NO_ERR) {
@@ -1589,8 +1527,6 @@ ndmpd_local_read(ndmpd_session_t *session, char *data, ulong_t length)
 			if (ndmp_send_request(session->ns_connection,
 			    NDMP_NOTIFY_MOVER_PAUSED, NDMP_NO_ERR,
 			    (void *) &pause_request, 0) < 0) {
-				syslog(LOG_DEBUG,
-				    "Sending notify_mover_paused request");
 				ndmpd_mover_error(session,
 				    NDMP_MOVER_HALT_INTERNAL_ERROR);
 				return (-1);
@@ -1676,8 +1612,6 @@ ndmpd_local_read(ndmpd_session_t *session, char *data, ulong_t length)
 		session->ns_mover.md_w_index = n;
 		session->ns_mover.md_r_index = 0;
 
-		syslog(LOG_DEBUG, "n: %d", n);
-
 		/*
 		 * Discard data if the current data stream position is
 		 * prior to the seek position. This is necessary if a seek
@@ -1756,8 +1690,6 @@ ndmpd_remote_read(ndmpd_session_t *session, char *data, ulong_t length)
 			if (ndmp_send_request_lock(session->ns_connection,
 			    NDMP_NOTIFY_DATA_READ, NDMP_NO_ERR,
 			    (void *) &request, 0) < 0) {
-				syslog(LOG_DEBUG,
-				    "Sending notify_data_read request");
 				return (-1);
 			}
 		}
@@ -1783,8 +1715,6 @@ ndmpd_remote_read(ndmpd_session_t *session, char *data, ulong_t length)
 		 */
 		if (len > session->ns_mover.md_bytes_left_to_read)
 			len = session->ns_mover.md_bytes_left_to_read;
-
-		syslog(LOG_DEBUG, "len: %u", len);
 
 		if ((n = read(session->ns_data.dd_sock, &data[count],
 		    len)) < 0) {
@@ -1874,16 +1804,12 @@ ndmpd_mover_shut_down(ndmpd_session_t *session)
 
 	(void) mutex_lock(&nlp->nlp_mtx);
 	if (session->ns_mover.md_listen_sock != -1) {
-		syslog(LOG_DEBUG, "mover.listen_sock: %d",
-		    session->ns_mover.md_listen_sock);
 		(void) ndmpd_remove_file_handler(session,
 		    session->ns_mover.md_listen_sock);
 		(void) close(session->ns_mover.md_listen_sock);
 		session->ns_mover.md_listen_sock = -1;
 	}
 	if (session->ns_mover.md_sock != -1) {
-		syslog(LOG_DEBUG, "mover.sock: %d",
-		    session->ns_mover.md_sock);
 		(void) ndmpd_remove_file_handler(session,
 		    session->ns_mover.md_sock);
 		(void) close(session->ns_mover.md_sock);
@@ -1956,12 +1882,12 @@ ndmpd_mover_connect(ndmpd_session_t *session, ndmp_mover_mode mover_mode)
 			    (ulong_t)sin.sin_port);
 
 			if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-				syslog(LOG_DEBUG, "Socket error: %m");
+				syslog(LOG_ERR, "Socket error: %m");
 				return (NDMP_IO_ERR);
 			}
 			if (connect(sock, (struct sockaddr *)&sin,
 			    sizeof (sin)) < 0) {
-				syslog(LOG_DEBUG, "Connect error: %m");
+				syslog(LOG_ERR, "Connect error: %m");
 				(void) close(sock);
 				return (NDMP_IO_ERR);
 			}
@@ -1973,7 +1899,7 @@ ndmpd_mover_connect(ndmpd_session_t *session, ndmp_mover_mode mover_mode)
 
 				syslog(LOG_DEBUG,
 				    "Not in active  state mover"
-				    "  state = %d or Invalid mover sock=%d",
+				    "  state = %d or Illegal mover sock=%d",
 				    session->ns_mover.md_state,
 				    session->ns_mover.md_sock);
 				return (NDMP_ILLEGAL_STATE_ERR);
@@ -1985,22 +1911,17 @@ ndmpd_mover_connect(ndmpd_session_t *session, ndmp_mover_mode mover_mode)
 			    " same as listen_sock", session, sock);
 		}
 
-		syslog(LOG_DEBUG, "sock fd: %d", sock);
-
 		session->ns_data.dd_sock = sock;
-
-		syslog(LOG_DEBUG, "data.mover_sock: %u", sock);
 
 		return (NDMP_NO_ERR);
 	}
 	/* Local mover connection. */
 
 	if (session->ns_mover.md_state != NDMP_MOVER_STATE_LISTEN) {
-		syslog(LOG_DEBUG, "Mover is not in listen state");
 		return (NDMP_ILLEGAL_STATE_ERR);
 	}
 	if (session->ns_tape.td_fd == -1) {
-		syslog(LOG_DEBUG, "Tape device not open");
+		syslog(LOG_ERR, "Tape device not open");
 		return (NDMP_DEV_NOT_OPEN_ERR);
 	}
 	if (mover_mode == NDMP_MOVER_MODE_READ &&
@@ -2061,8 +1982,6 @@ ndmpd_mover_seek(ndmpd_session_t *session, u_longlong_t offset,
 	    session->ns_mover.md_seek_position >=
 	    session->ns_mover.md_window_offset +
 	    session->ns_mover.md_window_length) {
-		syslog(LOG_DEBUG, "MOVER_PAUSE_SEEK(%llu)",
-		    session->ns_mover.md_seek_position);
 
 		session->ns_mover.md_w_index = 0;
 		session->ns_mover.md_r_index = 0;
@@ -2075,8 +1994,6 @@ ndmpd_mover_seek(ndmpd_session_t *session, u_longlong_t offset,
 		if (ndmp_send_request(session->ns_connection,
 		    NDMP_NOTIFY_MOVER_PAUSED, NDMP_NO_ERR,
 		    (void *) &pause_request, 0) < 0) {
-			syslog(LOG_DEBUG,
-			    "Sending notify_mover_paused request");
 			return (-1);
 		}
 		return (1);
@@ -2104,11 +2021,6 @@ ndmpd_mover_seek(ndmpd_session_t *session, u_longlong_t offset,
 		session->ns_mover.md_position = offset;
 		session->ns_mover.md_r_index = session->ns_mover.md_position -
 		    buf_position;
-
-		syslog(LOG_DEBUG, "pos %llu r_index %u",
-		    session->ns_mover.md_position,
-		    session->ns_mover.md_r_index);
-
 		return (0);
 	}
 
@@ -2133,16 +2045,12 @@ ndmpd_mover_seek(ndmpd_session_t *session, u_longlong_t offset,
 	}
 	/* Reposition the tape if necessary. */
 	if (ctlcmd) {
-		syslog(LOG_DEBUG, "cmd %d count %d",
-		    ctlcmd, ctlcnt);
 		(void) ndmp_mtioctl(session->ns_tape.td_fd, ctlcmd, ctlcnt);
 	}
 
 	session->ns_mover.md_position = tape_position;
 	session->ns_mover.md_r_index = 0;
 	session->ns_mover.md_w_index = 0;
-
-	syslog(LOG_DEBUG, "pos %llu", session->ns_mover.md_position);
 
 	return (0);
 }
@@ -2184,7 +2092,6 @@ create_listen_socket_v2(ndmpd_session_t *session, ulong_t *addr, ushort_t *port)
 		return (-1);
 	}
 
-	syslog(LOG_DEBUG, "addr: 0x%x, port: %d", *addr, *port);
 	return (0);
 }
 
@@ -2220,13 +2127,11 @@ accept_connection(void *cookie, int fd, ulong_t mode)
 	session->ns_mover.md_listen_sock = -1;
 
 	if (session->ns_mover.md_sock < 0) {
-		syslog(LOG_DEBUG, "Accept error: %m");
+		syslog(LOG_ERR, "Accept error: %m");
 		ndmpd_mover_error(session, NDMP_MOVER_HALT_CONNECT_ERROR);
 		return;
 	}
 	set_socket_options(session->ns_mover.md_sock);
-
-	syslog(LOG_DEBUG, "sock fd: %d", session->ns_mover.md_sock);
 
 	if (session->ns_mover.md_mode == NDMP_MOVER_MODE_READ) {
 		if (start_mover_for_backup(session) < 0) {
@@ -2242,8 +2147,6 @@ accept_connection(void *cookie, int fd, ulong_t mode)
 		    inet_ntoa(IN_ADDR(from.sin_addr.s_addr)),
 		    ntohs(from.sin_port));
 	}
-
-	syslog(LOG_DEBUG, "Received connection");
 
 	session->ns_mover.md_state = NDMP_MOVER_STATE_ACTIVE;
 }
@@ -2362,8 +2265,6 @@ change_tape(ndmpd_session_t *session)
 	if (ndmp_send_request(session->ns_connection,
 	    NDMP_NOTIFY_MOVER_PAUSED, NDMP_NO_ERR,
 	    (void *) &request, 0) < 0) {
-		syslog(LOG_DEBUG,
-		    "Sending notify_mover_paused request");
 		return (-1);
 	}
 	/*
@@ -2443,8 +2344,6 @@ mover_tape_read_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf)
 	    session->ns_mover.md_window_length) {
 		ndmp_notify_mover_paused_request pause_request;
 
-		syslog(LOG_DEBUG, "end of mover window");
-
 		session->ns_mover.md_state = NDMP_MOVER_STATE_PAUSED;
 		session->ns_mover.md_pause_reason = NDMP_MOVER_PAUSE_SEEK;
 		pause_request.reason = NDMP_MOVER_PAUSE_SEEK;
@@ -2454,8 +2353,6 @@ mover_tape_read_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf)
 		if (ndmp_send_request(session->ns_connection,
 		    NDMP_NOTIFY_MOVER_PAUSED, NDMP_NO_ERR,
 		    (void *) &pause_request, 0) < 0) {
-			syslog(LOG_DEBUG,
-			    "Sending notify_mover_paused request");
 			ndmpd_mover_error(session,
 			    NDMP_MOVER_HALT_INTERNAL_ERROR);
 		}
@@ -2464,8 +2361,6 @@ mover_tape_read_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf)
 	}
 
 	n = tape_read(session, buf->tb_buffer_data);
-
-	syslog(LOG_DEBUG, "read %d bytes from tape", n);
 
 	if (n <= 0) {
 		if (n < 0)
@@ -2518,7 +2413,6 @@ mover_tape_reader(ndmpd_session_t *session)
 	tlm_commands_t *cmds;	/* Commands structure */
 
 	if ((nlp = ndmp_get_nlp(session)) == NULL) {
-		syslog(LOG_DEBUG, "nlp == NULL");
 		return (-1);
 	}
 
@@ -2612,10 +2506,7 @@ mover_socket_write_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf)
 	n = write(session->ns_mover.md_sock, buf->tb_buffer_data,
 	    buf->tb_buffer_size);
 
-	syslog(LOG_DEBUG, "n: %d, len: %d", n, buf->tb_buffer_size);
-
 	if (n < 0) {
-		syslog(LOG_DEBUG, "n: %d, errno: %m", n);
 		ndmpd_mover_error(session, NDMP_MOVER_HALT_CONNECT_CLOSED);
 		return (-1);
 	}
@@ -2631,7 +2522,6 @@ mover_socket_write_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf)
 	 * will reinstall the handler.
 	 */
 	if (session->ns_mover.md_bytes_left_to_read == 0) {
-		syslog(LOG_DEBUG, "bytes_left_to_read == 0");
 		(void) ndmpd_remove_file_handler(session,
 		    session->ns_mover.md_sock);
 		return (-1);
@@ -2666,7 +2556,6 @@ mover_socket_writer(ndmpd_session_t *session)
 	tlm_commands_t *cmds;	/* Commands structure */
 
 	if ((nlp = ndmp_get_nlp(session)) == NULL) {
-		syslog(LOG_DEBUG, "nlp == NULL");
 		return (-1);
 	}
 
@@ -2691,8 +2580,6 @@ mover_socket_writer(ndmpd_session_t *session)
 			syslog(LOG_DEBUG, "w%d", bidx);
 
 			if (mover_socket_write_one_buf(session, buf) < 0) {
-				syslog(LOG_DEBUG,
-				    "mover_socket_write_one_buf() < 0");
 				break;
 			}
 
@@ -2702,7 +2589,6 @@ mover_socket_writer(ndmpd_session_t *session)
 		} else {
 			if (lcmd->tc_writer != TLM_RESTORE_RUN) {
 				/* No more data is coming, time to exit */
-				syslog(LOG_DEBUG, "Time to exit");
 				break;
 			}
 			syslog(LOG_DEBUG, "W%d", bidx);
@@ -2754,7 +2640,6 @@ start_mover_for_restore(ndmpd_session_t *session)
 	int rc;
 
 	if ((nlp = ndmp_get_nlp(session)) == NULL) {
-		syslog(LOG_DEBUG, "nlp == NULL");
 		return (-1);
 	}
 
@@ -2779,8 +2664,6 @@ start_mover_for_restore(ndmpd_session_t *session)
 	if (rc == 0) {
 		tlm_cmd_wait(cmds->tcs_command, TLM_TAPE_READER);
 	} else {
-		syslog(LOG_DEBUG, "Launch mover_tape_reader: %s",
-		    strerror(rc));
 		return (-1);
 	}
 
@@ -2788,8 +2671,6 @@ start_mover_for_restore(ndmpd_session_t *session)
 	if (rc == 0) {
 		tlm_cmd_wait(cmds->tcs_command, TLM_SOCK_WRITER);
 	} else {
-		syslog(LOG_DEBUG, "Launch mover_socket_writer: %s",
-		    strerror(rc));
 		return (-1);
 	}
 
@@ -2823,22 +2704,17 @@ mover_socket_read_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf,
 	tlm_buffer_mark_empty(buf);
 	for (index = 0, toread = read_size; toread > 0; ) {
 		errno = 0;
-		syslog(LOG_DEBUG, "index: %d, toread: %d", index, toread);
-
 		n = read(session->ns_mover.md_sock, &buf->tb_buffer_data[index],
 		    toread);
 		if (n == 0) {
-			syslog(LOG_DEBUG, "n: %d", n);
 			break;
 		} else if (n > 0) {
-			syslog(LOG_DEBUG, "n: %d", n);
 			index += n;
 			toread -= n;
 		} else {
 			buf->tb_eof = TRUE;
 			buf->tb_errno = errno;
 			buf->tb_buffer_size = 0;
-			syslog(LOG_DEBUG, "n: %d, errno: %m", n);
 			return (-1);
 		}
 	}
@@ -2889,7 +2765,6 @@ mover_socket_reader(ndmpd_session_t *session)
 	static int nr = 0;
 
 	if ((nlp = ndmp_get_nlp(session)) == NULL) {
-		syslog(LOG_DEBUG, "nlp == NULL");
 		return (-1);
 	}
 
@@ -2985,8 +2860,6 @@ mover_tape_write_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf)
 	n = mover_tape_write_v3(session, buf->tb_buffer_data,
 	    buf->tb_buffer_size);
 
-	syslog(LOG_DEBUG, "n: %d", n);
-
 	if (n <= 0) {
 		ndmpd_mover_error(session, (n == 0 ? NDMP_MOVER_HALT_ABORTED
 		    : NDMP_MOVER_HALT_INTERNAL_ERROR));
@@ -2996,7 +2869,6 @@ mover_tape_write_one_buf(ndmpd_session_t *session, tlm_buffer_t *buf)
 	session->ns_mover.md_data_written += n;
 	session->ns_mover.md_record_num++;
 
-	syslog(LOG_DEBUG, "Calling tlm_buffer_mark_empty(buf)");
 	tlm_buffer_mark_empty(buf);
 
 	return (0);
@@ -3029,7 +2901,6 @@ mover_tape_writer(ndmpd_session_t *session)
 	static int nw = 0;
 
 	if ((nlp = ndmp_get_nlp(session)) == NULL) {
-		syslog(LOG_DEBUG, "nlp == NULL");
 		return (-1);
 	}
 
@@ -3065,7 +2936,6 @@ mover_tape_writer(ndmpd_session_t *session)
 		} else {
 			if (lcmd->tc_writer != TLM_BACKUP_RUN) {
 				/* No more data is coming, time to exit */
-				syslog(LOG_DEBUG, "Time to exit");
 				break;
 			}
 			syslog(LOG_DEBUG, "W%d", bidx);
@@ -3081,12 +2951,10 @@ mover_tape_writer(ndmpd_session_t *session)
 		syslog(LOG_DEBUG, "cmds->tcs_writer == TLM_ABORT");
 	if (lcmd->tc_writer == (int)TLM_ABORT)
 		syslog(LOG_DEBUG, "lcmd->tc_writer == TLM_ABORT");
-	syslog(LOG_DEBUG, "nw: %d", nw);
 
 	if (buf->tb_errno == 0) {
 		ndmpd_mover_error(session, NDMP_MOVER_HALT_CONNECT_CLOSED);
 	} else {
-		syslog(LOG_DEBUG, "buf->tb_errno: %d", buf->tb_errno);
 		ndmpd_mover_error(session, NDMP_MOVER_HALT_INTERNAL_ERROR);
 	}
 
@@ -3125,7 +2993,6 @@ start_mover_for_backup(ndmpd_session_t *session)
 	int rc;
 
 	if ((nlp = ndmp_get_nlp(session)) == NULL) {
-		syslog(LOG_DEBUG, "nlp == NULL");
 		return (-1);
 	}
 
@@ -3150,8 +3017,6 @@ start_mover_for_backup(ndmpd_session_t *session)
 	if (rc == 0) {
 		tlm_cmd_wait(cmds->tcs_command, TLM_SOCK_READER);
 	} else {
-		syslog(LOG_DEBUG, "Launch mover_socket_reader: %s",
-		    strerror(rc));
 		return (-1);
 	}
 
@@ -3159,8 +3024,6 @@ start_mover_for_backup(ndmpd_session_t *session)
 	if (rc == 0) {
 		tlm_cmd_wait(cmds->tcs_command, TLM_TAPE_WRITER);
 	} else {
-		syslog(LOG_DEBUG, "Launch mover_tape_writer: %s",
-		    strerror(rc));
 		return (-1);
 	}
 
@@ -3319,14 +3182,14 @@ ndmpd_mover_error(ndmpd_session_t *session, ndmp_mover_halt_reason reason)
 
 	if (session->ns_protocol_version == NDMPV4) {
 		if (ndmpd_mover_error_send_v4(session, reason) < 0)
-			syslog(LOG_DEBUG,
+			syslog(LOG_ERR,
 			    "Error sending notify_mover_halted request");
 	} else {
 		/* No media error in V3 */
 		if (reason == NDMP_MOVER_HALT_MEDIA_ERROR)
 			reason = NDMP_MOVER_HALT_INTERNAL_ERROR;
 		if (ndmpd_mover_error_send(session, reason) < 0)
-			syslog(LOG_DEBUG,
+			syslog(LOG_ERR,
 			    "Error sending notify_mover_halted request");
 	}
 
@@ -3384,7 +3247,7 @@ mover_pause_v3(ndmpd_session_t *session, ndmp_mover_pause_reason reason)
 
 	if (ndmp_send_request(session->ns_connection, NDMP_NOTIFY_MOVER_PAUSED,
 	    NDMP_NO_ERR, (void *)&request, 0) < 0) {
-		syslog(LOG_DEBUG,
+		syslog(LOG_ERR,
 		    "Error sending notify_mover_paused_request");
 		return (-1);
 	}
@@ -3427,8 +3290,6 @@ mover_pause_v3(ndmpd_session_t *session, ndmp_mover_pause_reason reason)
 		    NDMP_ADDR_LOCAL) {
 			rv = ndmp_wait_for_mover(session);
 		} else {
-			syslog(LOG_DEBUG, "Invalid address type %d",
-			    session->ns_mover.md_data_addr.addr_type);
 			rv = -1;
 		}
 	}
@@ -3578,7 +3439,6 @@ ndmpd_local_write_v3(ndmpd_session_t *session, char *data, ulong_t length)
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_LISTEN ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid mover state to write data");
 		return (-1);
 	}
 
@@ -3712,11 +3572,12 @@ mover_data_read_v3(void *cookie, int fd, ulong_t mode)
 		} else {
 			/* Socket is non-blocking, perhaps there are no data */
 			if (errno == EAGAIN) {
-				syslog(LOG_ERR, "No data to read");
+				syslog(LOG_DEBUG, "No data to read");
 				return;
 			}
 
-			syslog(LOG_ERR, "Failed to read from socket %d: %m", fd);
+			syslog(LOG_ERR,
+			    "Failed to read from socket %d: %m", fd);
 			ndmpd_mover_error(session,
 			    NDMP_MOVER_HALT_INTERNAL_ERROR);
 		}
@@ -3786,7 +3647,6 @@ mover_tape_read_v3(ndmpd_session_t *session, char *data)
 			 * then it's repeated attempt to read at EOT.
 			 */
 			if (errno == EIO && tape_is_at_bof(session)) {
-				syslog(LOG_DEBUG, "Repeated read at EOT");
 				pause_reason = NDMP_MOVER_PAUSE_EOM;
 				NDMP_APILOG((void*)session, NDMP_LOG_NORMAL,
 				    ++ndmp_log_msg_id,
@@ -3967,8 +3827,6 @@ mover_data_write_v3(void *cookie, int fd, ulong_t mode)
 	else
 		wlen = session->ns_mover.md_bytes_left_to_read;
 
-	syslog(LOG_DEBUG, "wlen window restrictions: %llu", wlen);
-
 	/*
 	 * Now limit the length to the amount of data in the buffer.
 	 */
@@ -3977,8 +3835,6 @@ mover_data_write_v3(void *cookie, int fd, ulong_t mode)
 		    session->ns_mover.md_r_index;
 
 	len = wlen & 0xffffffff;
-	syslog(LOG_DEBUG,
-	    "buffer restrictions: wlen %llu len %u", wlen, len);
 
 	/*
 	 * Write the data to the data connection.
@@ -4230,7 +4086,6 @@ ndmpd_local_read_v3(ndmpd_session_t *session, char *data, ulong_t length)
 	if (session->ns_mover.md_state == NDMP_MOVER_STATE_IDLE ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_LISTEN ||
 	    session->ns_mover.md_state == NDMP_MOVER_STATE_HALTED) {
-		syslog(LOG_DEBUG, "Invalid mover state to read data");
 		return (-1);
 	}
 

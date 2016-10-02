@@ -36,6 +36,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+
 #include <syslog.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -990,6 +992,7 @@ tar_getfile(tlm_backup_restore_arg_t *argp)
 				/* the restore job name */
 	int	erc;		/* error return codes */
 	int	flags;
+	int	i;
 	struct	rs_name_maker rn;
 	tlm_commands_t *commands;
 	tlm_cmd_t *local_commands;
@@ -1026,17 +1029,23 @@ tar_getfile(tlm_backup_restore_arg_t *argp)
 		return (-1);
 	}
 
-	sels = argp->ba_sels;
+	sels = ndmp_malloc(sizeof (char *) * (argp->ba_count + 1));
+	    /* One extra for NULL terminate */
 	if (sels == NULL) {
 		local_commands->tc_reader = TLM_STOP;
 		free(dir);
 		(void) pthread_barrier_wait(&argp->ba_barrier);
 		return (-1);
 	}
+
+	(void) memset(sels, 0, (argp->ba_count + 1) * sizeof (char *));
+	for (i = 0; i < argp->ba_count; i++) {
+		sels[i] = argp->ba_sels[i];
+	}
+
 	exls = &list;
 
 	tlm_log_list("selections", sels);
-	tlm_log_list("exclusions", exls);
 
 	if (wildcard_enabled())
 		flags |= RSFLG_MATCH_WCARD;
@@ -1057,17 +1066,14 @@ tar_getfile(tlm_backup_restore_arg_t *argp)
 	/*
 	 * work
 	 */
-	syslog(LOG_DEBUG, "start restore job %s", job);
 	erc = tar_getdir(commands, local_commands, job_stats, &rn, 1, 1,
 	    sels, exls, flags, 0, NULL, NULL);
 
 	/*
 	 * teardown
 	 */
-	syslog(LOG_DEBUG, "end restore job %s", job);
 	tlm_un_ref_job_stats(job);
 	tlm_release_list(sels);
-	tlm_release_list(exls);
 
 	commands->tcs_writer_count--;
 	local_commands->tc_reader = TLM_STOP;
@@ -1909,7 +1915,8 @@ create_sym_link(char *dst, char *target, tlm_acls_t *acls,
 		erc = errno;
 		if (errno == EEXIST) {
 			erc = 0;
-			syslog(LOG_DEBUG, "softlink [%s] to [%s] already existed",
+			syslog(LOG_DEBUG,
+			    "softlink [%s] to [%s] already existed",
 			    dst, target);
 		} else {
 			job_stats->js_errors++;
