@@ -24,7 +24,7 @@
  */
 
 /*
- * Copyright 2011 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*
@@ -3547,29 +3547,6 @@ is_zfs(char *root)
 		return (1);
 	} else {
 		BAM_DPRINTF((D_IS_NOT_ZFS, fcn, root));
-		return (0);
-	}
-}
-
-static int
-is_ufs(char *root)
-{
-	struct statvfs		vfs;
-	int			ret;
-	const char		*fcn = "is_ufs()";
-
-	ret = statvfs(root, &vfs);
-	INJECT_ERROR1("STATVFS_UFS", ret = 1);
-	if (ret != 0) {
-		bam_error(STATVFS_FAIL, root, strerror(errno));
-		return (0);
-	}
-
-	if (strncmp(vfs.f_basetype, "ufs", strlen("ufs")) == 0) {
-		BAM_DPRINTF((D_IS_UFS, fcn, root));
-		return (1);
-	} else {
-		BAM_DPRINTF((D_IS_NOT_UFS, fcn, root));
 		return (0);
 	}
 }
@@ -7349,222 +7326,6 @@ zfs_get_physical(char *special, char ***physarray, int *n)
 	return (0);
 }
 
-/*
- * Certain services needed to run metastat successfully may not
- * be enabled. Enable them now.
- */
-/*
- * Checks if the specified service is online
- * Returns: 	1 if the service is online
- *		0 if the service is not online
- *		-1 on error
- */
-static int
-is_svc_online(char *svc)
-{
-	char			*state;
-	const char		*fcn = "is_svc_online()";
-
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, svc));
-
-	state = smf_get_state(svc);
-	INJECT_ERROR2("GET_SVC_STATE", free(state), state = NULL);
-	if (state == NULL) {
-		bam_error(GET_SVC_STATE_ERR, svc);
-		return (-1);
-	}
-	BAM_DPRINTF((D_GOT_SVC_STATUS, fcn, svc));
-
-	if (strcmp(state, SCF_STATE_STRING_ONLINE) == 0) {
-		BAM_DPRINTF((D_SVC_ONLINE, fcn, svc));
-		free(state);
-		return (1);
-	}
-
-	BAM_DPRINTF((D_SVC_NOT_ONLINE, fcn, state, svc));
-
-	free(state);
-
-	return (0);
-}
-
-static int
-enable_svc(char *svc)
-{
-	int			ret;
-	int			sleeptime;
-	const char		*fcn = "enable_svc()";
-
-	ret = is_svc_online(svc);
-	if (ret == -1) {
-		bam_error(SVC_IS_ONLINE_FAILED, svc);
-		return (-1);
-	} else if (ret == 1) {
-		BAM_DPRINTF((D_SVC_ALREADY_ONLINE, fcn, svc));
-		return (0);
-	}
-
-	/* Service is not enabled. Enable it now. */
-	ret = smf_enable_instance(svc, 0);
-	INJECT_ERROR1("ENABLE_SVC_FAILED", ret = -1);
-	if (ret != 0) {
-		bam_error(ENABLE_SVC_FAILED, svc);
-		return (-1);
-	}
-
-	BAM_DPRINTF((D_SVC_ONLINE_INITIATED, fcn, svc));
-
-	sleeptime = 0;
-	do {
-		ret = is_svc_online(svc);
-		INJECT_ERROR1("SVC_ONLINE_SUCCESS", ret = 1);
-		INJECT_ERROR1("SVC_ONLINE_FAILURE", ret = -1);
-		INJECT_ERROR1("SVC_ONLINE_NOTYET", ret = 0);
-		if (ret == -1) {
-			bam_error(ERR_SVC_GET_ONLINE, svc);
-			return (-1);
-		} else if (ret == 1) {
-			BAM_DPRINTF((D_SVC_NOW_ONLINE, fcn, svc));
-			return (1);
-		}
-		(void) sleep(1);
-	} while (++sleeptime < 60);
-
-	bam_error(TIMEOUT_ENABLE_SVC, svc);
-
-	return (-1);
-}
-
-static int
-ufs_get_physical(char *special, char ***physarray, int *n)
-{
-	char			cmd[PATH_MAX];
-	char			*shortname;
-	filelist_t		flist = {0};
-	char			*meta;
-	char			*type;
-	char			*comp1;
-	char			*comp2;
-	char			*comp3;
-	char			*comp4;
-	int			i;
-	line_t			*lp;
-	int			ret;
-	char			*svc;
-	const char		*fcn = "ufs_get_physical()";
-
-	assert(special);
-
-	BAM_DPRINTF((D_FUNC_ENTRY1, fcn, special));
-
-	if (strncmp(special, "/dev/md/", strlen("/dev/md/")) != 0) {
-		bam_error(UFS_GET_PHYS_NOT_SVM, special);
-		return (-1);
-	}
-
-	if (strncmp(special, "/dev/md/dsk/", strlen("/dev/md/dsk/")) == 0) {
-		shortname = special + strlen("/dev/md/dsk/");
-	} else if (strncmp(special, "/dev/md/rdsk/",
-	    strlen("/dev/md/rdsk/")) == 0) {
-		shortname = special + strlen("/dev/md/rdsk");
-	} else {
-		bam_error(UFS_GET_PHYS_INVALID_SVM, special);
-		return (-1);
-	}
-
-	BAM_DPRINTF((D_UFS_SVM_SHORT, fcn, special, shortname));
-
-	svc = "network/rpc/meta:default";
-	if (enable_svc(svc) == -1) {
-		bam_error(UFS_SVM_METASTAT_SVC_ERR, svc);
-	}
-
-	(void) snprintf(cmd, sizeof (cmd), "/sbin/metastat -p %s", shortname);
-
-	ret = exec_cmd(cmd, &flist);
-	INJECT_ERROR1("UFS_SVM_METASTAT", ret = 1);
-	if (ret != 0) {
-		bam_error(UFS_SVM_METASTAT_ERR, shortname);
-		return (-1);
-	}
-
-	INJECT_ERROR1("UFS_SVM_METASTAT_OUT", flist.head = NULL);
-	if (flist.head == NULL) {
-		bam_error(BAD_UFS_SVM_METASTAT, shortname);
-		filelist_free(&flist);
-		return (-1);
-	}
-
-	/*
-	 * Check if not a mirror. We only parse a single metadevice
-	 * if not a mirror
-	 */
-	meta = strtok(flist.head->line, " \t");
-	type = strtok(NULL, " \t");
-	if (meta == NULL || type == NULL) {
-		bam_error(ERROR_PARSE_UFS_SVM_METASTAT, shortname);
-		filelist_free(&flist);
-		return (-1);
-	}
-	if (strcmp(type, "-m") != 0) {
-		comp1 = strtok(NULL, " \t");
-		comp2 = strtok(NULL, " \t");
-		if (comp1 == NULL || comp2 != NULL) {
-			bam_error(INVALID_UFS_SVM_METASTAT, shortname);
-			filelist_free(&flist);
-			return (-1);
-		}
-		BAM_DPRINTF((D_UFS_SVM_ONE_COMP, fcn, comp1, shortname));
-		*physarray = s_calloc(1, sizeof (char *));
-		(*physarray)[0] = s_strdup(comp1);
-		*n = 1;
-		filelist_free(&flist);
-		return (0);
-	}
-
-	/*
-	 * Okay we have a mirror. Everything after the first line
-	 * is a submirror
-	 */
-	for (i = 0, lp = flist.head->next; lp; lp = lp->next) {
-		if (strstr(lp->line, "/dev/dsk/") == NULL &&
-		    strstr(lp->line, "/dev/rdsk/") == NULL) {
-			bam_error(CANNOT_PARSE_UFS_SVM_METASTAT, shortname);
-			filelist_free(&flist);
-			return (-1);
-		}
-		i++;
-	}
-
-	*physarray = s_calloc(i, sizeof (char *));
-	*n = i;
-
-	for (i = 0, lp = flist.head->next; lp; lp = lp->next) {
-		comp1 = strtok(lp->line, " \t");
-		comp2 = strtok(NULL, " \t");
-		comp3 = strtok(NULL, " \t");
-		comp4 = strtok(NULL, " \t");
-
-		if (comp3 == NULL || comp4 == NULL ||
-		    (strncmp(comp4, "/dev/dsk/", strlen("/dev/dsk/")) != 0 &&
-		    strncmp(comp4, "/dev/rdsk/", strlen("/dev/rdsk/")) != 0)) {
-			bam_error(CANNOT_PARSE_UFS_SVM_SUBMIRROR, shortname);
-			filelist_free(&flist);
-			free_physarray(*physarray, *n);
-			return (-1);
-		}
-
-		(*physarray)[i++] = s_strdup(comp4);
-	}
-
-	assert(i == *n);
-
-	filelist_free(&flist);
-
-	BAM_DPRINTF((D_RETURN_SUCCESS, fcn));
-	return (0);
-}
-
 static int
 get_physical(char *menu_root, char ***physarray, int *n)
 {
@@ -7602,8 +7363,6 @@ get_physical(char *menu_root, char ***physarray, int *n)
 
 	if (is_zfs(menu_root)) {
 		ret = zfs_get_physical(special, physarray, n);
-	} else if (is_ufs(menu_root)) {
-		ret = ufs_get_physical(special, physarray, n);
 	} else {
 		bam_error(GET_PHYSICAL_NOTSUP_FSTYPE, menu_root, special);
 		ret = -1;

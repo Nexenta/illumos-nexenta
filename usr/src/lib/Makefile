@@ -219,7 +219,6 @@ SUBDIRS += \
 	raidcfg_plugins	\
 	cfgadm_plugins	\
 	libmail		\
-	lvm		\
 	libsmedia	\
 	libipp		\
 	libdiskmgt	\
@@ -302,8 +301,7 @@ fm:			\
 #
 NOWAIT_SUBDIRS= $(SUBDIRS:.WAIT=)
 
-DCSUBDIRS =		\
-	lvm
+DCSUBDIRS=
 
 MSGSUBDIRS=		\
 	abi		\
@@ -360,7 +358,6 @@ MSGSUBDIRS=		\
 	libwanbootutil	\
 	libzfs		\
 	libzonecfg	\
-	lvm		\
 	madv		\
 	mpss		\
 	pam_modules	\
@@ -488,7 +485,6 @@ HDRSUBDIRS=		\
 	libzonestat	\
 	hal		\
 	policykit	\
-	lvm		\
 	pkcs11		\
 	passwdutil	\
 	../cmd/sendmail/libmilter	\

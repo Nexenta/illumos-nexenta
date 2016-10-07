@@ -18,9 +18,11 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 #ifndef _LIBDISKMGT_H
@@ -214,7 +216,6 @@ typedef enum {
 #define	DM_USED_BY		"used_by"
 #define	DM_USED_NAME		"used_name"
 #define	DM_USE_MOUNT		"mount"
-#define	DM_USE_SVM		"svm"
 #define	DM_USE_LU		"lu"
 #define	DM_USE_DUMP		"dump"
 #define	DM_USE_VXVM		"vxvm"

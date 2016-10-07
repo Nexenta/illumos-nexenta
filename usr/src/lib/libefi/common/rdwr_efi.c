@@ -309,7 +309,6 @@ efi_read(int fd, struct dk_gpt *vtoc)
 	int			i, j;
 	int			label_len;
 	int			rval = 0;
-	int			md_flag = 0;
 	int			vdc_flag = 0;
 	struct dk_minfo		disk_info;
 	dk_efi_t		dk_ioc;
@@ -335,10 +334,8 @@ efi_read(int fd, struct dk_gpt *vtoc)
 			return (VT_ERROR);
 		}
 	}
-	if ((strncmp(dki_info.dki_cname, "pseudo", 7) == 0) &&
-	    (strncmp(dki_info.dki_dname, "md", 3) == 0)) {
-		md_flag++;
-	} else if ((strncmp(dki_info.dki_cname, "vdc", 4) == 0) &&
+
+	if ((strncmp(dki_info.dki_cname, "vdc", 4) == 0) &&
 	    (strncmp(dki_info.dki_dname, "vdc", 4) == 0)) {
 		/*
 		 * The controller and drive name "vdc" (virtual disk client)
@@ -386,17 +383,7 @@ efi_read(int fd, struct dk_gpt *vtoc)
 	dk_ioc.dki_length = disk_info.dki_lbsize;
 	user_length = vtoc->efi_nparts;
 	efi = dk_ioc.dki_data;
-	if (md_flag) {
-		dk_ioc.dki_length = label_len;
-		if (efi_ioctl(fd, DKIOCGETEFI, &dk_ioc) == -1) {
-			switch (errno) {
-			case EIO:
-				return (VT_EIO);
-			default:
-				return (VT_ERROR);
-			}
-		}
-	} else if ((rval = check_label(fd, &dk_ioc)) == VT_EINVAL) {
+	if ((rval = check_label(fd, &dk_ioc)) == VT_EINVAL) {
 		/*
 		 * No valid label here; try the alternate. Note that here
 		 * we just read GPT header and save it into dk_ioc.data,
@@ -845,7 +832,6 @@ efi_write(int fd, struct dk_gpt *vtoc)
 	efi_gpe_t		*efi_parts;
 	int			i, j;
 	struct dk_cinfo		dki_info;
-	int			md_flag = 0;
 	int			nblocks;
 	diskaddr_t		lba_backup_gpt_hdr;
 
@@ -862,21 +848,8 @@ efi_write(int fd, struct dk_gpt *vtoc)
 		}
 	}
 
-	/* check if we are dealing wih a metadevice */
-	if ((strncmp(dki_info.dki_cname, "pseudo", 7) == 0) &&
-	    (strncmp(dki_info.dki_dname, "md", 3) == 0)) {
-		md_flag = 1;
-	}
-
-	if (check_input(vtoc)) {
-		/*
-		 * not valid; if it's a metadevice just pass it down
-		 * because SVM will do its own checking
-		 */
-		if (md_flag == 0) {
-			return (VT_EINVAL);
-		}
-	}
+	if (check_input(vtoc))
+		return (VT_EINVAL);
 
 	dk_ioc.dki_lba = 1;
 	if (NBLOCKS(vtoc->efi_nparts, vtoc->efi_lbasize) < 34) {
@@ -983,11 +956,6 @@ efi_write(int fd, struct dk_gpt *vtoc)
 		default:
 			return (VT_ERROR);
 		}
-	}
-	/* if it's a metadevice we're done */
-	if (md_flag) {
-		free(dk_ioc.dki_data);
-		return (0);
 	}
 
 	/* write backup partition array */

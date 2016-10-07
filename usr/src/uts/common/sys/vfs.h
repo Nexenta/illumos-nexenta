@@ -18,9 +18,10 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -476,7 +477,6 @@ void	vn_reclaim(vnode_t *);
 void	vn_invalid(vnode_t *);
 
 int	rootconf(void);
-int	svm_rootconf(void);
 int	domount(char *, struct mounta *, vnode_t *, struct cred *,
 	    struct vfs **);
 int	dounmount(struct vfs *, int, cred_t *);
