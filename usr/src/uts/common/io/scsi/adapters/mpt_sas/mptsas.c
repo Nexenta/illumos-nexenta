@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
@@ -3549,13 +3549,14 @@ mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	}
 
 	/*
-	 * If HBA is being reset, the DevHandles are being re-initialized,
-	 * which means that they could be invalid even if the target is still
-	 * attached.  Check if being reset and if DevHandle is being
-	 * re-initialized.  If this is the case, return BUSY so the I/O can be
-	 * retried later.
+	 * If HBA is being reset, the device handles will be invalidated.
+	 * This is temporary and, if target is still attached, the device
+	 * handles will be re-assigned when firmware reset completes.
+	 * Then, if command was already waiting, complete the command
+	 * otherwise return BUSY and expect transport retry.
 	 */
 	if ((ptgt->m_devhdl == MPTSAS_INVALID_DEVHDL) && mpt->m_in_reset) {
+		NDBG20(("retry command, invalid devhdl, during FW reset."));
 		mptsas_set_pkt_reason(mpt, cmd, CMD_RESET, STAT_BUS_RESET);
 		if (cmd->cmd_flags & CFLAG_TXQ) {
 			mptsas_doneq_add(mpt, cmd);
@@ -3567,23 +3568,18 @@ mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 	}
 
 	/*
-	 * If device handle has already been invalidated, just
-	 * fail the command. In theory, command from scsi_vhci
-	 * client is impossible send down command with invalid
-	 * devhdl since devhdl is set after path offline, target
-	 * driver is not suppose to select a offlined path.
+	 * If the device handle has been invalidated, set the response
+	 * reason to indicate the device is gone. Then add the
+	 * command to the done queue and run the completion routine
+	 * so the initiator of the command can clean up.
 	 */
 	if (ptgt->m_devhdl == MPTSAS_INVALID_DEVHDL) {
-		NDBG20(("rejecting command, it might because invalid devhdl "
-		    "request."));
+		NDBG20(("rejecting command, invalid devhdl because "
+		    "device gone."));
 		mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE, STAT_TERMINATED);
-		if (cmd->cmd_flags & CFLAG_TXQ) {
-			mptsas_doneq_add(mpt, cmd);
-			mptsas_doneq_empty(mpt);
-			return (rval);
-		} else {
-			return (TRAN_FATAL_ERROR);
-		}
+		mptsas_doneq_add(mpt, cmd);
+		mptsas_doneq_empty(mpt);
+		return (rval);
 	}
 
 	/*
