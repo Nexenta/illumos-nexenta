@@ -1011,8 +1011,9 @@ dump_history(spa_t *spa)
 
 		off -= resid;
 		if (resid == len) {
+			 umem_free(buf, buflen);
 			 buflen *= 2;
-			 buf = realloc(buf, buflen);
+			 buf = umem_alloc(buflen, UMEM_NOFAIL);
 			 if (buf == NULL) {
 				(void) fprintf(stderr, "Unable to read history: %s\n",
 				    strerror(error));
