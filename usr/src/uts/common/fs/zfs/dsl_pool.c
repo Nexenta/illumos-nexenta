@@ -185,8 +185,7 @@ dsl_pool_open_impl(spa_t *spa, uint64_t txg)
 	mutex_init(&dp->dp_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&dp->dp_spaceavail_cv, NULL, CV_DEFAULT, NULL);
 
-	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq",
-	    zfs_vn_rele_max_tasks, minclsyspri,
+	dp->dp_vnrele_taskq = taskq_create("zfs_vn_rele_taskq", 1, minclsyspri,
 	    1, zfs_vn_rele_max_tasks, TASKQ_DYNAMIC);
 
 	return (dp);

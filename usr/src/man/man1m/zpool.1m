@@ -476,9 +476,12 @@ The amount of fragmentation in the pool.
 The amount of free space available in the pool.
 .It Sy freeing
 .Sy freeing
-is the amount of pool space remaining to be reclaimed. After a file, dataset or
+is the amount of pool space remaining to be reclaimed. After a dataset or
 snapshot is destroyed, the space it was using is returned to the pool
-asynchronously. Over time
+asynchronously. Space reclamation due to active deletion of
+.Qq large
+.Pq bigger than 64GB by default
+file(s) is also done asynchronously. Over time
 .Sy freeing
 will decrease while
 .Sy free
