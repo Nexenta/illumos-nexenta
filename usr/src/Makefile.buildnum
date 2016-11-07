@@ -22,6 +22,7 @@
 #
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
 #
@@ -37,4 +38,4 @@
 # currently open build in the onnv-gate.
 #
 
-ONNV_BUILDNUM= 148
+ONNV_BUILDNUM=5.0.2.1
