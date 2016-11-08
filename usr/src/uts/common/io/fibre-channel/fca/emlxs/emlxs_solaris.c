@@ -1647,6 +1647,10 @@ emlxs_fca_bind_port(dev_info_t *dip, fc_fca_port_info_t *port_info,
 			(void) strlcpy(linkspeed, "16Gb", sizeof (linkspeed));
 			port_info->pi_port_state |= FC_STATE_16GBIT_SPEED;
 			break;
+		case LA_32GHZ_LINK:
+			(void) strlcpy(linkspeed, "32Gb", sizeof (linkspeed));
+			port_info->pi_port_state |= FC_STATE_32GBIT_SPEED;
+			break;
 		default:
 			(void) snprintf(linkspeed, sizeof (linkspeed),
 			    "unknown(0x%x)", hba->linkspeed);
@@ -1764,7 +1768,8 @@ emlxs_fca_bind_port(dev_info_t *dip, fc_fca_port_info_t *port_info,
 	/* Initialize the port attributes */
 	bzero(&port_info->pi_attrs, sizeof (port_info->pi_attrs));
 
-	(void) strncpy(port_info->pi_attrs.manufacturer, "Emulex",
+	(void) strncpy(port_info->pi_attrs.manufacturer,
+	    hba->model_info.manufacturer,
 	    (sizeof (port_info->pi_attrs.manufacturer)-1));
 
 	port_info->pi_rnid_params.status = FC_SUCCESS;
@@ -4324,6 +4329,9 @@ emlxs_fca_port_manage(opaque_t fca_port_handle, fc_fca_pm_t *pm)
 				break;
 			case LA_16GHZ_LINK:
 				*link_state |= FC_STATE_16GBIT_SPEED;
+				break;
+			case LA_32GHZ_LINK:
+				*link_state |= FC_STATE_32GBIT_SPEED;
 				break;
 			case LA_1GHZ_LINK:
 			default:

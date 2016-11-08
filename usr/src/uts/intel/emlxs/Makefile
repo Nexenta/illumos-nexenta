@@ -61,7 +61,6 @@ EMLXS_LFLAGS            = $(EMLXS_FLAGS)
 CFLAGS	                += $(EMLXS_CFLAGS) -DEMLXS_ARCH=\"$(CLASS)\"
 LINTTAGS                += $(EMLXS_LFLAGS) -DEMLXS_ARCH=\"$(CLASS)\"
 
-
 #
 #	Overrides and depends_on
 #
