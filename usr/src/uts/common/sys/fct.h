@@ -337,6 +337,7 @@ typedef struct fct_port_stat {
 #define	PORT_SPEED_8G			8
 #define	PORT_SPEED_10G			16
 #define	PORT_SPEED_16G			32
+#define	PORT_SPEED_32G			64
 
 /*
  * Abort commands

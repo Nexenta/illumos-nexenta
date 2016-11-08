@@ -1254,7 +1254,8 @@ emlxs_fcio_get_adapter_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 		    (fc_hba_adapter_attributes32_t *)fcio->fcio_obuf;
 
 		hba_attrs->version = FC_HBA_ADAPTER_ATTRIBUTES_VERSION;
-		(void) strncpy(hba_attrs->Manufacturer, "Emulex",
+		(void) strncpy(hba_attrs->Manufacturer,
+		    hba->model_info.manufacturer,
 		    (sizeof (hba_attrs->Manufacturer)-1));
 		(void) strncpy(hba_attrs->SerialNumber, vpd->serial_num,
 		    (sizeof (hba_attrs->SerialNumber)-1));
@@ -1300,7 +1301,8 @@ emlxs_fcio_get_adapter_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 		    (fc_hba_adapter_attributes_t *)fcio->fcio_obuf;
 
 		hba_attrs->version = FC_HBA_ADAPTER_ATTRIBUTES_VERSION;
-		(void) strncpy(hba_attrs->Manufacturer, "Emulex",
+		(void) strncpy(hba_attrs->Manufacturer,
+		    hba->model_info.manufacturer,
 		    (sizeof (hba_attrs->Manufacturer)-1));
 		(void) strncpy(hba_attrs->SerialNumber, vpd->serial_num,
 		    (sizeof (hba_attrs->SerialNumber)-1));
@@ -1447,6 +1449,10 @@ emlxs_fcio_get_adapter_port_attrs(emlxs_port_t *port, fcio_t *fcio,
 				port_attrs->PortSpeed =
 				    HBA_PORTSPEED_16GBIT;
 				break;
+			case LA_32GHZ_LINK:
+				port_attrs->PortSpeed =
+				    HBA_PORTSPEED_32GBIT;
+				break;
 			default:
 				port_attrs->PortSpeed =
 				    HBA_PORTSPEED_UNKNOWN;
@@ -1592,6 +1598,10 @@ emlxs_fcio_get_adapter_port_attrs(emlxs_port_t *port, fcio_t *fcio,
 			case LA_16GHZ_LINK:
 				port_attrs->PortSpeed =
 				    HBA_PORTSPEED_16GBIT;
+				break;
+			case LA_32GHZ_LINK:
+				port_attrs->PortSpeed =
+				    HBA_PORTSPEED_32GBIT;
 				break;
 			default:
 				port_attrs->PortSpeed =
@@ -2226,6 +2236,10 @@ emlxs_fcio_get_disc_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					port_attrs->PortSpeed =
 					    HBA_PORTSPEED_16GBIT;
 					break;
+				case LA_32GHZ_LINK:
+					port_attrs->PortSpeed =
+					    HBA_PORTSPEED_32GBIT;
+					break;
 				}
 			}
 			/* public loop */
@@ -2265,6 +2279,10 @@ emlxs_fcio_get_disc_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					case LA_16GHZ_LINK:
 						port_attrs->PortSpeed =
 						    HBA_PORTSPEED_16GBIT;
+						break;
+					case LA_32GHZ_LINK:
+						port_attrs->PortSpeed =
+						    HBA_PORTSPEED_32GBIT;
 						break;
 					}
 				}
@@ -2358,6 +2376,10 @@ emlxs_fcio_get_disc_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					port_attrs->PortSpeed =
 					    HBA_PORTSPEED_16GBIT;
 					break;
+				case LA_32GHZ_LINK:
+					port_attrs->PortSpeed =
+					    HBA_PORTSPEED_32GBIT;
+					break;
 				}
 			}
 			/* public loop */
@@ -2397,6 +2419,10 @@ emlxs_fcio_get_disc_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					case LA_16GHZ_LINK:
 						port_attrs->PortSpeed =
 						    HBA_PORTSPEED_16GBIT;
+						break;
+					case LA_32GHZ_LINK:
+						port_attrs->PortSpeed =
+						    HBA_PORTSPEED_32GBIT;
 						break;
 					}
 				}
@@ -2520,6 +2546,10 @@ emlxs_fcio_get_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					port_attrs->PortSpeed =
 					    HBA_PORTSPEED_16GBIT;
 					break;
+				case LA_32GHZ_LINK:
+					port_attrs->PortSpeed =
+					    HBA_PORTSPEED_32GBIT;
+					break;
 				}
 			}
 			/* public loop */
@@ -2559,6 +2589,10 @@ emlxs_fcio_get_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					case LA_16GHZ_LINK:
 						port_attrs->PortSpeed =
 						    HBA_PORTSPEED_16GBIT;
+						break;
+					case LA_32GHZ_LINK:
+						port_attrs->PortSpeed =
+						    HBA_PORTSPEED_32GBIT;
 						break;
 					}
 				}
@@ -2659,6 +2693,10 @@ emlxs_fcio_get_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					port_attrs->PortSpeed =
 					    HBA_PORTSPEED_16GBIT;
 					break;
+				case LA_32GHZ_LINK:
+					port_attrs->PortSpeed =
+					    HBA_PORTSPEED_32GBIT;
+					break;
 				}
 			}
 			/* public loop */
@@ -2698,6 +2736,10 @@ emlxs_fcio_get_port_attrs(emlxs_port_t *port, fcio_t *fcio, int32_t mode)
 					case LA_16GHZ_LINK:
 						port_attrs->PortSpeed =
 						    HBA_PORTSPEED_16GBIT;
+						break;
+					case LA_32GHZ_LINK:
+						port_attrs->PortSpeed =
+						    HBA_PORTSPEED_32GBIT;
 						break;
 					}
 				}
@@ -3959,6 +4001,8 @@ emlxs_dfc_get_hbainfo(emlxs_hba_t *hba, dfc_t *dfc, int32_t mode)
 			hbainfo->port_speed = HBA_PORTSPEED_10GBIT;
 		} else if (hba->linkspeed == LA_16GHZ_LINK) {
 			hbainfo->port_speed = HBA_PORTSPEED_16GBIT;
+		} else if (hba->linkspeed == LA_32GHZ_LINK) {
+			hbainfo->port_speed = HBA_PORTSPEED_32GBIT;
 		} else {
 			hbainfo->port_speed = HBA_PORTSPEED_1GBIT;
 		}
@@ -4195,6 +4239,8 @@ emlxs_dfc_get_hbastats(emlxs_hba_t *hba, dfc_t *dfc, int32_t mode)
 			stats->link_speed = HBA_PORTSPEED_10GBIT;
 		} else if (hba->linkspeed == LA_16GHZ_LINK) {
 			stats->link_speed = HBA_PORTSPEED_16GBIT;
+		} else if (hba->linkspeed == LA_32GHZ_LINK) {
+			stats->link_speed = HBA_PORTSPEED_32GBIT;
 		} else {
 			stats->link_speed = HBA_PORTSPEED_1GBIT;
 		}
@@ -6447,7 +6493,8 @@ emlxs_fcoe_attention_thread(emlxs_hba_t *hba,
 	if (rsp->fru_data_valid == 0) {
 		EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_adapter_error_msg,
 		    "Invalid FRU data found on adapter. "
-		    "Return adapter to Emulex for repair.");
+		    "Return adapter to %s for repair.",
+		    hba->model_info.manufacturer);
 	}
 
 	switch (rsp->fw_type) {

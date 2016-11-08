@@ -1372,7 +1372,8 @@ emlxs_fct_populate_hba_details(fct_local_port_t *fct_port,
 	emlxs_hba_t *hba = HBA;
 	emlxs_vpd_t *vpd = &VPD;
 
-	(void) strncpy(port_attrs->manufacturer, "Emulex",
+	(void) strncpy(port_attrs->manufacturer,
+	    hba->model_info.manufacturer,
 	    (sizeof (port_attrs->manufacturer)-1));
 	(void) strncpy(port_attrs->serial_number, vpd->serial_num,
 	    (sizeof (port_attrs->serial_number)-1));
@@ -2010,6 +2011,9 @@ emlxs_fct_get_link_info(fct_local_port_t *fct_port, fct_link_info_t *link)
 		break;
 	case LA_16GHZ_LINK:
 		link->port_speed = PORT_SPEED_16G;
+		break;
+	case LA_32GHZ_LINK:
+		link->port_speed = PORT_SPEED_32G;
 		break;
 	default:
 		link->port_speed = PORT_SPEED_UNKNOWN;

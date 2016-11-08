@@ -67,6 +67,7 @@ extern "C" {
 #define	FC_STATE_10GBIT_SPEED		0x0600	/* 10 Gbit/sec */
 #define	FC_STATE_8GBIT_SPEED		0x0700	/* 8 Gbit/sec */
 #define	FC_STATE_16GBIT_SPEED		0x0800	/* 16 Gbit/sec */
+#define	FC_STATE_32GBIT_SPEED		0x0900	/* 32 Gbit/sec */
 #define	FC_STATE_FULL_SPEED		FC_STATE_1GBIT_SPEED
 #define	FC_STATE_DOUBLE_SPEED		FC_STATE_2GBIT_SPEED
 
