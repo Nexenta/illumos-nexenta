@@ -142,6 +142,8 @@ const zio_taskq_info_t zio_taskqs[ZIO_TYPES][ZIO_TASKQ_TYPES] = {
 	{ ZTI_ONE,	ZTI_NULL,	ZTI_ONE,	ZTI_NULL }, /* IOCTL */
 };
 
+static sysevent_t *spa_event_create(spa_t *spa, vdev_t *vd, const char *name);
+static void spa_event_notify_impl(sysevent_t *ev);
 static void spa_sync_version(void *arg, dmu_tx_t *tx);
 static void spa_sync_props(void *arg, dmu_tx_t *tx);
 static void spa_vdev_sync_props(void *arg, dmu_tx_t *tx);
@@ -5896,6 +5898,7 @@ int
 spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 {
 	vdev_t *vd;
+	sysevent_t *ev = NULL;
 	metaslab_group_t *mg;
 	nvlist_t **spares, **l2cache, *nv;
 	uint64_t txg = 0;
@@ -5921,6 +5924,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		if (vd == NULL || unspare) {
 			if (vd == NULL)
 				vd = spa_lookup_by_guid(spa, guid, B_TRUE);
+
 			/*
 			 * Release the references to CoS descriptors if any
 			 */
@@ -5928,11 +5932,12 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 				cos_rele(vd->vdev_queue.vq_cos);
 				vd->vdev_queue.vq_cos = NULL;
 			}
+
+			ev = spa_event_create(spa, vd, ESC_ZFS_VDEV_REMOVE_AUX);
 			spa_vdev_remove_aux(spa->spa_spares.sav_config,
 			    ZPOOL_CONFIG_SPARES, spares, nspares, nv);
 			spa_load_spares(spa);
 			spa->spa_spares.sav_sync = B_TRUE;
-			spa_event_notify(spa, NULL, ESC_ZFS_VDEV_REMOVE_AUX);
 		} else {
 			error = SET_ERROR(EBUSY);
 		}
@@ -5952,11 +5957,12 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 			cos_rele(vd->vdev_queue.vq_cos);
 			vd->vdev_queue.vq_cos = NULL;
 		}
+
+		ev = spa_event_create(spa, vd, ESC_ZFS_VDEV_REMOVE_AUX);
 		spa_vdev_remove_aux(spa->spa_l2cache.sav_config,
 		    ZPOOL_CONFIG_L2CACHE, l2cache, nl2cache, nv);
 		spa_load_l2cache(spa);
 		spa->spa_l2cache.sav_sync = B_TRUE;
-		spa_event_notify(spa, NULL, ESC_ZFS_VDEV_REMOVE_AUX);
 	} else if (vd != NULL && vd->vdev_islog) {
 		ASSERT(!locked);
 
@@ -6000,12 +6006,13 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 			vd->vdev_queue.vq_cos = NULL;
 		}
 
+		ev = spa_event_create(spa, vd, ESC_ZFS_VDEV_REMOVE_DEV);
+
 		/*
 		 * Clean up the vdev namespace.
 		 */
 		spa_vdev_remove_from_namespace(spa, vd);
 
-		spa_event_notify(spa, vd, ESC_ZFS_VDEV_REMOVE_DEV);
 	} else if (vd != NULL && vdev_is_special(vd)) {
 		ASSERT(!locked);
 
@@ -6014,6 +6021,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 
 		error = spa_special_vdev_remove(spa, vd, &txg);
 		if (error == 0) {
+			ev = spa_event_create(spa, vd, ESC_ZFS_VDEV_REMOVE_DEV);
 			spa_vdev_remove_from_namespace(spa, vd);
 
 			/*
@@ -6036,6 +6044,9 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 
 	if (!locked)
 		error = spa_vdev_exit(spa, NULL, txg, error);
+
+	if (ev)
+		spa_event_notify_impl(ev);
 
 	return (error);
 }
@@ -7424,34 +7435,6 @@ spa_has_active_shared_spare(spa_t *spa)
 	return (B_FALSE);
 }
 
-static void
-spa_init_einfo(spa_t *spa, vdev_t *vdev, const char *name, spa_einfo_t *spe)
-{
-	bzero(spe, sizeof (spa_einfo_t));
-
-	spe->spa_guid = spa_guid(spa);
-	spe->spa_name = spa_strdup(spa_name(spa));
-	spe->event_name = spa_strdup(name);
-
-	if (vdev) {
-		spe->vdev_guid = vdev->vdev_guid;
-		if (vdev->vdev_path)
-			spe->vdev_path = spa_strdup(vdev->vdev_path);
-	}
-}
-
-static void
-spa_fini_einfo(spa_einfo_t *spe)
-{
-	if (spe->spa_name)
-		spa_strfree(spe->spa_name);
-	if (spe->event_name)
-		spa_strfree(spe->event_name);
-	if (spe->vdev_path)
-		spa_strfree(spe->vdev_path);
-	kmem_free(spe, sizeof (spa_einfo_t));
-}
-
 /*
  * Post a sysevent corresponding to the given event.  The 'name' must be one of
  * the event definitions in sys/sysevent/eventdefs.h.  The payload will be
@@ -7459,41 +7442,38 @@ spa_fini_einfo(spa_einfo_t *spe)
  * in the userland libzpool, as we don't want consumers to misinterpret ztest
  * or zdb as real changes.
  */
-static void
-spa_event_notify_impl(void *arg)
+static sysevent_t *
+spa_event_create(spa_t *spa, vdev_t *vd, const char *name)
 {
-	/* cast the argument; will need to be freed once done */
-	spa_einfo_t *evt = (spa_einfo_t *)arg;
-
+	sysevent_t		*ev = NULL;
 #ifdef _KERNEL
-	sysevent_t		*ev;
 	sysevent_attr_list_t	*attr = NULL;
 	sysevent_value_t	value;
-	sysevent_id_t		eid;
 
-	ev = sysevent_alloc(EC_ZFS, (char *)evt->event_name,
-	    SUNW_KERN_PUB "zfs", SE_SLEEP);
+	ev = sysevent_alloc(EC_ZFS, (char *)name, SUNW_KERN_PUB "zfs",
+	    SE_SLEEP);
+	ASSERT(ev != NULL);
 
 	value.value_type = SE_DATA_TYPE_STRING;
-	value.value.sv_string = evt->spa_name;
+	value.value.sv_string = spa_name(spa);
 	if (sysevent_add_attr(&attr, ZFS_EV_POOL_NAME, &value, SE_SLEEP) != 0)
 		goto done;
 
 	value.value_type = SE_DATA_TYPE_UINT64;
-	value.value.sv_uint64 = evt->spa_guid;
+	value.value.sv_uint64 = spa_guid(spa);
 	if (sysevent_add_attr(&attr, ZFS_EV_POOL_GUID, &value, SE_SLEEP) != 0)
 		goto done;
 
-	if (evt->vdev_guid) {
+	if (vd != NULL) {
 		value.value_type = SE_DATA_TYPE_UINT64;
-		value.value.sv_uint64 = evt->vdev_guid;
+		value.value.sv_uint64 = vd->vdev_guid;
 		if (sysevent_add_attr(&attr, ZFS_EV_VDEV_GUID, &value,
 		    SE_SLEEP) != 0)
 			goto done;
 
-		if (evt->vdev_path) {
+		if (vd->vdev_path) {
 			value.value_type = SE_DATA_TYPE_STRING;
-			value.value.sv_string = evt->vdev_path;
+			value.value.sv_string = vd->vdev_path;
 			if (sysevent_add_attr(&attr, ZFS_EV_VDEV_PATH,
 			    &value, SE_SLEEP) != 0)
 				goto done;
@@ -7504,14 +7484,25 @@ spa_event_notify_impl(void *arg)
 		goto done;
 	attr = NULL;
 
-	(void) log_sysevent(ev, SE_SLEEP, &eid);
-
 done:
 	if (attr)
 		sysevent_free_attr(attr);
+
+#endif
+	return (ev);
+}
+
+static void
+spa_event_post(void *arg)
+{
+#ifdef _KERNEL
+	sysevent_t *ev = (sysevent_t *)arg;
+
+	sysevent_id_t		eid;
+
+	(void) log_sysevent(ev, SE_SLEEP, &eid);
 	sysevent_free(ev);
 #endif
-	spa_fini_einfo(evt);
 }
 
 /*
@@ -7520,15 +7511,11 @@ done:
  */
 taskq_t *spa_sysevent_taskq;
 
-void
-spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name)
+static void
+spa_event_notify_impl(sysevent_t *ev)
 {
-	spa_einfo_t *spe = kmem_alloc(sizeof (spa_einfo_t), KM_SLEEP);
-
-	spa_init_einfo(spa, vdev, name, spe);
-
-	if (taskq_dispatch(spa_sysevent_taskq, spa_event_notify_impl,
-	    spe, TQ_NOSLEEP) == NULL) {
+	if (taskq_dispatch(spa_sysevent_taskq, spa_event_post,
+	    ev, TQ_NOSLEEP) == NULL) {
 		/*
 		 * These are management sysevents; as much as it is
 		 * unpleasant to drop these due to syseventd not being able
@@ -7538,10 +7525,18 @@ spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name)
 		 */
 		cmn_err(CE_NOTE, "Could not dispatch sysevent nofitication "
 		    "for %s, please check state of syseventd\n",
-		    spe->event_name);
-		spa_fini_einfo(spe);
+		    sysevent_get_subclass_name(ev));
+
+		sysevent_free(ev);
+
 		return;
 	}
+}
+
+void
+spa_event_notify(spa_t *spa, vdev_t *vdev, const char *name)
+{
+	spa_event_notify_impl(spa_event_create(spa, vdev, name));
 }
 
 /*

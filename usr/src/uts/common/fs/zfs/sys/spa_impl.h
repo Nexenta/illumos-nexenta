@@ -182,18 +182,6 @@ typedef struct spa_meta_placement {
 	uint64_t spa_sync_to_special;
 } spa_meta_placement_t;
 
-/*
- * SPA info copied from spa_t and optionally from vdev_t that is provided
- * with pool and vdev sysevents
- */
-typedef struct {
-	char *event_name;
-	char *spa_name;
-	char *vdev_path;
-	uint64_t spa_guid;
-	uint64_t vdev_guid;
-} spa_einfo_t;
-
 typedef struct spa_trimstats spa_trimstats_t;
 
 struct spa {
