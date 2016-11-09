@@ -38,4 +38,4 @@
 # currently open build in the onnv-gate.
 #
 
-ONNV_BUILDNUM=5.0.2.1
+ONNV_BUILDNUM=5.0.2.2
