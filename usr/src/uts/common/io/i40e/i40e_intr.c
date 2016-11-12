@@ -583,11 +583,18 @@ i40e_intr_adminq_work(i40e_t *i40e)
 
 		opcode = LE_16(evt.desc.opcode);
 		switch (opcode) {
-		case i40e_aqc_opc_get_link_status:
-			mutex_enter(&i40e->i40e_general_lock);
-			i40e_link_check(i40e);
-			mutex_exit(&i40e->i40e_general_lock);
-			break;
+		/*
+		 * Disable link checks for NEX-6977. With the fibers unplugged
+		 * we can end up receiving too many link check interrupts,
+		 * saturating one CPU for each link. This can cause system hangs
+		 * at boot or shutdown when the system is running single-threaded.
+		 *
+		 * case i40e_aqc_opc_get_link_status:
+		 *	mutex_enter(&i40e->i40e_general_lock);
+		 *	i40e_link_check(i40e);
+		 *	mutex_exit(&i40e->i40e_general_lock);
+		 *	break;
+		 */
 		default:
 			/*
 			 * Longer term we'll want to enable other causes here
