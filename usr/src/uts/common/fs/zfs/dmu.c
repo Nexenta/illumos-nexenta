@@ -665,28 +665,29 @@ get_next_chunk(dnode_t *dn, uint64_t *start, uint64_t minimum)
 
 /*
  * If this dnode is in the ZFS object set
- * return true if vfs's unmounted flag is set, otherwise return false.
- * Used below in dmu_free_long_range_impl() to enable abort on ZFS unmount
+ * return true if vfs's unmounted flag is set or the
+ * zfsvfs is currently suspended, otherwise return false.
  */
 /*ARGSUSED*/
 static boolean_t
-dmu_dnode_fs_unmounting(dnode_t *deleting_dn)
+dmu_dnode_fs_unmounting_or_suspended(dnode_t *freeing_dn)
 {
 #ifdef _KERNEL
-	boolean_t unmounting = B_FALSE;
-	objset_t *os = deleting_dn->dn_objset;
-	zfsvfs_t *zfvp;
+	boolean_t busy = B_FALSE;
+	objset_t *os = freeing_dn->dn_objset;
+	zfsvfs_t *zfsvfs;
 
 	if (dmu_objset_type(os) == DMU_OST_ZFS) {
 		mutex_enter(&os->os_user_ptr_lock);
-		zfvp = dmu_objset_get_user(os);
-		if (zfvp != NULL && zfvp->z_vfs != NULL &&
-		    (zfvp->z_vfs->vfs_flag & VFS_UNMOUNTED))
-			unmounting = B_TRUE;
+		zfsvfs = dmu_objset_get_user(os);
+		if (zfsvfs != NULL && zfsvfs->z_vfs != NULL &&
+		    ((zfsvfs->z_vfs->vfs_flag & VFS_UNMOUNTED) ||
+		     zfsvfs->z_busy))
+			busy = B_TRUE;
 		mutex_exit(&os->os_user_ptr_lock);
 	}
 
-	return (unmounting);
+	return (busy);
 #else
 	return (B_FALSE);
 #endif
@@ -725,7 +726,7 @@ dmu_free_long_range_impl(objset_t *os, dnode_t *dn, uint64_t offset,
 		uint64_t chunk_end, chunk_begin, chunk_len;
 		dmu_tx_t *tx;
 
-		if (dmu_dnode_fs_unmounting(dn)) {
+		if (dmu_dnode_fs_unmounting_or_suspended(dn)) {
 			mutex_enter(&dp->dp_lock);
 			dp->dp_long_freeing_total -= length;
 			mutex_exit(&dp->dp_lock);

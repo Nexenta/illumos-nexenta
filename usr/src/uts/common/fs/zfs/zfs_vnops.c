@@ -185,6 +185,9 @@
  *	return (error);			// done, report error
  */
 
+/* set this tunable to zero to disable asynchronous freeing of files */
+boolean_t zfs_do_async_free = B_TRUE;
+
 int nms_worm_transition_time = 30;
 int
 zfs_worm_in_trans(znode_t *zp)
@@ -4496,15 +4499,18 @@ out:
 	return (error);
 }
 
-/*ARGSUSED*/
-static void
-zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
+/*
+ * Returns B_TRUE and exits the z_teardown_inactive_lock
+ * if the znode we are looking at is no longer valid
+ */
+static boolean_t
+zfs_znode_free_invalid(znode_t *zp)
 {
-	znode_t	*zp = VTOZ(vp);
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
-	int error;
+	vnode_t *vp = ZTOV(zp);
 
-	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER);
+	ASSERT(rw_read_held(&zfsvfs->z_teardown_inactive_lock));
+
 	if (zp->z_sa_hdl == NULL) {
 		/*
 		 * The fs has been unmounted, or we did a
@@ -4523,8 +4529,27 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 		mutex_exit(&zp->z_lock);
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 		zfs_znode_free(zp);
-		return;
+		return (B_TRUE);
 	}
+
+	return (B_FALSE);
+}
+
+/*
+ * Does the prep work for freeing the znode, then calls zfs_zinactive to do the
+ * actual freeing.
+ * This code used be in zfs_inactive() before the async delete patch came in
+ */
+static void
+zfs_inactive_impl(znode_t *zp)
+{
+	vnode_t	*vp = ZTOV(zp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+	int error;
+
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER_STARVEWRITER);
+	if (zfs_znode_free_invalid(zp))
+		return; /* z_teardown_inactive_lock already dropped */
 
 	/*
 	 * Attempt to push any data in the page cache.  If this fails
@@ -4532,7 +4557,7 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	 */
 	if (vn_has_cached_data(vp)) {
 		(void) pvn_vplist_dirty(vp, 0, zfs_putapage, B_INVAL|B_ASYNC,
-		    cr);
+		    CRED());
 	}
 
 	if (zp->z_atime_dirty && zp->z_unlinked == 0) {
@@ -4555,6 +4580,41 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 
 	zfs_zinactive(zp);
 	rw_exit(&zfsvfs->z_teardown_inactive_lock);
+}
+
+/*
+ * taskq task calls zfs_inactive_impl() so that we can free the znode
+ */
+static void
+zfs_inactive_task(void *task_arg)
+{
+	znode_t *zp = task_arg;
+	ASSERT(zp != NULL);
+	zfs_inactive_impl(zp);
+}
+
+/*ARGSUSED*/
+void
+zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
+{
+	znode_t	*zp = VTOZ(vp);
+	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
+
+	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER_STARVEWRITER);
+	if (zfs_znode_free_invalid(zp))
+		return; /* z_teardown_inactive_lock already dropped */
+
+	if (zfs_do_async_free != B_FALSE &&
+	    taskq_dispatch(dsl_pool_vnrele_taskq(
+	    dmu_objset_pool(zp->z_zfsvfs->z_os)), zfs_inactive_task,
+	    zp, TQ_NOSLEEP) != NULL) {
+		rw_exit(&zfsvfs->z_teardown_inactive_lock);
+		return; /* task dispatched, we're done */
+	}
+	rw_exit(&zfsvfs->z_teardown_inactive_lock);
+
+	/* if the taskq dispatch failed - do a sync zfs_inactive_impl() call */
+	zfs_inactive_impl(zp);
 }
 
 /*

@@ -1016,6 +1016,7 @@ static int
 zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 {
 	int error;
+	int readonly;
 
 	error = zfs_register_callbacks(zfsvfs->z_vfs);
 	if (error)
@@ -1028,6 +1029,8 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 	dmu_objset_set_user(zfsvfs->z_os, zfsvfs);
 	mutex_exit(&zfsvfs->z_os->os_user_ptr_lock);
 
+	readonly = zfsvfs->z_vfs->vfs_flag & VFS_RDONLY;
+
 	zfsvfs->z_log = zil_open(zfsvfs->z_os, zfs_get_data);
 
 	/*
@@ -1036,13 +1039,10 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 	 * operations out since we closed the ZIL.
 	 */
 	if (mounting) {
-		boolean_t readonly;
-
 		/*
 		 * During replay we remove the read only flag to
 		 * allow replays to succeed.
 		 */
-		readonly = zfsvfs->z_vfs->vfs_flag & VFS_RDONLY;
 		if (readonly != 0)
 			zfsvfs->z_vfs->vfs_flag &= ~VFS_RDONLY;
 		else {
@@ -1095,6 +1095,22 @@ zfsvfs_setup(zfsvfs_t *zfsvfs, boolean_t mounting)
 			}
 		}
 		zfsvfs->z_vfs->vfs_flag |= readonly; /* restore readonly bit */
+	} else if (readonly == 0 && !zfsvfs->z_unmounted) {
+		/*
+		 * We got here if we're doing a zfs_resume_fs(). This means
+		 * we did a zfs_suspend_fs() earlier which could have
+		 * interrupted freeing of dnodes. We need to restart this
+		 * freeing so that we don't "leak" the space.
+		 */
+		zfs_unlinked_drain_prepare(zfsvfs);
+		if (taskq_dispatch(dsl_pool_vnrele_taskq(
+		    spa_get_dsl(zfsvfs->z_os->os_spa)),
+		    (void (*)(void *))zfs_unlinked_drain, zfsvfs,
+		    TQ_NOSLEEP) == NULL) {
+			cmn_err(CE_WARN,
+			    "async zfs_unlinked_drain dispatch failed");
+			zfs_unlinked_drain(zfsvfs);
+		}
 	}
 
 	return (0);
