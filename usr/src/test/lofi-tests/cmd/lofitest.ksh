@@ -22,16 +22,21 @@ PATH=$PATH:$CTI_ROOT/bin
 export PATH
 export SCRATCH_DIR=/var/tmp
 
+
+function fail
+{
+        echo $1
+        exit ${2:-1}
+}
+
 #
 # Test needs to be run as root 
-# Make sure /dev/lofi does not exist
 #
+[[ $(id -u) != "0" ]] && fail "This script must be run as root."
+
+# Make sure /dev/lofi does not exist
 if [ -d /dev/lofi ]; then
-	rm -rf /dev/lofi
-	if [$? != 0]; then
-		echo Need to be run as root
-		exit
-	fi
+    rm -rf /dev/lofi
 fi
 
 PATH=$PATH:$CTI_ROOT/bin
