@@ -180,7 +180,6 @@ smb_lock_range(
 	smb_lock_t	*lock;
 	smb_lock_t	*conflict = NULL;
 	uint32_t	result;
-	uint32_t	desired_access;
 	int		rc;
 	boolean_t	lock_has_timeout =
 	    (timeout != 0 && timeout != UINT_MAX);
@@ -188,13 +187,6 @@ smb_lock_range(
 	if (length > 1 &&
 	    (start + length) < start)
 		return (NT_STATUS_INVALID_LOCK_RANGE);
-
-	desired_access = FILE_READ_DATA;
-	if (locktype == SMB_LOCK_TYPE_READWRITE)
-		desired_access |= FILE_WRITE_DATA;
-	result = smb_ofile_access(file, file->f_cr, desired_access);
-	if (result != NT_STATUS_SUCCESS)
-		return (result);
 
 #ifdef	DEBUG
 	if (smb_lock_debug) {
