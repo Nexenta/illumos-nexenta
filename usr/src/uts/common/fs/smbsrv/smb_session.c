@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/atomic.h>
@@ -42,15 +42,6 @@ static volatile uint64_t smb_kids;
  * specifies it in seconds, so convert to minutes.
  */
 uint32_t smb_keep_alive = SMB_PI_KEEP_ALIVE_MIN / 60;
-
-/*
- * The variable smb_cancel_delay is the minimum age (in mSec) of an
- * active request for it to be eligible for cancellation in "pass 0".
- * It's also used in the protocol-level cancel handlers for the
- * amount of time to delay between "pass 0" and "pass 1".
- * See smb_request_cancel()
- */
-int smb_cancel_delay = 100; /* mSec */
 
 /*
  * There are many smbtorture test cases that send
@@ -389,29 +380,10 @@ smb_request_init_command_mbuf(smb_request_t *sr)
  * smb_request_cancel
  *
  * Handle a cancel for a request properly depending on the current request
- * state.  Return B_TRUE if a request was cancelled.
- *
- * SMB Cancel has an inherent race with the request being cancelled.
- * If a cancel is processed before the request being cancelled, that
- * request might not have been decoded yet and will not be found.
- *
- * When a client issues a cancel, we run it in two passes.  In the
- * "pass 0", we cancel a request in any of the "WAIT" states, or an
- * active request as long as it's had some time to run.  If the
- * request is cancelled in the first pass, we're done.  Otherwise,
- * the caller delays for smb_cancel_delay and calls "pass 1", where
- * we do our best to make the request complete soon.
- *
- * Usually, cancel arrives long after the request being cancelled,
- * and we're done after "pass 0".  However on rare occasion, we've
- * seen Windows send an SMB2 (sync) cancel shortly after a notify
- * request.  There are also some smbtorture "notify" test cases
- * that send notify requests "back to back" with a cancel, and
- * expect the notify to be processed.  Those situations cause a
- * delay and "pass 1" in the cancel handler.
+ * state.
  */
-boolean_t
-smb_request_cancel(smb_request_t *sr, int pass)
+void
+smb_request_cancel(smb_request_t *sr)
 {
 	void (*cancel_method)(smb_request_t *) = NULL;
 
@@ -420,21 +392,8 @@ smb_request_cancel(smb_request_t *sr, int pass)
 
 	case SMB_REQ_STATE_INITIALIZING:
 	case SMB_REQ_STATE_SUBMITTED:
-		if (pass == 0) {
-			mutex_exit(&sr->sr_mutex);
-			return (B_FALSE);
-		}
-		sr->sr_state = SMB_REQ_STATE_CANCELLED;
-		break;
-
 	case SMB_REQ_STATE_ACTIVE:
 	case SMB_REQ_STATE_CLEANED_UP:
-		if (pass == 0 && gethrtime() <
-		    (sr->sr_time_active + MSEC2NSEC(smb_cancel_delay))) {
-			/* This SR is too young to die. */
-			mutex_exit(&sr->sr_mutex);
-			return (B_FALSE);
-		}
 		sr->sr_state = SMB_REQ_STATE_CANCELLED;
 		break;
 
@@ -475,8 +434,6 @@ smb_request_cancel(smb_request_t *sr, int pass)
 	if (cancel_method != NULL) {
 		cancel_method(sr);
 	}
-
-	return (B_TRUE);
 }
 
 /*
@@ -821,6 +778,9 @@ smb_session_delete(smb_session_t *session)
 		    session->signing.mackey_len);
 	}
 
+	if (session->s_scoreboard_arr != NULL)
+		smb2_scoreboard_fini(session);
+
 	session->s_magic = 0;
 
 	smb_rwx_destroy(&session->s_lock);
@@ -898,7 +858,7 @@ smb_session_cancel_requests(
 		ASSERT(sr->sr_magic == SMB_REQ_MAGIC);
 		if ((sr != exclude_sr) &&
 		    (tree == NULL || sr->tid_tree == tree))
-			(void) smb_request_cancel(sr, 1);
+			smb_request_cancel(sr);
 
 		sr = smb_slist_next(&session->s_req_list, sr);
 	}

@@ -22,7 +22,7 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 LIBRARY =	libfksmbsrv.a
@@ -141,6 +141,7 @@ OBJS_FS_SMBSRV = \
 		smb2_query_dir.o \
 		smb2_query_info.o \
 		smb2_read.o \
+		smb2_scoreboard.o \
 		smb2_session_setup.o \
 		smb2_set_info.o \
 		smb2_setinfo_file.o \

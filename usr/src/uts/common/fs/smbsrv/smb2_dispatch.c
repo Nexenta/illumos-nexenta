@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -152,6 +152,8 @@ smb2_invalid_cmd(smb_request_t *sr)
 	return (SDRC_DROP_VC);
 }
 
+int smb2_cancel_in_reader = 1;
+
 /*
  * This is the SMB2 handler for new smb requests, called from
  * smb_session_reader after SMB negotiate is done.  For most SMB2
@@ -176,6 +178,25 @@ smb2sr_newrq(smb_request_t *sr)
 		smb_request_free(sr);
 		/* will drop the connection */
 		return (EPROTO);
+	}
+
+	/*
+	 * Execute Cancel requests immediately, (here in the
+	 * reader thread) so they won't wait for any other
+	 * commands we might already have in the task queue.
+	 * Cancel also skips signature verification and
+	 * does not consume a sequence number.
+	 * [MS-SMB2] 3.2.4.24 Cancellation...
+	 */
+	if (smb2_cancel_in_reader != 0) {
+		uint16_t command;
+
+		command = LE_IN16((uint8_t *)sr->sr_request_buf + 12);
+		if (command == SMB2_CANCEL) {
+			int rc = smb2_newrq_cancel(sr);
+			smb_request_free(sr);
+			return (rc);
+		}
 	}
 
 	/*
@@ -267,19 +288,19 @@ smb2sr_work(struct smb_request *sr)
 	sr->user_cr = zone_kcred();
 
 cmd_start:
-	/* Re-check sr_state at the start of each command. */
-	mutex_enter(&sr->sr_mutex);
-	switch (sr->sr_state) {
-	case SMB_REQ_STATE_ACTIVE:
-		break;
-	default:
-		ASSERT(0);
-		/* FALLTHROUGH */
-	case SMB_REQ_STATE_CANCELLED:
-		sr->smb2_status = NT_STATUS_CANCELLED;
-		break;
-	}
-	mutex_exit(&sr->sr_mutex);
+	/*
+	 * Note that we don't check sr_state here and abort the
+	 * compound if cancelled (etc.) because some SMB2 command
+	 * handlers need to do work even when cancelled.
+	 *
+	 * We treat some status codes as if "sticky", meaning
+	 * once they're set after some command handler returns,
+	 * all remaining commands get this status without even
+	 * calling the command-specific handler.
+	 */
+	if (sr->smb2_status != NT_STATUS_CANCELLED &&
+	    sr->smb2_status != NT_STATUS_INSUFFICIENT_RESOURCES)
+		sr->smb2_status = 0;
 
 	/*
 	 * Decode the request header
@@ -288,23 +309,25 @@ cmd_start:
 	 * STATUS_INVALID_PARAMETER.  If the decoding problem
 	 * prevents continuing, we'll close the connection.
 	 * [MS-SMB2] 3.3.5.2.6 Handling Incorrectly Formatted...
-	 *
-	 * We treat some status codes as if "sticky", meaning
-	 * once they're set after some command handler returns,
-	 * all remaining commands get this status without even
-	 * calling the command-specific handler. The cancelled
-	 * status is used above, and insufficient_resources is
-	 * used when smb2sr_go_async declines to "go async".
-	 * Otherwise initialize to zero (success).
 	 */
-	if (sr->smb2_status != NT_STATUS_CANCELLED &&
-	    sr->smb2_status != NT_STATUS_INSUFFICIENT_RESOURCES)
-		sr->smb2_status = 0;
-
 	sr->smb2_cmd_hdr = sr->command.chain_offset;
 	if ((rc = smb2_decode_header(sr)) != 0) {
 		cmn_err(CE_WARN, "clnt %s bad SMB2 header",
 		    session->ip_addr_str);
+		disconnect = B_TRUE;
+		goto cleanup;
+	}
+
+	/*
+	 * Update the "scoreboard" for this new command.
+	 * If rc != 0, it's a replay attempt.  Drop them.
+	 * If we missed a cancel, this discovers that and
+	 * sets the SR state to cancelled (not sr_status).
+	 */
+	if ((rc = smb2_scoreboard_cmd_start(sr)) != 0) {
+		cmn_err(CE_WARN, "clnt %s SMB2 replay MID=0x%llx",
+		    session->ip_addr_str,
+		    (u_longlong_t)sr->smb2_messageid);
 		disconnect = B_TRUE;
 		goto cleanup;
 	}
@@ -683,6 +706,8 @@ cmd_done:
 	atomic_add_64(&sds->sdt_txb,
 	    (int64_t)(sr->reply.chain_offset - sr->smb2_reply_hdr));
 
+	smb2_scoreboard_cmd_done(sr);
+
 	switch (rc) {
 	case SDRC_SUCCESS:
 		break;
@@ -805,7 +830,7 @@ smb2sr_do_async(smb_request_t *sr)
 	sr->smb2_cmd_hdr   = ar->ar_cmd_hdr;
 	sr->smb2_cmd_code  = ar->ar_cmd_code;
 	sr->smb2_hdr_flags = ar->ar_hdr_flags;
-	sr->smb2_async_id  = (uintptr_t)ar;
+	sr->smb2_async_id  = ar->ar_messageid ^ (1ULL << 62);
 	sr->smb2_messageid = ar->ar_messageid;
 	sr->smb_pid = ar->ar_pid;
 	sr->smb_tid = ar->ar_tid;
@@ -975,7 +1000,7 @@ smb2sr_go_async(smb_request_t *sr,
 	 * by storing that in flags before coping into ar.
 	 */
 	sr->smb2_hdr_flags |= SMB2_FLAGS_ASYNC_COMMAND;
-	sr->smb2_async_id = (uintptr_t)ar;
+	sr->smb2_async_id = sr->smb2_messageid ^ (1ULL << 62);
 
 	ar->ar_func = async_func;
 	ar->ar_cmd_hdr = sr->smb2_cmd_hdr;

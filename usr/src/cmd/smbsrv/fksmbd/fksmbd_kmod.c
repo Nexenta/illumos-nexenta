@@ -61,11 +61,36 @@ static void
 fksmbd_adjust_config(smb_ioc_header_t *ioc_hdr)
 {
 	smb_ioc_cfg_t *ioc = (smb_ioc_cfg_t *)ioc_hdr;
+	char *s;
 
 	ioc->maxconnections = 10;
 	ioc->maxworkers = 20;
 	smbd_report("maxconnections=%d, maxworkers=%d",
 	    ioc->maxconnections, ioc->maxworkers);
+
+	if ((s = getenv("SMB2_ENABLE")) != NULL) {
+		ioc->smb2_enable = 1;
+		smbd_report("env SMB2_ENABLE");
+	}
+
+	if ((s = getenv("SMB_SIGNING")) != NULL) {
+		ioc->signing_enable = 0;
+		ioc->signing_required = 0;
+		switch (s[0]) {
+		case 'e':
+			ioc->signing_enable = 1;
+			break;
+		case 'r':
+			ioc->signing_enable = 1;
+			ioc->signing_required = 1;
+			break;
+		default:
+			smbd_report("env SMB_SIGNING invalid");
+			break;
+		}
+	}
+	smbd_report("signing: enable=%d, required=%d",
+	    ioc->signing_enable, ioc->signing_required);
 }
 
 boolean_t

@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB2_KPROTO_H_
@@ -35,8 +35,6 @@ void	smb2_dispatch_stats_update(smb_server_t *,
 		smb_kstat_req_t *, int, int);
 
 int	smb2sr_newrq(smb_request_t *);
-int	smb2sr_newrq_async(smb_request_t *);
-int	smb2sr_newrq_cancel(smb_request_t *);
 void	smb2sr_work(smb_request_t *);
 
 int smb2_decode_header(smb_request_t *);
@@ -74,6 +72,7 @@ smb_sdrc_t smb2_set_info(smb_request_t *);
 smb_sdrc_t smb2_oplock_break_ack(smb_request_t *);
 
 int smb2_newrq_negotiate(smb_request_t *);
+int smb2_newrq_cancel(smb_request_t *);
 
 uint32_t smb2_aapl_crctx(smb_request_t *,
 	mbuf_chain_t *, mbuf_chain_t *);
@@ -94,6 +93,13 @@ uint32_t smb2_setinfo_sec(smb_request_t *, smb_setinfo_t *, uint32_t);
 uint32_t smb2_setinfo_quota(smb_request_t *, smb_setinfo_t *);
 
 void smb2sr_finish_async(smb_request_t *);
+
+void smb2_scoreboard_init(smb_session_t *);
+void smb2_scoreboard_fini(smb_session_t *);
+
+int smb2_scoreboard_cmd_start(smb_request_t *);
+void smb2_scoreboard_cmd_done(smb_request_t *);
+boolean_t smb2_scoreboard_cancel(smb_request_t *);
 
 #ifdef	__cplusplus
 }

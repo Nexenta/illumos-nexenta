@@ -508,6 +508,8 @@ smbsr_cleanup(smb_request_t *sr)
 	mutex_exit(&sr->sr_mutex);
 }
 
+int smb_cancel_in_reader = 1;
+
 /*
  * This is the SMB1 handler for new smb requests, called from
  * smb_session_reader after SMB negotiate is done.  For most SMB
@@ -527,20 +529,58 @@ smbsr_cleanup(smb_request_t *sr)
 int
 smb1sr_newrq(smb_request_t *sr)
 {
-	uint32_t magic;
+	uint16_t pid_hi, pid_lo;
+	int rc, save_offset;
 
-	magic = SMB_READ_PROTOCOL(sr->sr_request_buf);
-	if (magic != SMB_PROTOCOL_MAGIC) {
+	/*
+	 * Decode the SMB header now (peek) so that
+	 * SMB_COM_NT_CANCEL can find this SR.
+	 */
+	save_offset = sr->command.chain_offset;
+	rc = smb_mbc_decodef(&sr->command, SMB_HEADER_ED_FMT,
+	    &sr->smb_com,
+	    &sr->smb_rcls,
+	    &sr->smb_reh,
+	    &sr->smb_err,
+	    &sr->smb_flg,
+	    &sr->smb_flg2,
+	    &pid_hi,
+	    sr->smb_sig,
+	    &sr->smb_tid,
+	    &pid_lo,
+	    &sr->smb_uid,
+	    &sr->smb_mid);
+	sr->command.chain_offset = save_offset;
+	if (rc != 0) {
+		/* Failed decoding the header. Drop 'em. */
 		smb_request_free(sr);
 		return (EPROTO);
 	}
+	sr->smb_pid = (pid_hi << 16) | pid_lo;
 
-	if (sr->session->signing.flags & SMB_SIGNING_ENABLED) {
-		if (SMB_IS_NT_CANCEL(sr)) {
+	if (sr->smb_com == SMB_COM_NT_CANCEL) {
+		if (sr->session->signing.flags & SMB_SIGNING_ENABLED) {
 			sr->session->signing.seqnum++;
 			sr->sr_seqnum = sr->session->signing.seqnum + 1;
 			sr->reply_seqnum = 0;
-		} else {
+		}
+
+		/*
+		 * Normally execute cancel requests immediately,
+		 * (here in the reader thread) so they won't wait
+		 * for other commands already in the task queue.
+		 * Disable this via smb_cancel_in_reader=0 for
+		 * testing or diagnostic efforts, in which case
+		 * cancel runs via taskq_dispatch.
+		 */
+		if (smb_cancel_in_reader != 0) {
+			rc = smb1sr_newrq_cancel(sr);
+			smb_request_free(sr);
+			return (rc);
+		}
+	} else {
+		/* not NT cancel */
+		if (sr->session->signing.flags & SMB_SIGNING_ENABLED) {
 			sr->session->signing.seqnum += 2;
 			sr->sr_seqnum = sr->session->signing.seqnum;
 			sr->reply_seqnum = sr->sr_seqnum + 1;
@@ -751,10 +791,11 @@ andx_more:
 		sr->sr_state = SMB_REQ_STATE_ACTIVE;
 		break;
 	case SMB_REQ_STATE_CANCELLED:
-		mutex_exit(&sr->sr_mutex);
-		smbsr_error(sr, NT_STATUS_CANCELLED,
-		    ERRDOS, ERROR_OPERATION_ABORTED);
-		goto report_error;
+		/*
+		 * Keep cancelled.  Handlers that might block will
+		 * check the state and return NT_STATUS_CANCELLED.
+		 */
+		break;
 	default:
 		ASSERT(0);
 		break;

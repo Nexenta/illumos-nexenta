@@ -22,7 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -44,8 +44,6 @@
  */
 
 #include <smbsrv/smb_kproto.h>
-
-static int smb1_cancel(smb_request_t *, int);
 
 smb_sdrc_t
 smb_pre_nt_cancel(smb_request_t *sr)
@@ -70,32 +68,6 @@ smb_post_nt_cancel(smb_request_t *sr)
 smb_sdrc_t
 smb_com_nt_cancel(smb_request_t *sr)
 {
-	int		cnt;
-
-	cnt = smb1_cancel(sr, 0);
-	if (cnt == 0) {
-		/*
-		 * Did not find the request to be cancelled
-		 * (or it hasn't had a chance to run yet).
-		 * Delay a little and look again.
-		 */
-		delay(MSEC_TO_TICK(smb_cancel_delay));
-		cnt = smb1_cancel(sr, 1);
-	}
-
-	if (cnt != 1) {
-		cmn_err(CE_WARN, "SMB nt_cancel failed, "
-		    "client=%s, MID=0x%x",
-		    sr->session->ip_addr_str,
-		    (uint_t)sr->smb_mid);
-	}
-
-	return (SDRC_NO_REPLY);
-}
-
-static int
-smb1_cancel(smb_request_t *sr, int pass)
-{
 	struct smb_request *req;
 	struct smb_session *session;
 	int cnt = 0;
@@ -111,12 +83,31 @@ smb1_cancel(smb_request_t *sr, int pass)
 		    (req->smb_pid == sr->smb_pid) &&
 		    (req->smb_tid == sr->smb_tid) &&
 		    (req->smb_mid == sr->smb_mid)) {
-			if (smb_request_cancel(req, pass))
-				cnt++;
+			smb_request_cancel(req);
+			cnt++;
 		}
 		req = smb_slist_next(&session->s_req_list, req);
 	}
+	if (cnt != 1) {
+		DTRACE_PROBE2(smb__ntcancel__error,
+		    uint16_t, sr->smb_mid, int, cnt);
+	}
 	smb_slist_exit(&session->s_req_list);
 
-	return (cnt);
+	return (SDRC_NO_REPLY);
+}
+
+/*
+ * This handles an SMB_COM_NT_CANCEL request when seen in the reader.
+ * (See smb1sr_newrq)  Handle this immediately, rather than
+ * going through the normal taskq dispatch mechanism.
+ * Note that Cancel does NOT get a response.
+ */
+int
+smb1sr_newrq_cancel(smb_request_t *sr)
+{
+	(void) smb_pre_nt_cancel(sr);
+	(void) smb_com_nt_cancel(sr);
+	smb_post_nt_cancel(sr);
+	return (0);
 }
