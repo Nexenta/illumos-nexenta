@@ -23,6 +23,8 @@
  * Use is subject to license terms.
  */
 
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
+
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
 /*	  All Rights Reserved  	*/
 
@@ -67,6 +69,22 @@
 int	vflag;
 int	nolocalquota;
 
+/*
+ * struct dqblk is a 32 bit quantity and is common across NFS and UFS.
+ * UFS has a 2TB limit and an uint32_t can hold this value.
+ * NFS translates this to rquota where all members are unit32_t in size.
+ * A private dqblk, dqblk_zfs is defined here.
+ */
+struct dqblk_zfs {
+	uint64_t  dqbz_bhardlimit; /* absolute limit on disk blks alloc */
+	uint64_t  dqbz_bsoftlimit; /* preferred limit on disk blks */
+	uint64_t  dqbz_curblocks;  /* current block count */
+	uint64_t  dqbz_fhardlimit; /* maximum # allocated files + 1 */
+	uint64_t  dqbz_fsoftlimit; /* preferred file limit */
+	uint64_t  dqbz_curfiles;   /* current # allocated files */
+	uint64_t  dqbz_btimelimit; /* time limit for excessive disk use */
+	uint64_t  dqbz_ftimelimit; /* time limit for excessive files */
+};
 extern int	optind;
 extern char	*optarg;
 
@@ -83,49 +101,21 @@ extern char	*optarg;
 #endif
 
 static void zexit(int);
-static int getzfsquota(char *, char *, struct dqblk *);
+static boolean_t blklimits_is_zero(struct dqblk *, struct dqblk_zfs *);
+static int getzfsquota(char *, char *, struct dqblk_zfs *);
 static int getnfsquota(char *, char *, uid_t, struct dqblk *);
 static void showuid(uid_t);
 static void showquotas(uid_t, char *);
-static void warn(struct mnttab *, struct dqblk *);
+static void warn(struct mnttab *, struct dqblk *, struct dqblk_zfs *);
+static void warn_dqblk_impl(struct mnttab *, struct dqblk *);
+static void warn_dqblk_zfs_impl(struct mnttab *, struct dqblk_zfs *);
 static void heading(uid_t, char *);
-static void prquota(struct mnttab *, struct dqblk *);
+static void prquota(struct mnttab *, struct dqblk *, struct dqblk_zfs *);
+static void prquota_dqblk_impl(struct mnttab *, struct dqblk *);
+static void prquota_dqblk_zfs_impl(struct mnttab *, struct dqblk_zfs *);
 static void fmttime(char *, long);
 
-static libzfs_handle_t *(*_libzfs_init)(void);
-static void (*_libzfs_fini)(libzfs_handle_t *);
-static zfs_handle_t *(*_zfs_open)(libzfs_handle_t *, const char *, int);
-static void (*_zfs_close)(zfs_handle_t *);
-static int (*_zfs_prop_get_userquota_int)(zfs_handle_t *, const char *,
-    uint64_t *);
 static libzfs_handle_t *g_zfs = NULL;
-
-/*
- * Dynamically check for libzfs, in case the user hasn't installed the SUNWzfs
- * packages.  'quota' utility supports zfs as an option.
- */
-static void
-load_libzfs(void)
-{
-	void *hdl;
-
-	if (g_zfs != NULL)
-		return;
-
-	if ((hdl = dlopen("libzfs.so", RTLD_LAZY)) != NULL) {
-		_libzfs_init = (libzfs_handle_t *(*)(void))dlsym(hdl,
-		    "libzfs_init");
-		_libzfs_fini = (void (*)())dlsym(hdl, "libzfs_fini");
-		_zfs_open = (zfs_handle_t *(*)())dlsym(hdl, "zfs_open");
-		_zfs_close = (void (*)())dlsym(hdl, "zfs_close");
-		_zfs_prop_get_userquota_int = (int (*)())
-		    dlsym(hdl, "zfs_prop_get_userquota_int");
-
-		if (_libzfs_init && _libzfs_fini && _zfs_open &&
-		    _zfs_close && _zfs_prop_get_userquota_int)
-			g_zfs = _libzfs_init();
-	}
-}
 
 int
 main(int argc, char *argv[])
@@ -153,7 +143,6 @@ main(int argc, char *argv[])
 		exit(1);
 	}
 
-	load_libzfs();
 
 	while ((opt = getopt(argc, argv, "vV")) != EOF) {
 		switch (opt) {
@@ -242,6 +231,7 @@ showquotas(uid_t uid, char *name)
 	struct mnttab mnt;
 	FILE *mtab;
 	struct dqblk dqblk;
+	struct dqblk_zfs dqblkz;
 	uid_t myuid;
 	struct failed_srv {
 		char *serv_name;
@@ -265,9 +255,12 @@ showquotas(uid_t uid, char *name)
 		heading(uid, name);
 	mtab = fopen(MNTTAB, "r");
 	while (getmntent(mtab, &mnt) == NULL) {
+		boolean_t is_zfs = B_FALSE;
+
 		if (strcmp(mnt.mnt_fstype, MNTTYPE_ZFS) == 0) {
-			bzero(&dqblk, sizeof (dqblk));
-			if (getzfsquota(name, mnt.mnt_special, &dqblk))
+			is_zfs = B_TRUE;
+			bzero(&dqblkz, sizeof (dqblkz));
+			if (getzfsquota(name, mnt.mnt_special, &dqblkz))
 				continue;
 		} else if (strcmp(mnt.mnt_fstype, MNTTYPE_UFS) == 0) {
 			if (nolocalquota ||
@@ -411,13 +404,15 @@ showquotas(uid_t uid, char *name)
 		} else {
 			continue;
 		}
-		if (dqblk.dqb_bsoftlimit == 0 && dqblk.dqb_bhardlimit == 0 &&
-		    dqblk.dqb_fsoftlimit == 0 && dqblk.dqb_fhardlimit == 0)
+
+		if (blklimits_is_zero(&dqblk, is_zfs ? &dqblkz : NULL))
 			continue;
+
 		if (vflag)
-			prquota(&mnt, &dqblk);
+			prquota(&mnt, &dqblk, is_zfs ? &dqblkz : NULL);
 		else
-			warn(&mnt, &dqblk);
+			warn(&mnt, &dqblk, is_zfs ? &dqblkz : NULL);
+
 	}
 
 	/*
@@ -435,66 +430,12 @@ showquotas(uid_t uid, char *name)
 }
 
 static void
-warn(struct mnttab *mntp, struct dqblk *dqp)
+warn(struct mnttab *mntp, struct dqblk *dqp, struct dqblk_zfs *dqzp)
 {
-	struct timeval tv;
-
-	time(&(tv.tv_sec));
-	tv.tv_usec = 0;
-	if (dqp->dqb_bhardlimit &&
-	    dqp->dqb_curblocks >= dqp->dqb_bhardlimit) {
-		printf("Block limit reached on %s\n", mntp->mnt_mountp);
-	} else if (dqp->dqb_bsoftlimit &&
-	    dqp->dqb_curblocks >= dqp->dqb_bsoftlimit) {
-		if (dqp->dqb_btimelimit == 0) {
-			printf("Over disk quota on %s, remove %luK\n",
-			    mntp->mnt_mountp,
-			    kb(dqp->dqb_curblocks - dqp->dqb_bsoftlimit + 1));
-		} else if (dqp->dqb_btimelimit > tv.tv_sec) {
-			char btimeleft[80];
-
-			fmttime(btimeleft, dqp->dqb_btimelimit - tv.tv_sec);
-			printf("Over disk quota on %s, remove %luK within %s\n",
-			    mntp->mnt_mountp,
-			    kb(dqp->dqb_curblocks - dqp->dqb_bsoftlimit + 1),
-			    btimeleft);
-		} else {
-			printf(
-		"Over disk quota on %s, time limit has expired, remove %luK\n",
-			    mntp->mnt_mountp,
-			    kb(dqp->dqb_curblocks - dqp->dqb_bsoftlimit + 1));
-		}
-	}
-	if (dqp->dqb_fhardlimit &&
-	    dqp->dqb_curfiles >= dqp->dqb_fhardlimit) {
-		printf("File count limit reached on %s\n", mntp->mnt_mountp);
-	} else if (dqp->dqb_fsoftlimit &&
-	    dqp->dqb_curfiles >= dqp->dqb_fsoftlimit) {
-		if (dqp->dqb_ftimelimit == 0) {
-			printf("Over file quota on %s, remove %lu file%s\n",
-			    mntp->mnt_mountp,
-			    dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1,
-			    ((dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1) > 1 ?
-			    "s" : ""));
-		} else if (dqp->dqb_ftimelimit > tv.tv_sec) {
-			char ftimeleft[80];
-
-			fmttime(ftimeleft, dqp->dqb_ftimelimit - tv.tv_sec);
-			printf(
-"Over file quota on %s, remove %lu file%s within %s\n",
-			    mntp->mnt_mountp,
-			    dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1,
-			    ((dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1) > 1 ?
-			    "s" : ""), ftimeleft);
-		} else {
-			printf(
-"Over file quota on %s, time limit has expired, remove %lu file%s\n",
-			    mntp->mnt_mountp,
-			    dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1,
-			    ((dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1) > 1 ?
-			    "s" : ""));
-		}
-	}
+	if (dqzp != NULL)
+		warn_dqblk_zfs_impl(mntp, dqzp);
+	else
+		warn_dqblk_impl(mntp, dqp);
 }
 
 static void
@@ -514,67 +455,12 @@ heading(uid_t uid, char *name)
 }
 
 static void
-prquota(struct mnttab *mntp, struct dqblk *dqp)
+prquota(struct mnttab *mntp, struct dqblk *dqp, struct dqblk_zfs *dqzp)
 {
-	struct timeval tv;
-	char ftimeleft[80], btimeleft[80];
-	char *cp;
-
-	time(&(tv.tv_sec));
-	tv.tv_usec = 0;
-	if (dqp->dqb_bsoftlimit && dqp->dqb_curblocks >= dqp->dqb_bsoftlimit) {
-		if (dqp->dqb_btimelimit == 0) {
-			strlcpy(btimeleft, "NOT STARTED", sizeof (btimeleft));
-		} else if (dqp->dqb_btimelimit > tv.tv_sec) {
-			fmttime(btimeleft, dqp->dqb_btimelimit - tv.tv_sec);
-		} else {
-			strlcpy(btimeleft, "EXPIRED", sizeof (btimeleft));
-		}
-	} else {
-		btimeleft[0] = '\0';
-	}
-	if (dqp->dqb_fsoftlimit && dqp->dqb_curfiles >= dqp->dqb_fsoftlimit) {
-		if (dqp->dqb_ftimelimit == 0) {
-			strlcpy(ftimeleft, "NOT STARTED", sizeof (ftimeleft));
-		} else if (dqp->dqb_ftimelimit > tv.tv_sec) {
-			fmttime(ftimeleft, dqp->dqb_ftimelimit - tv.tv_sec);
-		} else {
-			strlcpy(ftimeleft, "EXPIRED", sizeof (ftimeleft));
-		}
-	} else {
-		ftimeleft[0] = '\0';
-	}
-	if (strlen(mntp->mnt_mountp) > 12) {
-		printf("%s\n", mntp->mnt_mountp);
-		cp = "";
-	} else {
-		cp = mntp->mnt_mountp;
-	}
-
-	if (dqp->dqb_curfiles == 0 &&
-	    dqp->dqb_fsoftlimit == 0 && dqp->dqb_fhardlimit == 0) {
-		printf("%-12.12s %7d %6d %6d %11s %6s %6s %6s %11s\n",
-		    cp,
-		    kb(dqp->dqb_curblocks),
-		    kb(dqp->dqb_bsoftlimit),
-		    kb(dqp->dqb_bhardlimit),
-		    "-",
-		    "-",
-		    "-",
-		    "-",
-		    "-");
-	} else {
-		printf("%-12.12s %7d %6d %6d %11s %6d %6d %6d %11s\n",
-		    cp,
-		    kb(dqp->dqb_curblocks),
-		    kb(dqp->dqb_bsoftlimit),
-		    kb(dqp->dqb_bhardlimit),
-		    btimeleft,
-		    dqp->dqb_curfiles,
-		    dqp->dqb_fsoftlimit,
-		    dqp->dqb_fhardlimit,
-		    ftimeleft);
-	}
+	if (dqzp != NULL)
+		prquota_dqblk_zfs_impl(mntp, dqzp);
+	else
+		prquota_dqblk_impl(mntp, dqp);
 }
 
 static void
@@ -823,7 +709,7 @@ getnfsquota(char *hostp, char *path, uid_t uid, struct dqblk *dqp)
 
 int
 callaurpc(char *host, int prognum, int versnum, int procnum,
-		xdrproc_t inproc, char *in, xdrproc_t outproc, char *out)
+    xdrproc_t inproc, char *in, xdrproc_t outproc, char *out)
 {
 	static enum clnt_stat clnt_stat;
 	struct timeval tottimeout = {20, 0};
@@ -868,41 +754,318 @@ callaurpc(char *host, int prognum, int versnum, int procnum,
 }
 
 static int
-getzfsquota(char *user, char *dataset, struct dqblk *zq)
+getzfsquota(char *user, char *dataset, struct dqblk_zfs *zq)
 {
 	zfs_handle_t *zhp = NULL;
 	char propname[ZFS_MAXPROPLEN];
 	uint64_t userquota, userused;
 
-	if (g_zfs == NULL)
-		return (1);
+	if (g_zfs == NULL) {
+		g_zfs = libzfs_init();
+	}
 
-	if ((zhp = _zfs_open(g_zfs, dataset, ZFS_TYPE_DATASET)) == NULL)
+	if ((zhp = zfs_open(g_zfs, dataset, ZFS_TYPE_DATASET)) == NULL)
 		return (1);
 
 	(void) snprintf(propname, sizeof (propname), "userquota@%s", user);
-	if (_zfs_prop_get_userquota_int(zhp, propname, &userquota) != 0) {
-		_zfs_close(zhp);
+	if (zfs_prop_get_userquota_int(zhp, propname, &userquota) != 0) {
+		zfs_close(zhp);
 		return (1);
 	}
 
 	(void) snprintf(propname, sizeof (propname), "userused@%s", user);
-	if (_zfs_prop_get_userquota_int(zhp, propname, &userused) != 0) {
-		_zfs_close(zhp);
+	if (zfs_prop_get_userquota_int(zhp, propname, &userused) != 0) {
+		zfs_close(zhp);
 		return (1);
 	}
 
-	zq->dqb_bhardlimit = userquota / DEV_BSIZE;
-	zq->dqb_bsoftlimit = userquota / DEV_BSIZE;
-	zq->dqb_curblocks = userused / DEV_BSIZE;
-	_zfs_close(zhp);
+	zq->dqbz_bhardlimit = userquota / DEV_BSIZE;
+	zq->dqbz_bsoftlimit = userquota / DEV_BSIZE;
+	zq->dqbz_curblocks = userused / DEV_BSIZE;
+	zfs_close(zhp);
 	return (0);
+}
+
+static boolean_t
+blklimits_is_zero(struct dqblk *dqp, struct dqblk_zfs *dqzp)
+{
+	if (dqzp == NULL) {
+		if (dqp->dqb_bsoftlimit == 0 && dqp->dqb_bhardlimit == 0 &&
+		    dqp->dqb_fsoftlimit == 0 && dqp->dqb_fhardlimit == 0) {
+			return (B_TRUE);
+		} else {
+			return (B_FALSE);
+		}
+	} else {
+		if (dqzp->dqbz_bsoftlimit == 0 && dqzp->dqbz_bhardlimit == 0 &&
+		    dqzp->dqbz_fsoftlimit == 0 && dqzp->dqbz_fhardlimit == 0) {
+			return (B_TRUE);
+		} else {
+			return (B_FALSE);
+		}
+	}
+}
+
+static void
+warn_dqblk_impl(struct mnttab *mntp, struct dqblk *dqp)
+{
+	struct timeval tv;
+
+	time(&(tv.tv_sec));
+	tv.tv_usec = 0;
+	if (dqp->dqb_bhardlimit &&
+	    dqp->dqb_curblocks >= dqp->dqb_bhardlimit) {
+		printf("Block limit reached on %s\n", mntp->mnt_mountp);
+	} else if (dqp->dqb_bsoftlimit &&
+	    dqp->dqb_curblocks >= dqp->dqb_bsoftlimit) {
+		if (dqp->dqb_btimelimit == 0) {
+			printf("Over disk quota on %s, remove %luK\n",
+			    mntp->mnt_mountp,
+			    kb(dqp->dqb_curblocks - dqp->dqb_bsoftlimit + 1));
+		} else if (dqp->dqb_btimelimit > tv.tv_sec) {
+			char btimeleft[80];
+
+			fmttime(btimeleft, dqp->dqb_btimelimit - tv.tv_sec);
+			printf("Over disk quota on %s, remove %luK within %s\n",
+			    mntp->mnt_mountp,
+			    kb(dqp->dqb_curblocks - dqp->dqb_bsoftlimit + 1),
+			    btimeleft);
+		} else {
+			printf("Over disk quota on %s, time limit has expired,"
+			    " remove %luK\n", mntp->mnt_mountp,
+			    kb(dqp->dqb_curblocks - dqp->dqb_bsoftlimit + 1));
+		}
+	}
+	if (dqp->dqb_fhardlimit &&
+	    dqp->dqb_curfiles >= dqp->dqb_fhardlimit) {
+		printf("File count limit reached on %s\n", mntp->mnt_mountp);
+	} else if (dqp->dqb_fsoftlimit &&
+	    dqp->dqb_curfiles >= dqp->dqb_fsoftlimit) {
+		if (dqp->dqb_ftimelimit == 0) {
+			printf("Over file quota on %s, remove %lu file%s\n",
+			    mntp->mnt_mountp,
+			    dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1,
+			    ((dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1) > 1 ?
+			    "s" : ""));
+		} else if (dqp->dqb_ftimelimit > tv.tv_sec) {
+			char ftimeleft[80];
+
+			fmttime(ftimeleft, dqp->dqb_ftimelimit - tv.tv_sec);
+			printf("Over file quota on %s, remove %lu file%s"
+			    " within %s\n", mntp->mnt_mountp,
+			    dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1,
+			    ((dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1) > 1 ?
+			    "s" : ""), ftimeleft);
+		} else {
+			printf("Over file quota on %s, time limit has expired,"
+			    " remove %lu file%s\n", mntp->mnt_mountp,
+			    dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1,
+			    ((dqp->dqb_curfiles - dqp->dqb_fsoftlimit + 1) > 1 ?
+			    "s" : ""));
+		}
+	}
+}
+
+static void
+warn_dqblk_zfs_impl(struct mnttab *mntp, struct dqblk_zfs *dqzp)
+{
+	struct timeval tv;
+
+	time(&(tv.tv_sec));
+	tv.tv_usec = 0;
+	if (dqzp->dqbz_bhardlimit &&
+	    dqzp->dqbz_curblocks >= dqzp->dqbz_bhardlimit) {
+		printf("Block limit reached on %s\n", mntp->mnt_mountp);
+	} else if (dqzp->dqbz_bsoftlimit &&
+	    dqzp->dqbz_curblocks >= dqzp->dqbz_bsoftlimit) {
+		if (dqzp->dqbz_btimelimit == 0) {
+			printf("Over disk quota on %s, remove %luK\n",
+			    mntp->mnt_mountp,
+			    kb(dqzp->dqbz_curblocks -
+			    dqzp->dqbz_bsoftlimit + 1));
+		} else if (dqzp->dqbz_btimelimit > tv.tv_sec) {
+			char btimeleft[80];
+
+			fmttime(btimeleft, dqzp->dqbz_btimelimit - tv.tv_sec);
+			printf("Over disk quota on %s, remove %luK within %s\n",
+			    mntp->mnt_mountp,
+			    kb(dqzp->dqbz_curblocks -
+			    dqzp->dqbz_bsoftlimit + 1),
+			    btimeleft);
+		} else {
+			printf("Over disk quota on %s, time limit has expired,"
+			    " remove %luK\n", mntp->mnt_mountp,
+			    kb(dqzp->dqbz_curblocks -
+			    dqzp->dqbz_bsoftlimit + 1));
+		}
+	}
+	if (dqzp->dqbz_fhardlimit &&
+	    dqzp->dqbz_curfiles >= dqzp->dqbz_fhardlimit) {
+		printf("File count limit reached on %s\n", mntp->mnt_mountp);
+	} else if (dqzp->dqbz_fsoftlimit &&
+	    dqzp->dqbz_curfiles >= dqzp->dqbz_fsoftlimit) {
+		if (dqzp->dqbz_ftimelimit == 0) {
+			printf("Over file quota on %s, remove %lu file%s\n",
+			    mntp->mnt_mountp,
+			    dqzp->dqbz_curfiles - dqzp->dqbz_fsoftlimit + 1,
+			    ((dqzp->dqbz_curfiles -
+			    dqzp->dqbz_fsoftlimit + 1) > 1 ?
+			    "s" : ""));
+		} else if (dqzp->dqbz_ftimelimit > tv.tv_sec) {
+			char ftimeleft[80];
+
+			fmttime(ftimeleft, dqzp->dqbz_ftimelimit - tv.tv_sec);
+			printf("Over file quota on %s, remove %lu file%s "
+			    " within %s\n", mntp->mnt_mountp,
+			    dqzp->dqbz_curfiles - dqzp->dqbz_fsoftlimit + 1,
+			    ((dqzp->dqbz_curfiles -
+			    dqzp->dqbz_fsoftlimit + 1) > 1 ?
+			    "s" : ""), ftimeleft);
+		} else {
+			printf("Over file quota on %s, time limit has expired,"
+			    " remove %lu file%s\n", mntp->mnt_mountp,
+			    dqzp->dqbz_curfiles - dqzp->dqbz_fsoftlimit + 1,
+			    ((dqzp->dqbz_curfiles -
+			    dqzp->dqbz_fsoftlimit + 1) > 1 ?
+			    "s" : ""));
+		}
+	}
+}
+
+static void
+prquota_dqblk_impl(struct mnttab *mntp, struct dqblk *dqp)
+{
+	struct timeval tv;
+	char ftimeleft[80], btimeleft[80];
+	char *cp;
+
+	time(&(tv.tv_sec));
+	tv.tv_usec = 0;
+	if (dqp->dqb_bsoftlimit && dqp->dqb_curblocks >= dqp->dqb_bsoftlimit) {
+		if (dqp->dqb_btimelimit == 0) {
+			strlcpy(btimeleft, "NOT STARTED", sizeof (btimeleft));
+		} else if (dqp->dqb_btimelimit > tv.tv_sec) {
+			fmttime(btimeleft, dqp->dqb_btimelimit - tv.tv_sec);
+		} else {
+			strlcpy(btimeleft, "EXPIRED", sizeof (btimeleft));
+		}
+	} else {
+		btimeleft[0] = '\0';
+	}
+	if (dqp->dqb_fsoftlimit && dqp->dqb_curfiles >= dqp->dqb_fsoftlimit) {
+		if (dqp->dqb_ftimelimit == 0) {
+			strlcpy(ftimeleft, "NOT STARTED", sizeof (ftimeleft));
+		} else if (dqp->dqb_ftimelimit > tv.tv_sec) {
+			fmttime(ftimeleft, dqp->dqb_ftimelimit - tv.tv_sec);
+		} else {
+			strlcpy(ftimeleft, "EXPIRED", sizeof (ftimeleft));
+		}
+	} else {
+		ftimeleft[0] = '\0';
+	}
+	if (strlen(mntp->mnt_mountp) > 12) {
+		printf("%s\n", mntp->mnt_mountp);
+		cp = "";
+	} else {
+		cp = mntp->mnt_mountp;
+	}
+
+	if (dqp->dqb_curfiles == 0 &&
+	    dqp->dqb_fsoftlimit == 0 && dqp->dqb_fhardlimit == 0) {
+		printf("%-12.12s %7d %6d %6d %11s %6s %6s %6s %11s\n",
+		    cp,
+		    kb(dqp->dqb_curblocks),
+		    kb(dqp->dqb_bsoftlimit),
+		    kb(dqp->dqb_bhardlimit),
+		    "-",
+		    "-",
+		    "-",
+		    "-",
+		    "-");
+	} else {
+		printf("%-12.12s %7d %6d %6d %11s %6d %6d %6d %11s\n",
+		    cp,
+		    kb(dqp->dqb_curblocks),
+		    kb(dqp->dqb_bsoftlimit),
+		    kb(dqp->dqb_bhardlimit),
+		    btimeleft,
+		    dqp->dqb_curfiles,
+		    dqp->dqb_fsoftlimit,
+		    dqp->dqb_fhardlimit,
+		    ftimeleft);
+	}
+}
+
+static void
+prquota_dqblk_zfs_impl(struct mnttab *mntp, struct dqblk_zfs *dqzp)
+{
+	struct timeval tv;
+	char ftimeleft[80], btimeleft[80];
+	char *cp;
+
+	time(&(tv.tv_sec));
+	tv.tv_usec = 0;
+	if (dqzp->dqbz_bsoftlimit &&
+	    dqzp->dqbz_curblocks >= dqzp->dqbz_bsoftlimit) {
+		if (dqzp->dqbz_btimelimit == 0) {
+			strlcpy(btimeleft, "NOT STARTED", sizeof (btimeleft));
+		} else if (dqzp->dqbz_btimelimit > tv.tv_sec) {
+			fmttime(btimeleft, dqzp->dqbz_btimelimit - tv.tv_sec);
+		} else {
+			strlcpy(btimeleft, "EXPIRED", sizeof (btimeleft));
+		}
+	} else {
+		btimeleft[0] = '\0';
+	}
+	if (dqzp->dqbz_fsoftlimit &&
+	    dqzp->dqbz_curfiles >= dqzp->dqbz_fsoftlimit) {
+		if (dqzp->dqbz_ftimelimit == 0) {
+			strlcpy(ftimeleft, "NOT STARTED", sizeof (ftimeleft));
+		} else if (dqzp->dqbz_ftimelimit > tv.tv_sec) {
+			fmttime(ftimeleft, dqzp->dqbz_ftimelimit - tv.tv_sec);
+		} else {
+			strlcpy(ftimeleft, "EXPIRED", sizeof (ftimeleft));
+		}
+	} else {
+		ftimeleft[0] = '\0';
+	}
+	if (strlen(mntp->mnt_mountp) > 12) {
+		printf("%s\n", mntp->mnt_mountp);
+		cp = "";
+	} else {
+		cp = mntp->mnt_mountp;
+	}
+
+	if (dqzp->dqbz_curfiles == 0 &&
+	    dqzp->dqbz_fsoftlimit == 0 && dqzp->dqbz_fhardlimit == 0) {
+		printf("%-12.12s %7llu %6llu %6llu %11s %6s %6s %6s %11s\n",
+		    cp,
+		    kb(dqzp->dqbz_curblocks),
+		    kb(dqzp->dqbz_bsoftlimit),
+		    kb(dqzp->dqbz_bhardlimit),
+		    "-",
+		    "-",
+		    "-",
+		    "-",
+		    "-");
+	} else {
+		printf("%-12.12s %7llu %6llu %6llu %11s %6d %6d %6d %11s\n",
+		    cp,
+		    kb(dqzp->dqbz_curblocks),
+		    kb(dqzp->dqbz_bsoftlimit),
+		    kb(dqzp->dqbz_bhardlimit),
+		    btimeleft,
+		    dqzp->dqbz_curfiles,
+		    dqzp->dqbz_fsoftlimit,
+		    dqzp->dqbz_fhardlimit,
+		    ftimeleft);
+	}
 }
 
 static void
 zexit(int n)
 {
 	if (g_zfs != NULL)
-		_libzfs_fini(g_zfs);
+		libzfs_fini(g_zfs);
 	exit(n);
 }
