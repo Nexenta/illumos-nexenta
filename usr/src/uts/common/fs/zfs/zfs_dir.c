@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2015 by Delphix. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -531,8 +531,6 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 	}
 	zap_cursor_fini(&zc);
 
-	VFS_RELE(zfsvfs->z_vfs);
-
 	mutex_enter(&zfsvfs->z_drain_lock);
 	zfsvfs->z_drain_state = ZFS_DRAIN_SHUTDOWN;
 	cv_broadcast(&zfsvfs->z_drain_cv);
@@ -540,23 +538,12 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 }
 
 /*
- * Sets up holds on crucial structures for an asynchronous zfs_unlinked_drain
- * call. Must be called prior to zfs_unlinked_drain.
+ * Must be called prior to zfs_unlinked_drain.
  */
 void
 zfs_unlinked_drain_prepare(zfsvfs_t *zfsvfs)
 {
 	ASSERT(!zfsvfs->z_unmounted);
-	/*
-	 * N.B. VFS_HOLD only prevents a "soft unmount" with EBUSY.
-	 * A forcible unmount will still try to unmount and detach the
-	 * underlying dataset from the vfs_t. To prevent this, before
-	 * destroying the the zfsvfs_t, zfsvfs_teardown calls
-	 * zfs_unlinked_drain_stop_wait to make sure that the unlinked
-	 * drain thread has exited. This also allows for interrupting
-	 * the drain in case an early export is desired.
-	 */
-	VFS_HOLD(zfsvfs->z_vfs);
 
 	mutex_enter(&zfsvfs->z_drain_lock);
 	ASSERT(zfsvfs->z_drain_state == ZFS_DRAIN_SHUTDOWN);
