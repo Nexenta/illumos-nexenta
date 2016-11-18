@@ -33,8 +33,6 @@
 /* For the output DataOffset fields in here. */
 #define	DATA_OFF	(SMB2_HDR_SIZE + 8)
 
-static smb_sdrc_t smb2_change_notify_async(smb_request_t *);
-
 smb_sdrc_t
 smb2_change_notify(smb_request_t *sr)
 {
@@ -68,6 +66,16 @@ smb2_change_notify(smb_request_t *sr)
 	if (status != 0)
 		goto errout; /* Bad FID */
 
+	/*
+	 * Only deal with change notify last in a compound,
+	 * because it blocks indefinitely.  This status gets
+	 * "sticky" handling in smb2sr_work().
+	 */
+	if (sr->smb2_next_command != 0) {
+		status = NT_STATUS_INSUFFICIENT_RESOURCES;
+		goto errout;
+	}
+
 	CompletionFilter &= FILE_NOTIFY_VALID_MASK;
 	if (iFlags & SMB2_WATCH_TREE)
 		CompletionFilter |= FILE_NOTIFY_CHANGE_EV_SUBDIR;
@@ -79,11 +87,18 @@ smb2_change_notify(smb_request_t *sr)
 	 * Check for events and consume, non-blocking.
 	 * Special return STATUS_PENDING means:
 	 *   No events; caller must call "act2" next.
-	 * SMB2 does that in the "async" handler.
+	 * SMB2 does that in "async mode".
 	 */
 	status = smb_notify_act1(sr, oBufLength, CompletionFilter);
 	if (status == NT_STATUS_PENDING) {
-		status = smb2sr_go_async(sr, smb2_change_notify_async);
+		status = smb2sr_go_async(sr);
+		if (status != 0)
+			goto errout;
+		status = smb_notify_act2(sr);
+		if (status == NT_STATUS_PENDING) {
+			/* See next: smb2_change_notify_finish */
+			return (SDRC_SR_KEPT);
+		}
 	}
 
 errout:
@@ -106,30 +121,6 @@ errout:
 }
 
 /*
- * This is called when the dispatch loop has made it to the end of a
- * compound request, and we had a notify that will require blocking.
- */
-static smb_sdrc_t
-smb2_change_notify_async(smb_request_t *sr)
-{
-	uint32_t status;
-
-	status = smb_notify_act2(sr);
-	if (status == NT_STATUS_PENDING) {
-		/* See next: smb2_change_notify_finish */
-		return (SDRC_SR_KEPT);
-	}
-
-	/* Note: Never NT_STATUS_NOTIFY_ENUM_DIR here. */
-	ASSERT(status != NT_STATUS_NOTIFY_ENUM_DIR);
-
-	if (status != 0)
-		smb2sr_put_error(sr, status);
-
-	return (SDRC_SUCCESS);
-}
-
-/*
  * This is called via taskq_dispatch in smb_notify.c
  * to finish up an NT transact notify change request.
  * Build an SMB2 Change Notify reply and send it.
@@ -137,7 +128,8 @@ smb2_change_notify_async(smb_request_t *sr)
 void
 smb2_change_notify_finish(void *arg)
 {
-	smb_request_t	*sr = arg;
+	smb_request_t *sr = arg;
+	smb_disp_stats_t *sds;
 	uint32_t status;
 	uint32_t oBufLength;
 
@@ -148,8 +140,12 @@ smb2_change_notify_finish(void *arg)
 	 */
 	status = smb_notify_act3(sr);
 
+	/*
+	 * The prior thread returned SDRC_SR_KEPT and skiped
+	 * the dtrace DONE probe, so fire that here.
+	 */
 	sr->smb2_status = status;
-	DTRACE_SMB2_DONE2(op__ChangeNotify, smb_request_t *, sr);
+	DTRACE_SMB2_DONE(op__ChangeNotify, smb_request_t *, sr);
 
 	if (status == 0 || status == NT_STATUS_NOTIFY_ENUM_DIR) {
 		sr->smb2_status = status;
@@ -165,5 +161,24 @@ smb2_change_notify_finish(void *arg)
 		smb2sr_put_error(sr, status);
 	}
 
-	smb2sr_finish_async(sr);
+	/*
+	 * Record some statistics: (just tx bytes here)
+	 */
+	sds = &sr->session->s_server->sv_disp_stats2[SMB2_CHANGE_NOTIFY];
+	atomic_add_64(&sds->sdt_txb, (int64_t)(sr->reply.chain_offset));
+
+	/*
+	 * Put (overwrite) the final SMB2 header,
+	 * sign, send.
+	 */
+	(void) smb2_encode_header(sr, B_TRUE);
+	if (sr->smb2_hdr_flags & SMB2_FLAGS_SIGNED)
+		smb2_sign_reply(sr);
+	smb2_send_reply(sr);
+
+	mutex_enter(&sr->sr_mutex);
+	sr->sr_state = SMB_REQ_STATE_COMPLETED;
+	mutex_exit(&sr->sr_mutex);
+
+	smb_request_free(sr);
 }

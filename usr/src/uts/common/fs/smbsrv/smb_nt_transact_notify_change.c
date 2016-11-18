@@ -226,7 +226,12 @@ smb_nt_transact_notify_finish(void *arg)
 	    &xa->rep_data_mb);
 
 sendit:
-	DTRACE_SMB_DONE2(op__NtTransactNotify, smb_request_t *, sr);
+	/*
+	 * When smb_nt_transact_notify_change returned SDRC_SR_KEPT
+	 * the dispatcher skipped the "done" probe, so do it now.
+	 * Note: Don't use this probe in response time statistics.
+	 */
+	DTRACE_SMB_DONE(op__NtTransact, smb_request_t *, sr);
 
 	sds = &sr->sr_server->sv_disp_stats1[sr->smb_com];
 	atomic_add_64(&sds->sdt_txb, (int64_t)sr->reply.chain_offset);

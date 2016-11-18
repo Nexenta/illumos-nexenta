@@ -28,11 +28,9 @@ provider fksmb {
 	/* smb provider probes */
 	probe smb_start(char *probename, unsigned long arg1);
 	probe smb_done(char *probename, unsigned long arg1);
-	probe smb_done2(char *probename, unsigned long arg1);
 	/* smb2 provider probes */
 	probe smb2_start(char *probename, unsigned long arg1);
 	probe smb2_done(char *probename, unsigned long arg1);
-	probe smb2_done2(char *probename, unsigned long arg1);
 };
 
 #pragma D attributes Evolving/Evolving/ISA provider fksmb provider

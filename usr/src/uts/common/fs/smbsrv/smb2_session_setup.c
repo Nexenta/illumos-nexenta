@@ -113,7 +113,7 @@ smb2_session_setup(smb_request_t *sr)
 	 *	    s->IsMultiChannelCapable == False)
 	 *		return (error...)
 	 */
-	if (sr->smb2_hdr_flags & SMB2_SESSION_FLAG_BINDING) {
+	if (Flags & SMB2_SESSION_FLAG_BINDING) {
 		status = NT_STATUS_REQUEST_NOT_ACCEPTED;
 		goto errout;
 	}

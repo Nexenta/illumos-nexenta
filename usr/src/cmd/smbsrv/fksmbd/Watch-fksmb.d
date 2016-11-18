@@ -16,7 +16,7 @@
 /*
  * Example using the "fksmb$pid" dtrace provider.
  * Traces all SMB commands using the probes:
- *	start, done, done2
+ *	start, done
  * all of which have two args:
  *	args[0]: char * (probe-name)
  *	args[1]: ulong (struct smb_request *)
@@ -37,8 +37,7 @@ fksmb$target:::smb_start
 	    this->sr->smb_tid);
 }
 
-fksmb$target:::smb_done,
-fksmb$target:::smb_done2
+fksmb$target:::smb_done
 {
 	this->pn = copyinstr(arg0);
 	this->sr = (userland pid`smb_request_t *)arg1;
@@ -61,8 +60,7 @@ fksmb$target:::smb2_start
 	    this->sr->smb_tid);
 }
 
-fksmb$target:::smb2_done,
-fksmb$target:::smb2_done2
+fksmb$target:::smb2_done
 {
 	this->pn = copyinstr(arg0);
 	this->sr = (userland pid`smb_request_t *)arg1;

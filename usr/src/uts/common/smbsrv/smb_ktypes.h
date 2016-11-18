@@ -1876,9 +1876,8 @@ typedef struct smb_request {
 
 	boolean_t		encrypted;
 
+	boolean_t		smb2_async;
 	uint64_t		smb2_async_id;
-	struct smb2_async_req	*sr_async_req;
-
 	/* Parameters */
 	struct mbuf_chain	smb_vwv;	/* variable width value */
 

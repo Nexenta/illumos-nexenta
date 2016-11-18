@@ -46,6 +46,7 @@ void	smb2_dispatch_stats_update(smb_server_t *,
 
 int	smb2sr_newrq(smb_request_t *);
 void	smb2sr_work(smb_request_t *);
+uint32_t smb2sr_go_async(smb_request_t *);
 void	smb2_network_disconnect(smb_session_t *);
 
 int smb2_decode_header(smb_request_t *);
@@ -126,8 +127,6 @@ uint32_t smb2_setinfo_file(smb_request_t *, smb_setinfo_t *, int);
 uint32_t smb2_setinfo_fs(smb_request_t *, smb_setinfo_t *, int);
 uint32_t smb2_setinfo_sec(smb_request_t *, smb_setinfo_t *, uint32_t);
 uint32_t smb2_setinfo_quota(smb_request_t *, smb_setinfo_t *);
-
-void smb2sr_finish_async(smb_request_t *);
 
 void smb2_scoreboard_init(smb_session_t *);
 void smb2_scoreboard_fini(smb_session_t *);

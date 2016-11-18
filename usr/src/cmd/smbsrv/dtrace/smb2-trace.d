@@ -90,20 +90,3 @@ smb2:::op-Write-done
 	       args[1]->soi_mid,
 	       args[1]->soi_status);
 }
-
-/*
- * We have a few operations that can "go async", which means
- * they block for a (potentially) long time.  In particular,
- * ChangeNotify can block for hours.  If you're deriving a
- * new script from this to analyze processing times, you'll
- * want to leave these out (or handle separately) otherwise
- * these would badly distort processing time statistics.
- */
-smb2:::op-ChangeNotify-done2,
-smb2:::op-Lock-done2
-{
-	printf("clnt=%s mid=0x%x status=0x%x\n",
-	       args[0]->ci_remote,
-	       args[1]->soi_mid,
-	       args[1]->soi_status);
-}

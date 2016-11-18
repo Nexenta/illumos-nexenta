@@ -246,27 +246,19 @@ extern "C" {
 	DTRACE_PROBE3(__nfsv4_##name, type1, arg1, type2, arg2, type3, arg3);
 
 /*
- * These are done a little differently from the other probes in
- * this file for the benefit of the fksmbd USDT provider.
+ * The SMB probes are done a little differently from the other probes
+ * in this file for the benefit of the libfksmbsrv USDT provider.
  * See: lib/smbsrv/libfksmbsrv/common/sys/sdt.h
  */
-#define	DTRACE_SMB_1(name, type1, arg1) \
-	DTRACE_PROBE1(__smb_##name, type1, arg1);
 #define	DTRACE_SMB_START(name, type1, arg1) \
 	DTRACE_PROBE1(__smb_##name##__start, type1, arg1);
 #define	DTRACE_SMB_DONE(name, type1, arg1) \
 	DTRACE_PROBE1(__smb_##name##__done, type1, arg1);
-#define	DTRACE_SMB_DONE2(name, type1, arg1) \
-	DTRACE_PROBE1(__smb_##name##__done2, type1, arg1);
 
-#define	DTRACE_SMB2_1(name, type1, arg1) \
-	DTRACE_PROBE1(__smb2_##name, type1, arg1);
 #define	DTRACE_SMB2_START(name, type1, arg1) \
 	DTRACE_PROBE1(__smb2_##name##__start, type1, arg1);
 #define	DTRACE_SMB2_DONE(name, type1, arg1) \
 	DTRACE_PROBE1(__smb2_##name##__done, type1, arg1);
-#define	DTRACE_SMB2_DONE2(name, type1, arg1) \
-	DTRACE_PROBE1(__smb2_##name##__done2, type1, arg1);
 
 #define	DTRACE_IP(name)						\
 	DTRACE_PROBE(__ip_##name);

@@ -57,8 +57,6 @@ extern "C" {
 	FKSMB_SMB_START(#name, (unsigned long)arg1)
 #define	DTRACE_SMB_DONE(name, type1, arg1) \
 	FKSMB_SMB_DONE(#name, (unsigned long)arg1)
-#define	DTRACE_SMB_DONE2(name, type1, arg1) \
-	FKSMB_SMB_DONE2(#name, (unsigned long)arg1)
 
 /*
  * Map "smb2" provider probes.
@@ -68,8 +66,6 @@ extern "C" {
 	FKSMB_SMB2_START(#name, (unsigned long)arg1)
 #define	DTRACE_SMB2_DONE(name, type1, arg1) \
 	FKSMB_SMB2_DONE(#name, (unsigned long)arg1)
-#define	DTRACE_SMB2_DONE2(name, type1, arg1) \
-	FKSMB_SMB2_DONE2(#name, (unsigned long)arg1)
 
 /*
  * These are for the other (specialized) dtrace SDT probes sprinkled
