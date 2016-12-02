@@ -2885,7 +2885,7 @@ retry:
 		VFS_RELE(zfsvfs->z_vfs);
 	}
 
-	if (rv != 0)
+	if (rv == 0)
 		autosnap_force_snap_by_name(dsname, NULL, B_FALSE);
 
 	spa_close(spa, FTAG);

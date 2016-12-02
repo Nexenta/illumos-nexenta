@@ -1131,8 +1131,19 @@ dsl_props_set_sync(void *arg, dmu_tx_t *tx)
 	dsl_props_set_arg_t *dpsa = arg;
 	dsl_pool_t *dp = dmu_tx_pool(tx);
 	dsl_dataset_t *ds;
+	objset_t *os = NULL;
 
 	VERIFY0(dsl_dataset_hold(dp, dpsa->dpsa_dsname, FTAG, &ds));
+	/*
+	 * Need to initialize os, to be sure that non-mounted datasets and
+	 * non-exposed zvols will receive notification about modified
+	 * properties.
+	 * During the initialization a property can register its callback
+	 * that will be called if the property is changed.
+	 * dsl_props_set_sync_impl() calls dsl_prop_changed_notify()
+	 * that calls the required callback if it exists.
+	 */
+	VERIFY0(dmu_objset_from_ds(ds, &os));
 	dsl_props_set_sync_impl(ds, dpsa->dpsa_source, dpsa->dpsa_props, tx);
 	dsl_dataset_rele(ds, FTAG);
 }
