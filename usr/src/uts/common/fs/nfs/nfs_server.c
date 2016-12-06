@@ -1666,21 +1666,24 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 
 		if (exi != NULL) {
 			rw_enter(&exported_lock, RW_READER);
+			exi_ksp = NULL;
 
-			switch (req->rq_vers) {
-			case NFS_VERSION:
-				exi_ksp = (disptable == rfs_disptable) ?
-				    exi->exi_kstats->rfsprocio_v2_ptr[which] :
-				    exi->exi_kstats->aclprocio_v2_ptr[which];
-				break;
-			case NFS_V3:
-				exi_ksp = (disptable == rfs_disptable) ?
-				    exi->exi_kstats->rfsprocio_v3_ptr[which] :
-				    exi->exi_kstats->aclprocio_v3_ptr[which];
-				break;
-			default:
-				ASSERT(0);
-				break;
+			if (exi->exi_kstats != NULL) {
+				switch (req->rq_vers) {
+				case NFS_VERSION:
+					exi_ksp = (disptable == rfs_disptable) ?
+					    exi->exi_kstats->rfsprocio_v2_ptr[which] :
+					    exi->exi_kstats->aclprocio_v2_ptr[which];
+					break;
+				case NFS_V3:
+					exi_ksp = (disptable == rfs_disptable) ?
+					    exi->exi_kstats->rfsprocio_v3_ptr[which] :
+					    exi->exi_kstats->aclprocio_v3_ptr[which];
+					break;
+				default:
+					ASSERT(0);
+					break;
+				}
 			}
 
 			if (exi_ksp != NULL) {

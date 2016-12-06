@@ -5910,8 +5910,11 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			}
 
 			if (resop->exi != NULL) {
-				exi_ksp = resop->exi->exi_kstats->
-				    rfsprocio_v4_ptr[op];
+				exi_ksp = NULL;
+				if (resop->exi->exi_kstats != NULL) {
+					exi_ksp = resop->exi->exi_kstats->
+					    rfsprocio_v4_ptr[op];
+				}
 				if (exi_ksp != NULL) {
 					mutex_enter(exi_ksp->ks_lock);
 					kstat_runq_enter(KSTAT_IO_PTR(exi_ksp));
@@ -5930,8 +5933,11 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			if (rfsv4disptab[op].op_type == NFS4_OP_POSTCFH &&
 			    *cs.statusp == NFS4_OK &&
 			    (resop->exi = cs.exi) != NULL) {
-				exi_ksp = resop->exi->exi_kstats->
-				    rfsprocio_v4_ptr[op];
+				exi_ksp = NULL;
+				if (resop->exi->exi_kstats != NULL) {
+					exi_ksp = resop->exi->exi_kstats->
+					    rfsprocio_v4_ptr[op];
+				}
 			}
 
 			if (exi_ksp != NULL) {
@@ -6105,11 +6111,12 @@ rfs4_compound_kstat_res(COMPOUND4res *res)
 			}
 
 			if (exi != NULL) {
-				kstat_t *exi_ksp;
+				kstat_t *exi_ksp = NULL;
 
 				rw_enter(&exported_lock, RW_READER);
 
-				exi_ksp = exi->exi_kstats->rfsprocio_v4_ptr[op];
+				if (exi->exi_kstats != NULL)
+					exi_ksp = exi->exi_kstats->rfsprocio_v4_ptr[op];
 				if (exi_ksp != NULL) {
 					mutex_enter(exi_ksp->ks_lock);
 					KSTAT_IO_PTR(exi_ksp)->nread +=
