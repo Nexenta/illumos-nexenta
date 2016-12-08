@@ -188,6 +188,21 @@
 /* set this tunable to zero to disable asynchronous freeing of files */
 boolean_t zfs_do_async_free = B_TRUE;
 
+/*
+ * This value will be multiplied by zfs_dirty_data_max to determine
+ * the threshold past which we will call zfs_inactive_impl() async.
+ *
+ * Selecting the multiplier is a balance between how long we're willing to wait
+ * for delete/free to complete (get shell back, have a NFS thread captive, etc)
+ * and reducing the number of active requests in the backing taskq.
+ *
+ * 4 GiB (zfs_dirty_data_max default) * 16 (multiplier default) = 64 GiB
+ * meaning by default we will call zfs_inactive_impl async for vnodes > 64 GiB
+ *
+ * Set this tunable to zero to disable asynchronous freeing of files
+ */
+uint16_t zfs_inactive_async_multiplier = 16;
+
 int nms_worm_transition_time = 30;
 int
 zfs_worm_in_trans(znode_t *zp)
@@ -4613,6 +4628,7 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 		return; /* z_teardown_inactive_lock already dropped */
 
 	if (zfs_do_async_free &&
+	    zp->z_size > zfs_inactive_async_multiplier * zfs_dirty_data_max &&
 	    taskq_dispatch(dsl_pool_vnrele_taskq(
 	    dmu_objset_pool(zp->z_zfsvfs->z_os)), zfs_inactive_task,
 	    zp, TQ_NOSLEEP) != NULL) {
