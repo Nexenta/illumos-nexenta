@@ -1909,6 +1909,7 @@ file path=opt/zfs-tests/tests/functional/mmap/setup mode=0555
 file path=opt/zfs-tests/tests/functional/mount/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/mount/setup mode=0555
 file path=opt/zfs-tests/tests/functional/mount/umount_001 mode=0555
+file path=opt/zfs-tests/tests/functional/mount/umount_002 mode=0555
 file path=opt/zfs-tests/tests/functional/mount/umountall_001 mode=0555
 file path=opt/zfs-tests/tests/functional/mv_files/cleanup mode=0555
 file path=opt/zfs-tests/tests/functional/mv_files/mv_files.cfg mode=0555

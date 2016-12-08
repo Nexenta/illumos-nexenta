@@ -4527,6 +4527,8 @@ zfs_znode_free_invalid(znode_t *zp)
 		vp->v_count = 0;
 		mutex_exit(&vp->v_lock);
 		mutex_exit(&zp->z_lock);
+		VERIFY(atomic_dec_32_nv(&zfsvfs->z_znodes_freeing_cnt) !=
+		    UINT32_MAX);
 		rw_exit(&zfsvfs->z_teardown_inactive_lock);
 		zfs_znode_free(zp);
 		return (B_TRUE);
@@ -4579,6 +4581,9 @@ zfs_inactive_impl(znode_t *zp)
 	}
 
 	zfs_zinactive(zp);
+
+	VERIFY(atomic_dec_32_nv(&zfsvfs->z_znodes_freeing_cnt) != UINT32_MAX);
+
 	rw_exit(&zfsvfs->z_teardown_inactive_lock);
 }
 
@@ -4601,10 +4606,13 @@ zfs_inactive(vnode_t *vp, cred_t *cr, caller_context_t *ct)
 	zfsvfs_t *zfsvfs = zp->z_zfsvfs;
 
 	rw_enter(&zfsvfs->z_teardown_inactive_lock, RW_READER_STARVEWRITER);
+
+	VERIFY(atomic_inc_32_nv(&zfsvfs->z_znodes_freeing_cnt) != 0);
+
 	if (zfs_znode_free_invalid(zp))
 		return; /* z_teardown_inactive_lock already dropped */
 
-	if (zfs_do_async_free != B_FALSE &&
+	if (zfs_do_async_free &&
 	    taskq_dispatch(dsl_pool_vnrele_taskq(
 	    dmu_objset_pool(zp->z_zfsvfs->z_os)), zfs_inactive_task,
 	    zp, TQ_NOSLEEP) != NULL) {

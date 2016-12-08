@@ -1103,8 +1103,7 @@ be_copy(nvlist_t *be_attrs)
 	}
 
 	/* Unmount the new BE */
-	if ((ret = _be_unmount(bt.nbe_name,
-	    BE_UNMOUNT_FLAG_FORCE)) != BE_SUCCESS) {
+	if ((ret = _be_unmount(bt.nbe_name, 0)) != BE_SUCCESS) {
 		be_print_err(gettext("be_copy: failed to "
 		    "unmount newly created BE\n"));
 		goto done;

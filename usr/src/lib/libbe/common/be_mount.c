@@ -841,8 +841,7 @@ cleanup:
 
 	/* If we mounted this BE, unmount it */
 	if (mounted_here) {
-		if ((err = _be_unmount(be_name,
-		    BE_UNMOUNT_FLAG_FORCE)) != BE_SUCCESS) {
+		if ((err = _be_unmount(be_name, 0)) != BE_SUCCESS) {
 			be_print_err(gettext("be_get_legacy_fs: "
 			    "failed to unmount %s\n"), be_name);
 			if (ret == BE_SUCCESS)

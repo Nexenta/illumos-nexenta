@@ -50,6 +50,7 @@
 #include "fs/fs_subr.h"
 #include <sys/zap.h>
 #include <sys/dmu.h>
+#include <sys/dmu_objset.h>
 #include <sys/atomic.h>
 #include <sys/zfs_ctldir.h>
 #include <sys/zfs_fuid.h>
@@ -476,11 +477,10 @@ zfs_unlinked_add(znode_t *zp, dmu_tx_t *tx)
 
 /*
  * Clean up any znodes that had no links when we either crashed or
- * (force) umounted the file system. Caller or invoking thread must
- * first call zfs_unlinked_drain_prepare to set up proper holds.
+ * (force) umounted the file system.
  */
-void
-zfs_unlinked_drain(zfsvfs_t *zfsvfs)
+static void
+zfs_unlinked_drain_impl(zfsvfs_t *zfsvfs)
 {
 	zap_cursor_t	zc;
 	zap_attribute_t zap;
@@ -538,10 +538,12 @@ zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 }
 
 /*
- * Must be called prior to zfs_unlinked_drain.
+ * Setup required hold. After that tries to dispatch
+ * async unlinked drain logic. Otherwise executes
+ * the logic synchronously.
  */
 void
-zfs_unlinked_drain_prepare(zfsvfs_t *zfsvfs)
+zfs_unlinked_drain(zfsvfs_t *zfsvfs)
 {
 	ASSERT(!zfsvfs->z_unmounted);
 
@@ -549,6 +551,14 @@ zfs_unlinked_drain_prepare(zfsvfs_t *zfsvfs)
 	ASSERT(zfsvfs->z_drain_state == ZFS_DRAIN_SHUTDOWN);
 	zfsvfs->z_drain_state = ZFS_DRAIN_RUNNING;
 	mutex_exit(&zfsvfs->z_drain_lock);
+
+	if (taskq_dispatch(dsl_pool_vnrele_taskq(
+	    spa_get_dsl(zfsvfs->z_os->os_spa)),
+	    (void (*)(void *))zfs_unlinked_drain_impl, zfsvfs,
+	    TQ_NOSLEEP) == NULL) {
+		cmn_err(CE_WARN, "async zfs_unlinked_drain dispatch failed");
+		zfs_unlinked_drain_impl(zfsvfs);
+	}
 }
 
 /*

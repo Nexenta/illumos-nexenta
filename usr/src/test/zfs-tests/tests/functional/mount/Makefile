@@ -11,6 +11,7 @@
 
 #
 # Copyright (c) 2013 by Delphix. All rights reserved.
+# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
 #
 
 include $(SRC)/Makefile.master
@@ -20,6 +21,7 @@ TESTDIR = $(ROOTOPTPKG)/tests/functional/mount
 
 PROGS = cleanup \
 	umount_001 \
+	umount_002 \
 	umountall_001 \
 	setup
 

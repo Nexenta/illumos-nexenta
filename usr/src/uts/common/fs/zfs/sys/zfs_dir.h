@@ -21,6 +21,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_SYS_FS_ZFS_DIR_H
@@ -63,7 +64,6 @@ extern void zfs_dl_name_switch(zfs_dirlock_t *dl, char *new, char **old);
 extern boolean_t zfs_dirempty(znode_t *);
 extern void zfs_unlinked_add(znode_t *, dmu_tx_t *);
 extern void zfs_unlinked_drain(zfsvfs_t *zfsvfs);
-extern void zfs_unlinked_drain_prepare(zfsvfs_t *zfsvfs);
 extern void zfs_unlinked_drain_stop_wait(zfsvfs_t *zfsvfs);
 extern int zfs_sticky_remove_access(znode_t *, znode_t *, cred_t *cr);
 extern int zfs_get_xattrdir(znode_t *, vnode_t **, cred_t *, int);
