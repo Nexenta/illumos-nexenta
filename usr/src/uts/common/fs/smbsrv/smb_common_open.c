@@ -39,6 +39,7 @@
 #include <smbsrv/smbinfo.h>
 
 int smb_disable_streams_on_share_root = 0;
+int smb_session_ofile_max = 32768;
 
 static volatile uint32_t smb_fids = 0;
 #define	SMB_UNIQ_FID()	atomic_inc_32_nv(&smb_fids)
@@ -333,7 +334,7 @@ smb_open_subr(smb_request_t *sr)
 	}
 	op->desired_access = smb_access_generic_to_file(op->desired_access);
 
-	if (sr->session->s_file_cnt >= SMB_SESSION_OFILE_MAX) {
+	if (sr->session->s_file_cnt >= smb_session_ofile_max) {
 		ASSERT(sr->uid_user);
 		cmn_err(CE_NOTE, "smbsrv[%s\\%s]: TOO_MANY_OPENED_FILES",
 		    sr->uid_user->u_domain, sr->uid_user->u_name);
