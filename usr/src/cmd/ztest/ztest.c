@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -3083,6 +3083,28 @@ online_vdev(vdev_t *vd, void *arg)
 }
 
 /*
+ * Callback function which checks that the given vdev is
+ * - not a part of replacing group
+ * - not being removed
+ * - healthy
+ */
+/* ARGSUSED */
+vdev_t *
+check_valid_vdev(vdev_t *vd, void *arg)
+{
+	spa_t *spa = vd->vdev_spa;
+
+	ASSERT(spa_config_held(spa, SCL_STATE, RW_READER) == SCL_STATE);
+	ASSERT(vd->vdev_ops->vdev_op_leaf);
+
+	if (vd->vdev_parent->vdev_ops == &vdev_replacing_ops ||
+	    vd->vdev_removing || vd->vdev_state != VDEV_STATE_HEALTHY)
+		return (NULL);
+
+	return (vd);
+}
+
+/*
  * Traverse the vdev tree calling the supplied function.
  * We continue to walk the tree until we either have walked all
  * children or we receive a non-NULL return from the callback.
@@ -4729,12 +4751,28 @@ ztest_get_random_vdev_leaf(spa_t *spa)
 	uint64_t top = 0;
 
 	spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
-	/* Pick first leaf of a random top-level vdev */
-	top = ztest_random_vdev_top(spa, B_TRUE);
-	tvd = spa->spa_root_vdev->vdev_child[top];
-	lvd = vdev_walk_tree(tvd, NULL, NULL);
-	ASSERT3P(lvd, !=, NULL);
-	ASSERT(lvd->vdev_ops->vdev_op_leaf);
+
+	for (;;) {
+		/* Pick a leaf of a random top-level vdev */
+		top = ztest_random_vdev_top(spa, B_TRUE);
+		tvd = spa->spa_root_vdev->vdev_child[top];
+		lvd = vdev_walk_tree(tvd, check_valid_vdev, NULL);
+		if (lvd == NULL) {
+			/*
+			 * We cannot  return NULL and no reasons to crash.
+			 * Just let other threads to finish their work and
+			 * maybe next time we will have leaf-vdev
+			 */
+			spa_config_exit(spa, SCL_ALL, FTAG);
+			(void) poll(NULL, 0, 100);
+			spa_config_enter(spa, SCL_ALL, FTAG, RW_READER);
+			continue;
+		}
+
+		ASSERT(lvd->vdev_ops->vdev_op_leaf);
+		break;
+	}
+
 	spa_config_exit(spa, SCL_ALL, FTAG);
 
 	return (lvd);
