@@ -20,12 +20,14 @@
  */
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
 
 
 
 #include <libgen.h>
+#include <limits.h>
 #include "cfga_fp.h"
 
 /* The following are used by update_fabric_wwn_list() */
@@ -222,6 +224,7 @@ update_fabric_wwn_list(int cmd, const char *update_str, char **errstring)
 	int	fd, copy_fd, tmp_fd, new_file_flag = 0;
 	int	len, write_offset, bytes_left;
 	int	sizeof_rep_hdr = strlen(HDR);
+	int	pid_maxlen = snprintf(NULL, 0, "%d", PID_MAX) + 1;
 	char	*repbuf, *c_repbuf, *t_repbuf;
 	char	*copy_rep, *tmp_rep, *upd_str;
 	off_t	filesize, size;
@@ -303,7 +306,7 @@ update_fabric_wwn_list(int cmd, const char *update_str, char **errstring)
 
 	if (filesize > 0) {
 		if ((copy_rep = (char *)calloc(1, strlen(FAB_REPOSITORY) +
-				sizeof (COPY_EXT) + sizeof (pid_t))) == NULL) {
+				sizeof (COPY_EXT) + pid_maxlen)) == NULL) {
 			cfga_err(errstring, errno, ERR_UPD_REP, 0);
 			CLEANUP_N_RET(FPCFGA_LIB_ERR);
 		}
@@ -430,7 +433,7 @@ update_fabric_wwn_list(int cmd, const char *update_str, char **errstring)
 
 		/* construct temp file name using pid. */
 		if ((tmp_rep = (char *)calloc(1, strlen(FAB_REPOSITORY) +
-				sizeof (TMP_EXT) + sizeof (pid_t))) == NULL) {
+				sizeof (TMP_EXT) + pid_maxlen)) == NULL) {
 			cfga_err(errstring, errno, ERR_UPD_REP, 0);
 			CLEANUP_N_RET(FPCFGA_LIB_ERR);
 		}
@@ -525,7 +528,7 @@ update_fabric_wwn_list(int cmd, const char *update_str, char **errstring)
 
 		/* construct temp file name using pid. */
 		if ((tmp_rep = (char *)calloc(1, strlen(FAB_REPOSITORY) +
-				sizeof (TMP_EXT) + sizeof (pid_t))) == NULL) {
+				sizeof (TMP_EXT) + pid_maxlen)) == NULL) {
 			cfga_err(errstring, errno, ERR_UPD_REP, 0);
 			CLEANUP_N_RET(FPCFGA_LIB_ERR);
 		}
