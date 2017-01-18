@@ -1,8 +1,4 @@
 #
-# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
-#
 # CDDL HEADER START
 #
 # The contents of this file are subject to the terms of the
@@ -22,6 +18,14 @@
 #
 # CDDL HEADER END
 #
+
+
+#
+# Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+# Use is subject to license terms.
+# Copyright 2017 Nexenta Systems, Inc.
+#
+
 #
 # code: ZFS-8000-14
 # keys: ereport.fs.zfs.pool.corrupt_cache
@@ -319,7 +323,7 @@ msgstr "Fault"
 msgid "ZFS-8000-LR.severity"
 msgstr "Major"
 msgid "ZFS-8000-LR.description"
-msgstr "A ZFS device failed and even though spare(s) exist in the pool,\n     a suitable spare was not found.  Refer to %s for more information."
+msgstr "Suitable spare was not found.  Refer to %s for more information."
 msgid "ZFS-8000-LR.response"
 msgstr "No automated response will be taken."
 msgid "ZFS-8000-LR.impact"
@@ -328,18 +332,17 @@ msgid "ZFS-8000-LR.action"
 msgstr "Replace the failed device and run 'zpool clear'"
 #
 # code: ZFS-8000-M2
-# keys: fault.fs.zfs.vdev.fru_not_matched
+# keys: fault.fs.zfs.vdev.dumb_spared
 #
 msgid "ZFS-8000-M2.type"
 msgstr "Fault"
 msgid "ZFS-8000-M2.severity"
 msgstr "Major"
 msgid "ZFS-8000-M2.description"
-msgstr "A ZFS device failed which triggered a spare activation attempt.\n     Spare matching by FRU field(s) has failed.\n  Refer to %s for more information."
+msgstr "Spare matching based on sparegroup and FRU has failed.  Refer to %s for more information."
 msgid "ZFS-8000-M2.response"
 msgstr "No automated response will be taken."
 msgid "ZFS-8000-M2.impact"
 msgstr "Pool redundancy may be compromised."
 msgid "ZFS-8000-M2.action"
 msgstr "Inspect activated spare to confirm pool redundancy is intact."
-

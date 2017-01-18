@@ -18,11 +18,11 @@
 #
 # CDDL HEADER END
 #
+
 #
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
-#
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 MODULE = zfs-retire
@@ -34,3 +34,5 @@ include ../../Makefile.plugin
 LINTFLAGS += -L$(ROOT)/usr/lib/fm
 LDLIBS += -lzfs -ldevid -ldevinfo -ltopo
 LDFLAGS += -L$(ROOT)/usr/lib/fm -R/usr/lib/fm
+
+C99MODE=	$(C99_ENABLE)

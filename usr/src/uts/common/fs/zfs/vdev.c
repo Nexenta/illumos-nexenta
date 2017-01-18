@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #include <sys/zfs_context.h>
@@ -1243,10 +1243,11 @@ vdev_open(vdev_t *vd)
 	vd->vdev_min_asize = vdev_get_min_asize(vd);
 
 	/*
-	 * If this vdev is not removed, check its fault status.  If it's
-	 * faulted, bail out of the open.
+	 * If vdev isn't removed and is faulted for reasons other than failed
+	 * open, or if it's offline - bail out.
 	 */
-	if (!vd->vdev_removed && vd->vdev_faulted) {
+	if (!vd->vdev_removed && vd->vdev_faulted &&
+	    vd->vdev_label_aux != VDEV_AUX_OPEN_FAILED) {
 		ASSERT(vd->vdev_children == 0);
 		ASSERT(vd->vdev_label_aux == VDEV_AUX_ERR_EXCEEDED ||
 		    vd->vdev_label_aux == VDEV_AUX_EXTERNAL);
@@ -2517,7 +2518,8 @@ int
 vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 {
 	vdev_t *vd, *tvd, *pvd, *rvd = spa->spa_root_vdev;
-	boolean_t postevent = B_FALSE;
+	boolean_t wasoffline;
+	vdev_state_t oldstate;
 
 	spa_vdev_state_enter(spa, SCL_NONE);
 
@@ -2527,13 +2529,12 @@ vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 	if (!vd->vdev_ops->vdev_op_leaf)
 		return (spa_vdev_state_exit(spa, NULL, ENOTSUP));
 
-	postevent =
-	    (vd->vdev_offline == B_TRUE || vd->vdev_tmpoffline == B_TRUE) ?
-	    B_TRUE : B_FALSE;
+	wasoffline = (vd->vdev_offline || vd->vdev_tmpoffline);
+	oldstate = vd->vdev_state;
 
 	tvd = vd->vdev_top;
-	vd->vdev_offline = B_FALSE;
-	vd->vdev_tmpoffline = B_FALSE;
+	vd->vdev_offline = 0ULL;
+	vd->vdev_tmpoffline = 0ULL;
 	vd->vdev_checkremove = !!(flags & ZFS_ONLINE_CHECKREMOVE);
 	vd->vdev_forcefault = !!(flags & ZFS_ONLINE_FORCEFAULT);
 
@@ -2567,7 +2568,12 @@ vdev_online(spa_t *spa, uint64_t guid, uint64_t flags, vdev_state_t *newstate)
 		spa_async_request(spa, SPA_ASYNC_CONFIG_UPDATE);
 	}
 
-	if (postevent)
+	if (wasoffline ||
+	    ((oldstate == VDEV_STATE_REMOVED ||
+	    oldstate == VDEV_STATE_CANT_OPEN ||
+	    oldstate == VDEV_STATE_FAULTED) &&
+	    (vd->vdev_state == VDEV_STATE_DEGRADED ||
+	    vd->vdev_state == VDEV_STATE_HEALTHY)))
 		spa_event_notify(spa, vd, ESC_ZFS_VDEV_ONLINE);
 
 	return (spa_vdev_state_exit(spa, vd, 0));
