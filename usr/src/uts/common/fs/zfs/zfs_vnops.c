@@ -25,7 +25,7 @@
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2015 Joyent, Inc.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -199,7 +199,8 @@ boolean_t zfs_do_async_free = B_TRUE;
  * 4 GiB (zfs_dirty_data_max default) * 16 (multiplier default) = 64 GiB
  * meaning by default we will call zfs_inactive_impl async for vnodes > 64 GiB
  *
- * Set this tunable to zero to disable asynchronous freeing of files
+ * WARNING: Setting this tunable to zero will enable asynchronous freeing for
+ * all files which can have undesirable side effects.
  */
 uint16_t zfs_inactive_async_multiplier = 16;
 
