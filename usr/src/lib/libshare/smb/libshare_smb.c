@@ -923,7 +923,8 @@ struct smb_proto_option_defs {
 	    SMB_REFRESH_REFRESH },
 	{ SMB_CI_MIN_PROTOCOL, 0, MAX_VALUE_BUFLEN, protocol_validator,
 	    SMB_REFRESH_REFRESH },
-
+	{ SMB_CI_BYPASS_TRAVERSE_CHECKING, 0, 0, true_false_validator,
+	    SMB_REFRESH_REFRESH },
 };
 
 #define	SMB_OPT_NUM \

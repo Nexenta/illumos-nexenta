@@ -1399,6 +1399,21 @@ user_flag_bits[] = {
 
 static const mdb_bitmask_t
 user_priv_bits[] = {
+	/*
+	 * Old definitions of these bits, for when we're
+	 * looking at an older core file.  These happen to
+	 * have no overlap with the current definitions.
+	 */
+	{ "TAKE_OWNER",	1, 1 },
+	{ "BACKUP",	2, 2 },
+	{ "RESTORE",	4, 4 },
+	{ "SECURITY",	8, 8 },
+	/*
+	 * Current definitions
+	 */
+	{ "SECURITY",
+	    SMB_USER_PRIV_SECURITY,
+	    SMB_USER_PRIV_SECURITY },
 	{ "TAKE_OWNER",
 	    SMB_USER_PRIV_TAKE_OWNERSHIP,
 	    SMB_USER_PRIV_TAKE_OWNERSHIP },
@@ -1408,9 +1423,9 @@ user_priv_bits[] = {
 	{ "RESTORE",
 	    SMB_USER_PRIV_RESTORE,
 	    SMB_USER_PRIV_RESTORE },
-	{ "SECURITY",
-	    SMB_USER_PRIV_SECURITY,
-	    SMB_USER_PRIV_SECURITY },
+	{ "CHANGE_NOTIFY",
+	    SMB_USER_PRIV_CHANGE_NOTIFY,
+	    SMB_USER_PRIV_CHANGE_NOTIFY },
 	{ NULL, 0, 0 }
 };
 
