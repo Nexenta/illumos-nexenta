@@ -526,16 +526,72 @@ mappedread(vnode_t *vp, int nbytes, uio_t *uio)
 	return (error);
 }
 
-/*
- * Shortest time we'll attempt to cv_wait (below), in nSec.
- * This should be no less than the minimum time it normally takes
- * to block a thread and wake back up after the timeout fires.
- * Guessing 10 uSec. for now.  This can be tuned as needed.
- */
-hrtime_t zfs_qos_shortest_wait = 10000;
 
 /*
- * ZFS Quality of Service (QoS) I/O throttling
+ * ZFS I/O rate throttling
+ */
+
+#define DELAY_SHIFT 24
+
+typedef struct zfs_rate_delay {
+	uint_t rl_rate;
+	hrtime_t rl_delay;
+} zfs_rate_delay_t;
+
+/*
+ * The time we'll attempt to cv_wait (below), in nSec.
+ * This should be no less than the minimum time it normally takes
+ * to block a thread and wake back up after the timeout fires.
+ *
+ * Each table entry represents the delay for each 4MB of bandwith.
+ * we reduce the delay as the size fo the I/O increases.
+ */
+zfs_rate_delay_t zfs_rate_delay_table[] = {
+	{0, 100000},
+	{1, 100000},
+	{2, 100000},
+	{3, 100000},
+	{4, 100000},
+	{5, 50000},
+	{6, 50000},
+	{7, 50000},
+	{8, 50000},
+	{9, 25000},
+	{10, 25000},
+	{11, 25000},
+	{12, 25000},
+	{13, 12500},
+	{14, 12500},
+	{15, 12500},
+	{16, 12500},
+	{17, 6250},
+	{18, 6250},
+	{19, 6250},
+	{20, 6250},
+	{21, 3125},
+	{22, 3125},
+	{23, 3125},
+	{24, 3125},
+};
+
+#define MAX_RATE_TBL_ENTRY 24
+
+/*
+ * The delay we use should be reduced based on the size of the iorate
+ * for higher iorates we want a shorter delay.
+ */
+static inline hrtime_t
+zfs_get_delay(ssize_t iorate)
+{
+	uint_t rate = iorate >> DELAY_SHIFT;
+
+	if (rate > MAX_RATE_TBL_ENTRY)
+		rate = MAX_RATE_TBL_ENTRY;
+	return zfs_rate_delay_table[rate].rl_delay;
+}
+
+/*
+ * ZFS I/O rate throttling
  * See "Token Bucket" on Wikipedia
  *
  * This is "Token Bucket" with some modifications to avoid wait times
@@ -544,34 +600,34 @@ hrtime_t zfs_qos_shortest_wait = 10000;
  * over the rate limit, but that's a lesser evil.
  */
 static void
-zfs_qos_throttle(zfsvfs_t *zfsvfs, ssize_t iosize)
+zfs_rate_throttle(zfsvfs_t *zfsvfs, ssize_t iosize)
 {
-	zfs_qos_state_t *qos = &zfsvfs->z_qos;
+	zfs_rate_state_t *rate = &zfsvfs->z_rate;
 	hrtime_t now, delta; /* nanoseconds */
 	int64_t refill;
 
-	VERIFY(qos->qos_rate_cap > 0);
-	mutex_enter(&qos->qos_lock);
+	VERIFY(rate->rate_cap > 0);
+	mutex_enter(&rate->rate_lock);
 
 	/*
 	 * If another thread is already waiting, we must queue up behind them.
 	 * We'll wait up to 1 sec here.  We normally will resume by cv_signal,
 	 * so we don't need fine timer resolution on this wait.
 	 */
-	if (qos->qos_token_bucket < 0) {
-		qos->qos_waiters++;
+	if (rate->rate_token_bucket < 0) {
+		rate->rate_waiters++;
 		(void) cv_timedwait_hires(
-		    &qos->qos_wait_cv, &qos->qos_lock,
+		    &rate->rate_wait_cv, &rate->rate_lock,
 		    NANOSEC, TR_CLOCK_TICK, 0);
-		qos->qos_waiters--;
+		rate->rate_waiters--;
 	}
 
 	/*
 	 * How long since we last updated the bucket?
 	 */
 	now = gethrtime();
-	delta = now - qos->qos_last_update;
-	qos->qos_last_update = now;
+	delta = now - rate->rate_last_update;
+	rate->rate_last_update = now;
 	if (delta < 0)
 		delta = 0; /* paranoid */
 
@@ -579,12 +635,12 @@ zfs_qos_throttle(zfsvfs_t *zfsvfs, ssize_t iosize)
 	 * Add "tokens" for time since last update,
 	 * being careful about possible overflow.
 	 */
-	refill = (delta * qos->qos_rate_cap) / NANOSEC;
-	if (refill < 0 || refill > qos->qos_rate_cap)
-		refill = qos->qos_rate_cap; /* overflow */
-	qos->qos_token_bucket += refill;
-	if (qos->qos_token_bucket > qos->qos_rate_cap)
-		qos->qos_token_bucket = qos->qos_rate_cap;
+	refill = (delta * rate->rate_cap) / NANOSEC;
+	if (refill < 0 || refill > rate->rate_cap)
+		refill = rate->rate_cap; /* overflow */
+	rate->rate_token_bucket += refill;
+	if (rate->rate_token_bucket > rate->rate_cap)
+		rate->rate_token_bucket = rate->rate_cap;
 
 	/*
 	 * Withdraw tokens for the current I/O.* If this makes us overdrawn,
@@ -595,29 +651,36 @@ zfs_qos_throttle(zfsvfs_t *zfsvfs, ssize_t iosize)
 	 * Leave the bucket negative while we wait so other threads know to
 	 * queue up. In here, "refill" is the debt we're waiting to pay off.
 	 */
-	qos->qos_token_bucket -= iosize;
-	if (qos->qos_token_bucket < 0) {
+	rate->rate_token_bucket -= iosize;
+	if (rate->rate_token_bucket < 0) {
+		hrtime_t zfs_rate_wait = 0;
 
-		refill = -qos->qos_token_bucket;
-		DTRACE_PROBE2(zfs_qos_over, zfsvfs_t *, zfsvfs,
+		refill = rate->rate_token_bucket;
+		DTRACE_PROBE2(zfs_rate_over, zfsvfs_t *, zfsvfs,
 		    int64_t, refill);
 
-		delta = (refill * NANOSEC) / qos->qos_rate_cap;
+		if (rate->rate_cap <= 0)
+			goto nocap;
+
+		delta = (refill * NANOSEC) / rate->rate_cap;
 		delta = MIN(delta, NANOSEC);
 
-		if (delta > zfs_qos_shortest_wait) {
+		zfs_rate_wait = zfs_get_delay(rate->rate_cap);
+
+		if (delta > zfs_rate_wait) {
 			(void) cv_timedwait_hires(
-			    &qos->qos_wait_cv, &qos->qos_lock,
-			    delta, TR_NANOSEC, 0);
+			    &rate->rate_wait_cv, &rate->rate_lock,
+			    delta, TR_CLOCK_TICK, 0);
 		}
 
-		qos->qos_token_bucket += refill;
+		rate->rate_token_bucket += refill;
 	}
-	if (qos->qos_waiters > 0) {
-		cv_signal(&qos->qos_wait_cv);
+nocap:
+	if (rate->rate_waiters > 0) {
+		cv_signal(&rate->rate_wait_cv);
 	}
 
-	mutex_exit(&qos->qos_lock);
+	mutex_exit(&rate->rate_lock);
 }
 
 
@@ -687,10 +750,10 @@ zfs_read(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 
 	/*
-	 * ZFS QoS throttling
+	 * ZFS I/O rate throttling
 	 */
-	if (zfsvfs->z_qos.qos_rate_cap)
-		zfs_qos_throttle(zfsvfs, uio->uio_resid);
+	if (zfsvfs->z_rate.rate_cap)
+		zfs_rate_throttle(zfsvfs, uio->uio_resid);
 
 	/*
 	 * If we're in FRSYNC mode, sync out this znode before reading it.
@@ -884,10 +947,10 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	}
 
 	/*
-	 * ZFS QoS throttling
+	 * ZFS I/O rate throttling
 	 */
-	if (zfsvfs->z_qos.qos_rate_cap)
-		zfs_qos_throttle(zfsvfs, uio->uio_resid);
+	if (zfsvfs->z_rate.rate_cap)
+		zfs_rate_throttle(zfsvfs, uio->uio_resid);
 
 	/*
 	 * Pre-fault the pages to ensure slow (eg NFS) pages

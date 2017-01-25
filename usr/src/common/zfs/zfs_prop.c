@@ -448,9 +448,9 @@ zfs_prop_init(void)
 	zprop_register_number(ZFS_PROP_SNAPSHOT_COUNT, "snapshot_count",
 	    UINT64_MAX, PROP_DEFAULT, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
 	    "<count>", "SSCOUNT");
-	zprop_register_number(ZFS_PROP_QOS_LIMIT, "qos_limit",
+	zprop_register_number(ZFS_PROP_RATE_LIMIT, "rate_limit",
 	    UINT64_MAX, PROP_DEFAULT, ZFS_TYPE_FILESYSTEM,
-	    "<count> | none", "QOSLIMIT");
+	    "<count> | none", "RATELIMIT");
 
 	/* inherit number properties */
 	zprop_register_number(ZFS_PROP_RECORDSIZE, "recordsize",

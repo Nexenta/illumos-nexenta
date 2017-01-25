@@ -403,13 +403,13 @@ acl_inherit_changed_cb(void *arg, uint64_t newval)
 }
 
 static void
-qos_changed_cb(void *arg, uint64_t newval)
+rate_changed_cb(void *arg, uint64_t newval)
 {
 	zfsvfs_t *zfsvfs = arg;
 
 	if (newval == UINT64_MAX)
 		newval = 0;
-	zfsvfs->z_qos.qos_rate_cap = newval;
+	zfsvfs->z_rate.rate_cap = newval;
 }
 
 static int
@@ -550,7 +550,7 @@ zfs_register_callbacks(vfs_t *vfsp)
 	error = error ? error : dsl_prop_register(ds,
 	    zfs_prop_to_name(ZFS_PROP_VSCAN), vscan_changed_cb, zfsvfs);
 	error = error ? error : dsl_prop_register(ds,
-	    zfs_prop_to_name(ZFS_PROP_QOS_LIMIT), qos_changed_cb, zfsvfs);
+	    zfs_prop_to_name(ZFS_PROP_RATE_LIMIT), rate_changed_cb, zfsvfs);
 
 	dsl_pool_config_exit(dmu_objset_pool(os), FTAG);
 	if (error)
