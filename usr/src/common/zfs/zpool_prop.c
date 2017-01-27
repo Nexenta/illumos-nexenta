@@ -18,11 +18,12 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #include <sys/zio.h>
@@ -145,7 +146,7 @@ zpool_prop_init(void)
 	zprop_register_index(ZPOOL_PROP_DELEGATION, "delegation", 1,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "DELEGATION",
 	    boolean_table);
-	zprop_register_index(ZPOOL_PROP_AUTOREPLACE, "autoreplace", 0,
+	zprop_register_index(ZPOOL_PROP_AUTOREPLACE, "autoreplace", 1,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "REPLACE", boolean_table);
 	zprop_register_index(ZPOOL_PROP_LISTSNAPS, "listsnapshots", 0,
 	    PROP_DEFAULT, ZFS_TYPE_POOL, "on | off", "LISTSNAPS",
