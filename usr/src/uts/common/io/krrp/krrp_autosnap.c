@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -132,15 +132,20 @@ krrp_autosnap_destroy(krrp_autosnap_t *autosnap)
 		krrp_autosnap_cv_wait(autosnap);
 
 	autosnap->state = KRRP_AUTOSNAP_STATE_UNREGISTERED;
+	krrp_autosnap_unlock(autosnap);
 
 	autosnap_unregister_handler(autosnap->zfs_ctx);
 
+	/*
+	 * By setting autosnap->state to KRRP_AUTOSNAP_STATE_UNREGISTERED
+	 * no one can push to the queue therefore we can safely iterate
+	 * over all the elements in the queue and free them.
+	 */
 	while ((txg_item =
 	    krrp_queue_get_no_wait(autosnap->txg_to_rele)) != NULL)
 		kmem_free(txg_item, sizeof (krrp_txg_t));
 
 	krrp_queue_fini(autosnap->txg_to_rele);
-	krrp_autosnap_unlock(autosnap);
 
 	cv_destroy(&autosnap->cv);
 	mutex_destroy(&autosnap->mtx);
@@ -326,13 +331,13 @@ krrp_autosnap_txg_rele(krrp_autosnap_t *autosnap,
 {
 	krrp_txg_t *txg_item;
 
+	if (!krrp_autosnap_try_hold_to_snap_rele(autosnap))
+		return;
+
 	txg_item = kmem_zalloc(sizeof (krrp_txg_t), KM_SLEEP);
 	txg_item->txg_start = txg_start;
 	txg_item->txg_end = txg_end;
 	krrp_queue_put(autosnap->txg_to_rele, txg_item);
-
-	if (!krrp_autosnap_try_hold_to_snap_rele(autosnap))
-		return;
 
 	while (krrp_queue_length(autosnap->txg_to_rele) >
 	    autosnap->keep_snaps) {
