@@ -345,16 +345,6 @@ mptsas_create_phy_stats(mptsas_t *mpt, char *iport, dev_info_t *dip)
 
 			ps = (sas_phy_stats_t *)phyp->phy_stats->ks_data;
 
-			kstat_named_init(&ps->seconds_since_last_reset,
-			    "SecondsSinceLastReset", KSTAT_DATA_ULONGLONG);
-			kstat_named_init(&ps->tx_frames,
-			    "TxFrames", KSTAT_DATA_ULONGLONG);
-			kstat_named_init(&ps->rx_frames,
-			    "RxFrames", KSTAT_DATA_ULONGLONG);
-			kstat_named_init(&ps->tx_words,
-			    "TxWords", KSTAT_DATA_ULONGLONG);
-			kstat_named_init(&ps->rx_words,
-			    "RxWords", KSTAT_DATA_ULONGLONG);
 			kstat_named_init(&ps->invalid_dword_count,
 			    "InvalidDwordCount", KSTAT_DATA_ULONGLONG);
 			kstat_named_init(&ps->running_disparity_error_count,

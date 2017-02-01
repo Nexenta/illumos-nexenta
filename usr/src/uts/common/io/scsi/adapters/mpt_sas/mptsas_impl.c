@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
  */
@@ -544,7 +544,8 @@ mptsas_access_config_page(mptsas_t *mpt, uint8_t action, uint8_t page_type,
 		    &reply->IOCLogInfo);
 	}
 
-	if (callback(mpt, page_memp, accessp, iocstatus, iocloginfo, ap)) {
+	if (callback(mpt, page_memp, accessp, iocstatus, iocloginfo, ap)
+	    != DDI_SUCCESS) {
 		rval = DDI_FAILURE;
 		goto page_done;
 	}
@@ -2542,9 +2543,9 @@ mptsas_sasphypage_1_cb(mptsas_t *mpt, caddr_t page_memp,
 
 	if ((iocstatus != MPI2_IOCSTATUS_SUCCESS) &&
 	    (iocstatus != MPI2_IOCSTATUS_CONFIG_INVALID_PAGE)) {
-		mptsas_log(mpt, CE_WARN, "mptsas_get_sas_expander_page1 "
+		mptsas_log(mpt, CE_WARN, "%s "
 		    "config: IOCStatus=0x%x, IOCLogInfo=0x%x",
-		    iocstatus, iocloginfo);
+		    __func__, iocstatus, iocloginfo);
 		rval = DDI_FAILURE;
 		return (rval);
 	}
