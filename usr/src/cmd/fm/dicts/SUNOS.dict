@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 # CDDL HEADER START
 #
@@ -45,3 +46,4 @@ defect.sunos.eft.undiag.limit=15
 defect.sunos.eft.undiag.unknown=16
 defect.sunos.eft.unexpected_telemetry fault.sunos.eft.unexpected_telemetry=17
 defect.sunos.kernel.panic=18
+defect.sunos.system.core=19

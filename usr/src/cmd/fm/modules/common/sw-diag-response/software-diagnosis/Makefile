@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 MODULE = software-diagnosis
@@ -36,7 +37,7 @@ SWDE_SRCS = swde_main.c swde_case.c
 # Sources for subsidiary diagnosis "modules" that we host.  These should
 # be listed in ../Makefile.com
 #
-SUBDE_SRCS = $(SMF_DE_SRCS) $(PANIC_DE_SRCS)
+SUBDE_SRCS = $(SMF_DE_SRCS) $(PANIC_DE_SRCS) $(CORE_DE_SRCS)
 
 #
 # All sources for softtware-diagnosis
@@ -47,7 +48,7 @@ include ../../../Makefile.plugin
 
 CFLAGS += $(INCS)
 LINTFLAGS += $(INCS)
-LDLIBS += -L$(ROOTLIB)/fm -ltopo -luutil -luuid -lkstat
+LDLIBS += -L$(ROOTLIB)/fm -ltopo -luutil -luuid -lkstat -lproc
 LDFLAGS += -R/usr/lib/fm
 CERRWARN += -_gcc=-Wno-parentheses
 CERRWARN += -_gcc=-Wno-uninitialized

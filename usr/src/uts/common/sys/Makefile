@@ -25,7 +25,7 @@
 # Copyright 2013 Garrett D'Amore <garrett@damore.org>
 # Copyright 2013 Saso Kiselkov. All rights reserved.
 # Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
-# Copyright 2016 Nexenta Systems, Inc.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 include $(SRC)/uts/Makefile.uts
@@ -859,6 +859,9 @@ FMIOHDRS=			\
 	sun4upci.h		\
 	opl_mc_fm.h
 
+FMSWHDRS=			\
+	core.h
+
 FSHDRS=				\
 	autofs.h		\
 	decomp.h		\
@@ -1185,6 +1188,7 @@ CHECKHDRS=						\
 	$(FMHDRS:%.h=fm/%.check)			\
 	$(FMFSHDRS:%.h=fm/fs/%.check)			\
 	$(FMIOHDRS:%.h=fm/io/%.check)			\
+	$(FMSWHDRS:%.h=fm/sw/%.check)			\
 	$(FSHDRS:%.h=fs/%.check)			\
 	$(LVMHDRS:%.h=lvm/%.check)			\
 	$(SCSIHDRS:%.h=scsi/%.check)			\
@@ -1235,6 +1239,7 @@ CHECKHDRS=						\
 	$(ROOTFMHDRS)		\
 	$(ROOTFMIOHDRS)		\
 	$(ROOTFMFSHDRS)		\
+	$(ROOTFMSWHDRS)		\
 	$(ROOTFSHDRS)		\
 	$(ROOTIBDHDRS)		\
 	$(ROOTIBHDRS)		\
@@ -1304,6 +1309,7 @@ install_h:			\
 	$(ROOTFMHDRS)		\
 	$(ROOTFMFSHDRS)		\
 	$(ROOTFMIOHDRS)		\
+	$(ROOTFMSWHDRS)		\
 	$(ROOTFSHDRS)		\
 	$(ROOTIBDHDRS)		\
 	$(ROOTIBHDRS)		\

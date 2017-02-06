@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 CMN_SRCS = common/sw_main_cmn.c
@@ -29,3 +30,5 @@ SMF_DE_SRCS = subsidiary/smf/smf_diag.c $(SMF_CMN_SRCS)
 SMF_RP_SRCS = subsidiary/smf/smf_response.c $(SMF_CMN_SRCS)
 
 PANIC_DE_SRCS = subsidiary/panic/panic_diag.c 
+
+CORE_DE_SRCS = subsidiary/core/core_diag.c

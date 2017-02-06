@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 # CDDL HEADER START
 #
@@ -327,3 +328,19 @@ msgid "SUNOS-8000-KL.impact"
 msgstr "There may be some performance impact while the panic is copied to the savecore directory.  Disk space usage by panics can be substantial."
 msgid "SUNOS-8000-KL.action"
 msgstr "If savecore is not enabled then please take steps to preserve the crash image.\nUse 'fmdump -Vp -u %<uuid>' to view more panic detail.  Please refer to the knowledge article for additional information."
+#
+# code: SUNOS-8000-LG
+# keys: defect.sunos.system.core
+#
+msgid "SUNOS-8000-LG.type"
+msgstr "Defect"
+msgid "SUNOS-8000-LG.severity"
+msgstr "Major"
+msgid "SUNOS-8000-LG.description"
+msgstr "A process was terminated by OS due to unexpected failure."
+msgid "SUNOS-8000-LG.response"
+msgstr "Core of the process has been generated for later analysis."
+msgid "SUNOS-8000-LG.impact"
+msgstr "Service provided by the process may be temporarily or permanently degraded."
+msgid "SUNOS-8000-LG.action"
+msgstr "Process core should be analysed to find a root cause of the problem."

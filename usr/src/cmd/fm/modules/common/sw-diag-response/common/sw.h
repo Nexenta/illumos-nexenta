@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #ifndef	_SW_H
@@ -145,7 +146,8 @@ struct sw_disp {
 enum sw_casetype {
 	SW_CASE_NONE = 0x0ca5e000,
 	SW_CASE_SMF,
-	SW_CASE_PANIC
+	SW_CASE_PANIC,
+	SW_CASE_CORE
 };
 
 /*
@@ -175,6 +177,7 @@ struct sw_subinfo {
 extern const struct sw_subinfo smf_diag_info;
 extern const struct sw_subinfo smf_response_info;
 extern const struct sw_subinfo panic_diag_info;
+extern const struct sw_subinfo core_diag_info;
 
 /*
  * Timers - as per the fmd module API but with an additional id_t argument

@@ -20,6 +20,7 @@
 #
 # Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 # Common definitions for open and closed headers.
@@ -42,6 +43,9 @@ fm/fs/%.check:	fm/fs/%.h
 	$(DOT_H_CHECK)
 
 fm/io/%.check:	fm/io/%.h
+	$(DOT_H_CHECK)
+
+fm/sw/%.check:	fm/sw/%.h
 	$(DOT_H_CHECK)
 
 fs/%.check:	fs/%.h
@@ -194,6 +198,7 @@ ROOTDIRS=			\
 	$(ROOTDIR)/fm/cpu	\
 	$(ROOTDIR)/fm/fs	\
 	$(ROOTDIR)/fm/io	\
+	$(ROOTDIR)/fm/sw	\
 	$(ROOTDIR)/fs		\
 	$(ROOTDIR)/ib		\
 	$(ROOTDIR)/ib/adapters/tavor	\
@@ -276,6 +281,7 @@ ROOTFMHDRS= $(FMHDRS:%=$(ROOTDIR)/fm/%)
 ROOTFMCPUHDRS= $(FMCPUHDRS:%=$(ROOTDIR)/fm/cpu/%)
 ROOTFMIOHDRS= $(FMIOHDRS:%=$(ROOTDIR)/fm/io/%)
 ROOTFMFSHDRS= $(FMFSHDRS:%=$(ROOTDIR)/fm/fs/%)
+ROOTFMSWHDRS= $(FMSWHDRS:%=$(ROOTDIR)/fm/sw/%)
 
 ROOTFSHDRS= $(FSHDRS:%=$(ROOTDIR)/fs/%)
 

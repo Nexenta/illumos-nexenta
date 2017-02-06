@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, Joyent Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 /*	Copyright (c) 1984, 1986, 1987, 1988, 1989 AT&T	*/
@@ -63,6 +64,10 @@
 #include <sys/zone.h>
 #include <sys/contract/process_impl.h>
 #include <sys/ddi.h>
+#include <sys/fm/protocol.h>
+#include <sys/fm/util.h>
+#include <sys/fm/sw/core.h>
+#include <sys/sysevent.h>
 
 /*
  * Processes running within a zone potentially dump core in 3 locations,
@@ -100,6 +105,56 @@ core_log(struct core_globals *cg, int error, const char *why, const char *path,
 	else
 		zcmn_err(zoneid, CE_NOTE, "core_log: %s[%d] %s, errno=%d: %s",
 		    fn, pid, why, error, path);
+}
+
+/*
+ * Generate FMA e-report for a core.
+ */
+static void
+gen_ereport(const char *path, int sig)
+{
+	nvlist_t *ereport = NULL;
+	nvlist_t *fmri = NULL;
+	nvlist_t *sw_obj = NULL;
+	uint64_t ena;
+	char class[64];
+	proc_t *p = curproc;
+	int err = 0;
+
+	if ((ereport = fm_nvlist_create(NULL)) == NULL)
+		return;
+	if ((fmri = fm_nvlist_create(NULL)) == NULL)
+		goto out;
+	if ((sw_obj = fm_nvlist_create(NULL)) == NULL)
+		goto out;
+	ena = fm_ena_generate(0, FM_ENA_FMT1);
+
+	err |= nvlist_add_uint8(fmri, FM_VERSION, FM_SW_SCHEME_VERSION);
+	err |= nvlist_add_string(fmri, FM_FMRI_SCHEME, FM_FMRI_SCHEME_SW);
+	err |= nvlist_add_string(sw_obj, FM_FMRI_SW_OBJ_PATH, path);
+	err |= nvlist_add_nvlist(fmri, FM_FMRI_SW_OBJ, sw_obj);
+
+	if (err != 0)
+		goto out;
+
+	fm_ereport_set(ereport, FM_EREPORT_VERSION, CORE_ERROR_CLASS,
+	    ena, fmri, NULL);
+
+	fm_payload_set(ereport,
+	    FM_EREPORT_PAYLOAD_CORE_COMMAND, DATA_TYPE_STRING,
+	    p->p_exec->v_path ? p->p_exec->v_path : p->p_user.u_comm,
+	    FM_EREPORT_PAYLOAD_CORE_PSARGS, DATA_TYPE_STRING,
+	    p->p_user.u_psargs,
+	    FM_EREPORT_PAYLOAD_CORE_SIGNAL, DATA_TYPE_INT32, sig,
+	    FM_EREPORT_PAYLOAD_CORE_PATH, DATA_TYPE_STRING, path,
+	    NULL);
+
+	fm_ereport_post(ereport, EVCH_SLEEP);
+
+out:
+	fm_nvlist_destroy(sw_obj, FM_NVA_FREE);
+	fm_nvlist_destroy(ereport, FM_NVA_FREE);
+	fm_nvlist_destroy(fmri, FM_NVA_FREE);
 }
 
 /*
@@ -761,6 +816,13 @@ core(int sig, int ext)
 		    error1 == 0 ? fp_process : NULL,
 		    error2 == 0 ? fp_global : NULL,
 		    error3 == 0 ? fp_zone : NULL);
+
+	/*
+	 * FMA ereport is currently generated only for global zone cores
+	 * with global path.
+	 */
+	if (error2 == 0 && global_cg == my_cg)
+		gen_ereport(fp_global, sig);
 
 	if (fp_process != NULL)
 		kmem_free(fp_process, MAXPATHLEN);

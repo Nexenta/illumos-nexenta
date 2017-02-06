@@ -21,12 +21,15 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #include "../common/sw_impl.h"
 
 static const fmd_prop_t swde_props[] = {
 	{ "enable", FMD_TYPE_BOOL, "true" },
+	{ "core_enable", FMD_TYPE_BOOL, "true" },
+	{ "core_stacks_enable", FMD_TYPE_BOOL, "true" },
 	{ NULL, 0, NULL }
 };
 
@@ -49,7 +52,8 @@ const fmd_hdl_info_t swde_info = {
  */
 static const struct sw_subinfo *subde[SW_SUB_MAX] = {
 	&smf_diag_info,
-	&panic_diag_info
+	&panic_diag_info,
+	&core_diag_info
 };
 
 void
