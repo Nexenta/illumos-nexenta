@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -717,29 +717,62 @@ autosnap_find_zone(zfs_autosnap_t *autosnap,
 
 /* AUTOSNAP-LOCK routines */
 
+/*
+ * This function is used to serialize atomically-destroy
+ * and start a KRRP replication session (send side).
+ *
+ * Atomically-destroy logic allows a DS and nested DSs
+ * to be destroyed in one TXG.
+ *
+ * This function uses RW_LOCK, so multiple KRRP replication
+ * sessions may start in parallel. However atomically-destroy
+ * is a writer, so KRRP replication sessions will wait until it
+ * finished.
+ *
+ * if pool export or destroy are in process then the function
+ * will not hold anything and return ENOLCK.
+ *
+ * In case of receiving kill-signal (if the function was called
+ * from an ioctl handler) the function returns EINTR.
+ */
 int
-autosnap_lock(spa_t *spa)
+autosnap_lock(spa_t *spa, krw_t rw)
 {
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	int err = 0;
+	int locked = 0;
 
 	mutex_enter(&autosnap->autosnap_lock);
 
-	while (autosnap->locked && !autosnap->need_stop) {
+	locked = rw_tryenter(&autosnap->autosnap_rwlock, rw);
+	while (locked == 0 && !autosnap->need_stop) {
+#ifdef _KERNEL
+		int rc = cv_wait_sig(&autosnap->autosnap_cv,
+		    &autosnap->autosnap_lock);
+		if (rc == 0)
+			break;
+#else
 		(void) cv_wait(&autosnap->autosnap_cv,
 		    &autosnap->autosnap_lock);
+#endif
+
+		locked = rw_tryenter(&autosnap->autosnap_rwlock, rw);
 	}
 
 	if (autosnap->need_stop) {
 		err = ENOLCK;
+		if (locked != 0)
+			rw_exit(&autosnap->autosnap_rwlock);
+	} else if (locked != 0) {
+		autosnap->autosnap_lock_cnt++;
 	} else {
-		autosnap->locked = B_TRUE;
+		err = EINTR;
 	}
 
 	cv_broadcast(&autosnap->autosnap_cv);
 	mutex_exit(&autosnap->autosnap_lock);
 
-	return (err);
+	return (SET_ERROR(err));
 }
 
 void
@@ -748,9 +781,9 @@ autosnap_unlock(spa_t *spa)
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 
 	mutex_enter(&autosnap->autosnap_lock);
-	ASSERT(autosnap->locked);
+	ASSERT(autosnap->autosnap_lock_cnt != 0);
 
-	autosnap->locked = B_FALSE;
+	autosnap->autosnap_lock_cnt--;
 
 	cv_broadcast(&autosnap->autosnap_cv);
 	mutex_exit(&autosnap->autosnap_lock);
@@ -1253,6 +1286,7 @@ autosnap_init(spa_t *spa)
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 	mutex_init(&autosnap->autosnap_lock, NULL, MUTEX_ADAPTIVE, NULL);
 	cv_init(&autosnap->autosnap_cv, NULL, CV_DEFAULT, NULL);
+	rw_init(&autosnap->autosnap_rwlock, NULL, RW_DEFAULT, NULL);
 	list_create(&autosnap->autosnap_zones, sizeof (autosnap_zone_t),
 	    offsetof(autosnap_zone_t, node));
 	list_create(&autosnap->autosnap_destroy_queue,
@@ -1305,6 +1339,7 @@ autosnap_fini(spa_t *spa)
 		kmem_free(snap, sizeof (*snap));
 	list_destroy(&autosnap->autosnap_destroy_queue);
 	list_destroy(&autosnap->autosnap_zones);
+	rw_destroy(&autosnap->autosnap_rwlock);
 	mutex_destroy(&autosnap->autosnap_lock);
 	cv_destroy(&autosnap->autosnap_cv);
 }

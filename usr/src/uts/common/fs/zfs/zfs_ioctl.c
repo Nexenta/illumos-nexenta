@@ -4027,7 +4027,7 @@ zfs_ioc_destroy(zfs_cmd_t *zc)
 
 		if ((err = spa_open(zc->zc_name, &spa, FTAG)) != 0)
 			return (err);
-		err = autosnap_lock(spa);
+		err = autosnap_lock(spa, RW_WRITER);
 		if (!err) {
 			err = wbc_walk_lock(spa);
 			if (err)

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 #include <sys/autosnap.h>
 #include <sys/dmu_objset.h>
@@ -1155,7 +1155,6 @@ zfs_send_thread(void *krrp_task_void)
 	kreplication_zfs_args_t *buffer_args = &krrp_task->buffer_args;
 	list_t ds_to_send;
 	int err = 0;
-	boolean_t a_locked = B_FALSE;
 	spa_t *spa;
 	void *owner = krrp_task;
 
@@ -1195,16 +1194,17 @@ zfs_send_thread(void *krrp_task_void)
 		}
 	}
 
-	err = autosnap_lock(spa);
+	err = autosnap_lock(spa, RW_READER);
 	if (err != 0)
 		goto final;
-
-	a_locked = B_TRUE;
 
 	err = zfs_send_collect_ds(buffer_args->from_ds,
 	    buffer_args->from_incr_base, buffer_args->from_snap,
 	    buffer_args->do_all, buffer_args->recursive,
 	    &ds_to_send, owner);
+
+	autosnap_unlock(spa);
+
 	if (err != 0)
 		goto final;
 
@@ -1236,9 +1236,6 @@ final:
 
 	if (err == 0)
 		err = dmu_krrp_put_buffer(krrp_task);
-
-	if (a_locked)
-		autosnap_unlock(spa);
 
 	if (err != 0) {
 		dmu_set_send_recv_error(krrp_task, err);

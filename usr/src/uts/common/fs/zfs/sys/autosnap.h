@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 #ifndef _SYS_AUTOSNAP_H
 #define	_SYS_AUTOSNAP_H
@@ -59,12 +59,13 @@ struct zfs_autosnap {
 	avl_tree_t snapshots;
 	kmutex_t autosnap_lock;
 	kcondvar_t autosnap_cv;
+	krwlock_t autosnap_rwlock;
+	size_t autosnap_lock_cnt;
 	list_t autosnap_zones;
 	list_t autosnap_destroy_queue;
 	kthread_t *destroyer;
 	boolean_t need_stop;
 	boolean_t initialized;
-	boolean_t locked;
 };
 
 /*
@@ -147,7 +148,7 @@ void autosnap_release_snapshots_by_txg_no_lock(void *opaque,
 nvlist_t *autosnap_get_owned_snapshots(void *opaque);
 void autosnap_reap_orphaned_snaps(spa_t *spa);
 
-int autosnap_lock(spa_t *spa);
+int autosnap_lock(spa_t *spa, krw_t rw);
 void autosnap_unlock(spa_t *spa);
 
 void autosnap_collect_orphaned_snapshots(spa_t *spa);
