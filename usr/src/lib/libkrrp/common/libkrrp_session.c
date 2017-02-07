@@ -1,12 +1,14 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
+#include <libintl.h>
 #include <sys/uuid.h>
 #include <sys/debug.h>
 #include <string.h>
 #include <inttypes.h>
 
+#include <libzfs.h>
 #include <sys/krrp.h>
 #include "libkrrp.h"
 #include "libkrrp_impl.h"
@@ -313,8 +315,41 @@ krrp_sess_create_write_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
     krrp_sess_stream_flags_t krrp_sess_stream_flags, nvlist_t *ignore_props,
     nvlist_t *replace_props, const char *resume_token, uint32_t keep_snaps)
 {
+	nvlist_t *replace_props_copy = NULL;
 	nvlist_t *params = NULL;
 	int rc;
+
+	libkrrp_reset(hdl);
+
+	if (replace_props != NULL) {
+		libzfs_handle_t *libzfs_hdl;
+		char errbuf[1024];
+
+		libzfs_hdl = libzfs_init();
+		if (libzfs_hdl == NULL) {
+			libkrrp_error_set(&hdl->libkrrp_error,
+			    LIBKRRP_ERRNO_PROPS, ENOMEM, 0);
+			return (-1);
+		}
+
+		replace_props_copy = zfs_valid_proplist(libzfs_hdl,
+		    ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME,
+		    replace_props, B_FALSE, NULL, NULL, "");
+		if (replace_props_copy == NULL) {
+			libkrrp_error_set(&hdl->libkrrp_error,
+			    LIBKRRP_ERRNO_PROPS, EINVAL, 0);
+			(void) snprintf(errbuf, sizeof (errbuf),
+			    dgettext(TEXT_DOMAIN, "Failed to validate "
+			    "ZFS properties: %s"),
+			    libzfs_error_description(libzfs_hdl));
+			libkrrp_set_error_description(hdl, errbuf);
+		}
+
+		libzfs_fini(libzfs_hdl);
+
+		if (replace_props_copy == NULL)
+			return (-1);
+	}
 
 	params = fnvlist_alloc();
 
@@ -332,9 +367,10 @@ krrp_sess_create_write_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
 		    ignore_props);
 	}
 
-	if (replace_props != NULL) {
+	if (replace_props_copy != NULL) {
 		(void) krrp_param_put(KRRP_PARAM_REPLACE_PROPS_LIST, params,
-		    replace_props);
+		    replace_props_copy);
+		fnvlist_free(replace_props_copy);
 	}
 
 	if (krrp_sess_stream_flags & KRRP_STREAM_DISCARD_HEAD) {

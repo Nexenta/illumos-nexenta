@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_LIBKRRP_H_
@@ -104,6 +104,7 @@ typedef struct libkrrp_event_s libkrrp_event_t;
 	X(EVSUBSRIBEFAIL)        \
 	X(EVREADFAIL)            \
 	X(SESSERR)               \
+	X(PROPS)                 \
 
 #define	LIBKRRP_ERRNO_EXPAND(enum_name) LIBKRRP_ERRNO_##enum_name,
 typedef enum {

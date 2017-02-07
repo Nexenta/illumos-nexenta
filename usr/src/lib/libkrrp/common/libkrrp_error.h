@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_LIBKRRP_ERROR_H
@@ -170,6 +170,8 @@ typedef enum {
 	    "The number of keep snapshots must be in range (%d .. %d)"
 #define LIBKRRP_EMSG_SESS_ENOTSUP \
 	    "Operation is not supported for this type of session"
+#define LIBKRRP_EMSG_PROPS_INVAL "Failed to validate ZFS properties"
+#define LIBKRRP_EMSG_PROPS_ENOMEM "Failed to initialize ZFS library"
 
 #define	libkrrp_error_init(error) (void) memset(error, 0, \
 	    sizeof (libkrrp_error_t));
@@ -191,6 +193,8 @@ typedef enum {
 	X(EVBINDFAIL, 0, LIBKRRP_EMSG_EVBINDFAIL) \
 	X(EVSUBSRIBEFAIL, 0, LIBKRRP_EMSG_EVSUBSCRIBEFAIL) \
 	X(EVREADFAIL, 0, LIBKRRP_EMSG_EVREADFAIL) \
+	X(PROPS, EINVAL, LIBKRRP_EMSG_PROPS_INVAL) \
+	X(PROPS, ENOMEM, LIBKRRP_EMSG_PROPS_ENOMEM) \
 
 #define	UNIX_ERRNO_MAP(X) \
 	X(EPERM)	/* Not super-user			*/ \
@@ -345,6 +349,7 @@ boolean_t libkrrp_error_cmp(libkrrp_errno_t, libkrrp_errno_t, int, int, int,
 const char *krrp_unix_errno_to_str(int);
 void libkrrp_common_error_description(libkrrp_error_type_t,
     libkrrp_error_t *, libkrrp_error_descr_t);
+void libkrrp_set_error_description(libkrrp_handle_t *hdl, const char *descr);
 #ifdef	__cplusplus
 }
 #endif

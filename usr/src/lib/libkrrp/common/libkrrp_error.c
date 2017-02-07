@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <libintl.h>
@@ -369,6 +369,15 @@ libkrrp_error(libkrrp_handle_t *hdl)
 	return (&hdl->libkrrp_error);
 }
 
+void
+libkrrp_set_error_description(libkrrp_handle_t *hdl, const char *descr)
+{
+	VERIFY(hdl != NULL && hdl->libkrrp_error.libkrrp_errno != 0);
+
+	(void) strlcpy(hdl->libkrrp_error_descr,
+	    descr, sizeof (libkrrp_error_descr_t));
+}
+
 const char *
 libkrrp_error_description(libkrrp_handle_t *hdl)
 {
@@ -383,7 +392,8 @@ libkrrp_error_description(libkrrp_handle_t *hdl)
 	VERIFY(hdl != NULL);
 
 	descr = hdl->libkrrp_error_descr;
-	descr[0] = '\0';
+	if (descr[0] != '\0')
+		return (descr);
 
 	libkrrp_errno = hdl->libkrrp_error.libkrrp_errno;
 	unix_errno = hdl->libkrrp_error.unix_errno;

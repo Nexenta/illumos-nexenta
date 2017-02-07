@@ -1,5 +1,5 @@
 #
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
 #
 
 LIBRARY= libkrrp.a
@@ -33,7 +33,7 @@ INCS +=	-I../../../common/krrp
 LINTFLAGS +=	-erroff=E_INVALID_TOKEN_IN_DEFINE_MACRO
 LINTFLAGS64 +=	-erroff=E_INVALID_TOKEN_IN_DEFINE_MACRO
 
-LDLIBS +=	-lc -lnvpair -lumem -luuid -lsysevent
+LDLIBS +=	-lc -lnvpair -lumem -luuid -lsysevent -lzfs
 CPPFLAGS +=	$(INCS) -D_REENTRANT
 
 SRCS=	$(OBJS_COMMON:%.o=$(SRCDIR)/%.c)        \
