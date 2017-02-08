@@ -249,7 +249,7 @@ static void dsl_scan_enqueue(dsl_pool_t *dp, const blkptr_t *bp,
 static void scan_exec_io(dsl_pool_t *dp, const blkptr_t *bp, int zio_flags,
     const zbookmark_phys_t *zb, boolean_t limit_inflight);
 static void scan_io_queue_insert(dsl_scan_t *scn, dsl_scan_io_queue_t *queue,
-    const blkptr_t *bp, int zio_flags, const zbookmark_phys_t *zb);
+    const blkptr_t *bp, int dva_i, int zio_flags, const zbookmark_phys_t *zb);
 
 static void scan_io_queues_run_one(io_queue_run_info_t *info);
 static void scan_io_queues_run(dsl_scan_t *scn);
@@ -257,6 +257,7 @@ static mem_lim_t scan_io_queue_mem_lim(dsl_scan_t *scn);
 
 static dsl_scan_io_queue_t *scan_io_queue_create(vdev_t *vd);
 static void scan_io_queues_destroy(dsl_scan_t *scn);
+static void dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i);
 
 static inline boolean_t
 dsl_scan_is_running(const dsl_scan_t *scn)
@@ -283,11 +284,11 @@ sio2bp(const scan_io_t *sio, blkptr_t *bp)
 }
 
 static inline void
-bp2sio(const blkptr_t *bp, scan_io_t *sio)
+bp2sio(const blkptr_t *bp, scan_io_t *sio, int dva_i)
 {
-	if (!BP_IS_SPECIAL(bp))
-		ASSERT3U(BP_GET_NDVAS(bp), ==, 1);
-	sio->sio_dva = bp->blk_dva[BP_IS_SPECIAL(bp) ? WBC_NORMAL_DVA : 0];
+	if (BP_IS_SPECIAL(bp))
+		ASSERT3S(dva_i, ==, WBC_NORMAL_DVA);
+	sio->sio_dva = bp->blk_dva[dva_i];
 	sio->sio_prop = bp->blk_prop;
 	sio->sio_phys_birth = bp->blk_phys_birth;
 	sio->sio_birth = bp->blk_birth;
@@ -2525,38 +2526,34 @@ dsl_scan_enqueue(dsl_pool_t *dp, const blkptr_t *bp, int zio_flags,
     const zbookmark_phys_t *zb)
 {
 	spa_t *spa = dp->dp_spa;
-	dva_t dva;
-	vdev_t *vdev;
 
-	/*
-	 * The conditions for a block to be suitable for sorting:
-	 * 1) it must NOT be an embedded BP
-	 * 2) if it is a special BP, it must have been migrated by WBC,
-	 *	so we can ignore WBC_SPECIAL_DVA.
-	 * If any of these is violated, the block is issued for immediate
-	 * processing. Otherwise we pass it to the appropriate target
-	 * top-level vdev's queue for insertion into the queue and issue
-	 * at a later time.
-	 */
 	ASSERT(!BP_IS_EMBEDDED(bp));
-	if ((!BP_IS_SPECIAL(bp) && BP_GET_NDVAS(bp) > 1) ||
-	    (BP_IS_SPECIAL(bp) && !wbc_bp_is_migrated(spa_get_wbc_data(spa),
-	    bp)) || !dp->dp_scan->scn_is_sorted) {
+	if (!dp->dp_scan->scn_is_sorted || (BP_IS_SPECIAL(bp) &&
+	    !wbc_bp_is_migrated(spa_get_wbc_data(spa), bp))) {
 		scan_exec_io(dp, bp, zio_flags, zb, B_TRUE);
 		return;
 	}
 
-	dva = bp->blk_dva[BP_IS_SPECIAL(bp) ? WBC_NORMAL_DVA : 0];
-	vdev = vdev_lookup_top(spa, DVA_GET_VDEV(&dva));
-	ASSERT(vdev != NULL);
+	for (int i = 0; i < BP_GET_NDVAS(bp); i++) {
+		dva_t dva;
+		vdev_t *vdev;
 
-	mutex_enter(&vdev->vdev_scan_io_queue_lock);
-	if (vdev->vdev_scan_io_queue == NULL)
-		vdev->vdev_scan_io_queue = scan_io_queue_create(vdev);
-	ASSERT(dp->dp_scan != NULL);
-	scan_io_queue_insert(dp->dp_scan, vdev->vdev_scan_io_queue, bp,
-	    zio_flags, zb);
-	mutex_exit(&vdev->vdev_scan_io_queue_lock);
+		/* On special BPs we only support handling the normal DVA */
+		if (BP_IS_SPECIAL(bp) && i != WBC_NORMAL_DVA)
+			continue;
+
+		dva = bp->blk_dva[i];
+		vdev = vdev_lookup_top(spa, DVA_GET_VDEV(&dva));
+		ASSERT(vdev != NULL);
+
+		mutex_enter(&vdev->vdev_scan_io_queue_lock);
+		if (vdev->vdev_scan_io_queue == NULL)
+			vdev->vdev_scan_io_queue = scan_io_queue_create(vdev);
+		ASSERT(dp->dp_scan != NULL);
+		scan_io_queue_insert(dp->dp_scan, vdev->vdev_scan_io_queue, bp,
+		    i, zio_flags, zb);
+		mutex_exit(&vdev->vdev_scan_io_queue_lock);
+	}
 }
 
 /*
@@ -2614,7 +2611,7 @@ scan_exec_io(dsl_pool_t *dp, const blkptr_t *bp, int zio_flags,
  */
 static void
 scan_io_queue_insert(dsl_scan_t *scn, dsl_scan_io_queue_t *queue,
-    const blkptr_t *bp, int zio_flags, const zbookmark_phys_t *zb)
+    const blkptr_t *bp, int dva_i, int zio_flags, const zbookmark_phys_t *zb)
 {
 	scan_io_t *sio = kmem_zalloc(sizeof (*sio), KM_SLEEP);
 	avl_index_t idx;
@@ -2622,7 +2619,7 @@ scan_io_queue_insert(dsl_scan_t *scn, dsl_scan_io_queue_t *queue,
 
 	ASSERT(MUTEX_HELD(&queue->q_vd->vdev_scan_io_queue_lock));
 
-	bp2sio(bp, sio);
+	bp2sio(bp, sio, dva_i);
 	sio->sio_flags = zio_flags;
 	sio->sio_zb = *zb;
 	offset = SCAN_IO_GET_OFFSET(sio);
@@ -3389,24 +3386,37 @@ dsl_scan_freed(spa_t *spa, const blkptr_t *bp)
 {
 	dsl_pool_t *dp = spa->spa_dsl_pool;
 	dsl_scan_t *scn = dp->dp_scan;
+
+	ASSERT(!BP_IS_EMBEDDED(bp));
+	ASSERT(scn != NULL);
+	if (!dsl_scan_is_running(scn))
+		return;
+
+	for (int i = 0; i < BP_GET_NDVAS(bp); i++) {
+		if (BP_IS_SPECIAL(bp) && i != WBC_NORMAL_DVA)
+			continue;
+		dsl_scan_freed_dva(spa, bp, i);
+	}
+}
+
+static void
+dsl_scan_freed_dva(spa_t *spa, const blkptr_t *bp, int dva_i)
+{
+	dsl_pool_t *dp = spa->spa_dsl_pool;
+	dsl_scan_t *scn = dp->dp_scan;
 	vdev_t *vdev;
-	dsl_scan_io_queue_t *queue;
 	kmutex_t *q_lock;
+	dsl_scan_io_queue_t *queue;
 	scan_io_t srch, *sio;
 	avl_index_t idx;
 	uint64_t offset;
 	int64_t asize;
-	const dva_t *dva;
 
 	ASSERT(!BP_IS_EMBEDDED(bp));
 	ASSERT(scn != NULL);
-	/* Exclude non-backgroundable BPs or if scan isn't running */
-	if ((!BP_IS_SPECIAL(bp) && BP_GET_NDVAS(bp) > 1) ||
-	    !dsl_scan_is_running(scn))
-		return;
+	ASSERT(!BP_IS_SPECIAL(bp) || dva_i == WBC_NORMAL_DVA);
 
-	dva = &bp->blk_dva[BP_IS_SPECIAL(bp) ? WBC_NORMAL_DVA : 0];
-	vdev = vdev_lookup_top(spa, DVA_GET_VDEV(dva));
+	vdev = vdev_lookup_top(spa, DVA_GET_VDEV(&bp->blk_dva[dva_i]));
 	ASSERT(vdev != NULL);
 	q_lock = &vdev->vdev_scan_io_queue_lock;
 	queue = vdev->vdev_scan_io_queue;
@@ -3417,7 +3427,7 @@ dsl_scan_freed(spa_t *spa, const blkptr_t *bp)
 		return;
 	}
 
-	bp2sio(bp, &srch);
+	bp2sio(bp, &srch, dva_i);
 	offset = SCAN_IO_GET_OFFSET(&srch);
 	asize = SCAN_IO_GET_ASIZE(&srch);
 
