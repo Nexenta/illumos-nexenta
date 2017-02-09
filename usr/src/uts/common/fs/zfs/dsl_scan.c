@@ -2877,6 +2877,30 @@ dsl_scan_queue_destroy(dsl_scan_queue_t *queue)
 	cv_destroy(&queue->q_cv);
 }
 
+/*
+ * Properly transfers a dsl_scan_queue_t from `svd' to `tvd'. This is
+ * called on behalf of vdev_top_transfer when creating or destroying
+ * a mirror vdev due to zpool attach/detach.
+ */
+void
+dsl_scan_queue_vdev_xfer(vdev_t *svd, vdev_t *tvd)
+{
+	mutex_enter(&svd->vdev_scan_queue_lock);
+	mutex_enter(&tvd->vdev_scan_queue_lock);
+
+	VERIFY3P(tvd->vdev_scan_queue, ==, NULL);
+	tvd->vdev_scan_queue = svd->vdev_scan_queue;
+	svd->vdev_scan_queue = NULL;
+	if (tvd->vdev_scan_queue != NULL) {
+		tvd->vdev_scan_queue->q_vd = tvd;
+		range_tree_set_lock(tvd->vdev_scan_queue->q_exts_by_addr,
+		    &tvd->vdev_scan_queue_lock);
+	}
+
+	mutex_exit(&tvd->vdev_scan_queue_lock);
+	mutex_exit(&svd->vdev_scan_queue_lock);
+}
+
 static void
 dsl_scan_queues_destroy(dsl_scan_t *scn)
 {
@@ -3236,6 +3260,7 @@ dsl_scan_queues_run(dsl_scan_t *scn)
 	    spa->spa_root_vdev->vdev_children;
 
 	ASSERT(scn->scn_is_sorted);
+	ASSERT(spa_config_held(spa, SCL_CONFIG, RW_READER));
 
 	if (scn->scn_taskq == NULL) {
 		char *tq_name = kmem_zalloc(ZFS_MAX_DATASET_NAME_LEN + 16,

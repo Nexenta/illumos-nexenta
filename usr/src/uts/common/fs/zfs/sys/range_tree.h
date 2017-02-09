@@ -89,6 +89,7 @@ void range_tree_verify(range_tree_t *rt, uint64_t start, uint64_t size);
 void range_tree_swap(range_tree_t **rtsrc, range_tree_t **rtdst);
 void range_tree_stat_verify(range_tree_t *rt);
 void range_tree_set_gap(range_tree_t *rt, uint64_t gap);
+void range_tree_set_lock(range_tree_t *rt, kmutex_t *lp);
 
 void range_tree_add(void *arg, uint64_t start, uint64_t size);
 void range_tree_remove(void *arg, uint64_t start, uint64_t size);

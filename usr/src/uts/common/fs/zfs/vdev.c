@@ -842,8 +842,7 @@ vdev_top_transfer(vdev_t *svd, vdev_t *tvd)
 	svd->vdev_isspecial = 0;
 	svd->vdev_isspecial_child = tvd->vdev_isspecial;
 
-	tvd->vdev_scan_queue = svd->vdev_scan_queue;
-	svd->vdev_scan_queue = NULL;
+	dsl_scan_queue_vdev_xfer(svd, tvd);
 }
 
 static void

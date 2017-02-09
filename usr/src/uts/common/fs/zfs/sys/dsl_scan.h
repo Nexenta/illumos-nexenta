@@ -179,6 +179,7 @@ void dsl_scan_ds_clone_swapped(struct dsl_dataset *ds1, struct dsl_dataset *ds2,
 boolean_t dsl_scan_active(dsl_scan_t *scn);
 void dsl_scan_freed(spa_t *spa, const blkptr_t *bp);
 void dsl_scan_queue_destroy(dsl_scan_queue_t *queue);
+void dsl_scan_queue_vdev_xfer(vdev_t *svd, vdev_t *tvd);
 
 #ifdef	__cplusplus
 }

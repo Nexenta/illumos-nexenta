@@ -131,6 +131,18 @@ range_tree_set_gap(range_tree_t *rt, uint64_t gap)
 	rt->rt_gap = gap;
 }
 
+/*
+ * Changes out the lock used by the range tree. Useful when you are moving
+ * the range tree between containing structures without having to recreate
+ * it. Both the old and new locks must be held by the caller.
+ */
+void
+range_tree_set_lock(range_tree_t *rt, kmutex_t *lp)
+{
+	ASSERT(MUTEX_HELD(rt->rt_lock) && MUTEX_HELD(lp));
+	rt->rt_lock = lp;
+}
+
 static void
 range_tree_stat_incr(range_tree_t *rt, range_seg_t *rs)
 {
