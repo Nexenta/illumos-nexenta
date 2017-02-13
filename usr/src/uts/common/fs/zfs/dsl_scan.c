@@ -271,6 +271,11 @@ sio2bp(const scan_io_t *sio, blkptr_t *bp)
 	bzero(bp, sizeof (*bp));
 	bp->blk_dva[0] = sio->sio_dva;
 	bp->blk_prop = sio->sio_prop;
+	/*
+	 * We must reset the special flag, because the rebuilt BP lacks
+	 * a second DVA, so wbc_select_dva must not be allowed to run.
+	 */
+	BP_SET_SPECIAL(bp, 0);
 	bp->blk_phys_birth = sio->sio_phys_birth;
 	bp->blk_birth = sio->sio_birth;
 	bp->blk_fill = 1;	/* we always only work with data pointers */
