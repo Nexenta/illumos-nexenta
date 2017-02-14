@@ -287,9 +287,7 @@ bp2sio(const blkptr_t *bp, scan_io_t *sio)
 {
 	if (!BP_IS_SPECIAL(bp))
 		ASSERT3U(BP_GET_NDVAS(bp), ==, 1);
-	else
-		ASSERT3U(BP_GET_NDVAS(bp), <=, 2);
-	sio->sio_dva = bp->blk_dva[0];
+	sio->sio_dva = bp->blk_dva[BP_IS_SPECIAL(bp) ? WBC_NORMAL_DVA : 0];
 	sio->sio_prop = bp->blk_prop;
 	sio->sio_phys_birth = bp->blk_phys_birth;
 	sio->sio_birth = bp->blk_birth;
@@ -2529,36 +2527,26 @@ dsl_scan_enqueue(dsl_pool_t *dp, const blkptr_t *bp, int zio_flags,
 	spa_t *spa = dp->dp_spa;
 	dva_t dva;
 	vdev_t *vdev;
-	int effective_ndvas = BP_GET_NDVAS(bp);
-
-	/*
-	 * If the blkptr is special AND the block has been migrated by WBC,
-	 * we can ignore the last DVA, because it simply contains the special
-	 * pointer (which has been invalidated anyway).
-	 */
-	if (BP_IS_SPECIAL(bp) && wbc_bp_is_migrated(spa_get_wbc_data(spa), bp))
-		effective_ndvas = BP_GET_NDVAS(bp) - 1;
-	else
-		effective_ndvas = BP_GET_NDVAS(bp);
 
 	/*
 	 * The conditions for a block to be suitable for sorting:
 	 * 1) it must NOT be an embedded BP
-	 * 2) it must have no more than 1 effective DVA (this is due to
-	 *	WBC potentially putting more than one DVA into the blkptr_t,
-	 *	but migrated blocks really only use one).
+	 * 2) if it is a special BP, it must have been migrated by WBC,
+	 *	so we can ignore WBC_SPECIAL_DVA.
 	 * If any of these is violated, the block is issued for immediate
 	 * processing. Otherwise we pass it to the appropriate target
 	 * top-level vdev's queue for insertion into the queue and issue
 	 * at a later time.
 	 */
 	ASSERT(!BP_IS_EMBEDDED(bp));
-	if (effective_ndvas > 1 || !dp->dp_scan->scn_is_sorted) {
+	if ((!BP_IS_SPECIAL(bp) && BP_GET_NDVAS(bp) > 1) ||
+	    (BP_IS_SPECIAL(bp) && !wbc_bp_is_migrated(spa_get_wbc_data(spa),
+	    bp)) || !dp->dp_scan->scn_is_sorted) {
 		scan_exec_io(dp, bp, zio_flags, zb, B_TRUE);
 		return;
 	}
 
-	dva = bp->blk_dva[0];
+	dva = bp->blk_dva[BP_IS_SPECIAL(bp) ? WBC_NORMAL_DVA : 0];
 	vdev = vdev_lookup_top(spa, DVA_GET_VDEV(&dva));
 	ASSERT(vdev != NULL);
 
@@ -3408,15 +3396,17 @@ dsl_scan_freed(spa_t *spa, const blkptr_t *bp)
 	avl_index_t idx;
 	uint64_t offset;
 	int64_t asize;
+	const dva_t *dva;
 
 	ASSERT(!BP_IS_EMBEDDED(bp));
 	ASSERT(scn != NULL);
 	/* Exclude non-backgroundable BPs or if scan isn't running */
-	if (BP_GET_NDVAS(bp) > 1 || BP_GET_LEVEL(bp) > 0 ||
+	if ((!BP_IS_SPECIAL(bp) && BP_GET_NDVAS(bp) > 1) ||
 	    !dsl_scan_is_running(scn))
 		return;
 
-	vdev = vdev_lookup_top(spa, DVA_GET_VDEV(&bp->blk_dva[0]));
+	dva = &bp->blk_dva[BP_IS_SPECIAL(bp) ? WBC_NORMAL_DVA : 0];
+	vdev = vdev_lookup_top(spa, DVA_GET_VDEV(dva));
 	ASSERT(vdev != NULL);
 	q_lock = &vdev->vdev_scan_io_queue_lock;
 	queue = vdev->vdev_scan_io_queue;
