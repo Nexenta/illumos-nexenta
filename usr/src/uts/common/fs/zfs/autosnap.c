@@ -760,19 +760,17 @@ autosnap_lock(spa_t *spa, krw_t rw)
 	}
 
 	if (autosnap->need_stop) {
-		err = ENOLCK;
+		err = SET_ERROR(ENOLCK);
 		if (locked != 0)
 			rw_exit(&autosnap->autosnap_rwlock);
-	} else if (locked != 0) {
-		autosnap->autosnap_lock_cnt++;
-	} else {
-		err = EINTR;
+	} else if (locked == 0) {
+		err = SET_ERROR(EINTR);
 	}
 
 	cv_broadcast(&autosnap->autosnap_cv);
 	mutex_exit(&autosnap->autosnap_lock);
 
-	return (SET_ERROR(err));
+	return (err);
 }
 
 void
@@ -780,13 +778,7 @@ autosnap_unlock(spa_t *spa)
 {
 	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
 
-	mutex_enter(&autosnap->autosnap_lock);
-	ASSERT(autosnap->autosnap_lock_cnt != 0);
-
-	autosnap->autosnap_lock_cnt--;
-
-	cv_broadcast(&autosnap->autosnap_cv);
-	mutex_exit(&autosnap->autosnap_lock);
+	rw_exit(&autosnap->autosnap_rwlock);
 }
 
 /* AUTOSNAP-FSNAP routines */
@@ -1318,6 +1310,8 @@ autosnap_fini(spa_t *spa)
 	if (!autosnap->initialized)
 		return;
 
+	rw_enter(&autosnap->autosnap_rwlock, RW_WRITER);
+
 	if (autosnap->destroyer)
 		autosnap_destroyer_thread_stop(spa);
 
@@ -1339,6 +1333,8 @@ autosnap_fini(spa_t *spa)
 		kmem_free(snap, sizeof (*snap));
 	list_destroy(&autosnap->autosnap_destroy_queue);
 	list_destroy(&autosnap->autosnap_zones);
+
+	rw_exit(&autosnap->autosnap_rwlock);
 	rw_destroy(&autosnap->autosnap_rwlock);
 	mutex_destroy(&autosnap->autosnap_lock);
 	cv_destroy(&autosnap->autosnap_cv);

@@ -60,7 +60,6 @@ struct zfs_autosnap {
 	kmutex_t autosnap_lock;
 	kcondvar_t autosnap_cv;
 	krwlock_t autosnap_rwlock;
-	size_t autosnap_lock_cnt;
 	list_t autosnap_zones;
 	list_t autosnap_destroy_queue;
 	kthread_t *destroyer;
