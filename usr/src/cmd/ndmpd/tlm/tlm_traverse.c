@@ -35,7 +35,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 /*
  * This file implemets the post-order, pre-order and level-order
@@ -233,7 +233,7 @@ fs_getdents(int fildes, struct dirent *buf, size_t *nbyte,
 	struct stat64 st;
 	char *p;
 	int len;
-	int rv;
+	int rv = 0;
 
 	if (*nbyte == 0) {
 		(void) memset((char *)buf, 0, MAX_DENT_BUF_SIZE);

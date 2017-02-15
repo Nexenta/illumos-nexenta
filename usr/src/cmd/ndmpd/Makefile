@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
 #
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -68,9 +68,6 @@ LINTFLAGS += -xerroff=E_INCONS_VAL_TYPE_DECL2
 LINTFLAGS += -xerroff=E_INCONS_ARG_USED2 
 
 CERRWARN += -_gcc=-Wno-unused-variable
-CERRWARN += -_gcc=-Wno-switch
-CERRWARN += -_gcc=-Wno-uninitialized
-CERRWARN += -_gcc=-Wno-address
 
 LDLIBS   += -lsocket -lnsl -lzfs -lsec -lndmp -lmd5 -lnvpair -lumem -lbsm -lcmdutils -linetutil
 

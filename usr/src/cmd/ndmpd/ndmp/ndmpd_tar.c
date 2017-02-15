@@ -38,7 +38,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -562,7 +562,7 @@ backup_file(char *dir, char *name, tlm_acls_t *tlm_acls,
 
 	int erc;
 	char buf[TLM_MAX_PATH_NAME];
-	longlong_t rv;
+	longlong_t rv = -1;
 
 	(void) strlcpy(buf, dir, sizeof (buf));
 	(void) strlcat(buf, "/", sizeof (buf));

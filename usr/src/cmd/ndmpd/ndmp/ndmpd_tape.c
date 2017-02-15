@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/param.h>
 #include <syslog.h>
@@ -116,7 +116,7 @@ ndmpd_tape_open_v2(ndmp_connection_t *connection, void *body)
 	int sid, lun;
 	int err;
 	scsi_adapter_t *sa;
-	int devid;
+	int devid = -1;
 
 	err = NDMP_NO_ERR;
 
@@ -1175,7 +1175,7 @@ common_tape_open(ndmp_connection_t *connection, char *devname, int ndmpmode)
 	int mode;
 	int sid, lun;
 	scsi_adapter_t *sa;
-	int devid;
+	int devid = -1;
 
 	err = NDMP_NO_ERR;
 

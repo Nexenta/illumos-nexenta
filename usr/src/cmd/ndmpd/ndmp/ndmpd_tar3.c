@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -1700,7 +1700,7 @@ backup_filev3(bk_param_v3_t *bpp, fst_node_t *pnp,
     fst_node_t *enp)
 {
 	char *ent;
-	longlong_t rv;
+	int rv = -1;
 	longlong_t apos, bpos;
 	acl_t *aclp = NULL;
 	char *acltp;
@@ -2537,7 +2537,7 @@ ndmp_error
 get_rs_path_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp)
 {
 	char *dp;
-	ndmp_error rv;
+	ndmp_error rv = -1;
 	mem_ndmp_name_v3_t *ep;
 	int i, nm_cnt;
 	char *nm_dpath_list[MULTIPLE_DEST_DIRS];
