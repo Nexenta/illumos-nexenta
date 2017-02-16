@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 /*
  * File history callback functions called by backup modules. NDMP file history
@@ -864,7 +864,7 @@ ndmpd_fhdir_v3_cb(lbr_fhlog_call_backs_t *cbp, char *dir, struct stat64 *stp)
 		 */
 		if (tlm_is_excluded(dir, nm, ndmp_excl_list)) {
 			syslog(LOG_DEBUG,
-			    "name \"%s\" skipped", nm == 0 ? "nil" : nm);
+			    "name \"%s\" skipped", *nm == '\0' ? "nil" : nm);
 			continue;
 		}
 

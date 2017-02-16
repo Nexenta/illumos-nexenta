@@ -38,9 +38,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/*
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
- */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -945,7 +943,7 @@ ndmpd_zfs_reader_writer(ndmpd_zfs_args_t *ndmpd_zfs_args,
 	funct_t sendrecv_func;
 	funct_t tape_func;
 	int sendrecv_err;
-	int tape_err;
+	int tape_err = -1;
 
 	switch (ndmpd_zfs_params->mp_operation) {
 	case NDMP_DATA_OP_BACKUP:
@@ -956,6 +954,8 @@ ndmpd_zfs_reader_writer(ndmpd_zfs_args_t *ndmpd_zfs_args,
 		sendrecv_func = (funct_t)ndmpd_zfs_restore_recv_write;
 		tape_func = (funct_t)ndmpd_zfs_restore_tape_read;
 		break;
+	default:
+		return (-1);
 	}
 
 	sendrecv_err = pthread_create(&ndmpd_zfs_args->nz_sendrecv_thread,
@@ -1208,7 +1208,7 @@ ndmpd_zfs_backup_pathvalid(ndmpd_zfs_args_t *ndmpd_zfs_args)
 			return (-1);
 		}
 
-		if (propstr && ndmpd_zfs_snapshot_ndmpd_generated(propstr)) {
+		if (strlen(propstr) > 0 && ndmpd_zfs_snapshot_ndmpd_generated(propstr)) {
 			ndmpd_zfs_dma_log(ndmpd_zfs_args, NDMP_LOG_ERROR,
 			    "cannot use an ndmpd-generated snapshot\n");
 			return (B_FALSE);

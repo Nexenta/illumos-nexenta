@@ -36,6 +36,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
+
 #include <syslog.h>
 #include <stdio.h>
 #include <limits.h>
@@ -733,8 +735,8 @@ tlm_output_xattr(char  *dir, char *name, char *chkdir,
 			long	actual_size;
 			int	read_size;
 			int sysattr_read = 0;
-			char *rec;
-			int size;
+			char *rec = NULL;
+			int size = 0;
 
 			/*
 			 * check for Abort commands

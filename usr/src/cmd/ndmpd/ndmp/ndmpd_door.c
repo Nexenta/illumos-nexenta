@@ -36,6 +36,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 /* This file contains all the door server code */
 
@@ -161,8 +162,8 @@ ndmp_door_server(void *cookie, char *ptr, size_t size,
 	unsigned int used;
 	ndmp_door_ctx_t *dec_ctx;
 	ndmp_door_ctx_t *enc_ctx;
-	unsigned int dec_status;
-	unsigned int enc_status;
+	unsigned int dec_status = EINVAL;
+	unsigned int enc_status = EINVAL;
 
 	dec_ctx = ndmp_door_decode_start(ptr, size);
 	if (dec_ctx == 0)

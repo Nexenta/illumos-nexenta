@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -1667,6 +1667,10 @@ ndmpd_zfs_start_op(ndmpd_session_t *session, ndmp_pval *env_val,
 		session->ns_data.dd_module.dm_start_func =
 		    ndmpd_zfs_restore_starter;
 		(void) strlcpy(str, "recover", 8);
+		break;
+	case NDMP_DATA_OP_NOACTION:
+	case NDMP_DATA_OP_RECOVER_FILEHIST:
+		return (NDMP_ILLEGAL_ARGS_ERR);
 		break;
 	}
 

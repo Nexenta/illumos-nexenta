@@ -35,7 +35,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <syslog.h>
 #include <stdlib.h>
@@ -271,7 +271,7 @@ tar_getdir(tlm_commands_t *commands,
 	char	*hugename;
 	longlong_t huge_size = 0;	/* size of a HUGE file */
 	long	acl_spot;		/* any ACL info on the next volume */
-	long	file_size;		/* size of file to restore */
+	long	file_size = 0;		/* size of file to restore */
 	long	size_left = 0;		/* need this after volume change */
 	int	last_action = 0;	/* what we are doing at EOT */
 	boolean_t multi_volume = FALSE;	/* is this a multi-volume switch ? */
@@ -1582,7 +1582,7 @@ is_file_wanted(char *name,
     int *pos)
 {
 	char *p_sel;
-	char *uc_name, *retry, *namep;
+	char *uc_name = NULL, *retry, *namep;
 	boolean_t found;
 	int i;
 	name_match_fp_t *cmp_fp;
