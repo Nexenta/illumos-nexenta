@@ -742,6 +742,7 @@ scan_ds_queue_remove(dsl_scan_t *scn, uint64_t dsobj)
 	sds = avl_find(&scn->scn_queue, &srch, NULL);
 	VERIFY(sds != NULL);
 	avl_remove(&scn->scn_queue, sds);
+	kmem_free(sds, sizeof (*sds));
 }
 
 static void
