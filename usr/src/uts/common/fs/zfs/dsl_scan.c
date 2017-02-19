@@ -2866,6 +2866,8 @@ dsl_scan_io_queue_destroy(dsl_scan_io_queue_t *queue)
 	avl_destroy(&queue->q_exts_by_size);
 	avl_destroy(&queue->q_zios_by_addr);
 	cv_destroy(&queue->q_cv);
+
+	kmem_free(queue, sizeof (*queue));
 }
 
 /*
