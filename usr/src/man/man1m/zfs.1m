@@ -26,9 +26,9 @@
 .\" Copyright (c) 2014, Joyent, Inc. All rights reserved.
 .\" Copyright (c) 2014 by Adam Stevko. All rights reserved.
 .\" Copyright (c) 2014 Integros [integros.com]
-.\" Copyright 2016 Nexenta Systems, Inc.
+.\" Copyright 2017 Nexenta Systems, Inc.
 .\"
-.Dd April 9, 2016
+.Dd February 01, 2017
 .Dt ZFS 1M
 .Os
 .Sh NAME
@@ -571,6 +571,12 @@ see. However, it does include space consumed by metadata.
 .Pp
 This property can also be referred to by its shortened column name,
 .Sy lused .
+.It Sy modified
+For a snapshot, indicates whether the parent filesystem or volume has
+been modified since the snapshot. This property can be either
+.Sy yes
+or
+.Sy no .
 .It Sy mounted
 For file systems, indicates whether the file system is currently mounted. This
 property can be either

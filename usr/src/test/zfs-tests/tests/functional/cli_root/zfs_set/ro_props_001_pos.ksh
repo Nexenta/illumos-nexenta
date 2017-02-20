@@ -26,7 +26,7 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -52,7 +52,7 @@ set -A dataset $TESTPOOL $TESTPOOL/$TESTFS $TESTPOOL/$TESTVOL \
 	$TESTPOOL/$TESTCTR/$TESTFS1 $TESTPOOL/$TESTFS@$TESTSNAP \
 	$TESTPOOL/$TESTVOL@$TESTSNAP
 typeset ro_props="type used available avail creation referenced refer compressratio \
-	mounted origin"
+	mounted origin modified"
 typeset snap_ro_props="volsize recordsize recsize quota reservation reserv mountpoint \
 	sharenfs checksum compression compress atime devices exec readonly rdonly \
 	setuid zoned"

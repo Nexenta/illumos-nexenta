@@ -11,6 +11,7 @@
 
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
 #
 
 include $(SRC)/Makefile.master
@@ -29,7 +30,8 @@ PROGS = cleanup \
 	zfs_get_007_neg \
 	zfs_get_008_pos \
 	zfs_get_009_pos \
-	zfs_get_010_neg
+	zfs_get_010_neg \
+	zfs_get_011_pos
 
 FILES = zfs_get_common.kshlib \
 	zfs_get_list_d.kshlib

@@ -26,7 +26,7 @@
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016, OmniTI Computer Consulting, Inc. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/dmu_objset.h>
@@ -1847,6 +1847,19 @@ dsl_dataset_stats(dsl_dataset_t *ds, nvlist_t *nv)
 	    dsl_dataset_phys(ds)->ds_uncompressed_bytes);
 
 	if (ds->ds_is_snapshot) {
+		dsl_dataset_t *hds = NULL;
+		boolean_t modified = B_FALSE;
+
+		if (dsl_dataset_hold_obj(dp,
+		    dsl_dir_phys(ds->ds_dir)->dd_head_dataset_obj,
+		    FTAG, &hds) == 0) {
+			modified = dsl_dataset_modified_since_snap(hds, ds);
+			dsl_dataset_rele(hds, FTAG);
+		}
+
+		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_MODIFIED,
+		    modified ? 1 : 0);
+
 		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_COMPRESSRATIO, ratio);
 		dsl_prop_nvlist_add_uint64(nv, ZFS_PROP_USED,
 		    dsl_dataset_phys(ds)->ds_unique_bytes);

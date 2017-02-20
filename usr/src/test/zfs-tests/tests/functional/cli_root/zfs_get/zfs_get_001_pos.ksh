@@ -25,6 +25,10 @@
 # Use is subject to license terms.
 #
 
+#
+# Copyright 2017 Nexenta Systems, Inc.
+#
+
 . $STF_SUITE/tests/functional/cli_root/zfs_get/zfs_get_common.kshlib
 . $STF_SUITE/tests/functional/cli_root/zfs_get/zfs_get_list_d.kshlib
 
@@ -57,7 +61,7 @@ typeset zfs_props=("type" used available creation volsize referenced \
     sharenfs checksum compression atime devices exec readonly setuid zoned \
     snapdir aclmode aclinherit canmount primarycache secondarycache \
     usedbychildren usedbydataset usedbyrefreservation usedbysnapshots \
-    version)
+    version modified)
 
 typeset userquota_props=(userquota@root groupquota@root userused@root \
     groupused@root)

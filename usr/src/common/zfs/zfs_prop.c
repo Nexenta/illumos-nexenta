@@ -24,7 +24,7 @@
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -484,6 +484,9 @@ zfs_prop_init(void)
 	    PROP_READONLY, ZFS_TYPE_FILESYSTEM | ZFS_TYPE_VOLUME, "PREVSNAP");
 	zprop_register_hidden(ZFS_PROP_LSTXG, "lstxg", PROP_TYPE_NUMBER,
 	    PROP_READONLY, ZFS_TYPE_DATASET, "LSTXG");
+	zprop_register_index_hidden(ZFS_PROP_MODIFIED, "modified", 0,
+	    PROP_READONLY, ZFS_TYPE_SNAPSHOT, "yes | no", "MODIFIED",
+	    boolean_table);
 
 	/* oddball properties */
 	zprop_register_impl(ZFS_PROP_CREATION, "creation", PROP_TYPE_NUMBER, 0,

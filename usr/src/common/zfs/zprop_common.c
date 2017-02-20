@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  * Copyright (c) 2012 by Delphix. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -136,6 +136,16 @@ zprop_register_index(int prop, const char *name, uint64_t def,
 {
 	zprop_register_impl(prop, name, PROP_TYPE_INDEX, def, NULL, attr,
 	    objset_types, values, colname, B_TRUE, B_TRUE, idx_tbl);
+}
+
+/* Same as zprop_register_index, except the property is hidden */
+void
+zprop_register_index_hidden(int prop, const char *name, uint64_t def,
+    zprop_attr_t attr, int objset_types, const char *values,
+    const char *colname, const zprop_index_t *idx_tbl)
+{
+	zprop_register_impl(prop, name, PROP_TYPE_INDEX, def, NULL, attr,
+	    objset_types, values, colname, B_TRUE, B_FALSE, idx_tbl);
 }
 
 void

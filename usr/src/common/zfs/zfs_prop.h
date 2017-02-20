@@ -21,7 +21,7 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #ifndef	_ZFS_PROP_H
@@ -124,6 +124,9 @@ void zprop_register_index(int, const char *, uint64_t, zprop_attr_t, int,
     const char *, const char *, const zprop_index_t *);
 void zprop_register_hidden(int, const char *, zprop_type_t, zprop_attr_t,
     int, const char *);
+void zprop_register_index_hidden(int prop, const char *name, uint64_t def,
+    zprop_attr_t attr, int objset_types, const char *values,
+    const char *colname, const zprop_index_t *idx_tbl);
 
 /*
  * Common routines for zfs and zpool property management

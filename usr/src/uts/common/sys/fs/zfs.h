@@ -25,7 +25,7 @@
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013, Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -169,6 +169,7 @@ typedef enum {
 	ZFS_PROP_RECEIVE_RESUME_TOKEN,
 	ZFS_PROP_SMARTCOMPRESSION,
 	ZFS_PROP_RATE_LIMIT,
+	ZFS_PROP_MODIFIED,
 	ZFS_NUM_PROPS
 } zfs_prop_t;
 

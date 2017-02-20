@@ -24,6 +24,11 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+
+#
+# Copyright 2017 Nexenta Systems, Inc.
+#
+
 . $STF_SUITE/include/libtest.shlib
 
 #
@@ -54,7 +59,7 @@ set -A args  "" "create" "create -s" "create -V" "create -s -V" \
     "set mountpoint=" "set devices=" "set exec=" "set setuid=" "set readonly=" \
     "set zoned=" "set snapdir=" "set aclmode=" "set aclinherit=" \
     "set quota=blah" "set reservation=blah" "set atime=blah" "set checksum=blah" \
-    "set compression=blah" \
+    "set compression=blah" "set modified=" \
     "upgrade blah" "mount blah" "mount -o" \
     "umount blah" "unmount" "unmount blah" "unmount -f" \
     "share" "unshare" "send" "send -i" "receive" "receive -d" "receive -vnF" \

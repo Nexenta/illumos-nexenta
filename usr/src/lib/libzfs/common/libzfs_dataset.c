@@ -2577,6 +2577,23 @@ zfs_prop_get(zfs_handle_t *zhp, zfs_prop_t prop, char *propbuf, size_t proplen,
 		(void) snprintf(propbuf, proplen, "%llu", (u_longlong_t)val);
 		break;
 
+	case ZFS_PROP_MODIFIED:
+		/*
+		 * For a snapshot the "modified" pseudo-property is set to
+		 * "yes" if parent filesystem/zvol differs from the snapshot.
+		 * Even though it's a boolean value, the typical
+		 * values of "on" and "off" don't make sense, so we translate
+		 * to "yes" and "no".
+		 */
+		if (get_numeric_property(zhp, ZFS_PROP_MODIFIED,
+		    src, &source, &val) != 0)
+			return (-1);
+		if (val != 0)
+			(void) strlcpy(propbuf, "yes", proplen);
+		else
+			(void) strlcpy(propbuf, "no", proplen);
+		break;
+
 	default:
 		switch (zfs_prop_get_type(prop)) {
 		case PROP_TYPE_NUMBER:
