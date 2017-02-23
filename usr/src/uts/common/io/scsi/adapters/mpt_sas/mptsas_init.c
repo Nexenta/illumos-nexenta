@@ -22,6 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
  */
 
@@ -306,9 +307,10 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	 * Set flag to check for SAS3 support.
 	 */
 	msgversion = ddi_get16(accessp, &factsreply->MsgVersion);
-	if (msgversion == MPI2_VERSION_02_05) {
-		mptsas_log(mpt, CE_NOTE, "?mpt_sas%d SAS 3 Supported\n",
-		    mpt->m_instance);
+	if (msgversion >= MPI2_VERSION_02_05) {
+		mptsas_log(mpt, CE_NOTE, "?mpt_sas%d SAS 3 "
+		    "Supported Version (0x%x)\n",
+		    mpt->m_instance, msgversion);
 		mpt->m_MPI25 = TRUE;
 	} else {
 		mptsas_log(mpt, CE_NOTE, "?mpt_sas%d MPI Version 0x%x\n",
