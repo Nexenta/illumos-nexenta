@@ -117,7 +117,6 @@ gen_ereport(const char *path, int sig)
 	nvlist_t *fmri = NULL;
 	nvlist_t *sw_obj = NULL;
 	uint64_t ena;
-	char class[64];
 	proc_t *p = curproc;
 	int err = 0;
 

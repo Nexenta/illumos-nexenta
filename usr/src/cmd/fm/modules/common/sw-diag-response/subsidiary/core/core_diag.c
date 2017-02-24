@@ -85,6 +85,7 @@ const char *toadd[] = {
 	FM_EREPORT_PAYLOAD_CORE_PATH
 };
 
+/*ARGSUSED*/
 static int
 print_frame(void *data, prgregset_t gregs, uint_t argc, const long *argv)
 {
