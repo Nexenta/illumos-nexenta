@@ -44,7 +44,7 @@
 #if SCOREBOARD_SIZE < SMB_PI_MAXIMUM_CREDITS_MAX
 #error "Increase SCOREBOARD_SIZE"
 #endif
-#define SCOREBOARD_MASK (SCOREBOARD_SIZE - 1)
+#define	SCOREBOARD_MASK (SCOREBOARD_SIZE - 1)
 
 enum sb_state { SB_unseen = 0, SB_started = 1, SB_cancelled = 2, SB_done = 3 };
 
@@ -143,7 +143,7 @@ smb2_scoreboard_cmd_start(smb_request_t *sr)
 		if (sr->sr_state == SMB_REQ_STATE_ACTIVE)
 			sr->sr_state = SMB_REQ_STATE_CANCELLED;
 		mutex_exit(&sr->sr_mutex);
-	}		
+	}
 
 
 	return (rc);
