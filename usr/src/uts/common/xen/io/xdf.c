@@ -638,10 +638,19 @@ xdf_kstat_exit(xdf_t *vdp, buf_t *bp)
 
 	if (vdp->xdf_xdev_iostat == NULL)
 		return;
+
 	if ((vreq != NULL) && vreq->v_runq) {
 		kstat_runq_exit(KSTAT_IO_PTR(vdp->xdf_xdev_iostat));
 	} else {
 		kstat_waitq_exit(KSTAT_IO_PTR(vdp->xdf_xdev_iostat));
+	}
+
+	if (bp->b_flags & B_READ) {
+		KSTAT_IO_PTR(vdp->xdf_xdev_iostat)->reads++;
+		KSTAT_IO_PTR(vdp->xdf_xdev_iostat)->nread += bp->b_bcount;
+	} else if (bp->b_flags & B_WRITE) {
+		KSTAT_IO_PTR(vdp->xdf_xdev_iostat)->writes++;
+		KSTAT_IO_PTR(vdp->xdf_xdev_iostat)->nwritten += bp->b_bcount;
 	}
 }
 
@@ -3360,14 +3369,14 @@ xdf_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	/* Report our version to dom0 */
 	(void) xenbus_printf(XBT_NULL, "guest/xdf", "version", "%d",
 	    HVMPV_XDF_VERS);
-#else /* !XPV_HVM_DRIVER */
+#endif /* XPV_HVM_DRIVER */
+
 	/* Create kstat for iostat(1M) */
 	if (xdf_kstat_create(dip, "xdf", instance) != 0) {
 		cmn_err(CE_WARN, "xdf@%s: failed to create kstat",
 		    ddi_get_name_addr(dip));
 		goto errout1;
 	}
-#endif /* !XPV_HVM_DRIVER */
 
 	ddi_report_dev(dip);
 	DPRINTF(DDI_DBG, ("xdf@%s: attached\n", vdp->xdf_addr));
