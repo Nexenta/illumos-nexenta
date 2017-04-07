@@ -811,6 +811,11 @@ extern void kstat_runq_back_to_waitq(kstat_io_t *);
 extern void kstat_timer_start(kstat_timer_t *);
 extern void kstat_timer_stop(kstat_timer_t *);
 
+extern void kstat_waitq_enter_time(kstat_io_t *, hrtime_t);
+extern void kstat_waitq_exit_time(kstat_io_t *, hrtime_t);
+extern void kstat_runq_enter_time(kstat_io_t *, hrtime_t);
+extern void kstat_runq_exit_time(kstat_io_t *, hrtime_t);
+
 extern void kstat_zone_add(kstat_t *, zoneid_t);
 extern void kstat_zone_remove(kstat_t *, zoneid_t);
 extern int kstat_zone_find(kstat_t *, zoneid_t);

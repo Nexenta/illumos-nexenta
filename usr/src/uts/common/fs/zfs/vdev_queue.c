@@ -294,17 +294,18 @@ static void
 vdev_queue_io_add(vdev_queue_t *vq, zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
+	hrtime_t t = gethrtime_unscaled();
 
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	avl_add(vdev_queue_class_tree(vq, zio->io_priority), zio);
 	avl_add(vdev_queue_type_tree(vq, zio->io_type), zio);
 
+	atomic_inc_64(&spa->spa_queue_stats[zio->io_priority].spa_queued);
 	mutex_enter(&spa->spa_iokstat_lock);
-	spa->spa_queue_stats[zio->io_priority].spa_queued++;
 	if (spa->spa_iokstat != NULL)
-		kstat_waitq_enter(spa->spa_iokstat->ks_data);
+		kstat_waitq_enter_time(spa->spa_iokstat->ks_data, t);
 	if (vq->vq_vdev->vdev_iokstat != NULL)
-		kstat_waitq_enter(vq->vq_vdev->vdev_iokstat->ks_data);
+		kstat_waitq_enter_time(vq->vq_vdev->vdev_iokstat->ks_data, t);
 	mutex_exit(&spa->spa_iokstat_lock);
 }
 
@@ -312,18 +313,20 @@ static void
 vdev_queue_io_remove(vdev_queue_t *vq, zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
+	hrtime_t t = gethrtime_unscaled();
 
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	avl_remove(vdev_queue_class_tree(vq, zio->io_priority), zio);
 	avl_remove(vdev_queue_type_tree(vq, zio->io_type), zio);
 
-	mutex_enter(&spa->spa_iokstat_lock);
 	ASSERT3U(spa->spa_queue_stats[zio->io_priority].spa_queued, >, 0);
-	spa->spa_queue_stats[zio->io_priority].spa_queued--;
+	atomic_dec_64(&spa->spa_queue_stats[zio->io_priority].spa_queued);
+
+	mutex_enter(&spa->spa_iokstat_lock);
 	if (spa->spa_iokstat != NULL)
-		kstat_waitq_exit(spa->spa_iokstat->ks_data);
+		kstat_waitq_exit_time(spa->spa_iokstat->ks_data, t);
 	if (vq->vq_vdev->vdev_iokstat != NULL)
-		kstat_waitq_exit(vq->vq_vdev->vdev_iokstat->ks_data);
+		kstat_waitq_exit_time(vq->vq_vdev->vdev_iokstat->ks_data, t);
 	mutex_exit(&spa->spa_iokstat_lock);
 }
 
@@ -331,17 +334,19 @@ static void
 vdev_queue_pending_add(vdev_queue_t *vq, zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
+	hrtime_t t = gethrtime_unscaled();
+
 	ASSERT(MUTEX_HELD(&vq->vq_lock));
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	vq->vq_class[zio->io_priority].vqc_active++;
 	avl_add(&vq->vq_active_tree, zio);
 
+	atomic_inc_64(&spa->spa_queue_stats[zio->io_priority].spa_active);
 	mutex_enter(&spa->spa_iokstat_lock);
-	spa->spa_queue_stats[zio->io_priority].spa_active++;
 	if (spa->spa_iokstat != NULL)
-		kstat_runq_enter(spa->spa_iokstat->ks_data);
+		kstat_runq_enter_time(spa->spa_iokstat->ks_data, t);
 	if (vq->vq_vdev->vdev_iokstat != NULL)
-		kstat_runq_enter(vq->vq_vdev->vdev_iokstat->ks_data);
+		kstat_runq_enter_time(vq->vq_vdev->vdev_iokstat->ks_data, t);
 	mutex_exit(&spa->spa_iokstat_lock);
 }
 
@@ -349,19 +354,21 @@ static void
 vdev_queue_pending_remove(vdev_queue_t *vq, zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
+	hrtime_t t = gethrtime_unscaled();
 
 	ASSERT(MUTEX_HELD(&vq->vq_lock));
 	ASSERT3U(zio->io_priority, <, ZIO_PRIORITY_NUM_QUEUEABLE);
 	vq->vq_class[zio->io_priority].vqc_active--;
 	avl_remove(&vq->vq_active_tree, zio);
 
-	mutex_enter(&spa->spa_iokstat_lock);
 	ASSERT3U(spa->spa_queue_stats[zio->io_priority].spa_active, >, 0);
-	spa->spa_queue_stats[zio->io_priority].spa_active--;
+	atomic_dec_64(&spa->spa_queue_stats[zio->io_priority].spa_active);
+
+	mutex_enter(&spa->spa_iokstat_lock);
 	if (spa->spa_iokstat != NULL) {
 		kstat_io_t *ksio = spa->spa_iokstat->ks_data;
 
-		kstat_runq_exit(spa->spa_iokstat->ks_data);
+		kstat_runq_exit_time(spa->spa_iokstat->ks_data, t);
 		if (zio->io_type == ZIO_TYPE_READ) {
 			ksio->reads++;
 			ksio->nread += zio->io_size;
@@ -374,7 +381,7 @@ vdev_queue_pending_remove(vdev_queue_t *vq, zio_t *zio)
 	if (vq->vq_vdev->vdev_iokstat != NULL) {
 		kstat_io_t *ksio = vq->vq_vdev->vdev_iokstat->ks_data;
 
-		kstat_runq_exit(ksio);
+		kstat_runq_exit_time(ksio, t);
 		if (zio->io_type == ZIO_TYPE_READ) {
 			ksio->reads++;
 			ksio->nread += zio->io_size;

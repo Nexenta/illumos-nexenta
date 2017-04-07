@@ -1306,6 +1306,68 @@ kstat_delete_byname(const char *ks_module, int ks_instance, const char *ks_name)
 	kstat_delete_byname_zone(ks_module, ks_instance, ks_name, ALL_ZONES);
 }
 
+void
+kstat_waitq_enter_time(kstat_io_t *kiop, const hrtime_t new)
+{
+	hrtime_t delta;
+	ulong_t wcnt;
+
+	ASSERT(kiop != NULL);
+	delta = new - kiop->wlastupdate;
+	kiop->wlastupdate = new;
+	wcnt = kiop->wcnt++;
+	if (wcnt != 0) {
+		kiop->wlentime += delta * wcnt;
+		kiop->wtime += delta;
+	}
+}
+
+void
+kstat_waitq_exit_time(kstat_io_t *kiop, const hrtime_t new)
+{
+	hrtime_t delta;
+	ulong_t wcnt;
+
+	ASSERT(kiop != NULL);
+	delta = new - kiop->wlastupdate;
+	kiop->wlastupdate = new;
+	wcnt = kiop->wcnt--;
+	ASSERT((int)wcnt > 0);
+	kiop->wlentime += delta * wcnt;
+	kiop->wtime += delta;
+}
+
+void
+kstat_runq_enter_time(kstat_io_t *kiop, const hrtime_t new)
+{
+	hrtime_t delta;
+	ulong_t rcnt;
+
+	ASSERT(kiop != NULL);
+	delta = new - kiop->rlastupdate;
+	kiop->rlastupdate = new;
+	rcnt = kiop->rcnt++;
+	if (rcnt != 0) {
+		kiop->rlentime += delta * rcnt;
+		kiop->rtime += delta;
+	}
+}
+
+void
+kstat_runq_exit_time(kstat_io_t *kiop, const hrtime_t new)
+{
+	hrtime_t delta;
+	ulong_t rcnt;
+
+	ASSERT(kiop != NULL);
+	delta = new - kiop->rlastupdate;
+	kiop->rlastupdate = new;
+	rcnt = kiop->rcnt--;
+	ASSERT((int)rcnt > 0);
+	kiop->rlentime += delta * rcnt;
+	kiop->rtime += delta;
+}
+
 /*
  * The sparc V9 versions of these routines can be much cheaper than
  * the poor 32-bit compiler can comprehend, so they're in sparcv9_subr.s.
@@ -1316,111 +1378,43 @@ kstat_delete_byname(const char *ks_module, int ks_instance, const char *ks_name)
 void
 kstat_waitq_enter(kstat_io_t *kiop)
 {
-	hrtime_t new, delta;
-	ulong_t wcnt;
-
-	new = gethrtime_unscaled();
-	delta = new - kiop->wlastupdate;
-	kiop->wlastupdate = new;
-	wcnt = kiop->wcnt++;
-	if (wcnt != 0) {
-		kiop->wlentime += delta * wcnt;
-		kiop->wtime += delta;
-	}
+	kstat_waitq_enter_time(kiop, gethrtime_unscaled());
 }
 
 void
 kstat_waitq_exit(kstat_io_t *kiop)
 {
-	hrtime_t new, delta;
-	ulong_t wcnt;
-
-	new = gethrtime_unscaled();
-	delta = new - kiop->wlastupdate;
-	kiop->wlastupdate = new;
-	wcnt = kiop->wcnt--;
-	ASSERT((int)wcnt > 0);
-	kiop->wlentime += delta * wcnt;
-	kiop->wtime += delta;
+	kstat_waitq_exit_time(kiop, gethrtime_unscaled());
 }
 
 void
 kstat_runq_enter(kstat_io_t *kiop)
 {
-	hrtime_t new, delta;
-	ulong_t rcnt;
-
-	new = gethrtime_unscaled();
-	delta = new - kiop->rlastupdate;
-	kiop->rlastupdate = new;
-	rcnt = kiop->rcnt++;
-	if (rcnt != 0) {
-		kiop->rlentime += delta * rcnt;
-		kiop->rtime += delta;
-	}
+	kstat_runq_enter_time(kiop, gethrtime_unscaled());
 }
 
 void
 kstat_runq_exit(kstat_io_t *kiop)
 {
-	hrtime_t new, delta;
-	ulong_t rcnt;
-
-	new = gethrtime_unscaled();
-	delta = new - kiop->rlastupdate;
-	kiop->rlastupdate = new;
-	rcnt = kiop->rcnt--;
-	ASSERT((int)rcnt > 0);
-	kiop->rlentime += delta * rcnt;
-	kiop->rtime += delta;
+	kstat_runq_exit_time(kiop, gethrtime_unscaled());
 }
 
 void
 kstat_waitq_to_runq(kstat_io_t *kiop)
 {
-	hrtime_t new, delta;
-	ulong_t wcnt, rcnt;
-
-	new = gethrtime_unscaled();
-
-	delta = new - kiop->wlastupdate;
-	kiop->wlastupdate = new;
-	wcnt = kiop->wcnt--;
-	ASSERT((int)wcnt > 0);
-	kiop->wlentime += delta * wcnt;
-	kiop->wtime += delta;
-
-	delta = new - kiop->rlastupdate;
-	kiop->rlastupdate = new;
-	rcnt = kiop->rcnt++;
-	if (rcnt != 0) {
-		kiop->rlentime += delta * rcnt;
-		kiop->rtime += delta;
-	}
+	hrtime_t new = gethrtime_unscaled();
+	ASSERT(kiop != NULL);
+	kstat_waitq_exit_time(kiop, new);
+	kstat_runq_enter_time(kiop, new);
 }
 
 void
 kstat_runq_back_to_waitq(kstat_io_t *kiop)
 {
-	hrtime_t new, delta;
-	ulong_t wcnt, rcnt;
-
-	new = gethrtime_unscaled();
-
-	delta = new - kiop->rlastupdate;
-	kiop->rlastupdate = new;
-	rcnt = kiop->rcnt--;
-	ASSERT((int)rcnt > 0);
-	kiop->rlentime += delta * rcnt;
-	kiop->rtime += delta;
-
-	delta = new - kiop->wlastupdate;
-	kiop->wlastupdate = new;
-	wcnt = kiop->wcnt++;
-	if (wcnt != 0) {
-		kiop->wlentime += delta * wcnt;
-		kiop->wtime += delta;
-	}
+	hrtime_t new = gethrtime_unscaled();
+	ASSERT(kiop != NULL);
+	kstat_runq_exit_time(kiop, new);
+	kstat_waitq_enter_time(kiop, new);
 }
 
 #endif

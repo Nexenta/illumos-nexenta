@@ -314,6 +314,13 @@ extern void kstat_runq_exit(kstat_io_t *);
 extern void kstat_waitq_to_runq(kstat_io_t *);
 extern void kstat_runq_back_to_waitq(kstat_io_t *);
 
+extern void kstat_waitq_enter_time(kstat_io_t *kiop, hrtime_t t);
+extern void kstat_waitq_exit_time(kstat_io_t *kiop, hrtime_t t);
+extern void kstat_runq_enter_time(kstat_io_t *kiop, hrtime_t t);
+extern void kstat_runq_exit_time(kstat_io_t *kiop, hrtime_t t);
+
+extern hrtime_t gethrtime_unscaled(void);
+
 /*
  * Kernel memory
  */

@@ -362,8 +362,8 @@ struct spa {
 	kmutex_t	spa_iokstat_lock;
 	struct kstat	*spa_iokstat;		/* kstat of io to this pool */
 	struct {
-		int spa_active;
-		int spa_queued;
+		uint64_t spa_active;
+		uint64_t spa_queued;
 	} spa_queue_stats[ZIO_PRIORITY_NUM_QUEUEABLE];
 
 	/* TRIM/UNMAP kstats */
