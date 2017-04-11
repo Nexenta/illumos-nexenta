@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -1834,8 +1834,7 @@ ndmpd_tar_backup_starter(void *arg)
 		NLP_SET(nlp, NLPF_CHKPNTED_PATH);
 	else {
 		NLP_UNSET(nlp, NLPF_CHKPNTED_PATH);
-		if (ndmp_create_snapshot(nlp->nlp_backup_path,
-		    nlp->nlp_jstat->js_job_name) < 0) {
+		if (backup_dataset_create(nlp) < 0) {
 			MOD_LOG(mod_params,
 			    "Error: creating checkpoint on %s\n",
 			    nlp->nlp_backup_path);
@@ -1850,8 +1849,7 @@ ndmpd_tar_backup_starter(void *arg)
 	    err, NDMP_YORN(NLP_SHOULD_UPDATE(nlp)));
 
 	if (err == 0) {
-		err = ndmp_get_cur_bk_time(nlp, &nlp->nlp_cdate,
-		    nlp->nlp_jstat->js_job_name);
+		err = ndmp_get_cur_bk_time(nlp, &nlp->nlp_cdate);
 		if (err != 0) {
 			syslog(LOG_DEBUG, "err %d", err);
 		} else {
@@ -1866,7 +1864,7 @@ ndmpd_tar_backup_starter(void *arg)
 	}
 
 	if (!NLP_ISCHKPNTED(nlp))
-		(void) ndmp_remove_snapshot(&sarg);
+		(void) backup_dataset_destroy(nlp);
 
 	syslog(LOG_DEBUG, "err %d, update %c",
 	    err, NDMP_YORN(NLP_SHOULD_UPDATE(nlp)));

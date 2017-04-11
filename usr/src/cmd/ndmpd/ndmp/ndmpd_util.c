@@ -38,7 +38,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/types.h>
 #include <syslog.h>
@@ -154,7 +154,6 @@ static char *exls[] = {
 	NULL, /* reserved for a copy of the "backup.directory" */
 	NULL
 };
-
 
 /*
  * The counter for creating unique names with "NDMP_RCF_BASENAME.%d" format.
@@ -2042,17 +2041,56 @@ cctime(time_t *t)
 int
 ndmp_new_job_name(char *s1, size_t n) {
 
-	if (n == TLM_MAX_BACKUP_JOB_NAME) {
+	if (n >= TLM_MAX_BACKUP_JOB_NAME) {
 		/*
 		 * TLM_MAX_BACKUP_JOB_NAME is the fixed length of
 		 * the encoded job name in the format `NdmpBackup.nnnn\0`,
 		 * where nnnn is a job sequence number.  A null byte
-		 * is included.
+		 * is included. It is okay if the buffer is bigger than that.
 		 */
 		return (snprintf(s1, n, "%10s.%04d",
 		    NDMP_RCF_BASENAME, ndmp_job_cnt++%1000));
 	}
 	return (0);
+}
+
+/*
+ * Check if the volume is has an autosync snapshot. As a side effect
+ * store the snapshot string in nlp_snapname for later reference.
+ * The nlp_snapname is set to '\0' otherwise if nothing is found.
+ */
+boolean_t
+fs_is_autosync(ndmp_lbr_params_t *nlp)
+{
+	zfs_handle_t *zhp;
+	snap_data_t si;
+
+	(void) mutex_lock(&zlib_mtx);
+	if ((zhp = zfs_open(zlibh, nlp->nlp_vol, ZFS_TYPE_DATASET)) != NULL) {
+		nlp->nlp_snapname[0] = '\0';
+		si.creation_time = (time_t)0;
+		si.last_snapshot = nlp->nlp_snapname;
+		if (ndmp_find_latest_autosync(zhp, (void *) &si) != 0) {
+			syslog(LOG_ERR,
+			    "Find AutoSync failed (err=%d): %s",
+			    errno, libzfs_error_description(zlibh));
+			zfs_close(zhp);
+			(void) mutex_unlock(&zlib_mtx);
+			return (B_FALSE);
+		}
+		zfs_close(zhp);
+		if (strlen(nlp->nlp_snapname) == 0) {
+			syslog(LOG_DEBUG, "Apparently not an "
+			    "Auto-Sync - continue as normal backup");
+			(void) mutex_unlock(&zlib_mtx);
+			return (B_FALSE);
+		}
+	}
+	(void) mutex_unlock(&zlib_mtx);
+	syslog(LOG_DEBUG, "It is an autosync:");
+	syslog(LOG_DEBUG, "nlp->nlp_vol = [%s]", nlp->nlp_vol);
+	syslog(LOG_DEBUG, "nlp->nlp_snapname = [%s]", nlp->nlp_snapname);
+	return (B_TRUE);
 }
 
 /*
@@ -2073,9 +2111,9 @@ fs_is_valid_logvol(char *path)
 	struct stat64 st;
 
 	if (stat64(path, &st) < 0)
-		return (FALSE);
+		return (B_FALSE);
 
-	return (TRUE);
+	return (B_TRUE);
 }
 
 
@@ -2225,6 +2263,57 @@ ndmpd_make_bk_dir_path(char *buf, char *fname)
 	return (buf);
 }
 
+static int
+ndmp_match_autosync_name(zfs_handle_t *zhp, void *arg)
+{
+	snap_data_t *sd = (snap_data_t *)arg;
+	time_t snap_creation;
+	nvlist_t *propval = NULL;
+	nvlist_t *userprops = NULL;
+
+	if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT) {
+		if ((userprops = zfs_get_user_props(zhp)) != NULL) {
+			if (nvlist_lookup_nvlist(userprops,
+			    "nms:autosyncmark",
+			    &propval) == 0 || propval != NULL) {
+				snap_creation = (time_t)zfs_prop_get_int(zhp,
+				    ZFS_PROP_CREATION);
+				if (snap_creation > sd->creation_time) {
+					strncpy((char *) sd->last_snapshot,
+					    zfs_get_name(zhp), ZFS_MAXNAMELEN);
+					sd->creation_time = snap_creation;
+				}
+			}
+		}
+	}
+	zfs_close(zhp);
+	return (0);
+}
+
+/*
+ * ndmp_find_latest_autosync
+ *
+ * Given a dataset zfs_handlt_t find the latest "AutoSync" snapshot
+ */
+int
+ndmp_find_latest_autosync(zfs_handle_t *zhp, void *arg)
+{
+	int err;
+	snap_data_t *si = (snap_data_t *)arg;
+
+	err = zfs_iter_dependents(zhp, B_FALSE,
+	    ndmp_match_autosync_name, (void *)si);
+	if (err) {
+		syslog(LOG_DEBUG,
+		    "Trying to find AutoSync zfs_iter_snapshots: %d", err);
+		si->last_snapshot = '\0';
+		return (-1);
+	} else {
+		syslog(LOG_DEBUG, "Found most recent AutoSync -> [%s]\n",
+		    si->last_snapshot);
+	}
+	return (0);
+}
 
 /*
  * ndmp_is_chkpnt_root
@@ -2353,29 +2442,22 @@ ndmp_check_utf8magic(tlm_cmd_t *cmd)
  * Get the backup checkpoint time.
  */
 int
-ndmp_get_cur_bk_time(ndmp_lbr_params_t *nlp, time_t *tp, char *jname)
+ndmp_get_cur_bk_time(ndmp_lbr_params_t *nlp, time_t *tp)
 {
 	int err;
 
-	if (!nlp || !nlp->nlp_backup_path || !tp) {
+	if (!nlp || !tp) {
 		syslog(LOG_ERR, "Invalid argument");
 		return (-1);
 	}
 
-	if (!fs_is_chkpnt_enabled(nlp->nlp_backup_path)) {
-		syslog(LOG_DEBUG, "Not a chkpnt volume %s",
-		    nlp->nlp_backup_path);
-		*tp = time(NULL);
-		return (0);
-	}
-
-	err = tlm_get_chkpnt_time(nlp->nlp_backup_path, !NLP_ISCHKPNTED(nlp),
-	    tp, jname);
+	err = tlm_get_chkpnt_time(nlp->nlp_snapname, tp);
 	if (err != 0) {
-		syslog(LOG_ERR, "Can't checkpoint time");
+		syslog(LOG_ERR, "Can't checkpoint time from [%s]",
+		    nlp->nlp_snapname);
 	} else {
 		syslog(LOG_DEBUG, "Checkpoint time of [%s] is [%s]",
-		    nlp->nlp_backup_path, cctime(tp));
+		    nlp->nlp_snapname, cctime(tp));
 	}
 
 	return (err);
@@ -2536,6 +2618,11 @@ ndmp_load_params(void)
 
 	/* Get the value from ndmp SMF property. */
 	ndmp_dar_support = ndmpd_get_prop_yorn(NDMP_DAR_SUPPORT);
+
+	ndmp_autosync_support = ndmpd_get_prop_yorn(NDMP_AUTOSYNC_SUPPORT);
+
+	syslog(LOG_DEBUG, "NDMP_AUTOSYNC_SUPPORT set to [%d]",
+	    ndmp_autosync_support);
 
 	if ((ndmp_ver = atoi(ndmpd_get_prop(NDMP_VERSION_ENV))) == 0)
 		ndmp_ver = NDMPVER;

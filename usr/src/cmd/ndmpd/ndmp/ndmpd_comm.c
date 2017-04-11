@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -83,6 +83,11 @@ int ndmp_full_restore_path = 1;
  * Do we support Direct Access Restore?
  */
 int ndmp_dar_support = 0;
+
+/*
+ * Is autosync enabled?
+ */
+int ndmp_autosync_support = 0;
 
 /*
  * ndmp_connection_t handler function

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -499,8 +499,6 @@ main(int argc, char *argv[])
 	if (!run_in_foreground)
 		daemonize_init();
 
-	(void) mutex_init(&ndmpd_zfs_fd_lock, 0, NULL);
-
 	if (mod_init() != 0) {
 		syslog(LOG_ERR, "Failed to load the plugin module.");
 		exit(SMF_EXIT_ERR_CONFIG);
@@ -569,7 +567,6 @@ main(int argc, char *argv[])
 		ndmpd.s_sigval = 0;
 	}
 
-	(void) mutex_destroy(&ndmpd_zfs_fd_lock);
 	libzfs_fini(zlibh);
 	mod_fini();
 	ndmp_door_fini();

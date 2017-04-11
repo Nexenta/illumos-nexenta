@@ -61,6 +61,7 @@
 #define	AUTH_NOT_REQUIRED	FALSE
 #define	NDMP_EOM_MAGIC	"PRCMEOM"
 #define	NDMP_RCF_BASENAME	"NdmpBackup"
+#define	NDMP_AUTOSYNC_BASENAME	"AutoSync"
 #define	KILOBYTE	1024
 
 #define	INT_MAXCMD	12

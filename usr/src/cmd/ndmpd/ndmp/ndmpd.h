@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved.  */
+/* Copyright 2017 Nexenta Systems, Inc.  All rights reserved.  */
 
 #ifndef _NDMPD_H
 #define	_NDMPD_H
@@ -169,6 +169,14 @@ typedef struct {
 } ndmp_restore_params_t;
 
 /*
+ * Used to find latest snapshot in a dataset
+ */
+typedef struct snap_data {
+	time_t		creation_time;
+	const char	*last_snapshot;
+} snap_data_t;
+
+/*
  * Tar format archiving ops table
  */
 extern tm_ops_t tm_tar_ops;
@@ -232,6 +240,11 @@ extern tm_ops_t tm_tar_ops;
 typedef struct ndmp_lbr_params {
 	struct ndmpd_session *nlp_session;
 	int nlp_flags;
+	char nlp_job_name[ZFS_MAXNAMELEN];
+	char nlp_vol[ZFS_MAXNAMELEN];
+	char nlp_snapname[ZFS_MAXNAMELEN];
+	char nlp_clonename[ZFS_MAXNAMELEN];
+	char nlp_mountpoint[ZFS_MAXNAMELEN];
 
 	ndmp_backup_params_t bk_params;
 	ndmp_restore_params_t rs_params;
@@ -714,6 +727,7 @@ typedef struct {
 extern int ndmp_ver;
 extern int ndmp_full_restore_path;
 extern int ndmp_dar_support;
+extern int ndmp_autosync_support;
 extern int ndmp_port;
 extern ndmp_stat_t ndstat;
 
@@ -948,12 +962,13 @@ extern char *ndmp_addr2str_v3(ndmp_addr_type);
 extern boolean_t ndmp_valid_v3addr_type(ndmp_addr_type);
 extern boolean_t ndmp_check_utf8magic(tlm_cmd_t *);
 extern int ndmp_get_cur_bk_time(ndmp_lbr_params_t *,
-    time_t *, char *);
+    time_t *);
 extern char *ndmp_get_relative_path(char *, char *);
 
 extern boolean_t ndmp_fhinode;
 extern void ndmp_load_params(void);
 extern void randomize(unsigned char *, int);
+extern int ndmp_find_latest_autosync(zfs_handle_t *, void *);
 
 
 /*
@@ -980,7 +995,7 @@ extern int ndmpd_mark_inodes_v2(ndmpd_session_t *, ndmp_lbr_params_t *);
 extern void ndmpd_abort_marking_v2(ndmpd_session_t *);
 extern int ndmpd_mark_inodes_v3(ndmpd_session_t *, ndmp_lbr_params_t *);
 extern ndmp_lbr_params_t *ndmp_get_nlp(void *);
-extern int ndmp_clone_snapshot(char *, char *);
+extern int ndmp_clone_snapshot(ndmp_lbr_params_t *);
 
 module_start_func_t ndmpd_tar_backup_starter;
 module_abort_func_t ndmpd_tar_backup_abort;
@@ -1017,8 +1032,8 @@ extern char *gethostaddr(void);
 extern char *get_default_nic_addr(void);
 extern int tlm_init(void);
 
-extern int backup_dataset_create(char *, char *, boolean_t, boolean_t);
-extern int backup_dataset_destroy(char *, char *, boolean_t, boolean_t, int *);
+extern int backup_dataset_create(ndmp_lbr_params_t *);
+extern int backup_dataset_destroy(ndmp_lbr_params_t *);
 
 extern boolean_t fs_is_chkpntvol(char *);
 extern boolean_t fs_is_chkpnt_enabled(char *);

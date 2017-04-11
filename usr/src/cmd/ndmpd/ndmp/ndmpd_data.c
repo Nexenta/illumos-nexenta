@@ -72,10 +72,6 @@ static ndmp_error ndmpd_tar_start_backup_v3(ndmpd_session_t *, char *,
 static ndmp_error ndmpd_tar_start_recover_v3(ndmpd_session_t *,
     ndmp_pval *, ulong_t, ndmp_name_v3 *, ulong_t);
 
-static ndmp_error ndmpd_zfs_start_op(ndmpd_session_t *,
-    ndmp_pval *, ulong_t, ndmp_name_v3 *, ulong_t, enum ndmp_data_operation);
-
-
 /*
  * ************************************************************************
  * NDMP V2 HANDLERS
@@ -427,7 +423,7 @@ ndmpd_data_start_backup_v3(ndmp_connection_t *connection, void *body)
 		(void) snprintf(msg_invalid, 32, "Invalid backup type: %s.",
 		    request->bu_type);
 		(void) snprintf(msg_types, 32,
-		    "Supported backup types are tar, dump, and zfs.");
+		    "Supported backup types are tar, dump.");
 
 		NDMP_APILOG((void *) session, NDMP_LOG_ERROR, ++ndmp_log_msg_id,
 		    msg_invalid);
@@ -436,20 +432,15 @@ ndmpd_data_start_backup_v3(ndmp_connection_t *connection, void *body)
 		syslog(LOG_ERR, "Invalid backup type: %s.",
 		    request->bu_type);
 		syslog(LOG_ERR,
-		    "Supported backup types are tar, dump, and zfs.");
+		    "Supported backup types are tar, dump.");
 
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
 		goto _error;
 	}
 
-	if (session->ns_butype == NDMP_BUTYPE_ZFS) {
-		reply.error = ndmpd_zfs_start_op(session, request->env.env_val,
-		    request->env.env_len, NULL, 0, NDMP_DATA_OP_BACKUP);
-	} else {
-		reply.error = ndmpd_tar_start_backup_v3(session,
-		    request->bu_type, request->env.env_val,
-		    request->env.env_len);
-	}
+	reply.error = ndmpd_tar_start_backup_v3(session,
+	    request->bu_type, request->env.env_val,
+	    request->env.env_len);
 
 	/*
 	 * *_start_backup* sends the reply if the backup is
@@ -508,7 +499,7 @@ ndmpd_data_start_recover_v3(ndmp_connection_t *connection, void *body)
 		(void) snprintf(msg_invalid, 32, "Invalid backup type: %s.",
 		    request->bu_type);
 		(void) snprintf(msg_types, 32,
-		    "Supported backup types are tar, dump, and zfs.");
+		    "Supported backup types are tar, dump.");
 
 		NDMP_APILOG((void *) session, NDMP_LOG_ERROR, ++ndmp_log_msg_id,
 		    msg_invalid);
@@ -517,21 +508,15 @@ ndmpd_data_start_recover_v3(ndmp_connection_t *connection, void *body)
 		syslog(LOG_ERR, "Invalid backup type: %s.",
 		    request->bu_type);
 		syslog(LOG_ERR,
-		    "Supported backup types are tar, dump, and zfs.");
+		    "Supported backup types are tar, dump.");
 
 		reply.error = NDMP_ILLEGAL_ARGS_ERR;
 		goto _error;
 	}
 
-	if (session->ns_butype == NDMP_BUTYPE_ZFS) {
-		reply.error = ndmpd_zfs_start_op(session, request->env.env_val,
-		    request->env.env_len, request->nlist.nlist_val,
-		    request->nlist.nlist_len, NDMP_DATA_OP_RECOVER);
-	} else {
-		reply.error = ndmpd_tar_start_recover_v3(session,
-		    request->env.env_val, request->env.env_len,
-		    request->nlist.nlist_val, request->nlist.nlist_len);
-	}
+	reply.error = ndmpd_tar_start_recover_v3(session,
+	    request->env.env_val, request->env.env_len,
+	    request->nlist.nlist_val, request->nlist.nlist_len);
 
 	/*
 	 * *_start_recover* sends the reply if the recover is
@@ -1605,120 +1590,6 @@ ndmpd_tar_start_recover_v3(ndmpd_session_t *session,
 	}
 
 	(void) pthread_detach(tid);
-
-	return (NDMP_NO_ERR);
-}
-
-static ndmp_error
-ndmpd_zfs_start_op(ndmpd_session_t *session, ndmp_pval *env_val,
-    ulong_t env_len, ndmp_name_v3 *nlist_val, ulong_t nlist_len,
-    enum ndmp_data_operation op)
-{
-	ndmpd_zfs_args_t *ndmpd_zfs_args = &session->ns_ndmpd_zfs_args;
-	ndmp_data_start_backup_reply_v3 backup_reply;
-	ndmp_data_start_recover_reply_v3 recover_reply;
-	pthread_t tid;
-	void *reply;
-	char str[8];
-	int err;
-
-	if (ndmpd_zfs_init(session) != 0)
-		return (NDMP_UNDEFINED_ERR);
-
-	err = ndmpd_save_env(session, env_val, env_len);
-	if (err != NDMP_NO_ERR) {
-		ndmpd_zfs_fini(ndmpd_zfs_args);
-		return (err);
-	}
-
-	switch (op) {
-	case NDMP_DATA_OP_BACKUP:
-		if (!ndmpd_zfs_backup_parms_valid(ndmpd_zfs_args)) {
-			ndmpd_zfs_fini(ndmpd_zfs_args);
-			return (NDMP_ILLEGAL_ARGS_ERR);
-		}
-
-		if (ndmpd_zfs_pre_backup(ndmpd_zfs_args)) {
-			syslog(LOG_ERR, "pre_backup error");
-			return (NDMP_ILLEGAL_ARGS_ERR);
-		}
-
-		session->ns_data.dd_module.dm_start_func =
-		    ndmpd_zfs_backup_starter;
-		(void) strlcpy(str, "backup", 8);
-		break;
-	case NDMP_DATA_OP_RECOVER:
-		err = ndmpd_save_nlist_v3(session, nlist_val, nlist_len);
-		if (err != NDMP_NO_ERR) {
-			ndmpd_zfs_fini(ndmpd_zfs_args);
-			return (NDMP_NO_MEM_ERR);
-		}
-
-		if (!ndmpd_zfs_restore_parms_valid(ndmpd_zfs_args)) {
-			ndmpd_zfs_fini(ndmpd_zfs_args);
-			return (NDMP_ILLEGAL_ARGS_ERR);
-		}
-
-		if (ndmpd_zfs_pre_restore(ndmpd_zfs_args)) {
-			syslog(LOG_ERR, "pre_restore error");
-			(void) ndmpd_zfs_post_restore(ndmpd_zfs_args);
-			return (NDMP_ILLEGAL_ARGS_ERR);
-		}
-		session->ns_data.dd_module.dm_start_func =
-		    ndmpd_zfs_restore_starter;
-		(void) strlcpy(str, "recover", 8);
-		break;
-	case NDMP_DATA_OP_NOACTION:
-	case NDMP_DATA_OP_RECOVER_FILEHIST:
-		return (NDMP_ILLEGAL_ARGS_ERR);
-		break;
-	}
-
-	ndmpd_zfs_params->mp_operation = op;
-	session->ns_data.dd_operation = op;
-	session->ns_data.dd_module.dm_abort_func = ndmpd_zfs_abort;
-	session->ns_data.dd_state = NDMP_DATA_STATE_ACTIVE;
-	session->ns_data.dd_abort = FALSE;
-
-	if (op == NDMP_DATA_OP_BACKUP) {
-		(void) memset((void*)&backup_reply, 0, sizeof (backup_reply));
-		backup_reply.error = NDMP_NO_ERR;
-		reply = &backup_reply;
-	} else {
-		(void) memset((void*)&recover_reply, 0, sizeof (recover_reply));
-		recover_reply.error = NDMP_NO_ERR;
-		reply = &recover_reply;
-	}
-
-	if (ndmp_send_response(session->ns_connection, NDMP_NO_ERR,
-	    reply) < 0) {
-		syslog(LOG_DEBUG, "Sending data_start_%s_v3 reply", str);
-		if (op == NDMP_DATA_OP_RECOVER)
-			ndmpd_data_error(session, NDMP_DATA_HALT_CONNECT_ERROR);
-		ndmpd_zfs_fini(ndmpd_zfs_args);
-		return (NDMP_NO_ERR);
-	}
-
-	err = pthread_create(&tid, NULL,
-	    (funct_t)session->ns_data.dd_module.dm_start_func, ndmpd_zfs_args);
-
-	if (err) {
-		syslog(LOG_ERR, "Can't start %s session (errno %d)",
-		    str, err);
-		ndmpd_zfs_fini(ndmpd_zfs_args);
-		MOD_DONE(ndmpd_zfs_params, -1);
-		return (NDMP_NO_ERR);
-	}
-
-	(void) pthread_detach(tid);
-
-	if (op == NDMP_DATA_OP_BACKUP)
-		NS_INC(nbk);
-	else
-		NS_INC(nrs);
-
-	ndmpd_zfs_dma_log(ndmpd_zfs_args, NDMP_LOG_NORMAL,
-	    "'zfs' %s starting\n", str);
 
 	return (NDMP_NO_ERR);
 }

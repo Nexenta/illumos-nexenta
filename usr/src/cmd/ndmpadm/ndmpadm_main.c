@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -101,6 +101,7 @@ static char *prop_table[] = {
 	"token-maxseq",
 	"version",
 	"dar-support",
+	"autosync-support",
 	"tcp-port",
 	"backup-quarantine",
 	"restore-quarantine",

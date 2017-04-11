@@ -115,6 +115,7 @@ ndmp_plugin_t *ndmp_pl;
  */
 char **ndmp_excl_list = NULL;
 
+extern boolean_t fs_is_autosync(ndmp_lbr_params_t *);
 /*
  * split_env
  *
@@ -778,7 +779,7 @@ log_bk_params_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
     ndmp_lbr_params_t *nlp)
 {
 	MOD_LOGV3(params, NDMP_LOG_NORMAL, "Backing up \"%s\".\n",
-	    nlp->nlp_backup_path);
+	    NLP_ISCHKPNTED(nlp) ? nlp->nlp_mountpoint : nlp->nlp_backup_path);
 
 	if (session->ns_mover.md_data_addr.addr_type == NDMP_ADDR_LOCAL)
 		MOD_LOGV3(params, NDMP_LOG_NORMAL,
@@ -2255,7 +2256,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
 		    bp.bp_chkpnm, nlp->nlp_jstat->js_job_name);
 	} else {
 		tlm_acls.acl_checkpointed = FALSE;
-		bp.bp_chkpnm = nlp->nlp_backup_path;
+		bp.bp_chkpnm = nlp->nlp_mountpoint;
 	}
 	bp.bp_excls = ndmpd_make_exc_list();
 
@@ -2389,8 +2390,9 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 			return (-1);
 		}
 
-		syslog(LOG_DEBUG,
-		    "Backing up \"%s\" started.", nlp->nlp_backup_path);
+		syslog(LOG_DEBUG, "Backing up \"%s\" started.",
+		    NLP_ISCHKPNTED(nlp)
+		    ? nlp->nlp_mountpoint : nlp->nlp_backup_path);
 
 		/* Plug-in module */
 		if (ndmp_pl != NULL &&
@@ -2457,7 +2459,8 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 			    session->ns_data.dd_data_addr.addr_type,
 			    session->ns_tape.td_adapter_name, result);
 			syslog(LOG_DEBUG, "Backing up \"%s\" Finished.",
-			    nlp->nlp_backup_path);
+			    NLP_ISCHKPNTED(nlp) ?
+			    nlp->nlp_mountpoint : nlp->nlp_backup_path);
 		}
 	}
 
@@ -2466,8 +2469,9 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 		    nlp->nlp_backup_path,
 		    session->ns_data.dd_data_addr.addr_type,
 		    session->ns_tape.td_adapter_name, EINTR);
-		syslog(LOG_INFO,
-		    "Backing up \"%s\" aborted.", nlp->nlp_backup_path);
+		syslog(LOG_INFO, "Backing up \"%s\" aborted.",
+		    NLP_ISCHKPNTED(nlp) ?
+		    nlp->nlp_mountpoint : nlp->nlp_backup_path);
 		err = -1;
 	} else {
 
@@ -2492,7 +2496,7 @@ backup_out:
  * of the progress of backup during NDMP backup.
  */
 void
-get_backup_size(ndmp_bkup_size_arg_t *sarg)
+get_backup_size(ndmp_lbr_params_t *nlp)
 {
 	fs_traverse_t ft;
 	u_longlong_t bk_size = 0;
@@ -2500,11 +2504,11 @@ get_backup_size(ndmp_bkup_size_arg_t *sarg)
 	char spath[PATH_MAX];
 	int rv;
 
-	if (fs_is_chkpntvol(sarg->bs_path)) {
-		ft.ft_path = sarg->bs_path;
+	if (NLP_ISCHKPNTED(nlp)) {
+		ft.ft_path = nlp->nlp_mountpoint;
 	} else {
-		(void) tlm_build_snapshot_name(sarg->bs_path,
-		    spath, sarg->bs_jname);
+		(void) tlm_build_snapshot_name(nlp->nlp_backup_path,
+		    spath, nlp->nlp_job_name);
 		ft.ft_path = spath;
 	}
 
@@ -2517,15 +2521,15 @@ get_backup_size(ndmp_bkup_size_arg_t *sarg)
 	if ((rv = traverse_level(&ft)) != 0) {
 		syslog(LOG_DEBUG, "bksize err=%d", rv);
 		syslog(LOG_DEBUG, "[%s] backup will be reported as [0]\n",
-		    sarg->bs_jname, buf);
+		    nlp->nlp_job_name, buf);
 		bk_size = 0;
 	} else {
 		(void) zfs_nicenum(bk_size, buf, sizeof (buf));
 		syslog(LOG_DEBUG, "[%s] backup size is [%s]\n",
-		    sarg->bs_jname, buf);
+		    nlp->nlp_job_name, buf);
 	}
 
-	sarg->bs_session->ns_data.dd_data_size = bk_size;
+	nlp->nlp_session->ns_data.dd_data_size = bk_size;
 }
 
 /*
@@ -3689,12 +3693,40 @@ ndmp_backup_get_params_v3(ndmpd_session_t *session,
 	if (!nlp->nlp_backup_path)
 		return (NDMP_ILLEGAL_ARGS_ERR);
 
-	if (fs_is_chkpntvol(nlp->nlp_backup_path) ||
-	    fs_is_rdonly(nlp->nlp_backup_path) ||
-	    !fs_is_chkpnt_enabled(nlp->nlp_backup_path))
+	/*
+	 * Assume volume is not checkpointed unless found to be below
+	 */
+	NLP_UNSET(nlp, NLPF_CHKPNTED_PATH);
+
+	/*
+	 * Get the zfs volume name from the backup path and store in
+	 * nlp_vol.
+	 */
+	if (get_zfsvolname(nlp->nlp_vol,
+	    sizeof (nlp->nlp_vol), nlp->nlp_backup_path) == -1) {
+		syslog(LOG_ERR,
+		    "Cannot get volume from [%s] on create",
+		    nlp->nlp_backup_path);
+		NDMP_FREE(nlp->nlp_params);
+		return (-1);
+	}
+
+	/*
+	 * Find out if this data is already checkpointed via. an AutoSync.
+	 * If it is, set the flag, and extract the snapshot name to use
+	 * as the nlp_job_name otherwise use the normal 'NdmpBackup-nnnn'
+	 * format.
+	 */
+	if (fs_is_autosync(nlp) && ndmp_autosync_support) {
 		NLP_SET(nlp, NLPF_CHKPNTED_PATH);
-	else
-		NLP_UNSET(nlp, NLPF_CHKPNTED_PATH);
+		syslog(LOG_DEBUG, ">>>> AutoSync active <<<<");
+	}
+
+	ndmp_new_job_name(nlp->nlp_job_name,
+	    sizeof (nlp->nlp_job_name));
+
+	syslog(LOG_DEBUG, "New backup job name [%s]",
+	    nlp->nlp_job_name);
 
 	/* Should the st_ctime be ignored when backing up? */
 	if (ndmp_ignore_ctime) {
@@ -3743,48 +3775,39 @@ ndmpd_tar_backup_starter_v3(void *arg)
 	int err;
 	ndmpd_session_t *session;
 	ndmp_lbr_params_t *nlp;
-	char jname[TLM_MAX_BACKUP_JOB_NAME];
-	ndmp_bkup_size_arg_t sarg;
-
 
 	session = (ndmpd_session_t *)(params->mp_daemon_cookie);
 	*(params->mp_module_cookie) = nlp = ndmp_get_nlp(session);
 	ndmp_session_ref(session);
-	if (ndmp_new_job_name(jname, sizeof (jname)) <= 0) {
-		return (-1);
-	}
-	sarg.bs_session = session;
-	sarg.bs_jname = jname;
-	sarg.bs_path = nlp->nlp_backup_path;
 
-	pthread_cleanup_push(ndmp_remove_snapshot, &sarg);
+	pthread_cleanup_push(backup_dataset_destroy, nlp);
 
 	err = 0;
-	if (!NLP_ISCHKPNTED(nlp) &&
-	    ndmp_create_snapshot(nlp->nlp_backup_path, jname) < 0) {
+	if (backup_dataset_create(nlp) < 0) {
 		MOD_LOGV3(params, NDMP_LOG_ERROR,
 		    "Creating checkpoint on \"%s\".\n",
 		    nlp->nlp_backup_path);
 		err = -1;
 	}
 
-	syslog(LOG_DEBUG, "BACKUP STARTED [%s]", jname);
+	syslog(LOG_DEBUG, "BACKUP STARTED [%s]", nlp->nlp_snapname);
 
 	if (err == 0) {
 		/* Get an estimate of the data size */
-		(void) get_backup_size(&sarg);
+		(void) get_backup_size(nlp);
 
-		err = ndmp_get_cur_bk_time(nlp, &nlp->nlp_cdate, jname);
+		err = ndmp_get_cur_bk_time(nlp, &nlp->nlp_cdate);
 		if (err != 0) {
 			syslog(LOG_ERR,
 			    "Failed to get current backup time %d", err);
 		} else {
 			log_bk_params_v3(session, params, nlp);
-			err = tar_backup_v3(session, params, nlp, jname);
+			err = tar_backup_v3(session, params, nlp,
+			    nlp->nlp_job_name);
 		}
 	}
 
-	pthread_cleanup_pop(!NLP_ISCHKPNTED(nlp));
+	pthread_cleanup_pop(B_TRUE);
 
 	if (err == 0)
 		save_backup_date_v3(params, nlp);
@@ -3797,7 +3820,8 @@ ndmpd_tar_backup_starter_v3(void *arg)
 
 	NS_DEC(nbk);
 	ndmp_session_unref(session);
-	syslog(LOG_DEBUG, "BACKUP COMPLETE [%s]", jname);
+	syslog(LOG_DEBUG, "BACKUP COMPLETE [%s] (as jobname %s)",
+	    nlp->nlp_snapname, nlp->nlp_job_name);
 	return (err);
 }
 
