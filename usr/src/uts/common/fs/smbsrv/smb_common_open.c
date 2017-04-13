@@ -559,6 +559,9 @@ smb_open_subr(smb_request_t *sr)
 					smb_node_release(dnode);
 					return (NT_STATUS_ACCESS_DENIED);
 				}
+				if (op->create_options & FILE_DELETE_ON_CLOSE) {
+					return (NT_STATUS_CANNOT_DELETE);
+				}
 			}
 		}
 
