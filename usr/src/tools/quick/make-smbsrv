@@ -11,11 +11,11 @@
 #
 
 #
-# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
-# Use distributed make (dmake) by default.
-make=${MAKE:-dmake}
+# Use normal make (not dmake) by default.
+make=${MAKE:-make}
 
 CLOSED_IS_PRESENT=no
 export CLOSED_IS_PRESENT
@@ -78,22 +78,28 @@ then
     (cd $SRC/uts && $make -k all_h)
 
   test -f $SRC/head/rpcsvc/nispasswd.h ||
-    (cd $SRC/head && $make -k install_h)
+    (cd $SRC/head && $make -k $targ)
 
   # ... stuff under $ROOT (proto area)
   test -d $ROOT/usr/include/sys ||
     (cd $SRC && $make rootdirs)
   test -f $ROOT/usr/include/sys/types.h ||
-    (cd $SRC/uts && $make -k install_h)
+    (cd $SRC/uts && $make -k $targ)
   test -f $ROOT/usr/include/rpcsvc/daemon_utils.h ||
-    (cd $SRC/head && $make install_h)
+    (cd $SRC/head && $make $targ)
 
   # always update the smbsrv headers to be safe
-  (cd $SRC/uts/common/gssapi && $make -k install_h)
-  (cd $SRC/uts/common/sys && $make -k install_h)
-  (cd $SRC/uts/common/smb && $make -k install_h)
-  (cd $SRC/uts/common/smbsrv && $make -k install_h)
+  (cd $SRC/uts/common/gssapi && $make -k $targ)
+  (cd $SRC/uts/common/sys && $make -k $targ)
+  (cd $SRC/uts/common/smb && $make -k $targ)
+  (cd $SRC/uts/common/smbsrv && $make -k $targ)
+fi
 
+if [ "$targ" = lint ]
+then
+  targ=check
+  (cd $SRC/uts/common/smb && $make -k $targ)
+  (cd $SRC/uts/common/smbsrv && $make -k $targ)
 fi
 
 # Need some library headers too...
@@ -114,7 +120,10 @@ for lib in \
   libsmbfs \
   libsqlite \
   libuutil \
+  libzfs_core \
+  libzfs \
   passwdutil \
+  pkcs11 \
   smbsrv
 do
   (cd $SRC/lib/$lib && $make $targ)
@@ -190,7 +199,6 @@ clean|clobber)
   ;;
 esac
 
-(cd $SRC/cmd/devfsadm && $make $1)
 (cd $SRC/cmd/smbsrv && $make $1)
 
 # Build the MDB modules, WITH the linktest
@@ -225,14 +233,6 @@ do
 	$make $1 )
 
 done
-
-(cd $SRC/cmd/Adm/sun && $make $1)
-
-# Deal with mode 0400 file annoyance...
-# See usr/src/cmd/Adm/sun/Makefile
-if [ $1 = install ]; then
-  chmod a+r $ROOT/var/smb/smbpasswd
-fi
 }
 
 
@@ -249,13 +249,13 @@ do_tags() {
 	find uts/common/smbsrv -name '*.[ch]' -print |sort
 	find uts/common/fs/smbsrv -name '*.[ch]' -print |sort
 	find uts/common/gssapi -name '*.[ch]' -print |sort
+	find common/smbsrv -name '*.[ch]' -print |sort
 	find head -name '*.h' -print |sort
 	find lib/smbsrv -name '*.[ch]' -print |sort
 	find lib/libsmbfs -name '*.[ch]' -print |sort
 	find lib/libads -name '*.[ch]' -print |sort
 	find lib/libgss -name '*.[ch]' -print |sort
 	find cmd/smbsrv -name '*.[ch]' -print |sort
-	find common/smbsrv -name '*.[ch]' -print |sort
 	) > $SRC/cscope.files
 
 	(cd $SRC ;
@@ -287,7 +287,6 @@ usr/lib/smbsrv/libmlsvc.so.1
 usr/lib/smbsrv/libsmb.so.1
 usr/lib/smbsrv/libsmbns.so.1
 usr/lib/smbsrv/smbd
-usr/sbin/devfsadm
 usr/sbin/smbadm
 usr/sbin/smbstat
 "
@@ -316,6 +315,7 @@ do
     do_cmds $arg
     ;;
   lint)
+    do_hdrs $arg
     do_kern $arg
     do_lib1 $arg
     do_lib2 $arg

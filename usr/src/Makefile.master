@@ -22,7 +22,7 @@
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2015 Gary Mills
@@ -463,6 +463,7 @@ CALLSYMS=	-W0,-xdbggen=no%usedonly
 # generate stabs.
 #
 DEBUGFORMAT=	-xdebugformat=stabs
+$(SRCDBGBLD)DEBUGFORMAT=
 
 #
 # Flags used to build in debug mode for ctf generation.  Bugs in the Devpro
