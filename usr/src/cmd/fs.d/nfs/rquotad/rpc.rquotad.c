@@ -19,6 +19,7 @@
  * CDDL HEADER END
  */
 /*
+ * Copyright 2017 Joyent Inc
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
@@ -37,6 +38,7 @@
 #include <sys/mnttab.h>
 #include <sys/param.h>
 #include <sys/time.h>
+#include <sys/debug.h>
 #ifdef notdef
 #include <netconfig.h>
 #endif
@@ -317,6 +319,8 @@ getquota(rqstp, transp)
 	struct fsquot *fsqp;
 	struct timeval tv;
 	bool_t qactive;
+
+	CTASSERT(sizeof (authp) <= RQCRED_SIZE);
 
 	gqa.gqa_pathp = NULL;		/* let xdr allocate the storage */
 	if (!svc_getargs(transp, xdr_getquota_args, (caddr_t)&gqa)) {

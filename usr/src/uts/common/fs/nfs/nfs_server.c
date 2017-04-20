@@ -20,10 +20,11 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright (c) 2017 Joyent Inc
  */
 
 /*
@@ -67,6 +68,7 @@
 #include <sys/mode.h>
 #include <sys/acl.h>
 #include <sys/sdt.h>
+#include <sys/debug.h>
 
 #include <rpc/types.h>
 #include <rpc/auth.h>
@@ -2072,6 +2074,7 @@ checkwin(int flavor, int window, struct svc_req *req)
 	switch (flavor) {
 	case AUTH_DES:
 		adc = (struct authdes_cred *)req->rq_clntcred;
+		CTASSERT(sizeof (struct authdes_cred) <= RQCRED_SIZE);
 		if (adc->adc_fullname.window > window)
 			return (0);
 		break;
