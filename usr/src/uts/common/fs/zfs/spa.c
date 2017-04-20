@@ -4325,7 +4325,7 @@ spa_import_rootpool(char *devpath, char *devid)
 	VERIFY(nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_TXG, &txg) == 0);
 
 	mutex_enter(&spa_namespace_lock);
-	if ((spa = spa_lookup(pname)) != NULL) {
+	if ((spa = spa_lookup(pname)) != NULL || spa_config_guid_exists(guid)) {
 		/*
 		 * Remove the existing root pool from the namespace so that we
 		 * can replace it with the correct config we just read in.
@@ -4419,12 +4419,16 @@ spa_import(const char *pool, nvlist_t *config, nvlist_t *props, uint64_t flags)
 	nvlist_t *nvroot;
 	nvlist_t **spares, **l2cache;
 	uint_t nspares, nl2cache;
+	uint64_t guid;
+
+	if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID, &guid) != 0)
+		return (SET_ERROR(EINVAL));
 
 	/*
 	 * If a pool with this name exists, return failure.
 	 */
 	mutex_enter(&spa_namespace_lock);
-	if (spa_lookup(pool) != NULL) {
+	if (spa_lookup(pool) != NULL || spa_config_guid_exists(guid)) {
 		mutex_exit(&spa_namespace_lock);
 		return (SET_ERROR(EEXIST));
 	}

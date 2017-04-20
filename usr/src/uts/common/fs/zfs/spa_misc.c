@@ -571,6 +571,7 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	spa_config_dirent_t *dp;
 	cyc_handler_t hdlr;
 	cyc_time_t when;
+	uint64_t guid;
 
 	ASSERT(MUTEX_HELD(&spa_namespace_lock));
 
@@ -615,6 +616,18 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	spa->spa_load_max_txg = UINT64_MAX;
 	spa->spa_proc = &p0;
 	spa->spa_proc_state = SPA_PROC_NONE;
+
+	/*
+	 * Grabbing the guid here is just so that spa_config_guid_exists can
+	 * check early on to protect against doubled imports of the same pool
+	 * under different names. If the GUID isn't provided here, we will
+	 * let spa generate one later on during spa_load, although in that
+	 * case we might not be able to provide the double-import protection.
+	 */
+	if (nvlist_lookup_uint64(config, ZPOOL_CONFIG_POOL_GUID, &guid) == 0) {
+		spa->spa_config_guid = guid;
+		ASSERT(!spa_config_guid_exists(guid));
+	}
 
 	hdlr.cyh_func = spa_deadman;
 	hdlr.cyh_arg = spa;
@@ -1430,6 +1443,35 @@ boolean_t
 spa_guid_exists(uint64_t pool_guid, uint64_t device_guid)
 {
 	return (spa_by_guid(pool_guid, device_guid) != NULL);
+}
+
+/*
+ * Similar to spa_guid_exists, but uses the spa_config_guid and doesn't
+ * filter the check by pool state (as spa_guid_exists does). This is
+ * used to protect against attempting to spa_add the same pool (with the
+ * same pool GUID) under different names. This situation can happen if
+ * the boot_archive contains an outdated zpool.cache file after a pool
+ * rename. That would make us import the pool twice, resulting in data
+ * corruption. Normally the boot_archive shouldn't contain a zpool.cache
+ * file, but if due to misconfiguration it does, this function serves as
+ * a failsafe to prevent the double import.
+ */
+boolean_t
+spa_config_guid_exists(uint64_t pool_guid)
+{
+	spa_t *spa;
+
+	ASSERT(MUTEX_HELD(&spa_namespace_lock));
+	if (pool_guid == 0)
+		return (B_FALSE);
+
+	for (spa = avl_first(&spa_namespace_avl); spa != NULL;
+	    spa = AVL_NEXT(&spa_namespace_avl, spa)) {
+		if (spa->spa_config_guid == pool_guid)
+			return (B_TRUE);
+	}
+
+	return (B_FALSE);
 }
 
 char *

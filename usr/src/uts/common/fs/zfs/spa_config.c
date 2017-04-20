@@ -121,13 +121,20 @@ spa_config_load(void)
 	mutex_enter(&spa_namespace_lock);
 	nvpair = NULL;
 	while ((nvpair = nvlist_next_nvpair(nvlist, nvpair)) != NULL) {
+		uint64_t guid = 0;
+
 		if (nvpair_type(nvpair) != DATA_TYPE_NVLIST)
 			continue;
 
 		child = fnvpair_value_nvlist(nvpair);
+		/* a zero guid means we simply will ignore the check later */
+		(void) nvlist_lookup_uint64(child, ZPOOL_CONFIG_POOL_GUID,
+		    &guid);
 
-		if (spa_lookup(nvpair_name(nvpair)) != NULL)
+		if (spa_lookup(nvpair_name(nvpair)) != NULL ||
+		    spa_config_guid_exists(guid)) {
 			continue;
+		}
 		(void) spa_add(nvpair_name(nvpair), child, NULL);
 	}
 	mutex_exit(&spa_namespace_lock);
