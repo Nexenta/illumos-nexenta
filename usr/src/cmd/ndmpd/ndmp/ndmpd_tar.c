@@ -1817,15 +1817,10 @@ ndmpd_tar_backup_starter(void *arg)
 	int err;
 	ndmpd_session_t *session;
 	ndmp_lbr_params_t *nlp;
-	ndmp_bkup_size_arg_t sarg;
 
 	session = (ndmpd_session_t *)(mod_params->mp_daemon_cookie);
 	*(mod_params->mp_module_cookie) = nlp = ndmp_get_nlp(session);
 	ndmp_session_ref(session);
-
-	sarg.bs_session = session;
-	sarg.bs_jname = nlp->nlp_jstat->js_job_name;
-	sarg.bs_path = nlp->nlp_backup_path;
 
 	err = 0;
 	if (fs_is_chkpntvol(nlp->nlp_backup_path) ||

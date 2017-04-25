@@ -103,8 +103,6 @@ snapshot_release(char *volname, char *snapname, char *jname)
 int
 backup_dataset_create(ndmp_lbr_params_t *nlp)
 {
-	zfs_handle_t *zhp;
-	snap_data_t si;
 	char zpoolname[ZFS_MAXNAMELEN];
 	char *slash;
 	int rv;

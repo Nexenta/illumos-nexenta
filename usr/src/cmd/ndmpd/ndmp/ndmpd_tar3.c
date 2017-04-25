@@ -3722,7 +3722,7 @@ ndmp_backup_get_params_v3(ndmpd_session_t *session,
 		syslog(LOG_DEBUG, ">>>> AutoSync active <<<<");
 	}
 
-	ndmp_new_job_name(nlp->nlp_job_name,
+	(void) ndmp_new_job_name(nlp->nlp_job_name,
 	    sizeof (nlp->nlp_job_name));
 
 	syslog(LOG_DEBUG, "New backup job name [%s]",

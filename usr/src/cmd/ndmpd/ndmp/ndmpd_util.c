@@ -2279,7 +2279,8 @@ ndmp_match_autosync_name(zfs_handle_t *zhp, void *arg)
 				snap_creation = (time_t)zfs_prop_get_int(zhp,
 				    ZFS_PROP_CREATION);
 				if (snap_creation > sd->creation_time) {
-					strncpy((char *) sd->last_snapshot,
+					(void) strncpy(
+					    (char *) sd->last_snapshot,
 					    zfs_get_name(zhp), ZFS_MAXNAMELEN);
 					sd->creation_time = snap_creation;
 				}
