@@ -23,7 +23,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2012, Joyent, Inc. All rights reserved.
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  */
 
@@ -849,7 +849,7 @@ send_iterate_fs(zfs_handle_t *zhp, void *arg)
 	sd->parent_fromsnap_guid = 0;
 	VERIFY(0 == nvlist_alloc(&sd->parent_snaps, NV_UNIQUE_NAME, 0));
 	VERIFY(0 == nvlist_alloc(&sd->snapprops, NV_UNIQUE_NAME, 0));
-	(void) zfs_iter_snapshots(zhp, send_iterate_snap, sd);
+	(void) zfs_iter_snapshots_sorted(zhp, send_iterate_snap, sd);
 	VERIFY(0 == nvlist_add_nvlist(nvfs, "snaps", sd->parent_snaps));
 	VERIFY(0 == nvlist_add_nvlist(nvfs, "snapprops", sd->snapprops));
 	nvlist_free(sd->parent_snaps);
@@ -1938,6 +1938,9 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 	prop_changelist_t *clp;
 	zfs_handle_t *zhp;
 
+	if (!zfs_dataset_exists(hdl, name, ZFS_TYPE_DATASET))
+		return (ENOENT);
+
 	zhp = zfs_open(hdl, name, ZFS_TYPE_DATASET);
 	if (zhp == NULL)
 		return (-1);
@@ -1955,16 +1958,26 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 
 	if (tryname) {
 		(void) strcpy(newname, tryname);
-
 		(void) strlcpy(zc.zc_value, tryname, sizeof (zc.zc_value));
+		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
 
 		if (flags->verbose) {
-			(void) printf("attempting rename %s to %s\n",
+			char errbuf[1024];
+			(void) snprintf(errbuf, sizeof (errbuf),
+			    dgettext(TEXT_DOMAIN,
+			    "attempting to rename '%s' to '%s': "),
 			    zc.zc_name, zc.zc_value);
+			if (err == 0) {
+				(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+				    "%s: success\n"), errbuf);
+			} else {
+				zfs_standard_error(hdl, errno, errbuf);
+			}
 		}
-		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
+
 		if (err == 0)
 			changelist_rename(clp, name, tryname);
+
 	} else {
 		err = ENOENT;
 	}
@@ -1975,24 +1988,26 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 		(void) snprintf(newname, ZFS_MAXNAMELEN, "%.*srecv-%u-%u",
 		    baselen, name, getpid(), seq);
 		(void) strlcpy(zc.zc_value, newname, sizeof (zc.zc_value));
+		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
 
 		if (flags->verbose) {
-			(void) printf("failed - trying rename %s to %s\n",
+			char errbuf[1024];
+			(void) snprintf(errbuf, sizeof (errbuf),
+			    dgettext(TEXT_DOMAIN,
+			    "attempting to temporarily rename '%s' to '%s': "),
 			    zc.zc_name, zc.zc_value);
+			if (err == 0) {
+				(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+				    "%s: success\n"), errbuf);
+			} else {
+				zfs_standard_error(hdl, errno, errbuf);
+			}
 		}
-		err = ioctl(hdl->libzfs_fd, ZFS_IOC_RENAME, &zc);
+
 		if (err == 0)
 			changelist_rename(clp, name, newname);
-		if (err && flags->verbose) {
-			(void) printf("failed (%u) - "
-			    "will try again on next pass\n", errno);
-		}
+
 		err = EAGAIN;
-	} else if (flags->verbose) {
-		if (err == 0)
-			(void) printf("success\n");
-		else
-			(void) printf("failed (%u)\n", errno);
 	}
 
 	(void) changelist_postfix(clp);
@@ -2011,6 +2026,9 @@ recv_destroy(libzfs_handle_t *hdl, const char *name, int baselen,
 	zfs_handle_t *zhp;
 	boolean_t defer = B_FALSE;
 	int spa_version;
+
+	if (!zfs_dataset_exists(hdl, name, ZFS_TYPE_DATASET))
+		return (ENOENT);
 
 	zhp = zfs_open(hdl, name, ZFS_TYPE_DATASET);
 	if (zhp == NULL)
@@ -2031,15 +2049,22 @@ recv_destroy(libzfs_handle_t *hdl, const char *name, int baselen,
 	zc.zc_objset_type = DMU_OST_ZFS;
 	zc.zc_defer_destroy = defer;
 	(void) strlcpy(zc.zc_name, name, sizeof (zc.zc_name));
-
-	if (flags->verbose)
-		(void) printf("attempting destroy %s\n", zc.zc_name);
 	err = ioctl(hdl->libzfs_fd, ZFS_IOC_DESTROY, &zc);
-	if (err == 0) {
-		if (flags->verbose)
-			(void) printf("success\n");
-		changelist_remove(clp, zc.zc_name);
+
+	if (flags->verbose) {
+		char errbuf[1024];
+		(void) snprintf(errbuf, sizeof (errbuf), dgettext(TEXT_DOMAIN,
+		    "attempting to destroy '%s'"), zc.zc_name);
+		if (err == 0) {
+			(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+			    "%s: success\n"), errbuf);
+		} else {
+			zfs_standard_error(hdl, errno, errbuf);
+		}
 	}
+
+	if (err == 0)
+		changelist_remove(clp, zc.zc_name);
 
 	(void) changelist_postfix(clp);
 	changelist_free(clp);
@@ -2138,55 +2163,46 @@ guid_to_name(libzfs_handle_t *hdl, const char *parent, uint64_t guid,
 }
 
 /*
- * Return +1 if guid1 is before guid2, 0 if they are the same, and -1 if
- * guid1 is after guid2.
+ * Returns a value:
+ * +1 - promote is reqired
+ *  0 - promote is not required
+ * -1 - an error is occured
  */
 static int
-created_before(libzfs_handle_t *hdl, avl_tree_t *avl,
+check_promote(libzfs_handle_t *hdl, avl_tree_t *avl,
     uint64_t guid1, uint64_t guid2)
 {
 	nvlist_t *nvfs;
 	char *fsname, *snapname;
-	char buf[ZFS_MAXNAMELEN];
-	int rv;
-	zfs_handle_t *guid1hdl, *guid2hdl;
 	uint64_t create1, create2;
 
+	/* the local dataset is not cloned */
 	if (guid2 == 0)
 		return (0);
+
+	/* the stream dataset is not cloned */
 	if (guid1 == 0)
 		return (1);
 
 	nvfs = fsavl_find(avl, guid1, &snapname);
+	if (nvfs == NULL)
+		return (0);
 	VERIFY(0 == nvlist_lookup_string(nvfs, "name", &fsname));
-	(void) snprintf(buf, sizeof (buf), "%s@%s", fsname, snapname);
-	guid1hdl = zfs_open(hdl, buf, ZFS_TYPE_SNAPSHOT);
-	if (guid1hdl == NULL)
-		return (-1);
+	create1 = get_snap_txg(hdl, fsname, snapname);
 
 	nvfs = fsavl_find(avl, guid2, &snapname);
+	if (nvfs == NULL)
+		return (0);
 	VERIFY(0 == nvlist_lookup_string(nvfs, "name", &fsname));
-	(void) snprintf(buf, sizeof (buf), "%s@%s", fsname, snapname);
-	guid2hdl = zfs_open(hdl, buf, ZFS_TYPE_SNAPSHOT);
-	if (guid2hdl == NULL) {
-		zfs_close(guid1hdl);
-		return (-1);
-	}
+	create2 = get_snap_txg(hdl, fsname, snapname);
 
-	create1 = zfs_prop_get_int(guid1hdl, ZFS_PROP_CREATETXG);
-	create2 = zfs_prop_get_int(guid2hdl, ZFS_PROP_CREATETXG);
+	if (create1 == 0 || create2 == 0)
+		return (-1);
 
 	if (create1 < create2)
-		rv = -1;
-	else if (create1 > create2)
-		rv = +1;
-	else
-		rv = 0;
+		return (1);
 
-	zfs_close(guid1hdl);
-	zfs_close(guid2hdl);
-
-	return (rv);
+	return (0);
 }
 
 static int
@@ -2232,6 +2248,7 @@ again:
 		uint64_t parent_fromsnap_guid, stream_parent_fromsnap_guid;
 		char *fsname, *stream_fsname;
 		boolean_t stream_fs_exists = B_FALSE;
+		boolean_t stream_originfs_exists = B_FALSE;
 
 		nextfselem = nvlist_next_nvpair(local_nv, fselem);
 
@@ -2244,7 +2261,8 @@ again:
 
 		if (!nvlist_empty(limitds) && !nvlist_exists(limitds, fsname)) {
 			if (flags->verbose) {
-				(void) printf("skipping receive of %s\n",
+				(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+				    "skip receiving for excluded '%s'\n"),
 				    fsname);
 			}
 			continue;
@@ -2256,11 +2274,12 @@ again:
 		 * and for preserving snapshots on the receiving side
 		 */
 		for (snapelem = nvlist_next_nvpair(snaps, NULL);
-		    snapelem; snapelem = nvlist_next_nvpair(snaps, snapelem)) {
-			uint64_t thisguid;
+		    snapelem != NULL; snapelem = nextsnapelem) {
+			uint64_t snapguid;
 
-			VERIFY(0 == nvpair_value_uint64(snapelem, &thisguid));
-			stream_nvfs = fsavl_find(stream_avl, thisguid, NULL);
+			nextsnapelem = nvlist_next_nvpair(snaps, snapelem);
+			VERIFY(0 == nvpair_value_uint64(snapelem, &snapguid));
+			stream_nvfs = fsavl_find(stream_avl, snapguid, NULL);
 
 			if (stream_nvfs != NULL) {
 				stream_fs_exists = B_TRUE;
@@ -2268,19 +2287,41 @@ again:
 			}
 		}
 
+		/* Check the stream's fs for origin snapshot */
+		if (stream_fs_exists && originguid != 0) {
+			nvlist_t *stream_snaps;
+
+			VERIFY(0 == nvlist_lookup_nvlist(stream_nvfs, "snaps",
+			    &stream_snaps));
+
+			for (snapelem = nvlist_next_nvpair(stream_snaps, NULL);
+			    snapelem != NULL; snapelem = nextsnapelem) {
+				uint64_t stream_snapguid;
+
+				nextsnapelem = nvlist_next_nvpair(stream_snaps,
+				    snapelem);
+				VERIFY(0 == nvpair_value_uint64(snapelem,
+				    &stream_snapguid));
+
+				if (stream_snapguid == originguid) {
+					stream_originfs_exists = B_TRUE;
+					break;
+				}
+			}
+		}
+
 		/* check for promote */
 		(void) nvlist_lookup_uint64(stream_nvfs, "origin",
 		    &stream_originguid);
-		if (stream_nvfs && originguid != stream_originguid) {
-			switch (created_before(hdl, local_avl,
+		if (originguid != stream_originguid && stream_originfs_exists) {
+			switch (check_promote(hdl, local_avl,
 			    stream_originguid, originguid)) {
+			case 0:
+				break;
 			case 1: {
 				/* promote it! */
 				zfs_cmd_t zc = { 0 };
 				char *origin_fsname;
-
-				if (flags->verbose)
-					(void) printf("promoting %s\n", fsname);
 
 				VERIFY(0 == nvlist_lookup_string(nvfs,
 				    "origin_fsname", &origin_fsname));
@@ -2289,36 +2330,52 @@ again:
 				(void) strlcpy(zc.zc_name, fsname,
 				    sizeof (zc.zc_name));
 				error = zfs_ioctl(hdl, ZFS_IOC_PROMOTE, &zc);
+
+				if (flags->verbose) {
+					char errbuf[1024];
+					(void) snprintf(errbuf, sizeof (errbuf),
+					    dgettext(TEXT_DOMAIN,
+					    "attempting to promote '%s': "),
+					    zc.zc_name);
+					if (error == 0) {
+						(void) fprintf(stderr,
+						    dgettext(TEXT_DOMAIN,
+						    "%s: success\n"), errbuf);
+					} else {
+						zfs_standard_error(hdl, errno,
+						    errbuf);
+					}
+				}
+
 				if (error == 0)
 					progress = B_TRUE;
-				break;
+
+				/*
+				 * We had/have the wrong origin, therefore our
+				 * list of snapshots is wrong. Need to handle
+				 * them on the next pass.
+				 */
+
+				needagain = B_TRUE;
+				goto out;
 			}
 			default:
-				break;
-			case -1:
-				fsavl_destroy(local_avl);
-				nvlist_free(local_nv);
-				return (-1);
+				progress = B_FALSE;
+				needagain = B_FALSE;
+				goto out;
 			}
-			/*
-			 * We had/have the wrong origin, therefore our
-			 * list of snapshots is wrong.  Need to handle
-			 * them on the next pass.
-			 */
-			needagain = B_TRUE;
-			continue;
 		}
 
 		for (snapelem = nvlist_next_nvpair(snaps, NULL);
-		    snapelem; snapelem = nextsnapelem) {
-			uint64_t thisguid;
+		    snapelem != NULL; snapelem = nextsnapelem) {
+			uint64_t snapguid;
 			char *stream_snapname;
 			nvlist_t *found, *props;
 
 			nextsnapelem = nvlist_next_nvpair(snaps, snapelem);
 
-			VERIFY(0 == nvpair_value_uint64(snapelem, &thisguid));
-			found = fsavl_find(stream_avl, thisguid,
+			VERIFY(0 == nvpair_value_uint64(snapelem, &snapguid));
+			found = fsavl_find(stream_avl, snapguid,
 			    &stream_snapname);
 
 			/* check for delete */
@@ -2366,10 +2423,12 @@ again:
 
 				error = recv_destroy(hdl, name,
 				    strlen(fsname)+1, newname, flags);
-				if (error)
-					needagain = B_TRUE;
-				else
+
+				if (error == 0)
 					progress = B_TRUE;
+				else
+					needagain = B_TRUE;
+
 				continue;
 			}
 
@@ -2404,14 +2463,15 @@ again:
 
 				error = recv_rename(hdl, name, tryname,
 				    strlen(fsname)+1, newname, flags);
-				if (error)
-					needagain = B_TRUE;
-				else
+
+				if (error == 0)
 					progress = B_TRUE;
+				else
+					needagain = B_TRUE;
 			}
 
 			if (strcmp(stream_snapname, fromsnap) == 0)
-				fromguid = thisguid;
+				fromguid = snapguid;
 		}
 
 		/* check for delete */
@@ -2421,22 +2481,26 @@ again:
 
 			error = recv_destroy(hdl, fsname, strlen(tofs)+1,
 			    newname, flags);
-			if (error)
-				needagain = B_TRUE;
-			else
+
+			switch (error) {
+			case 0:
 				progress = B_TRUE;
+				break;
+			case EAGAIN:
+				progress = B_TRUE;
+				needagain = B_TRUE;
+				goto out;
+			default:
+				needagain = B_TRUE;
+				break;
+			}
+
 			continue;
 		}
 
-		if (fromguid == 0) {
-			if (flags->verbose) {
-				(void) printf("local fs %s does not have "
-				    "fromsnap (%s in stream); must have "
-				    "been deleted locally; ignoring\n",
-				    fsname, fromsnap);
-			}
+		/* skip destroyed or re-created datasets */
+		if (fromguid == 0)
 			continue;
-		}
 
 		VERIFY(0 == nvlist_lookup_string(stream_nvfs,
 		    "name", &stream_fsname));
@@ -2478,8 +2542,10 @@ again:
 			} else {
 				tryname[0] = '\0';
 				if (flags->verbose) {
-					(void) printf("local fs %s new parent "
-					    "not found\n", fsname);
+					(void) fprintf(stderr,
+					    dgettext(TEXT_DOMAIN,
+					    "parent dataset not found for "
+					    "local dataset '%s'\n"), fsname);
 				}
 			}
 
@@ -2493,20 +2559,22 @@ again:
 				    newname));
 			}
 
-			if (error)
-				needagain = B_TRUE;
-			else
+			if (error == 0)
 				progress = B_TRUE;
+			else
+				needagain = B_TRUE;
 		}
 	}
 
+out:
 	fsavl_destroy(local_avl);
 	nvlist_free(local_nv);
 
 	if (needagain && progress) {
 		/* do another pass to fix up temporary names */
 		if (flags->verbose)
-			(void) printf("another pass:\n");
+			(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
+			    "another pass for promote, destroy and rename:\n"));
 		goto again;
 	}
 
