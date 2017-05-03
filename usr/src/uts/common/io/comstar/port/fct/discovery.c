@@ -621,11 +621,15 @@ check_state_again:
 			}
 		}
 		/* Find out if we need to do PLOGI at all */
+		rw_enter(&iport->iport_lock, RW_READER);
 		if (iport->iport_nrps_login) {
 			iport->iport_li_state++;
 			atomic_and_32(&iport->iport_flags,
 			    ~IPORT_ALLOW_UNSOL_FLOGI);
+			rw_exit(&iport->iport_lock);
 			goto check_state_again;
+		} else {
+			rw_exit(&iport->iport_lock);
 		}
 		if ((ddi_get_lbolt() >= iport->iport_li_cmd_timeout) &&
 		    (!fct_lport_has_bigger_wwn(iport))) {
@@ -987,6 +991,14 @@ start_els_posting:;
 		atomic_or_32(&icmd->icmd_flags, ICMD_IMPLICIT_CMD_HAS_RESOURCE);
 	}
 	atomic_add_16(&irp->irp_nonfcp_xchg_count, 1);
+
+	/*
+	 * The iport_lock is currently held as a Reader lock, protocol
+	 * dictates that to modify iport_nrps_login the lock must be held
+	 * as a Writer.
+	 */
+	rw_exit(&iport->iport_lock);
+	rw_enter(&iport->iport_lock, RW_WRITER);
 
 	/*
 	 * Grab the remote port lock while we modify the port state.
@@ -1521,10 +1533,14 @@ fct_process_plogi(fct_i_cmd_t *icmd)
 
 	if (ret == FCT_SUCCESS) {
 		if (cmd_type == FCT_CMD_RCVD_ELS) {
+                        rw_enter(&iport->iport_lock, RW_WRITER);
+                        rw_enter(&irp->irp_lock, RW_WRITER);
 			atomic_or_32(&irp->irp_flags, IRP_PLOGI_DONE);
 			atomic_add_32(&iport->iport_nrps_login, 1);
 			if (irp->irp_deregister_timer)
 				irp->irp_deregister_timer = 0;
+                        rw_exit(&irp->irp_lock);
+                        rw_exit(&iport->iport_lock);
 		}
 		if (icmd_flags & ICMD_IMPLICIT) {
 			DTRACE_FC_5(rport__login__end,
@@ -2181,16 +2197,22 @@ fct_handle_sol_els_completion(fct_i_local_port_t *iport, fct_i_cmd_t *icmd)
 
 		stmf_wwn_to_devid_desc((scsi_devid_desc_t *)irp->irp_id,
 		    irp->irp_rp->rp_pwwn, PROTOCOL_FIBRE_CHANNEL);
+		rw_enter(&iport->iport_lock, RW_WRITER);
+		rw_enter(&irp->irp_lock, RW_WRITER);
 		atomic_or_32(&irp->irp_flags, IRP_PLOGI_DONE);
 		atomic_add_32(&iport->iport_nrps_login, 1);
 		if (irp->irp_deregister_timer) {
 			irp->irp_deregister_timer = 0;
 			irp->irp_dereg_count = 0;
 		}
+		rw_exit(&irp->irp_lock);
+		rw_exit(&iport->iport_lock);
 	}
 
 	if (irp && (els->els_req_payload[0] == ELS_OP_PLOGI)) {
+		rw_enter(&irp->irp_lock, RW_WRITER);
 		atomic_and_32(&irp->irp_flags, ~IRP_SOL_PLOGI_IN_PROGRESS);
+		rw_exit(&irp->irp_lock);
 	}
 	atomic_or_32(&icmd->icmd_flags, ICMD_CMD_COMPLETE);
 	stmf_trace(iport->iport_alias, "Sol ELS %x (%s) completed with "
