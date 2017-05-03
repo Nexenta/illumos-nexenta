@@ -39,6 +39,7 @@
 #include <sys/byteorder.h>
 #include <sys/atomic.h>
 #include <sys/scsi/scsi.h>
+#include <sys/time.h>
 
 #include <sys/stmf_defines.h>
 #include <sys/fct_defines.h>
@@ -3799,6 +3800,9 @@ qlt_mbox_wait_loop:;
 	return (QLT_SUCCESS);
 }
 
+clock_t qlt_next_invalid_msg = 0;
+int qlt_invalid_idx_cnt = 0;
+
 /*
  * **SHOULD ONLY BE CALLED FROM INTERRUPT CONTEXT. DO NOT CALL ELSEWHERE**
  */
@@ -3809,12 +3813,41 @@ qlt_msix_resp_handler(caddr_t arg, caddr_t arg2)
 	qlt_state_t	*qlt = (qlt_state_t *)arg;
 	uint32_t	risc_status;
 	uint16_t 	qi = 0;
+	clock_t		now;
 
 	risc_status = REG_RD32(qlt, REG_RISC_STATUS);
 	if (qlt->qlt_mq_enabled) {
 		/* XXX: */
 		/* qi = (uint16_t)((unsigned long)arg2); */
 		qi = (uint16_t)(risc_status >> 16);
+		if (qi >= MQ_MAX_QUEUES) {
+			/*
+			 * Two customers have reported panics in the call to
+			 * mutex_enter below. Analysis showed the address passed
+			 * in could only occur if 'qi' had a value of 0x4000.
+			 * We'll ignore the upper bits and see if an index which
+			 * at least within the range of possible produces some
+			 * sane results.
+			 */
+			now = ddi_get_lbolt();
+			if (now > qlt_next_invalid_msg) {
+				/*
+				 * Since this issue has never been seen in the
+				 * lab it's unknown if once this bit gets set
+				 * does it remain until the next hardware reset?
+				 * If so, we don't want to flood the message
+				 * buffer or make it difficult to reboot the
+				 * system.
+				 */
+				qlt_next_invalid_msg = now +
+				    drv_usectohz(MICROSEC * 10);
+				cmn_err(CE_NOTE,
+					"QLT: hardware reporting invalid index: 0x%x",
+					qi);
+			}
+			qi &= MQ_MAX_QUEUES_MASK;
+			qlt_invalid_idx_cnt++;
+		}
 
 		mutex_enter(&qlt->mq_resp[qi].mq_lock);
 		if (!qlt->qlt_intr_enabled) {

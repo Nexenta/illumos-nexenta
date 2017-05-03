@@ -173,7 +173,7 @@ extern "C" {
 #define	MQBAR_REG_OFFSET		4096
 
 #define	MQ_MAX_QUEUES			8
-
+#define MQ_MAX_QUEUES_MASK		(MQ_MAX_QUEUES - 1)
 
 /*
  * Flash/NVRAM definitions
