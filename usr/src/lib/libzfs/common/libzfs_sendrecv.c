@@ -1971,7 +1971,7 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 				(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
 				    "%s: success\n"), errbuf);
 			} else {
-				zfs_standard_error(hdl, errno, errbuf);
+				(void) zfs_standard_error(hdl, errno, errbuf);
 			}
 		}
 
@@ -2000,7 +2000,7 @@ recv_rename(libzfs_handle_t *hdl, const char *name, const char *tryname,
 				(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
 				    "%s: success\n"), errbuf);
 			} else {
-				zfs_standard_error(hdl, errno, errbuf);
+				(void) zfs_standard_error(hdl, errno, errbuf);
 			}
 		}
 
@@ -2059,7 +2059,7 @@ recv_destroy(libzfs_handle_t *hdl, const char *name, int baselen,
 			(void) fprintf(stderr, dgettext(TEXT_DOMAIN,
 			    "%s: success\n"), errbuf);
 		} else {
-			zfs_standard_error(hdl, errno, errbuf);
+			(void) zfs_standard_error(hdl, errno, errbuf);
 		}
 	}
 
@@ -2342,8 +2342,8 @@ again:
 						    dgettext(TEXT_DOMAIN,
 						    "%s: success\n"), errbuf);
 					} else {
-						zfs_standard_error(hdl, errno,
-						    errbuf);
+						(void) zfs_standard_error(hdl,
+						    errno, errbuf);
 					}
 				}
 
