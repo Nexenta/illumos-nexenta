@@ -380,12 +380,13 @@ replace_with_spare(fmd_hdl_t *hdl, zpool_handle_t *zhp, nvlist_t *vdev)
 	/* Check if there are any hot spares available in the pool */
 	if (nvlist_lookup_nvlist_array(nvroot, ZPOOL_CONFIG_SPARES, &spares,
 	    &nspares) != 0) {
-		fmd_hdl_debug(hdl, "%s: no spares found");
+		fmd_hdl_debug(hdl, "%s: no spares found", __func__);
 		return;
 	}
 
 	if (nvlist_lookup_string(vdev, ZPOOL_CONFIG_PATH, &devpath) != 0 ||
-	    nvlist_lookup_uint64(vdev, ZPOOL_CONFIG_WHOLE_DISK, &wd) != 0)
+	    nvlist_lookup_uint64(vdev, ZPOOL_CONFIG_WHOLE_DISK, &wd) != 0 ||
+	    nvlist_lookup_boolean_value(vdev, ZPOOL_CONFIG_IS_SSD, &fssd) != 0)
 		return;
 	(void) strlcpy(fdevpath, devpath, sizeof (fdevpath));
 	if (wd)
@@ -426,13 +427,7 @@ again:
 
 		/* Don't swap HDD for SSD and vice versa */
 		if (nvlist_lookup_boolean_value(spares[i], ZPOOL_CONFIG_IS_SSD,
-		    &sssd) != 0) {
-			fmd_hdl_debug(hdl, "%s: unknown media type", __func__);
-			continue;
-		}
-		if (fssd != sssd) {
-			fmd_hdl_debug(hdl, "%s: different media type",
-			    __func__);
+		    &sssd) != 0 || fssd != sssd) {
 			continue;
 		}
 
