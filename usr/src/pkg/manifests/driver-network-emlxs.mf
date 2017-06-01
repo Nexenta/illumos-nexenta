@@ -57,6 +57,7 @@ driver name=emlxs class=fibre-channel perms="* 0666 root sys" \
     alias=pci10df,fc20 \
     alias=pci10df,fd00 \
     alias=pci10df,fe00 \
+    alias=pci117c,64 \
     alias=pciex10df,e200 \
     alias=pciex10df,e300 \
     alias=pciex10df,f100 \
