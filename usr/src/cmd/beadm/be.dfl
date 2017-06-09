@@ -18,47 +18,18 @@
 #
 # CDDL HEADER END
 #
-# Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+
 #
-# Copyright 2017 Nexenta Systems, Inc.
+# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
 #
 
-PROG=		beadm
-OBJS=		beadm.o
-SRCS=		$(OBJS:%.o=%.c)
-POFILE=		beadm.po
-DEFAULTFILES=	be.dfl
+#
+# BE_HAS_GRUB is used to control the transition from GRUB to the
+# FreeBSD boot loader "loader".
+# The current default setting for BE_HAS_GRUB is "true". Setting this
+# to "false" will activate "loader". Once the new "loader" is
+# activated, changing this variable will have no impact.
+#
+# The current consumers of this file are bootadm, beadm.
 
-include ../Makefile.cmd
-
-LDLIBS += -lnvpair -lbe
-CERRWARN += -_gcc=-Wno-parentheses
-
-$(NOT_RELEASE_BUILD)CPPFLAGS += -DDEBUG
-
-ROOTUSRSBINLINKS = $(PROG:%=$(ROOTUSRSBIN)/%)
-
-.KEEP_STATE:
-
-.PARALLEL:
-
-all: $(PROG)
-
-$(PROG): $(OBJS)
-	$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
-	$(POST_PROCESS)
-
-install: all $(ROOTSBINPROG) $(ROOTUSRSBINLINKS) $(ROOTETCDEFAULTFILES)
-
-clean:
-	$(RM) $(OBJS)
-
-lint:	lint_SRCS
-
-# Links from /usr/sbin to /sbin
-$(ROOTUSRSBINLINKS):
-	-$(RM) $@; $(SYMLINK) ../../sbin/$(PROG) $@
-
-FRC:
-
-include ../Makefile.targ
+BE_HAS_GRUB=true

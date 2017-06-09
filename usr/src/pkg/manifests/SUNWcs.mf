@@ -337,6 +337,7 @@ file path=etc/cron.d/queuedefs group=sys
 file path=etc/crypto/kmf.conf group=sys preserve=true
 file path=etc/crypto/pkcs11.conf group=sys preserve=true
 file path=etc/datemsk group=sys mode=0444
+file path=etc/default/be group=sys preserve=true
 file path=etc/default/cron group=sys preserve=true
 file path=etc/default/devfsadm group=sys preserve=true
 file path=etc/default/fs group=sys preserve=true
