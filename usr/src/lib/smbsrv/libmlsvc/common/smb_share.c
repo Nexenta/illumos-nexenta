@@ -1553,7 +1553,12 @@ smb_shr_cache_freent(HT_ITEM *item)
  */
 
 /*
- * Load shares from sharemgr
+ * Loads the SMB shares, from sharemgr, then:
+ *     - calls smb_shr_add which:
+ *         - adds the share into the share cache
+ *         - adds the share into in-kernel kshare table
+ *         - publishes the share in ADS
+ *     - updates the share list in sharefs/sharetab
  */
 /*ARGSUSED*/
 void *
@@ -1596,6 +1601,41 @@ smb_shr_load(void *args)
 	}
 	smb_shr_sa_exit();
 	return (NULL);
+}
+
+/*
+ * Handles disabling shares in sharefs when stoping smbd
+ */
+void
+smb_shr_unload()
+{
+	smb_shriter_t iterator;
+	smb_share_t *si;
+	sa_handle_t handle;
+	int rc;
+
+	if ((handle = smb_shr_sa_enter()) == NULL) {
+		syslog(LOG_ERR, "smb_shr_unload: failed");
+		return;
+	}
+
+	smb_shr_iterinit(&iterator);
+
+	while ((si = smb_shr_iterate(&iterator)) != NULL) {
+
+		/* Skip transient shares, IPC$, ... */
+		if ((si->shr_flags & SMB_SHRF_TRANS) ||
+		    STYPE_ISIPC(si->shr_type))
+			continue;
+
+		rc = sa_delete_sharetab(handle, si->shr_path, "smb");
+		if (rc) {
+			syslog(LOG_ERR,
+			    "sharefs remove %s failed, rc=%d, err=%d",
+			    si->shr_path, rc, errno);
+		}
+	}
+	smb_shr_sa_exit();
 }
 
 /*
@@ -1652,6 +1692,7 @@ smb_shr_sa_load(sa_share_t share, sa_resource_t resource)
 	char *sharename;
 	uint32_t status;
 	boolean_t loaded;
+	int rc;
 
 	if ((sharename = sa_get_resource_attr(resource, "name")) == NULL)
 		return (NERR_InternalError);
@@ -1673,6 +1714,12 @@ smb_shr_sa_load(sa_share_t share, sa_resource_t resource)
 		syslog(LOG_DEBUG, "share: failed to cache %s (%d)",
 		    si.shr_name, status);
 		return (status);
+	}
+
+	rc = sa_update_sharetab(share, "smb");
+	if (rc) {
+	    syslog(LOG_ERR, "sharefs add %s failed, rc=%d, err=%d",
+	    sharename, rc, errno);
 	}
 
 	return (NERR_Success);
