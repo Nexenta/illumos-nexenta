@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -62,7 +62,7 @@ static void idm_buf_bind_in_locked(idm_task_t *idt, idm_buf_t *buf);
 static void idm_buf_bind_out_locked(idm_task_t *idt, idm_buf_t *buf);
 static void idm_buf_unbind_in_locked(idm_task_t *idt, idm_buf_t *buf);
 static void idm_buf_unbind_out_locked(idm_task_t *idt, idm_buf_t *buf);
-static void idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt,
+static stmf_status_t idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt,
     idm_abort_type_t abort_type);
 static void idm_task_aborted(idm_task_t *idt, idm_status_t status);
 static idm_pdu_t *idm_pdu_alloc_common(uint_t hdrlen, uint_t datalen,
@@ -1523,11 +1523,12 @@ idm_task_rele(idm_task_t *idt)
 	idm_refcnt_rele(&idt->idt_refcnt);
 }
 
-void
+stmf_status_t
 idm_task_abort(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 {
 	idm_task_t	*task;
 	int		idx;
+	stmf_status_t	s = STMF_SUCCESS;
 
 	/*
 	 * Passing NULL as the task indicates that all tasks
@@ -1549,7 +1550,7 @@ idm_task_abort(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 			    (task->idt_state != TASK_COMPLETE) &&
 			    (task->idt_ic == ic)) {
 				rw_exit(&idm.idm_taskid_table_lock);
-				idm_task_abort_one(ic, task, abort_type);
+				s = idm_task_abort_one(ic, task, abort_type);
 				rw_enter(&idm.idm_taskid_table_lock, RW_READER);
 			} else
 				mutex_exit(&task->idt_mutex);
@@ -1557,8 +1558,9 @@ idm_task_abort(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 		rw_exit(&idm.idm_taskid_table_lock);
 	} else {
 		mutex_enter(&idt->idt_mutex);
-		idm_task_abort_one(ic, idt, abort_type);
+		s = idm_task_abort_one(ic, idt, abort_type);
 	}
+	return (s);
 }
 
 static void
@@ -1589,9 +1591,11 @@ idm_task_abort_unref_cb(void *ref)
  * Abort the idm task.
  *    Caller must hold the task mutex, which will be released before return
  */
-static void
+static stmf_status_t
 idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 {
+	stmf_status_t	s = STMF_SUCCESS;
+	
 	/* Caller must hold connection mutex */
 	ASSERT(mutex_owned(&idt->idt_mutex));
 	switch (idt->idt_state) {
@@ -1610,7 +1614,7 @@ idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 			 */
 			idm_refcnt_async_wait_ref(&idt->idt_refcnt,
 			    &idm_task_abort_unref_cb);
-			return;
+			return (s);
 		case AT_INTERNAL_ABORT:
 		case AT_TASK_MGMT_ABORT:
 			idt->idt_state = TASK_ABORTING;
@@ -1624,7 +1628,7 @@ idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 			 */
 			idm_refcnt_async_wait_ref(&idt->idt_refcnt,
 			    &idm_task_abort_unref_cb);
-			return;
+			return (s);
 		default:
 			ASSERT(0);
 		}
@@ -1664,7 +1668,7 @@ idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 			 */
 			idm_refcnt_async_wait_ref(&idt->idt_refcnt,
 			    &idm_task_abort_unref_cb);
-			return;
+			return (s);
 		default:
 			ASSERT(0);
 		}
@@ -1683,17 +1687,15 @@ idm_task_abort_one(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type)
 		}
 		break;
 	case TASK_COMPLETE:
-		/*
-		 * In this case, let it go.  The status has already been
-		 * sent (which may or may not get successfully transmitted)
-		 * and we don't want to end up in a race between completing
-		 * the status PDU and marking the task suspended.
-		 */
+		idm_refcnt_wait_ref(&idt->idt_refcnt);
+		s = STMF_ABORT_SUCCESS;
 		break;
 	default:
 		ASSERT(0);
 	}
 	mutex_exit(&idt->idt_mutex);
+	
+	return (s);
 }
 
 static void

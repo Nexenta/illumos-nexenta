@@ -21,7 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -31,6 +31,8 @@
 #ifdef	__cplusplus
 extern "C" {
 #endif
+
+#include <sys/stmf_defines.h>
 
 typedef enum {
 	IDM_STATUS_SUCCESS = 0,
@@ -440,7 +442,7 @@ idm_task_alloc(idm_conn_t *ic);
 void
 idm_task_start(idm_task_t *idt, uintptr_t handle);
 
-void
+stmf_status_t
 idm_task_abort(idm_conn_t *ic, idm_task_t *idt, idm_abort_type_t abort_type);
 
 void

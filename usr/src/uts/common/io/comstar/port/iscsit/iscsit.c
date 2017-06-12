@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  *
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -1888,20 +1888,8 @@ iscsit_abort(stmf_local_port_t *lport, int abort_cmd, void *arg, uint32_t flags)
 		 * Call IDM to abort the task.  Due to a variety of
 		 * circumstances the task may already be in the process of
 		 * aborting.
-		 * We'll let IDM worry about rationalizing all that except
-		 * for one particular instance.  If the state of the task
-		 * is TASK_COMPLETE, we need to indicate to the framework
-		 * that we are in fact done.  This typically happens with
-		 * framework-initiated task management type requests
-		 * (e.g. abort task).
 		 */
-		if (idt->idt_state == TASK_COMPLETE) {
-			idm_refcnt_wait_ref(&idt->idt_refcnt);
-			return (STMF_ABORT_SUCCESS);
-		} else {
-			idm_task_abort(idt->idt_ic, idt, AT_TASK_MGMT_ABORT);
-			return (STMF_SUCCESS);
-		}
+		return (idm_task_abort(idt->idt_ic, idt, AT_TASK_MGMT_ABORT));
 	}
 
 	/*NOTREACHED*/
