@@ -1718,8 +1718,8 @@ smb_shr_sa_load(sa_share_t share, sa_resource_t resource)
 
 	rc = sa_update_sharetab(share, "smb");
 	if (rc) {
-	    syslog(LOG_ERR, "sharefs add %s failed, rc=%d, err=%d",
-	    sharename, rc, errno);
+		syslog(LOG_ERR, "sharefs add %s failed, rc=%d, err=%d",
+		    sharename, rc, errno);
 	}
 
 	return (NERR_Success);
