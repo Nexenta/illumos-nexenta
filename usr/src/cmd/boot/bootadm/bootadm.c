@@ -280,7 +280,6 @@ static char *get_machine(void);
 static void append_to_flist(filelist_t *, char *);
 static int ufs_add_to_sign_list(char *sign);
 static error_t synchronize_BE_menu(void);
-static boolean_t sync_etc_system = B_FALSE;
 
 #if !defined(_OBP)
 static void ucode_install();
@@ -2386,16 +2385,6 @@ cmpstat(
 			}
 		}
 
-		/*
-		 * Bypass self-assembly file but set sync flag
-		 * to true if there are changes in
-		 * /etc/system.d directory.
-		 */
-		if (strstr(file, ETC_SYSTEM_DIR) &&
-		    strcmp(file, self_assembly) != 0) {
-			sync_etc_system = B_TRUE;
-		}
-
 		if (bam_verbose)
 			bam_print(_("    new     %s\n"), file);
 		return (0);
@@ -2408,15 +2397,6 @@ cmpstat(
 	if (is_flag_on(IS_SPARC_TARGET) &&
 	    is_dir_flag_on(FILE64, NEED_UPDATE) && !bam_nowrite())
 		return (0);
-
-	/*
-	 * self-assembly file is always recreated so bypass it
-	 * if there are no changes in /etc/system.d directory.
-	 */
-	if (strcmp(file, self_assembly) == 0 &&
-	    sync_etc_system == B_FALSE) {
-		return (0);
-	}
 
 
 	/*
@@ -2458,9 +2438,16 @@ cmpstat(
 			}
 		}
 
-		if (strstr(file, ETC_SYSTEM_DIR) &&
-		    strcmp(file, self_assembly) != 0) {
-			sync_etc_system = B_TRUE;
+		/*
+		 * Update self-assembly file if there are changes in
+		 * /etc/system.d directory
+		 */
+		if (strstr(file, ETC_SYSTEM_DIR)) {
+			ret = update_dircache(self_assembly, flags);
+			if (ret == BAM_ERROR) {
+				bam_error(UPDT_CACHE_FAIL, file);
+				return (-1);
+			}
 		}
 
 		if (bam_verbose) {
@@ -3001,11 +2988,6 @@ check4stale(char *root)
 
 			if (bam_verbose)
 				bam_print(_("    stale %s\n"), path);
-
-			if (strncmp(file, ETC_SYSTEM_DIR,
-			    strlen(ETC_SYSTEM_DIR)) == 0) {
-				sync_etc_system = B_TRUE;
-			}
 
 			if (is_flag_on(IS_SPARC_TARGET)) {
 				set_dir_flag(FILE64, NEED_UPDATE);
@@ -3845,6 +3827,8 @@ build_etc_system_dir(char *root)
 	char path[PATH_MAX], tmpfile[PATH_MAX];
 	int i, files, sysfiles = 0;
 	int ret = BAM_SUCCESS;
+	struct stat st;
+	timespec_t times[2];
 
 	(void) snprintf(path, sizeof (path), "%s/%s", root, ETC_SYSTEM_DIR);
 	(void) snprintf(self_assembly, sizeof (self_assembly),
@@ -3852,6 +3836,11 @@ build_etc_system_dir(char *root)
 	(void) snprintf(tmpfile, sizeof (tmpfile), "%s.%ld",
 	    self_assembly, (long)getpid());
 
+	if (stat(self_assembly, &st) >= 0 && (st.st_mode & S_IFMT) == S_IFREG) {
+		times[0] = times[1] = st.st_mtim;
+	} else {
+		times[1].tv_nsec = 0;
+	}
 
 	if ((files = scandir(path, &filelist, NULL, alphasort)) < 0)
 		return (BAM_ERROR);
@@ -3887,6 +3876,17 @@ build_etc_system_dir(char *root)
 	if (sysfiles > 0) {
 		if (rename(tmpfile, self_assembly) < 0) {
 			bam_error(_("failed to rename file: %s: %s\n"), tmpfile,
+			    strerror(errno));
+			return (BAM_ERROR);
+		}
+
+		/*
+		 * Use previous attribute times to avoid
+		 * boot archive recreation.
+		 */
+		if (times[1].tv_nsec != 0 &&
+		    utimensat(AT_FDCWD, self_assembly, times, 0) != 0) {
+			bam_error(_("failed to change times: %s\n"),
 			    strerror(errno));
 			return (BAM_ERROR);
 		}
