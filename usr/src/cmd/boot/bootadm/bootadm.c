@@ -2445,7 +2445,8 @@ cmpstat(
 		if (strstr(file, ETC_SYSTEM_DIR)) {
 			ret = update_dircache(self_assembly, flags);
 			if (ret == BAM_ERROR) {
-				bam_error(UPDT_CACHE_FAIL, file);
+				bam_error(_("directory cache update failed "
+				    "for %s\n"), file);
 				return (-1);
 			}
 		}
