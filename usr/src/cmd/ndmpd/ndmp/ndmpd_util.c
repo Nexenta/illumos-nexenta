@@ -2264,14 +2264,18 @@ ndmp_match_autosync_name(zfs_handle_t *zhp, void *arg)
 {
 	snap_data_t *sd = (snap_data_t *)arg;
 	time_t snap_creation;
-	nvlist_t *propval = NULL;
 	nvlist_t *userprops = NULL;
 
 	if (zfs_get_type(zhp) == ZFS_TYPE_SNAPSHOT) {
 		if ((userprops = zfs_get_user_props(zhp)) != NULL) {
-			if (nvlist_lookup_nvlist(userprops,
-			    "nms:autosyncmark",
-			    &propval) == 0 || propval != NULL) {
+			/*
+			 * Destination AutoSync snap-shots have 'nms:autosyncmark'
+			 * property whereas the source dataset snap-shot has
+			 * has 'nms:service' property. This finds either for use
+			 * as backup.
+			 */
+			if (nvlist_exists(userprops, "nms:autosyncmark") ||
+			    nvlist_exists(userprops, "nms:service")) {
 				snap_creation = (time_t)zfs_prop_get_int(zhp,
 				    ZFS_PROP_CREATION);
 				if (snap_creation > sd->creation_time) {
