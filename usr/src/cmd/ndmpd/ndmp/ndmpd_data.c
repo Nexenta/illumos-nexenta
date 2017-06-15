@@ -1700,7 +1700,7 @@ ndmpd_remote_read_v3(ndmpd_session_t *session, char *data, ulong_t length)
 			request.length =
 			    long_long_to_quad(session->ns_data.dd_read_length);
 
-			syslog(LOG_DEBUG, "to NOTIFY_DATA_READ [%llu, %llu]",
+			syslog(LOG_DEBUG, "to NOTIFY_DATA_READ [%lu, %lu]",
 			    session->ns_data.dd_read_offset,
 			    session->ns_data.dd_read_length);
 

@@ -36,6 +36,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
+
 #include <sys/types.h>
 #include <sys/queue.h>
 #include <bitmap.h>
@@ -77,7 +79,7 @@
  */
 #define	BMAP_BPW	(BMAP_WSIZE * 8)
 #define	BMAP_BPW_SHIFT	5
-#define	BMAP_BPW_MASK	(~(~0 << BMAP_BPW_SHIFT))
+#define	BMAP_BPW_MASK	(~(~0LL << BMAP_BPW_SHIFT))
 
 
 /*

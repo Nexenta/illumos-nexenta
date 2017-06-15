@@ -703,7 +703,6 @@ typedef struct {
 } ndmpd_worker_arg_t;
 
 typedef struct {
-	char *br_jname;
 	ndmp_lbr_params_t *br_nlp;
 	tlm_commands_t *br_cmds;
 	pthread_barrier_t br_barrier;
@@ -939,7 +938,7 @@ extern void ndmp_waitfor_op(ndmpd_session_t *);
 
 extern char *cctime(time_t *);
 extern int ndmp_new_job_name(char *, size_t);
-extern char *ndmpd_mk_temp(char *);
+extern char *ndmpd_mk_temp(char *, char *);
 extern char *ndmpd_make_bk_dir_path(char *, char *);
 extern boolean_t ndmp_is_chkpnt_root(char *);
 extern char **ndmpd_make_exc_list(void);

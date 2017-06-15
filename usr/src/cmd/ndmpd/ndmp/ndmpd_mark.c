@@ -36,7 +36,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -135,7 +135,7 @@ count_bits_cb(int bmd, u_longlong_t bn, void *arg)
 	if (dbm_getone(bmd, bn)) {
 		(*(u_longlong_t *)arg)++;
 		if (ndmpd_print_inodes)
-			syslog(LOG_DEBUG, "%llu", bn);
+			syslog(LOG_DEBUG, "%lu", bn);
 	}
 
 	return (0);
@@ -164,7 +164,7 @@ count_set_bits(char *path, int bmd)
 
 	cnt = 0;
 	(void) dbm_apply_ifset(bmd, count_bits_cb, &cnt);
-	syslog(LOG_DEBUG, "%s %llu inodes marked", path, cnt);
+	syslog(LOG_DEBUG, "%s %lu inodes marked", path, cnt);
 }
 
 
@@ -430,28 +430,25 @@ mark_inodes_v2(ndmpd_session_t *session, ndmp_lbr_params_t *nlp, char *path)
  * Create a dbitmap and return its descriptor.
  *
  * Parameters:
- *   path (input) - path for which the bitmap should be created
+ *   nlp (input) - pointer to the nlp structure
  *   value (input) - the initial value for the bitmap
  *
  * Returns:
  *   the dbitmap descriptor
  */
 static int
-create_bitmap(char *path, int value)
+create_bitmap(ndmp_lbr_params_t *nlp, int value)
 {
 	char bm_fname[PATH_MAX];
-	char buf[TLM_MAX_PATH_NAME];
 	char *livepath;
 	ulong_t ninode;
 
-	if (fs_is_chkpntvol(path))
-		livepath = (char *)tlm_remove_checkpoint(path, buf);
-	else
-		livepath = path;
+	livepath = NLP_ISCHKPNTED(nlp) ? nlp->nlp_mountpoint : nlp->nlp_backup_path;
+
 	ninode = 1024 * 1024 * 1024;
 	if (ninode == 0)
 		return (-1);
-	(void) ndmpd_mk_temp(bm_fname);
+	(void) ndmpd_mk_temp(nlp->nlp_job_name, bm_fname);
 
 	syslog(LOG_DEBUG, "path \"%s\" ninode %u bm_fname \"%s\"",
 	    livepath, ninode, bm_fname);
@@ -477,7 +474,7 @@ create_allset_bitmap(ndmp_lbr_params_t *nlp)
 {
 	int rv;
 
-	nlp->nlp_bkmap = create_bitmap(nlp->nlp_backup_path, 1);
+	nlp->nlp_bkmap = create_bitmap(nlp, 1);
 
 	if (nlp->nlp_bkmap < 0) {
 		syslog(LOG_ERR,
@@ -522,7 +519,7 @@ mark_common_v2(ndmpd_session_t *session, ndmp_lbr_params_t *nlp)
 		return (create_allset_bitmap(nlp));
 
 	rv = 0;
-	nlp->nlp_bkmap = create_bitmap(nlp->nlp_backup_path, 0);
+	nlp->nlp_bkmap = create_bitmap(nlp, 0);
 
 	if (nlp->nlp_bkmap < 0) {
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_common_v2");
@@ -678,7 +675,7 @@ mark_tokv3(ndmpd_session_t *session, ndmp_lbr_params_t *nlp, char *path)
 	if (nlp->nlp_tokdate == (time_t)0)
 		return (create_allset_bitmap(nlp));
 
-	nlp->nlp_bkmap = create_bitmap(nlp->nlp_backup_path, 0);
+	nlp->nlp_bkmap = create_bitmap(nlp, 0);
 	if (nlp->nlp_bkmap < 0) {
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_tokv3");
 		return (-1);
@@ -823,7 +820,7 @@ mark_lbrv3(ndmpd_session_t *session, ndmp_lbr_params_t *nlp, char *path)
 	if (c == 'F' || c == 'A')
 		return (create_allset_bitmap(nlp));
 
-	nlp->nlp_bkmap = create_bitmap(nlp->nlp_backup_path, 0);
+	nlp->nlp_bkmap = create_bitmap(nlp, 0);
 	if (nlp->nlp_bkmap < 0) {
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_lbrv3");
 		return (-1);
@@ -875,7 +872,7 @@ mark_levelv3(ndmpd_session_t *session, ndmp_lbr_params_t *nlp, char *path)
 	if (nlp->nlp_ldate == (time_t)0)
 		return (create_allset_bitmap(nlp));
 
-	nlp->nlp_bkmap = create_bitmap(nlp->nlp_backup_path, 0);
+	nlp->nlp_bkmap = create_bitmap(nlp, 0);
 	if (nlp->nlp_bkmap < 0) {
 		syslog(LOG_ERR, "Failed to allocate bitmap in mark_levelv3");
 		return (-1);

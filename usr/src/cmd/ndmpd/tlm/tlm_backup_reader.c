@@ -931,7 +931,7 @@ tlm_output_file(char *dir, char *name, char *chkdir,
 			goto err_out;
 		}
 	} else {
-		syslog(LOG_DEBUG, "found hardlink, inode = %llu, pos = %llu ",
+		syslog(LOG_DEBUG, "found hardlink, inode = %lu, pos = %lu ",
 		    tlm_acls->acl_attr.st_ino, hardlink_pos);
 
 		fd = -1;
@@ -1055,7 +1055,7 @@ tlm_output_file(char *dir, char *name, char *chkdir,
 		(void) hardlink_q_add(hardlink_q, tlm_acls->acl_attr.st_ino,
 		    pos, NULL, 0);
 		syslog(LOG_DEBUG,
-		    "backed up hardlink file %s, inode = %llu, pos = %llu ",
+		    "backed up hardlink file %s, inode = %lu, pos = %lu ",
 		    fullname, tlm_acls->acl_attr.st_ino, pos);
 	}
 
@@ -1065,7 +1065,7 @@ tlm_output_file(char *dir, char *name, char *chkdir,
 	 */
 	if (hardlink_done) {
 		syslog(LOG_DEBUG,
-		    "backed up hardlink link %s, inode = %llu, pos = %llu ",
+		    "backed up hardlink link %s, inode = %lu, pos = %lu ",
 		    fullname, tlm_acls->acl_attr.st_ino, hardlink_pos);
 	} else {
 		(void) tlm_log_fhnode(job_stats, dir, name,
@@ -1271,12 +1271,12 @@ zfs_put_quota_cb(void *pp, const char *domain, uid_t rid, uint64_t space)
 		typestr = "groupquota";
 
 	if (domain == NULL || *domain == '\0')
-		(void) snprintf(mpp->mp_name, ZFS_MAXNAMELEN, "%s@%llu",
+		(void) snprintf(mpp->mp_name, ZFS_MAXNAMELEN, "%s@%lu",
 		    typestr, (longlong_t)rid);
 	else
-		(void) snprintf(mpp->mp_name, ZFS_MAXNAMELEN, "%s@%s-%llu",
+		(void) snprintf(mpp->mp_name, ZFS_MAXNAMELEN, "%s@%s-%lu",
 		    typestr, domain, (longlong_t)rid);
-	(void) snprintf(mpp->mp_value, ZFS_MAXPROPLEN, "%llu", space);
+	(void) snprintf(mpp->mp_value, ZFS_MAXPROPLEN, "%lu", space);
 	(void) strlcpy(mpp->mp_source, mhp->nh_dataset, ZFS_MAXPROPLEN);
 
 	mhp->nh_count++;
