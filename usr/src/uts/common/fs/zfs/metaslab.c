@@ -2462,8 +2462,14 @@ metaslab_sync_done(metaslab_t *msp, uint64_t txg)
 	 * defer_tree -- this is safe to do because we've just emptied out
 	 * the defer_tree.
 	 */
-	if (spa_get_auto_trim(spa) == SPA_AUTO_TRIM_ON)
+	if (spa_get_auto_trim(spa) == SPA_AUTO_TRIM_ON &&
+	    !vd->vdev_man_trimming) {
 		range_tree_walk(*defer_tree, metaslab_trim_add, msp);
+		if (!defer_allowed) {
+			range_tree_walk(msp->ms_freedtree, metaslab_trim_add,
+			    msp);
+		}
+	}
 	range_tree_vacate(*defer_tree,
 	    msp->ms_loaded ? range_tree_add : NULL, msp->ms_tree);
 	if (defer_allowed) {
@@ -2713,6 +2719,7 @@ metaslab_block_alloc(metaslab_t *msp, uint64_t size, uint64_t txg)
 		VERIFY0(P2PHASE(size, 1ULL << vd->vdev_ashift));
 		VERIFY3U(range_tree_space(rt) - size, <=, msp->ms_size);
 		range_tree_remove(rt, start, size);
+		metaslab_trim_remove(msp, start, size);
 
 		if (range_tree_space(msp->ms_alloctree[txg & TXG_MASK]) == 0)
 			vdev_dirty(mg->mg_vd, VDD_METASLAB, msp, txg);
@@ -3270,7 +3277,8 @@ metaslab_free_dva(spa_t *spa, const dva_t *dva, uint64_t txg, boolean_t now)
 		VERIFY0(P2PHASE(offset, 1ULL << vd->vdev_ashift));
 		VERIFY0(P2PHASE(size, 1ULL << vd->vdev_ashift));
 		range_tree_add(msp->ms_tree, offset, size);
-		if (spa_get_auto_trim(spa) == SPA_AUTO_TRIM_ON)
+		if (spa_get_auto_trim(spa) == SPA_AUTO_TRIM_ON &&
+		    !vd->vdev_man_trimming)
 			metaslab_trim_add(msp, offset, size);
 		msp->ms_max_size = metaslab_block_maxsize(msp);
 	} else {
@@ -3602,14 +3610,12 @@ metaslab_check_free(spa_t *spa, const blkptr_t *bp)
 
 		if (msp->ms_loaded) {
 			range_tree_verify(msp->ms_tree, offset, size);
-#ifdef	DEBUG
 			range_tree_verify(msp->ms_cur_ts->ts_tree,
 			    offset, size);
 			if (msp->ms_prev_ts != NULL) {
 				range_tree_verify(msp->ms_prev_ts->ts_tree,
 				    offset, size);
 			}
-#endif
 		}
 
 		range_tree_verify(msp->ms_freeingtree, offset, size);
@@ -3741,6 +3747,13 @@ metaslab_auto_trim(metaslab_t *msp, uint64_t txg)
 				 * back the device up with trim requests.
 				 */
 				spa_trimstats_auto_slow_incr(spa);
+				metaslab_free_trimset(msp->ms_prev_ts);
+			} else if (msp->ms_group->mg_vd->vdev_man_trimming) {
+				/*
+				 * If a manual trim is ongoing, we want to
+				 * inhibit autotrim temporarily so it doesn't
+				 * slow down the manual trim.
+				 */
 				metaslab_free_trimset(msp->ms_prev_ts);
 			} else {
 				/*

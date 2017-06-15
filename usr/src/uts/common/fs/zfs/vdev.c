@@ -3648,6 +3648,7 @@ vdev_man_trim(vdev_trim_info_t *vti)
 	spa_t *spa = vti->vti_vdev->vdev_spa;
 	vdev_t *vd = vti->vti_vdev;
 
+	vd->vdev_man_trimming = B_TRUE;
 	vd->vdev_trim_prog = 0;
 
 	spa_config_enter(spa, SCL_STATE_ALL, FTAG, RW_READER);
@@ -3693,6 +3694,7 @@ vdev_man_trim(vdev_trim_info_t *vti)
 	}
 	spa_config_exit(spa, SCL_STATE_ALL, FTAG);
 out:
+	vd->vdev_man_trimming = B_FALSE;
 	/*
 	 * Ensure we're marked as "completed" even if we've had to stop
 	 * before processing all metaslabs.
@@ -3715,11 +3717,14 @@ vdev_auto_trim(vdev_trim_info_t *vti)
 	spa_t *spa = vd->vdev_spa;
 	uint64_t txg = vti->vti_txg;
 
+	if (vd->vdev_man_trimming)
+		goto out;
+
 	spa_config_enter(spa, SCL_STATE_ALL, FTAG, RW_READER);
 	for (uint64_t i = 0; i < vd->vdev_ms_count; i++)
 		metaslab_auto_trim(vd->vdev_ms[i], txg);
 	spa_config_exit(spa, SCL_STATE_ALL, FTAG);
-
+out:
 	ASSERT(vti->vti_done_cb != NULL);
 	vti->vti_done_cb(vti->vti_done_arg);
 

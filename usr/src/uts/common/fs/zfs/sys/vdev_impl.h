@@ -231,6 +231,7 @@ struct vdev {
 	uint64_t	vdev_top_zap;
 	uint64_t	vdev_isspecial;	/* is a special device	*/
 
+	boolean_t	vdev_man_trimming; /* manual trim is ongoing	*/
 	uint64_t	vdev_trim_prog;	/* trim progress in bytes	*/
 
 	/*
