@@ -460,7 +460,7 @@ tests = ['reservation_001_pos', 'reservation_002_pos', 'reservation_003_pos',
     'reservation_016_pos', 'reservation_017_pos', 'reservation_018_pos']
 
 [/opt/zfs-tests/tests/functional/rootpool]
-tests = ['rootpool_002_neg', 'rootpool_007_neg']
+tests = ['rootpool_002_neg', 'rootpool_007_pos']
 
 [/opt/zfs-tests/tests/functional/rsend]
 tests = ['rsend_001_pos', 'rsend_002_pos', 'rsend_003_pos', 'rsend_004_pos',
