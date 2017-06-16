@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -746,12 +746,21 @@ krrp_stream_write_snap_notify_cb(const char *snap_name, boolean_t recursive,
 
 	stream = void_stream;
 
+	krrp_stream_lock(stream);
+
+	if (stream->cur_task == NULL) {
+		krrp_stream_unlock(stream);
+		return (B_FALSE);
+	}
+
 	if (stream->cur_task->txg_start == UINT64_MAX) {
 		stream->cur_task->txg_start = txg;
 		stream->cur_task->txg_end = AUTOSNAP_NO_SNAP;
 	} else {
 		stream->cur_task->txg_end = txg;
 	}
+
+	krrp_stream_unlock(stream);
 
 	return (B_TRUE);
 }
@@ -915,6 +924,7 @@ krrp_stream_read(void *arg)
 		krrp_stream_lock(stream);
 	} /* while() loop */
 
+	stream->cur_task = NULL;
 	krrp_stream_unlock(stream);
 
 	if (pdu != NULL)
@@ -1040,6 +1050,7 @@ krrp_stream_write(void *arg)
 		krrp_stream_lock(stream);
 	} /* while() loop */
 
+	stream->cur_task = NULL;
 	krrp_stream_unlock(stream);
 
 	if (pdu != NULL)
