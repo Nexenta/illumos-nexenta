@@ -627,7 +627,7 @@ libipmp:	libinetutil
 libipsecutil:	libtecla libtsol
 libiscsit:	libstmf libuuid
 libkmf:		libcryptoutil pkcs11
-libkrrp:	libuuid libsysevent libumem
+libkrrp:	libuuid libsysevent libumem libzfs
 libkvm:		../cmd/sgs/libelf
 libldap5:	libsasl
 libmapid:	libresolv2 libscf
