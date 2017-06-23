@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/sid.h>
@@ -1240,25 +1240,6 @@ smb_fsop_setattr(
 		return (EACCES);
 
 	/*
-	 * The file system cannot detect pending READDONLY
-	 * (i.e. if the file has been opened readonly but
-	 * not yet closed) so we need to test READONLY here.
-	 *
-	 * Note that file handle that were opened before the
-	 * READONLY flag was set in the node (or the FS) are
-	 * immune to that change, and remain writable.
-	 */
-	if (sr && (set_attr->sa_mask & SMB_AT_SIZE)) {
-		if (sr->fid_ofile) {
-			if (SMB_OFILE_IS_READONLY(sr->fid_ofile))
-				return (EACCES);
-		} else {
-			if (SMB_PATHFILE_IS_READONLY(sr, snode))
-				return (EACCES);
-		}
-	}
-
-	/*
 	 * SMB checks access on open and retains an access granted
 	 * mask for use while the file is open.  ACL changes should
 	 * not affect access to an open file.
@@ -1342,18 +1323,6 @@ smb_fsop_freesp(
 		return (EROFS);
 
 	if (SMB_TREE_HAS_ACCESS(sr, access) == 0)
-		return (EACCES);
-
-	/*
-	 * The file system cannot detect pending READDONLY
-	 * (i.e. if the file has been opened readonly but
-	 * not yet closed) so we need to test READONLY here.
-	 *
-	 * Note that file handle that were opened before the
-	 * READONLY flag was set in the node (or the FS) are
-	 * immune to that change, and remain writable.
-	 */
-	if (SMB_OFILE_IS_READONLY(ofile))
 		return (EACCES);
 
 	/*
@@ -1511,8 +1480,6 @@ smb_fsop_write(
 		 * so we can check both amask bits at the same time.
 		 * If any bit in amask is granted, allow this write.
 		 */
-		if (SMB_OFILE_IS_READONLY(ofile))
-			return (EACCES);
 		if (cr != kcr && (ofile->f_granted_access & amask) == 0)
 			return (EACCES);
 	}
