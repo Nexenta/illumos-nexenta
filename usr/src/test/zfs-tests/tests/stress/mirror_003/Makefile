@@ -13,10 +13,9 @@
 # Copyright 2017 Nexenta Systems, Inc.
 #
 
-include		$(SRC)/Makefile.master
+include $(SRC)/Makefile.master
 
-ROOTOPTPKG=	$(ROOT)/opt/zfs-tests
-TARGETDIR=	$(ROOTOPTPKG)/tests/stress
+ROOTOPTPKG = $(ROOT)/opt/zfs-tests
+TARGETDIR = $(ROOTOPTPKG)/tests/stress/mirror_003
 
-include		$(SRC)/test/zfs-tests/Makefile.com
-include		$(SRC)/test/Makefile.com
+include $(SRC)/test/zfs-tests/Makefile.com

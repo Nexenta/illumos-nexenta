@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 [DEFAULT]
@@ -18,34 +18,34 @@ pre = setup
 quiet = False
 pre_user = root
 user = root
-timeout = 600
+timeout = 3600
 post_user = root
 post = cleanup
 outputdir = /var/tmp/test_results
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_003]
-tests = ['mirror_stress_003']
+[/opt/zfs-tests/tests/stress/mirror_002]
+tests = ['mirror_002']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_002]
-tests = ['mirror_stress_002']
+[/opt/zfs-tests/tests/stress/mirror_003]
+tests = ['mirror_003']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_005]
-tests = ['mirror_stress_005']
+[/opt/zfs-tests/tests/stress/mirror_004]
+tests = ['mirror_004']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_006]
-tests = ['mirror_stress_006']
+[/opt/zfs-tests/tests/stress/mirror_005]
+tests = ['mirror_005']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_004]
-tests = ['mirror_stress_004']
+[/opt/zfs-tests/tests/stress/mirror_006]
+tests = ['mirror_006']
 
-[/opt/zfs-tests/tests/stress/replica_stress/slog_stress_001]
-tests = ['slog_stress_001']
+[/opt/zfs-tests/tests/stress/raidz_001]
+tests = ['raidz_001']
 
-[/opt/zfs-tests/tests/stress/replica_stress/slog_stress_002]
-tests = ['slog_stress_002']
+[/opt/zfs-tests/tests/stress/raidz_002]
+tests = ['raidz_002']
 
-[/opt/zfs-tests/tests/stress/replica_stress/raidz_stress_001]
-tests = ['raidz_stress_001']
+[/opt/zfs-tests/tests/stress/slog_001]
+tests = ['slog_001']
 
-[/opt/zfs-tests/tests/stress/replica_stress/raidz_stress_002]
-tests = ['raidz_stress_002']
+[/opt/zfs-tests/tests/stress/slog_002]
+tests = ['slog_002']

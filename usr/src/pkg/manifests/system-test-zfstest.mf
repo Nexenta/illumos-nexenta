@@ -151,20 +151,22 @@ dir path=opt/zfs-tests/tests/perf/fio
 dir path=opt/zfs-tests/tests/perf/regression
 dir path=opt/zfs-tests/tests/perf/scripts
 dir path=opt/zfs-tests/tests/stress
-dir path=opt/zfs-tests/tests/stress/bin
 dir path=opt/zfs-tests/tests/stress/include
-dir path=opt/zfs-tests/tests/stress/replica_stress
-dir path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_002
-dir path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_003
-dir path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_004
-dir path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_005
-dir path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_006
-dir path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_001
-dir path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_002
-dir path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_001
-dir path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_002
+dir path=opt/zfs-tests/tests/stress/mirror_002
+dir path=opt/zfs-tests/tests/stress/mirror_003
+dir path=opt/zfs-tests/tests/stress/mirror_004
+dir path=opt/zfs-tests/tests/stress/mirror_005
+dir path=opt/zfs-tests/tests/stress/mirror_006
+dir path=opt/zfs-tests/tests/stress/raidz_001
+dir path=opt/zfs-tests/tests/stress/raidz_002
+dir path=opt/zfs-tests/tests/stress/slog_001
+dir path=opt/zfs-tests/tests/stress/slog_002
 file path=opt/zfs-tests/README mode=0444
 file path=opt/zfs-tests/bin/chg_usr_exec mode=0555
+file path=opt/zfs-tests/bin/dataset_create_write_destroy mode=0555
+file path=opt/zfs-tests/bin/dataset_create_write_destroy_acl mode=0555
+file path=opt/zfs-tests/bin/dataset_create_write_destroy_exattr mode=0555
+file path=opt/zfs-tests/bin/dataset_run_xattr mode=0555
 file path=opt/zfs-tests/bin/devname2devid mode=0555
 file path=opt/zfs-tests/bin/dir_rd_update mode=0555
 file path=opt/zfs-tests/bin/dos_ro mode=0555
@@ -2380,81 +2382,35 @@ file path=opt/zfs-tests/tests/perf/regression/sequential_writes mode=0555
 file path=opt/zfs-tests/tests/perf/regression/setup mode=0555
 file path=opt/zfs-tests/tests/perf/scripts/io.d mode=0444
 file path=opt/zfs-tests/tests/perf/scripts/prefetch_io.d mode=0444
-file path=opt/zfs-tests/tests/stress/bin/dataset_create_write_destroy \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/bin/dataset_create_write_destroy_acl \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/bin/dataset_create_write_destroy_exattr \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/bin/dataset_run_xattr mode=0555
 file path=opt/zfs-tests/tests/stress/include/stress.cfg mode=0444
-file path=opt/zfs-tests/tests/stress/replica_stress/default.cfg mode=0444
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_002/cleanup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_002/mirror_stress_002 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_002/setup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_003/cleanup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_003/mirror_stress_003 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_003/setup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_004/cleanup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_004/mirror_stress_004 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_004/setup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_005/cleanup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_005/mirror_stress_005 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_005/setup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_006/cleanup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_006/mirror_stress_006 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/mirror_stress_006/setup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_001/cleanup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_001/raidz_stress_001 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_001/setup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_002/cleanup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_002/raidz_stress_002 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/raidz_stress_002/setup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/replica_stress_common.kshlib \
-    mode=0444
-file path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_001/cleanup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_001/setup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_001/slog_stress_001 \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_002/cleanup \
-    mode=0555
-file path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_002/setup \
-    mode=0555
-file \
-    path=opt/zfs-tests/tests/stress/replica_stress/slog_stress_002/slog_stress_002 \
-    mode=0555
+file path=opt/zfs-tests/tests/stress/include/stress.kshlib mode=0444
+file path=opt/zfs-tests/tests/stress/mirror_002/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_002/mirror_002 mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_002/setup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_003/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_003/mirror_003 mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_003/setup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_004/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_004/mirror_004 mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_004/setup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_005/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_005/mirror_005 mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_005/setup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_006/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_006/mirror_006 mode=0555
+file path=opt/zfs-tests/tests/stress/mirror_006/setup mode=0555
+file path=opt/zfs-tests/tests/stress/raidz_001/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/raidz_001/raidz_001 mode=0555
+file path=opt/zfs-tests/tests/stress/raidz_001/setup mode=0555
+file path=opt/zfs-tests/tests/stress/raidz_002/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/raidz_002/raidz_002 mode=0555
+file path=opt/zfs-tests/tests/stress/raidz_002/setup mode=0555
+file path=opt/zfs-tests/tests/stress/slog_001/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/slog_001/setup mode=0555
+file path=opt/zfs-tests/tests/stress/slog_001/slog_001 mode=0555
+file path=opt/zfs-tests/tests/stress/slog_002/cleanup mode=0555
+file path=opt/zfs-tests/tests/stress/slog_002/setup mode=0555
+file path=opt/zfs-tests/tests/stress/slog_002/slog_002 mode=0555
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL
 depend fmri=system/file-system/zfs/tests type=require

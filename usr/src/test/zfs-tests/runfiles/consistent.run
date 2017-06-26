@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 [DEFAULT]
@@ -24,7 +24,8 @@ post = cleanup
 outputdir = /var/tmp/test_results
 
 [/opt/zfs-tests/tests/functional/acl/cifs]
-tests = ['cifs_attr_001_pos', 'cifs_attr_002_pos', 'cifs_attr_003_pos', 'cifs_attr_004_pos']
+tests = ['cifs_attr_001_pos', 'cifs_attr_002_pos', 'cifs_attr_003_pos',
+    'cifs_attr_004_pos']
 
 [/opt/zfs-tests/tests/functional/acl/nontrivial]
 tests = ['zfs_acl_chmod_001_neg', 'zfs_acl_chmod_002_pos',
@@ -545,29 +546,29 @@ tests = ['zvol_misc_001_neg', 'zvol_misc_002_pos', 'zvol_misc_003_neg',
 tests = ['zvol_swap_001_pos', 'zvol_swap_002_pos', 'zvol_swap_003_pos',
     'zvol_swap_004_pos', 'zvol_swap_005_pos', 'zvol_swap_006_pos']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_003]
-tests = ['mirror_stress_003']
+[/opt/zfs-tests/tests/stress/mirror_002]
+tests = ['mirror_002']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_002]
-tests = ['mirror_stress_002']
+[/opt/zfs-tests/tests/stress/mirror_003]
+tests = ['mirror_003']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_005]
-tests = ['mirror_stress_005']
+[/opt/zfs-tests/tests/stress/mirror_004]
+tests = ['mirror_004']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_006]
-tests = ['mirror_stress_006']
+[/opt/zfs-tests/tests/stress/mirror_005]
+tests = ['mirror_005']
 
-[/opt/zfs-tests/tests/stress/replica_stress/mirror_stress_004]
-tests = ['mirror_stress_004']
+[/opt/zfs-tests/tests/stress/mirror_006]
+tests = ['mirror_006']
 
-[/opt/zfs-tests/tests/stress/replica_stress/slog_stress_001]
-tests = ['slog_stress_001']
+[/opt/zfs-tests/tests/stress/raidz_001]
+tests = ['raidz_001']
 
-[/opt/zfs-tests/tests/stress/replica_stress/slog_stress_002]
-tests = ['slog_stress_002']
+[/opt/zfs-tests/tests/stress/raidz_002]
+tests = ['raidz_002']
 
-[/opt/zfs-tests/tests/stress/replica_stress/raidz_stress_001]
-tests = ['raidz_stress_001']
+[/opt/zfs-tests/tests/stress/slog_001]
+tests = ['slog_001']
 
-[/opt/zfs-tests/tests/stress/replica_stress/raidz_stress_002]
-tests = ['raidz_stress_002']
+[/opt/zfs-tests/tests/stress/slog_002]
+tests = ['slog_002']

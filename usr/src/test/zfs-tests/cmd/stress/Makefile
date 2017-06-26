@@ -16,7 +16,6 @@
 include		$(SRC)/Makefile.master
 
 ROOTOPTPKG=	$(ROOT)/opt/zfs-tests
-TARGETDIR=	$(ROOTOPTPKG)/tests/stress
+TARGETDIR=	$(ROOTOPTPKG)/bin
 
 include		$(SRC)/test/zfs-tests/Makefile.com
-include		$(SRC)/test/Makefile.com

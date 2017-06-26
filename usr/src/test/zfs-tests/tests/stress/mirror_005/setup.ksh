@@ -1,3 +1,4 @@
+#!/usr/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -24,39 +25,9 @@
 # Use is subject to license terms.
 #
 
-export MAX_BLOCKSIZE=$((128 * 1024))
-export TOTAL_COUNT=5
-export COUNT=10000
+. ${STF_SUITE}/include/libtest.shlib
+. ${STF_SUITE}/tests/stress/include/stress.kshlib
 
-# To avoid hitting the timeout, the value of STRESS_TIMEOUT must be lower than
-# the one set in the runfile. Currently 30 mins.
-export STRESS_TIMEOUT=1800
+setup_mirrors $NUMBER_OF_MIRRORS $DISKS
 
-typeset -i NUMBER_OF_DISKS=0
-for i in $DISKS; do
-	(( NUMBER_OF_DISKS = NUMBER_OF_DISKS + 1 ))
-done
-
-
-# 1 Pool per GB of memory
-MEMORY=`prtconf | grep Memory | nawk '{ print $3 }'`
-MAXPOOLS=$(( (MEMORY / 1024) + 1 ))
-
-echo "MAXPOOLS=$MAXPOOLS"
-echo "NUMBER_OF_DISKS=$NUMBER_OF_DISKS"
-
-# Number of Mirrors = MIN(NUMBER_OF_DISKS, MAXPOOLS)
-NUMBER_OF_MIRRORS=$(( NUMBER_OF_DISKS / 2 ))
-if (( MAXPOOLS < NUMBER_OF_MIRRORS )); then
-	NUMBER_OF_MIRRORS=$MAXPOOLS
-fi
-
-# Assume 10 Processes per 1gb of memory
-NUM_CREATORS=10
-
-echo "NUMBER_OF_MIRRORS=$NUMBER_OF_MIRRORS"
-echo "NUM_CREATORS=$NUM_CREATORS"
-
-export NUMBER_OF_MIRRORS
-export NUMBER_OF_DISKS
-export NUM_CREATORS
+log_pass
