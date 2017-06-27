@@ -12,7 +12,7 @@
 #
 
 #
-# Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 . $STF_SUITE/tests/functional/wbc/wbc.cfg
@@ -33,7 +33,7 @@ log_onexit cleanup
 for pool_type in "stripe" "mirror" ; do
 	for special_type in "raidz" "raidz2" "raidz3" ; do
 		for wbc_mode in "none" "on" ; do
-			log_mustnot create_pool_special $TESTPOOL $wbc_mode
+			log_mustnot create_pool_special $TESTPOOL $wbc_mode \
 			    $pool_type $special_type
 		done
 	done
