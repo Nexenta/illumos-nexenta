@@ -23,7 +23,7 @@
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
  * Copyright (c) 2014, Joyent, Inc. All rights reserved.
  * Copyright 2014 HybridCluster. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright 2016 RackTop Systems.
  * Copyright (c) 2014 Integros [integros.com]
  */
@@ -157,23 +157,26 @@ dump_record(dmu_sendarg_t *dsp, void *payload, int payload_len)
 {
 	ASSERT3U(offsetof(dmu_replay_record_t, drr_u.drr_checksum.drr_checksum),
 	    ==, sizeof (dmu_replay_record_t) - sizeof (zio_cksum_t));
+
+	if (dsp->dsa_drr->drr_type == DRR_BEGIN) {
+		dsp->dsa_sent_begin = B_TRUE;
+	}
+
+	if (dsp->dsa_drr->drr_type == DRR_END) {
+		dsp->dsa_sent_end = B_TRUE;
+	}
+
 	if (!dsp->sendsize && (dsp->dsa_krrp_task == NULL ||
 	    dsp->dsa_krrp_task->buffer_args.force_cksum)) {
 		fletcher_4_incremental_native(dsp->dsa_drr,
 		    offsetof(dmu_replay_record_t,
 		    drr_u.drr_checksum.drr_checksum),
 		    &dsp->dsa_zc);
-		if (dsp->dsa_drr->drr_type == DRR_BEGIN) {
-			dsp->dsa_sent_begin = B_TRUE;
-		} else {
+		if (dsp->dsa_drr->drr_type != DRR_BEGIN) {
 			ASSERT(ZIO_CHECKSUM_IS_ZERO(&dsp->dsa_drr->drr_u.
 			    drr_checksum.drr_checksum));
 			dsp->dsa_drr->drr_u.drr_checksum.drr_checksum =
 			    dsp->dsa_zc;
-		}
-
-		if (dsp->dsa_drr->drr_type == DRR_END) {
-			dsp->dsa_sent_end = B_TRUE;
 		}
 
 		fletcher_4_incremental_native(&dsp->dsa_drr->
