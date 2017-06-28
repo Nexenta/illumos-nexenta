@@ -53,7 +53,11 @@ struct sa_proto_plugin *sap_proto_list;
 
 static struct sa_proto_handle sa_proto_handle;
 
+extern mutex_t sa_global_lock;
+
 void proto_plugin_fini();
+
+static void proto_plugin_fini_impl(boolean_t);
 
 /*
  * Returns true if name is "." or "..", otherwise returns false.
@@ -95,12 +99,18 @@ proto_plugin_init()
 	struct stat st;
 	char isa[MAXISALEN];
 
+	assert(MUTEX_HELD(&sa_global_lock));
+
 #if defined(_LP64)
 	if (sysinfo(SI_ARCHITECTURE_64, isa, MAXISALEN) == -1)
 		isa[0] = '\0';
 #else
 	isa[0] = '\0';
 #endif
+	if (sap_proto_list != NULL && sa_proto_handle.sa_proto != NULL) {
+		sa_proto_handle.sa_ref_count++;
+		return (SA_OK);
+	}
 
 	if ((dir = opendir(SA_LIB_DIR)) == NULL)
 		return (SA_OK);
@@ -155,7 +165,7 @@ proto_plugin_init()
 
 	(void) closedir(dir);
 
-	if (num_protos != 0) {
+	if (num_protos != 0 && sa_proto_handle.sa_proto == NULL) {
 		sa_proto_handle.sa_proto =
 		    (char **)calloc(num_protos, sizeof (char *));
 		sa_proto_handle.sa_ops =
@@ -194,8 +204,12 @@ proto_plugin_init()
 	/*
 	 * There was an error, so cleanup prior to return of failure.
 	 */
-	if (ret != SA_OK)
-		proto_plugin_fini();
+	if (ret != SA_OK) {
+		proto_plugin_fini_impl(B_TRUE);
+	} else {
+		assert(sa_proto_handle.sa_ref_count >= 0);
+		sa_proto_handle.sa_ref_count++;
+	}
 
 	return (ret);
 }
@@ -209,7 +223,29 @@ proto_plugin_init()
 void
 proto_plugin_fini()
 {
+	assert(MUTEX_HELD(&sa_global_lock));
+
+	proto_plugin_fini_impl(B_FALSE);
+}
+
+static void
+proto_plugin_fini_impl(boolean_t forcefini)
+{
 	struct sa_proto_plugin *p;
+
+	assert(MUTEX_HELD(&sa_global_lock));
+
+	sa_proto_handle.sa_ref_count--;
+	/*
+	 * If another thread has a reference to the proto list,
+	 * we don't want to clear it out while they're using it
+	 * or find_protocol() could fail.
+	 */
+	if (!forcefini && sa_proto_handle.sa_ref_count > 0) {
+		return;
+	} else {
+		sa_proto_handle.sa_ref_count = 0;
+	}
 
 	/*
 	 * Protocols may call this framework during _fini
@@ -226,6 +262,8 @@ proto_plugin_fini()
 			(void) dlclose(p->plugin_handle);
 		free(p);
 	}
+	if (sap_proto_list != NULL)
+		sap_proto_list = NULL;
 	if (sa_proto_handle.sa_ops != NULL) {
 		free(sa_proto_handle.sa_ops);
 		sa_proto_handle.sa_ops = NULL;
@@ -249,7 +287,6 @@ find_protocol(char *proto)
 {
 	int i;
 	struct sa_plugin_ops *ops = NULL;
-	extern mutex_t sa_global_lock;
 
 	(void) mutex_lock(&sa_global_lock);
 	if (proto != NULL) {

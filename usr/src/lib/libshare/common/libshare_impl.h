@@ -84,6 +84,7 @@ struct sa_plugin_ops {
 };
 
 struct sa_proto_handle {
+	int			sa_ref_count;
 	int			sa_num_proto;
 	char			**sa_proto;
 	struct sa_plugin_ops	**sa_ops;
