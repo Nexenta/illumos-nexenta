@@ -127,7 +127,12 @@ typedef struct traverse_statistics {
  */
 traverse_statistics_t traverse_stats;
 
-#define	MAX_DENT_BUF_SIZE	(8 * 1024)
+/*
+ * Size the target directory entry buffer to multiple of the
+ * destination structure size for proper alignment during
+ * traversal and copy.
+ */
+#define	MAX_DENT_BUF_SIZE	(sizeof (fs_dent_info_t) * 1024)
 
 typedef struct {
 	struct stat64 fd_attr;
