@@ -1182,13 +1182,13 @@ ndmpd_tar_backup(ndmpd_session_t *session, ndmpd_module_params_t *mod_params,
 		nlp->nlp_jstat->js_stop_time = time(NULL);
 
 		syslog(LOG_DEBUG,
-		    "Runtime [%s] %lu bytes (%lu): %d seconds",
+		    "Runtime [%s] %llu bytes (%llu): %d seconds",
 		    nlp->nlp_backup_path, session->ns_mover.md_data_written,
 		    session->ns_mover.md_data_written,
 		    nlp->nlp_jstat->js_stop_time -
 		    nlp->nlp_jstat->js_start_ltime);
 		MOD_LOG(mod_params,
-		    "Runtime [%s] %lu bytes (%lu): %d seconds",
+		    "Runtime [%s] %llu bytes (%llu): %d seconds",
 		    nlp->nlp_backup_path, session->ns_mover.md_data_written,
 		    session->ns_mover.md_data_written,
 		    nlp->nlp_jstat->js_stop_time -

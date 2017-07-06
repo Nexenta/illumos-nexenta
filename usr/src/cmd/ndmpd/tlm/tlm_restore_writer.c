@@ -404,7 +404,6 @@ tar_getdir(tlm_commands_t *commands,
 			multi_volume = FALSE;
 			last_action = 0;
 		} else {
-			file_size = 0;
 			tar_hdr = (tlm_tar_hdr_t *)get_read_buffer(want,
 			    &erc, &actual_size, local_commands);
 
@@ -696,6 +695,7 @@ tar_getdir(tlm_commands_t *commands,
 					    "No tmplink_dir specified.");
 				}
 			}
+
 			rv = restore_file(&fp, nmp, file_size,
 			    huge_size, acls, want_this_file, local_commands,
 			    job_stats, &size_left);
@@ -1751,7 +1751,7 @@ get_humongus_file_header(int lib,
 	char *p_record, *value;
 	int rv;
 
-	syslog(LOG_WARNING, "HUGE Record found: %d => [%s]", recsize, name);
+	syslog(LOG_WARNING, "HUGE Record found: %d", recsize);
 
 	rv = 0;
 	if (recsize == 0) {

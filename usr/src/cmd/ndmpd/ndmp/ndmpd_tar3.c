@@ -1295,7 +1295,7 @@ save_date_token_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp)
 
 	nlp->nlp_tokseq++;
 	tok = ((u_longlong_t)nlp->nlp_tokseq << 32) | nlp->nlp_cdate;
-	(void) snprintf(val, sizeof (val), "%lu", tok);
+	(void) snprintf(val, sizeof (val), "%llu", tok);
 
 	if (MOD_SETENV(params, "DUMP_DATE", val) != 0) {
 		MOD_LOGV3(params, NDMP_LOG_ERROR,
@@ -1412,13 +1412,15 @@ save_backup_date_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp)
  *
  * Parameters:
  *   session (input) - pointer to the session
+ *   jname (input) - name assigned to the current backup for
+ *	job stats strucure
  *
  * Returns:
  *   0: on success
  *   -1: otherwise
  */
 static int
-backup_alloc_structs_v3(ndmpd_session_t *session)
+backup_alloc_structs_v3(ndmpd_session_t *session, char *jname)
 {
 	int n;
 	long xfer_size;
@@ -1431,7 +1433,7 @@ backup_alloc_structs_v3(ndmpd_session_t *session)
 		return (-1);
 	}
 
-	nlp->nlp_jstat = tlm_new_job_stats(nlp->nlp_job_name);
+	nlp->nlp_jstat = tlm_new_job_stats(jname);
 	if (!nlp->nlp_jstat) {
 		syslog(LOG_ERR, "Creating job stats failed");
 		return (-1);
@@ -1457,7 +1459,7 @@ backup_alloc_structs_v3(ndmpd_session_t *session)
 
 	cmds->tcs_command = tlm_create_reader_writer_ipc(TRUE, xfer_size);
 	if (!cmds->tcs_command) {
-		tlm_un_ref_job_stats(nlp->nlp_job_name);
+		tlm_un_ref_job_stats(jname);
 		return (-1);
 	}
 
@@ -1465,7 +1467,7 @@ backup_alloc_structs_v3(ndmpd_session_t *session)
 	    ndmpd_fhpath_v3_cb, ndmpd_fhdir_v3_cb, ndmpd_fhnode_v3_cb);
 	if (!nlp->nlp_logcallbacks) {
 		tlm_release_reader_writer_ipc(cmds->tcs_command);
-		tlm_un_ref_job_stats(nlp->nlp_job_name);
+		tlm_un_ref_job_stats(jname);
 		return (-1);
 	}
 	nlp->nlp_jstat->js_callbacks = (void *)(nlp->nlp_logcallbacks);
@@ -1485,13 +1487,15 @@ backup_alloc_structs_v3(ndmpd_session_t *session)
  *
  * Parameters:
  *   session (input) - pointer to the session
+ *   jname (input) - name assigned to the current backup for
+ *	job stats strucure
  *
  * Returns:
  *   0: on success
  *   -1: otherwise
  */
 int
-restore_alloc_structs_v3(ndmpd_session_t *session)
+restore_alloc_structs_v3(ndmpd_session_t *session, char *jname)
 {
 	long xfer_size;
 	ndmp_lbr_params_t *nlp;
@@ -1506,7 +1510,7 @@ restore_alloc_structs_v3(ndmpd_session_t *session)
 	/* this is used in ndmpd_path_restored_v3() */
 	nlp->nlp_lastidx = -1;
 
-	nlp->nlp_jstat = tlm_new_job_stats(nlp->nlp_job_name);
+	nlp->nlp_jstat = tlm_new_job_stats(jname);
 	if (!nlp->nlp_jstat) {
 		syslog(LOG_ERR, "Creating job stats failed");
 		return (-1);
@@ -1518,7 +1522,7 @@ restore_alloc_structs_v3(ndmpd_session_t *session)
 	xfer_size = ndmp_buffer_get_size(session);
 	cmds->tcs_command = tlm_create_reader_writer_ipc(FALSE, xfer_size);
 	if (!cmds->tcs_command) {
-		tlm_un_ref_job_stats(nlp->nlp_job_name);
+		tlm_un_ref_job_stats(jname);
 		return (-1);
 	}
 
@@ -1526,7 +1530,7 @@ restore_alloc_structs_v3(ndmpd_session_t *session)
 	    ndmpd_path_restored_v3, NULL, NULL);
 	if (!nlp->nlp_logcallbacks) {
 		tlm_release_reader_writer_ipc(cmds->tcs_command);
-		tlm_un_ref_job_stats(nlp->nlp_job_name);
+		tlm_un_ref_job_stats(jname);
 		return (-1);
 	}
 	nlp->nlp_jstat->js_callbacks = (void *)(nlp->nlp_logcallbacks);
@@ -1536,7 +1540,7 @@ restore_alloc_structs_v3(ndmpd_session_t *session)
 		syslog(LOG_ERR, "Out of memory.");
 		lbrlog_callbacks_done(nlp->nlp_logcallbacks);
 		tlm_release_reader_writer_ipc(cmds->tcs_command);
-		tlm_un_ref_job_stats(nlp->nlp_job_name);
+		tlm_un_ref_job_stats(jname);
 		return (-1);
 	}
 
@@ -1552,12 +1556,15 @@ restore_alloc_structs_v3(ndmpd_session_t *session)
  *
  * Parameters:
  *   session (input) - pointer to the session
+ *   jname (input) - name assigned to the current backup for
+ *	job stats strucure
  *
  * Returns:
  *   void
  */
+/*ARGSUSED*/
 static void
-free_structs_v3(ndmpd_session_t *session)
+free_structs_v3(ndmpd_session_t *session, char *jname)
 {
 	ndmp_lbr_params_t *nlp;
 	tlm_commands_t *cmds;
@@ -2175,7 +2182,10 @@ lbrbk_v3(void *arg, fst_node_t *pnp, fst_node_t *enp)
  * way.
  *
  * Parameters:
- *   argp (input) - backup reader argument
+ *   jname (input) - name assigned to the current backup for
+ *	job stats strucure
+ *   nlp (input) - pointer to the nlp structure
+ *   cmds (input) - pointer to the tlm_commands_t structure
  *
  * Returns:
  *   0: on success
@@ -2190,6 +2200,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
 	longlong_t bpos, n;
 	bk_param_v3_t bp;
 	fs_traverse_t ft;
+	char *jname;
 	ndmp_lbr_params_t *nlp;
 	tlm_commands_t *cmds;
 	int rc;
@@ -2197,6 +2208,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
 	if (!argp)
 		return (-1);
 
+	jname = argp->br_jname;
 	nlp = argp->br_nlp;
 	cmds = argp->br_cmds;
 
@@ -2212,7 +2224,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
 	bp.bp_nlp = nlp;
 
 	/* LBR-related parameters  */
-	bp.bp_js = tlm_ref_job_stats(nlp->nlp_job_name);
+	bp.bp_js = tlm_ref_job_stats(jname);
 	bp.bp_cmds = cmds;
 	bp.bp_lcmd = lcmd;
 	bp.bp_tlmacl = &tlm_acls;
@@ -2234,7 +2246,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
 	 */
 	bp.bp_unchkpnm = nlp->nlp_backup_path;
 	if (!NLP_ISCHKPNTED(nlp)) {
-		tlm_acls.acl_checkpointed = FALSE;
+		tlm_acls.acl_checkpointed = TRUE;
 		bp.bp_chkpnm = ndmp_malloc(sizeof (char) * TLM_MAX_PATH_NAME);
 		if (!bp.bp_chkpnm) {
 			NDMP_FREE(bp.bp_tmp);
@@ -2243,7 +2255,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
 		(void) tlm_build_snapshot_name(nlp->nlp_backup_path,
 		    bp.bp_chkpnm, nlp->nlp_jstat->js_job_name);
 	} else {
-		tlm_acls.acl_checkpointed = TRUE;
+		tlm_acls.acl_checkpointed = FALSE;
 		bp.bp_chkpnm = nlp->nlp_mountpoint;
 	}
 	bp.bp_excls = ndmpd_make_exc_list();
@@ -2303,7 +2315,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
 	cmds->tcs_reader_count--;
 	lcmd->tc_writer = TLM_STOP;
 	tlm_release_reader_writer_ipc(lcmd);
-	tlm_un_ref_job_stats(nlp->nlp_job_name);
+	tlm_un_ref_job_stats(jname);
 
 	return (rv);
 }
@@ -2319,6 +2331,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
  *   session (input) - pointer to the session
  *   params (input) - pointer to the parameters structure
  *   nlp (input) - pointer to the nlp structure
+ *   jname (input) - job name
  *
  * Returns:
  *   0: on success
@@ -2326,7 +2339,7 @@ backup_reader_v3(backup_reader_arg_t *argp)
  */
 static int
 tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
-    ndmp_lbr_params_t *nlp)
+    ndmp_lbr_params_t *nlp, char *jname)
 {
 	tlm_commands_t *cmds;
 	backup_reader_arg_t arg;
@@ -2349,7 +2362,7 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 		return (-1);
 	}
 	if (!session->ns_data.dd_abort) {
-		if (backup_alloc_structs_v3(session) < 0) {
+		if (backup_alloc_structs_v3(session, jname) < 0) {
 			nlp->nlp_bkmap = -1;
 			return (-1);
 		}
@@ -2359,7 +2372,7 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 				(void) dbm_free(nlp->nlp_bkmap);
 				nlp->nlp_bkmap = -1;
 			}
-			free_structs_v3(session);
+			free_structs_v3(session, jname);
 			return (-1);
 		}
 
@@ -2373,7 +2386,7 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 		cmds->tcs_command->tc_writer = TLM_BACKUP_RUN;
 
 		if (ndmp_write_utf8magic(cmds->tcs_command) < 0) {
-			free_structs_v3(session);
+			free_structs_v3(session, jname);
 			return (-1);
 		}
 
@@ -2398,6 +2411,7 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 		}
 
 		(void) memset(&arg, 0, sizeof (backup_reader_arg_t));
+		arg.br_jname = jname;
 		arg.br_nlp = nlp;
 		arg.br_cmds = cmds;
 
@@ -2412,9 +2426,9 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 			}
 		} else {
 			(void) pthread_barrier_destroy(&arg.br_barrier);
-			free_structs_v3(session);
+			free_structs_v3(session, jname);
 			syslog(LOG_ERR, "Launch backup_reader_v3 failed on %s",
-			    nlp->nlp_job_name);
+			    jname);
 			return (-1);
 		}
 
@@ -2424,7 +2438,7 @@ tar_backup_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 		nlp->nlp_jstat->js_stop_time = time(NULL);
 
 		(void) snprintf(info, sizeof (info),
-		    "Runtime [%s] %lu bytes (%lu): %d seconds\n",
+		    "Runtime [%s] %llu bytes (%llu): %d seconds\n",
 		    nlp->nlp_backup_path,
 		    session->ns_data.dd_module.dm_stats.ms_bytes_processed,
 		    session->ns_data.dd_module.dm_stats.ms_bytes_processed,
@@ -2471,7 +2485,7 @@ backup_out:
 		}
 	}
 
-	free_structs_v3(session);
+	free_structs_v3(session, jname);
 	return (err);
 }
 
@@ -2881,13 +2895,14 @@ send_unrecovered_list_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp)
  *
  * Parameters:
  *   session (input) - pointer to the session
+ *   jname (input) - Job name
  *
  * Returns:
  *    0: on success
  *   -1: on error
  */
 int
-restore_dar_alloc_structs_v3(ndmpd_session_t *session)
+restore_dar_alloc_structs_v3(ndmpd_session_t *session, char *jname)
 {
 	long xfer_size;
 	ndmp_lbr_params_t *nlp;
@@ -2905,7 +2920,7 @@ restore_dar_alloc_structs_v3(ndmpd_session_t *session)
 	xfer_size = ndmp_buffer_get_size(session);
 	cmds->tcs_command = tlm_create_reader_writer_ipc(FALSE, xfer_size);
 	if (!cmds->tcs_command) {
-		tlm_un_ref_job_stats(nlp->nlp_job_name);
+		tlm_un_ref_job_stats(jname);
 		return (-1);
 	}
 
@@ -2921,13 +2936,14 @@ restore_dar_alloc_structs_v3(ndmpd_session_t *session)
  *
  * Parameters:
  *   session (input) - pointer to the session
+ *   jname (input) - job name
  *
  * Returns:
  *	NONE
  */
 /*ARGSUSED*/
 static void
-free_dar_structs_v3(ndmpd_session_t *session)
+free_dar_structs_v3(ndmpd_session_t *session, char *jname)
 {
 	ndmp_lbr_params_t *nlp;
 	tlm_commands_t *cmds;
@@ -3108,6 +3124,7 @@ static int ndmpd_dar_tar_end_v3(ndmpd_session_t *session,
  *   session (input) - pointer to the session
  *   params (input) - pointer to the parameters structure
  *   nlp (input) - pointer to the nlp structure
+ *   jname (input) - job name
  *   dar_index(input) - Index of this entry in the restore list
  *
  * Returns:
@@ -3116,7 +3133,7 @@ static int ndmpd_dar_tar_end_v3(ndmpd_session_t *session,
  */
 static int
 ndmpd_dar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
-    ndmp_lbr_params_t *nlp, int dar_index)
+    ndmp_lbr_params_t *nlp, char *jname, int dar_index)
 {
 	char *excl;
 	char **sels;
@@ -3136,12 +3153,12 @@ ndmpd_dar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 	 * We have to allocate and deallocate buffers every time we
 	 * run the restore, for we need to flush the buffers.
 	 */
-	if (restore_dar_alloc_structs_v3(session) < 0)
+	if (restore_dar_alloc_structs_v3(session, jname) < 0)
 		return (-1);
 
 	sels = setupsels(session, params, nlp, dar_index);
 	if (!sels) {
-		free_dar_structs_v3(session);
+		free_dar_structs_v3(session, jname);
 		return (-1);
 	}
 	excl = NULL;
@@ -3198,7 +3215,7 @@ ndmpd_dar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 
 			err = (tm_tar_ops.tm_getdir)(cmds, cmds->tcs_command,
 			    nlp->nlp_jstat, &rn, 1, 1, sels, &excl, flags,
-			    dar_index, nlp->nlp_mountpoint,
+			    dar_index, nlp->nlp_backup_path,
 			    session->hardlink_q);
 			/*
 			 * If the fatal error from tm_getdir looks like an
@@ -3245,7 +3262,7 @@ restore_out:
 
 	NDMP_FREE(sels);
 
-	free_dar_structs_v3(session);
+	free_dar_structs_v3(session, jname);
 
 	return (err);
 }
@@ -3365,7 +3382,7 @@ ndmpd_rs_dar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 		 * We are inside the target window.
 		 * for each restore we will use one entry as selection list
 		 */
-		if ((ret = ndmpd_dar_tar_v3(session, params, nlp, i+1))
+		if ((ret = ndmpd_dar_tar_v3(session, params, nlp, jname, i+1))
 		    != 0)
 			result = EIO;
 		ndmpd_audit_restore(session->ns_connection,
@@ -3480,6 +3497,7 @@ static int
 ndmpd_rs_sar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
     ndmp_lbr_params_t *nlp)
 {
+	char jname[TLM_MAX_BACKUP_JOB_NAME];
 	char *excl;
 	char **sels;
 	int flags;
@@ -3492,13 +3510,16 @@ ndmpd_rs_sar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 	ndmp_context_t nctx;
 
 	result = err = 0;
+	if (ndmp_new_job_name(jname, sizeof (jname)) <= 0) {
+		return (-1);
+	}
 
-	if (restore_alloc_structs_v3(session) < 0) {
+	if (restore_alloc_structs_v3(session, jname) < 0) {
 		return (-1);
 	}
 	sels = setupsels(session, params, nlp, 0);
 	if (!sels) {
-		free_structs_v3(session);
+		free_structs_v3(session, jname);
 		return (-1);
 	}
 	excl = NULL;
@@ -3527,7 +3548,7 @@ ndmpd_rs_sar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 			tlm_cmd_wait(cmds->tcs_command, TLM_TAR_READER);
 		} else {
 			syslog(LOG_ERR, "Launch ndmp_tar_reader failed");
-			free_structs_v3(session);
+			free_structs_v3(session, jname);
 			return (-1);
 		}
 
@@ -3564,7 +3585,7 @@ ndmpd_rs_sar_tar_v3(ndmpd_session_t *session, ndmpd_module_params_t *params,
 
 			err = (tm_tar_ops.tm_getdir)(cmds, cmds->tcs_command,
 			    nlp->nlp_jstat, &rn, 1, 1, sels, &excl, flags, 0,
-			    nlp->nlp_mountpoint, session->hardlink_q);
+			    nlp->nlp_backup_path, session->hardlink_q);
 			/*
 			 * If the fatal error from tm_getdir looks like an
 			 * errno code, we send the error description to DMA.
@@ -3627,7 +3648,7 @@ restore_out:
 	}
 
 	NDMP_FREE(sels);
-	free_structs_v3(session);
+	free_structs_v3(session, jname);
 
 	return (err);
 }
@@ -3781,7 +3802,8 @@ ndmpd_tar_backup_starter_v3(void *arg)
 			    "Failed to get current backup time %d", err);
 		} else {
 			log_bk_params_v3(session, params, nlp);
-			err = tar_backup_v3(session, params, nlp);
+			err = tar_backup_v3(session, params, nlp,
+			    nlp->nlp_job_name);
 		}
 	}
 

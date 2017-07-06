@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2017 Nexenta Systems, Inc.  All rights reserved. */
+/* Copyright 2016 Nexenta Systems, Inc.  All rights reserved. */
 
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -3747,7 +3747,7 @@ mover_data_write_v3(void *cookie, int fd, ulong_t mode)
 	if (session->ns_mover.md_position >= session->ns_mover.md_window_offset
 	    + session->ns_mover.md_window_length) {
 		syslog(LOG_DEBUG,
-		    "MOVER_PAUSE_SEEK(%lu)", session->ns_mover.md_position);
+		    "MOVER_PAUSE_SEEK(%llu)", session->ns_mover.md_position);
 
 		session->ns_mover.md_w_index = 0;
 		session->ns_mover.md_r_index = 0;
@@ -3854,7 +3854,7 @@ mover_data_write_v3(void *cookie, int fd, ulong_t mode)
 	}
 
 	syslog(LOG_DEBUG,
-	    "wrote %u of %u bytes to data connection position %lu r_index %lu",
+	    "wrote %u of %u bytes to data connection position %llu r_index %lu",
 	    n, len, session->ns_mover.md_position,
 	    session->ns_mover.md_r_index);
 

@@ -2130,8 +2130,9 @@ fs_is_valid_logvol(char *path)
  *   buf
  */
 char *
-ndmpd_mk_temp(char* fname, char *buf)
+ndmpd_mk_temp(char *buf)
 {
+	char fname[TLM_MAX_BACKUP_JOB_NAME];
 	const char *dir;
 	char *rv;
 
@@ -2166,6 +2167,9 @@ ndmpd_mk_temp(char* fname, char *buf)
 	}
 
 	rv = buf;
+	if (ndmp_new_job_name(fname, sizeof (fname)) <= 0) {
+		return (0);
+	}
 
 	(void) tlm_cat_path(buf, (char *)dir, fname);
 
