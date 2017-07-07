@@ -37,7 +37,6 @@ _MANFILES=	aac.7d		\
 		bnxe.7d		\
 		bscv.7d		\
 		chxge.7d	\
-		console.7d	\
 		cpuid.7d	\
 		dca.7d		\
 		dcam1394.7d	\

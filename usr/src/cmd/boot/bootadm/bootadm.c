@@ -279,7 +279,6 @@ static long s_strtol(char *);
 static int s_fputs(char *, FILE *);
 
 static int is_zfs(char *root);
-static int is_ufs(char *root);
 static int is_pcfs(char *root);
 static int is_amd64(void);
 static char *get_machine(void);

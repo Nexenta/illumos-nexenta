@@ -37,7 +37,7 @@ include ../Makefile.com
 .KEEP_STATE:
 
 LDLIBS_i386= -lfdisk
-LDLIBS += -lnvpair -lgen -ladm -lefi -lscf -lz -lbe -lzfs $(LDLIBS_$(MACH))
+LDLIBS += -lnvpair -lgen -ladm -lefi -lz -lbe -lzfs $(LDLIBS_$(MACH))
 
 # Writing into string literals is incorrect.  We need to match gcc's
 # behavior, which causes us to take SIGSEGV on such a write.
