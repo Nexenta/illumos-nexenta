@@ -532,6 +532,14 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 		os->os_secondary_cache = ZFS_CACHE_ALL;
 		os->os_zpl_meta_to_special = 0;
 	}
+	/*
+	 * These properties will be filled in by the logic in zfs_get_zplprop()
+	 * when they are queried for the first time.
+	 */
+	os->os_version = OBJSET_PROP_UNINITIALIZED;
+	os->os_normalization = OBJSET_PROP_UNINITIALIZED;
+	os->os_utf8only = OBJSET_PROP_UNINITIALIZED;
+	os->os_casesensitivity = OBJSET_PROP_UNINITIALIZED;
 
 	if (ds == NULL || !ds->ds_is_snapshot)
 		os->os_zil_header = os->os_phys->os_zil_header;
