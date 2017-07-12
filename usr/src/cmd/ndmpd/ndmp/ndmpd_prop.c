@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -94,6 +94,8 @@ ndmpd_cfg_param_t ndmpd_cfg_table[] =
 	{"debug-mode",			"",	0, NDMP_CF_NOTINIT},
 	{"vendor-name",			"",	0, NDMP_CF_NOTINIT},
 	{"product-name",		"",	0, NDMP_CF_NOTINIT},
+	{"autosync-support",		"",	0, NDMP_CF_NOTINIT},
+	{"hpr-support",			"",	0, NDMP_CF_NOTINIT},
 };
 
 /*

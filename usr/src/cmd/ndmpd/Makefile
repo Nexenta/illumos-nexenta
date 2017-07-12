@@ -95,8 +95,7 @@ NDMP_OBJ = \
 	ndmpd_tape.o \
 	ndmpd_tar.o \
 	ndmpd_tar3.o \
-	ndmpd_util.o \
-	ndmpd_zfs.o
+	ndmpd_util.o
 
 TLM_OBJ = \
 	tlm_backup_reader.o \

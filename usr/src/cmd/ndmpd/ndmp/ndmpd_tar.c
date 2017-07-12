@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -1181,13 +1182,13 @@ ndmpd_tar_backup(ndmpd_session_t *session, ndmpd_module_params_t *mod_params,
 		nlp->nlp_jstat->js_stop_time = time(NULL);
 
 		syslog(LOG_DEBUG,
-		    "Runtime [%s] %llu bytes (%llu): %d seconds",
+		    "Runtime [%s] %lu bytes (%llu): %d seconds",
 		    nlp->nlp_backup_path, session->ns_mover.md_data_written,
 		    session->ns_mover.md_data_written,
 		    nlp->nlp_jstat->js_stop_time -
 		    nlp->nlp_jstat->js_start_ltime);
 		MOD_LOG(mod_params,
-		    "Runtime [%s] %llu bytes (%llu): %d seconds",
+		    "Runtime [%s] %lu bytes (%lu): %d seconds",
 		    nlp->nlp_backup_path, session->ns_mover.md_data_written,
 		    session->ns_mover.md_data_written,
 		    nlp->nlp_jstat->js_stop_time -
@@ -1816,15 +1817,10 @@ ndmpd_tar_backup_starter(void *arg)
 	int err;
 	ndmpd_session_t *session;
 	ndmp_lbr_params_t *nlp;
-	ndmp_bkup_size_arg_t sarg;
 
 	session = (ndmpd_session_t *)(mod_params->mp_daemon_cookie);
 	*(mod_params->mp_module_cookie) = nlp = ndmp_get_nlp(session);
 	ndmp_session_ref(session);
-
-	sarg.bs_session = session;
-	sarg.bs_jname = nlp->nlp_jstat->js_job_name;
-	sarg.bs_path = nlp->nlp_backup_path;
 
 	err = 0;
 	if (fs_is_chkpntvol(nlp->nlp_backup_path) ||
@@ -1833,8 +1829,7 @@ ndmpd_tar_backup_starter(void *arg)
 		NLP_SET(nlp, NLPF_CHKPNTED_PATH);
 	else {
 		NLP_UNSET(nlp, NLPF_CHKPNTED_PATH);
-		if (ndmp_create_snapshot(nlp->nlp_backup_path,
-		    nlp->nlp_jstat->js_job_name) < 0) {
+		if (backup_dataset_create(nlp) < 0) {
 			MOD_LOG(mod_params,
 			    "Error: creating checkpoint on %s\n",
 			    nlp->nlp_backup_path);
@@ -1849,8 +1844,7 @@ ndmpd_tar_backup_starter(void *arg)
 	    err, NDMP_YORN(NLP_SHOULD_UPDATE(nlp)));
 
 	if (err == 0) {
-		err = ndmp_get_cur_bk_time(nlp, &nlp->nlp_cdate,
-		    nlp->nlp_jstat->js_job_name);
+		err = ndmp_get_cur_bk_time(nlp, &nlp->nlp_cdate);
 		if (err != 0) {
 			syslog(LOG_DEBUG, "err %d", err);
 		} else {
@@ -1865,7 +1859,7 @@ ndmpd_tar_backup_starter(void *arg)
 	}
 
 	if (!NLP_ISCHKPNTED(nlp))
-		(void) ndmp_remove_snapshot(&sarg);
+		(void) backup_dataset_destroy(nlp);
 
 	syslog(LOG_DEBUG, "err %d, update %c",
 	    err, NDMP_YORN(NLP_SHOULD_UPDATE(nlp)));

@@ -36,7 +36,7 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-/* Copyright 2016 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/errno.h>
 #include <syslog.h>
@@ -341,9 +341,10 @@ tlm_vfy_tar_checksum(tlm_tar_hdr_t *tar_hdr)
 	 */
 	sum += ' ' * 8;
 
-	if (sum != chksum)
+	if (sum != chksum) {
 		syslog(LOG_DEBUG,
 		    "should be %d, is %d", chksum, sum);
+	}
 
 	return ((sum == chksum) ? 1 : -1);
 }
@@ -647,24 +648,29 @@ tlm_cat_path(char *buf, char *dir, char *name)
  * This is necessary to check for checkpoints not being stale.
  */
 int
-tlm_get_chkpnt_time(char *path, int auto_checkpoint, time_t *tp, char *jname)
+tlm_get_chkpnt_time(char *path, time_t *tp)
 {
-	char volname[TLM_VOLNAME_MAX_LENGTH];
-	char chk_name[PATH_MAX];
+	zfs_handle_t *zhp;
 
-	if (path == NULL || *path == '\0' || tp == NULL)
+	if (path == NULL || *path == '\0' || tp == NULL) {
+		syslog(LOG_ERR, "tlm_get_chkpnt_time: bad params");
 		return (-1);
-
-	if (get_zfsvolname(volname, TLM_VOLNAME_MAX_LENGTH,
-	    path) == -1)
-		return (-1);
-
-	if (auto_checkpoint) {
-		(void) snprintf(chk_name, PATH_MAX, "%s", jname);
-		return (chkpnt_creationtime_bypattern(volname, chk_name, tp));
 	}
 
-	return (chkpnt_creationtime_bypattern(volname, jname, tp));
+	(void) mutex_lock(&zlib_mtx);
+	if ((zhp = zfs_open(zlibh, path, ZFS_TYPE_DATASET)) == NULL) {
+		syslog(LOG_DEBUG, "tlm_get_chkpnt_time: open %s failed",
+		    path);
+		(void) mutex_unlock(&zlib_mtx);
+		return (-1);
+	}
+
+	*tp = zfs_prop_get_int(zhp, ZFS_PROP_CREATION);
+
+	zfs_close(zhp);
+	(void) mutex_unlock(&zlib_mtx);
+
+	return (0);
 }
 
 /*

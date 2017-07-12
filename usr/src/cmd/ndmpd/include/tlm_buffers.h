@@ -41,7 +41,7 @@
  * for both local-backup and NDMP.
  *
  */
-/* Copyright 2015 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
 
 #ifndef	_TLM_BUFFERS_H_
 #define	_TLM_BUFFERS_H_
@@ -280,7 +280,7 @@ extern char *trim_name(char *);
 
 extern struct full_dir_info *dup_dir_info(struct full_dir_info *);
 extern void write_tar_eof(tlm_cmd_t *);
-extern int tlm_get_chkpnt_time(char *, int, time_t *, char *);
+extern int tlm_get_chkpnt_time(char *, time_t *);
 extern struct full_dir_info *tlm_new_dir_info(fs_fhandle_t *,
     char *,
     char *);
