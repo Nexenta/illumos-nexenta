@@ -16,7 +16,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  * Copyright 2015 Citrus IT Limited. All rights reserved.
  * Copyright 2015 Garrett D'Amore <garrett@damore.org>
  */
@@ -2403,7 +2403,8 @@ tbolt_complete_cmd(struct mrsas_instance *instance,
 					display_scsi_inquiry((caddr_t)inq);
 #ifdef PDSUPPORT
 				} else if ((status == MFI_STAT_OK) &&
-				    inq->inq_dtype == DTYPE_DIRECT) {
+				    (inq->inq_dtype == DTYPE_DIRECT ||
+				    inq->inq_dtype == DTYPE_ESI)) {
 					display_scsi_inquiry((caddr_t)inq);
 #endif
 				} else {
@@ -3611,8 +3612,8 @@ mrsas_tbolt_config_pd(struct mrsas_instance *instance, uint16_t tgt,
 	mrsas_tbolt_get_pd_info(instance, pds, tgt);
 	dtype = pds->scsiDevType;
 
-	/* Check for Disk */
-	if ((dtype == DTYPE_DIRECT)) {
+	/* Check for disk/enclosure */
+	if (dtype == DTYPE_DIRECT || dtype == DTYPE_ESI) {
 		if ((dtype == DTYPE_DIRECT) &&
 		    (LE_16(pds->fwState) != PD_SYSTEM)) {
 			kmem_free(pds, sizeof (struct mrsas_tbolt_pd_info));
