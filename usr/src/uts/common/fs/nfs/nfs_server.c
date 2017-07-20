@@ -1867,7 +1867,7 @@ common_dispatch(struct svc_req *req, SVCXPRT *xprt, rpcvers_t min_vers,
 	if (logging_enabled) {
 		nfslog_write_record(nfslog_exi, req, args, (char *)&res_buf,
 		    cr, &nb, nfslog_rec_id, NFSLOG_ONE_BUFFER);
-		exi_rele(nfslog_exi);
+		exi_rele(&nfslog_exi);
 		kmem_free((&nb)->buf, (&nb)->len);
 	}
 
@@ -1914,7 +1914,7 @@ done:
 	}
 
 	if (exi != NULL)
-		exi_rele(exi);
+		exi_rele(&exi);
 
 	if (ksp != NULL) {
 		mutex_enter(ksp->ks_lock);
@@ -2936,7 +2936,7 @@ rfs_publicfh_mclookup(char *p, vnode_t *dvp, cred_t *cr, vnode_t **vpp,
 
 			/* Release the reference on the old exi value */
 			ASSERT(*exi != NULL);
-			exi_rele(*exi);
+			exi_rele(exi);
 
 			if (error = nfs_check_vpexi(mc_dvp, *vpp, kcred, exi)) {
 				VN_RELE(*vpp);

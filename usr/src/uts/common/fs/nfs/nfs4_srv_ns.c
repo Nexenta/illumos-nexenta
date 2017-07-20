@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
@@ -798,7 +798,7 @@ treeclimb_export(struct exportinfo *exip)
 				exp_kstats_delete(e->exi_kstats);
 				avl_remove(&exi_id_tree, e);
 				export_unlink(e);
-				exi_rele(e);
+				exi_rele(&e);
 			}
 			tree_head = tree_head->tree_child_first;
 			kmem_free(t2, sizeof (*t2));
@@ -851,7 +851,7 @@ treeclimb_unexport(struct exportinfo *exip)
 			exp_kstats_delete(tnode->tree_exi->exi_kstats);
 			avl_remove(&exi_id_tree, tnode->tree_exi);
 			export_unlink(tnode->tree_exi);
-			exi_rele(tnode->tree_exi);
+			exi_rele(&tnode->tree_exi);
 		}
 
 		/* Release visible in parent's exportinfo */

@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Jason King.
  */
@@ -623,7 +623,7 @@ extern vnode_t *nfs3_fhtovp(nfs_fh3 *, struct exportinfo *);
 extern struct	exportinfo *checkexport(fsid_t *, struct fid *);
 extern struct	exportinfo *checkexport4(fsid_t *, struct fid *, vnode_t *);
 extern void	exi_hold(struct exportinfo *);
-extern void	exi_rele(struct exportinfo *);
+extern void	exi_rele(struct exportinfo **);
 extern struct exportinfo *nfs_vptoexi(vnode_t *, vnode_t *, cred_t *, int *,
     int *, bool_t);
 extern int	nfs_check_vpexi(vnode_t *, vnode_t *, cred_t *,

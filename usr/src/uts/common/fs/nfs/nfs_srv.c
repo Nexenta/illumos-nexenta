@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -362,11 +362,11 @@ rfs_cross_mnt(vnode_t **vpp, struct exportinfo **exip)
 		 * or "nohide" is not set
 		 */
 		if (exi != NULL)
-			exi_rele(exi);
+			exi_rele(&exi);
 		VN_RELE(vp);
 	} else {
 		/* go to submount */
-		exi_rele(*exip);
+		exi_rele(exip);
 		*exip = exi;
 
 		VN_RELE(*vpp);
@@ -397,7 +397,7 @@ rfs_climb_crossmnt(vnode_t **dvpp, struct exportinfo **exip, cred_t *cr)
 		return (-1);
 	}
 
-	exi_rele(*exip);
+	exi_rele(exip);
 	*exip = exi;
 	VN_RELE(*dvpp);
 	*dvpp = dvp;
@@ -501,7 +501,7 @@ rfs_lookup(struct nfsdiropargs *da, struct nfsdiropres *dr,
 	if (PUBLIC_FH2(fhp)) {
 		publicfh_flag = TRUE;
 
-		exi_rele(exi);
+		exi_rele(&exi);
 
 		error = rfs_publicfh_mclookup(name, dvp, cr, &vp, &exi,
 		    &sec);
@@ -551,7 +551,7 @@ out:
 	VN_RELE(dvp);
 
 	if (exi != NULL)
-		exi_rele(exi);
+		exi_rele(&exi);
 
 	/*
 	 * If it's public fh, no 0x81, and client's flavor is
@@ -2153,7 +2153,7 @@ rfs_rename(struct nfsrnmargs *args, enum nfsstat *status,
 		*status = NFSERR_ACCES;
 		return;
 	}
-	exi_rele(to_exi);
+	exi_rele(&to_exi);
 
 	if (to_exi != exi) {
 		VN_RELE(fromvp);
@@ -2306,7 +2306,7 @@ rfs_link(struct nfslinkargs *args, enum nfsstat *status,
 		*status = NFSERR_ACCES;
 		return;
 	}
-	exi_rele(to_exi);
+	exi_rele(&to_exi);
 
 	if (to_exi != exi) {
 		VN_RELE(fromvp);

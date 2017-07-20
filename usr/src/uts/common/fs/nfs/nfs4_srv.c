@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  */
@@ -5948,8 +5948,6 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 				if (rfsv4disptab[op].op_type != NFS4_OP_POSTCFH)
 					kstat_runq_exit(KSTAT_IO_PTR(exi_ksp));
 				mutex_exit(exi_ksp->ks_lock);
-
-				exi_hold(resop->exi);
 			} else {
 				resop->exi = NULL;
 			}
@@ -6116,6 +6114,7 @@ rfs4_compound_kstat_res(COMPOUND4res *res)
 				rw_enter(&exported_lock, RW_READER);
 
 				if (exi->exi_kstats != NULL)
+					/*CSTYLED*/
 					exi_ksp = exi->exi_kstats->rfsprocio_v4_ptr[op];
 				if (exi_ksp != NULL) {
 					mutex_enter(exi_ksp->ks_lock);
@@ -6126,8 +6125,6 @@ rfs4_compound_kstat_res(COMPOUND4res *res)
 				}
 
 				rw_exit(&exported_lock);
-
-				exi_rele(exi);
 			}
 		}
 	}

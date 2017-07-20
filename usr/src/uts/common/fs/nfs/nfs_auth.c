@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1995, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2015 by Delphix. All rights reserved.
  */
@@ -236,7 +236,7 @@ nfsauth_fini(void)
 		}
 
 		list_destroy(&ren->ren_authlist);
-		exi_rele(ren->ren_exi);
+		exi_rele(&ren->ren_exi);
 		kmem_free(ren, sizeof (refreshq_exi_node_t));
 	}
 	list_destroy(&refreshq_queue);
@@ -742,7 +742,7 @@ nfsauth_refresh_thread(void)
 		}
 
 		list_destroy(&ren->ren_authlist);
-		exi_rele(ren->ren_exi);
+		exi_rele(&ren->ren_exi);
 		kmem_free(ren, sizeof (refreshq_exi_node_t));
 	}
 

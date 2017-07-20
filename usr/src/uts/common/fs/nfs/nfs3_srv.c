@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  */
@@ -452,7 +452,7 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	if (PUBLIC_FH3(&args->what.dir)) {
 		publicfh_flag = TRUE;
 
-		exi_rele(exi);
+		exi_rele(&exi);
 
 		error = rfs_publicfh_mclookup(name, dvp, cr, &vp,
 		    &exi, &sec);
@@ -536,7 +536,7 @@ rfs3_lookup(LOOKUP3args *args, LOOKUP3res *resp, struct exportinfo *exi,
 	va.va_mask = AT_ALL;
 	vap = rfs4_delegated_getattr(vp, &va, 0, cr) ? NULL : &va;
 
-	exi_rele(exi);
+	exi_rele(&exi);
 	VN_RELE(vp);
 
 	resp->status = NFS3_OK;
@@ -565,7 +565,7 @@ out:
 		resp->status = puterrno3(error);
 out1:
 	if (exi != NULL)
-		exi_rele(exi);
+		exi_rele(&exi);
 
 	DTRACE_NFSV3_4(op__lookup__done, struct svc_req *, req,
 	    cred_t *, cr, vnode_t *, dvp, LOOKUP3res *, resp);
@@ -2740,7 +2740,7 @@ rfs3_rename(RENAME3args *args, RENAME3res *resp, struct exportinfo *exi,
 		resp->status = NFS3ERR_ACCES;
 		goto err1;
 	}
-	exi_rele(to_exi);
+	exi_rele(&to_exi);
 
 	if (to_exi != exi) {
 		resp->status = NFS3ERR_XDEV;
@@ -2954,7 +2954,7 @@ rfs3_link(LINK3args *args, LINK3res *resp, struct exportinfo *exi,
 		resp->status = NFS3ERR_ACCES;
 		goto out1;
 	}
-	exi_rele(to_exi);
+	exi_rele(&to_exi);
 
 	if (to_exi != exi) {
 		resp->status = NFS3ERR_XDEV;

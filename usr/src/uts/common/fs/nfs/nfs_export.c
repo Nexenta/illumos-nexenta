@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 1990, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
@@ -1165,7 +1165,7 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 		if (ex1 == NULL)
 			return (EINVAL);
 		error = unexport(ex1);
-		exi_rele(ex1);
+		exi_rele(&ex1);
 		return (error);
 	}
 
@@ -1191,7 +1191,7 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 	if (error) {
 		pn_free(&lookpn);
 		if (ex1)
-			exi_rele(ex1);
+			exi_rele(&ex1);
 		return (error);
 	}
 
@@ -1217,7 +1217,7 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 				VN_RELE(dvp);
 			pn_free(&lookpn);
 			if (ex1)
-				exi_rele(ex1);
+				exi_rele(&ex1);
 			return (error);
 		}
 	}
@@ -1228,11 +1228,11 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 		if (dvp != NULL)
 			VN_RELE(dvp);
 		pn_free(&lookpn);
-		exi_rele(ex1);
+		exi_rele(&ex1);
 		return (EEXIST);
 	}
 	if (ex1)
-		exi_rele(ex1);
+		exi_rele(&ex1);
 
 	/*
 	 * Get the vfs id
@@ -1696,7 +1696,7 @@ exportfs(struct exportfs_args *args, model_t model, cred_t *cr)
 	}
 
 	if (ex != NULL)
-		exi_rele(ex);
+		exi_rele(&ex);
 
 	return (0);
 
@@ -1837,7 +1837,7 @@ unexport(struct exportinfo *exi)
 		nfslog_unshare_record(exi, CRED());
 	}
 
-	exi_rele(exi);
+	exi_rele(&exi);
 	return (0);
 }
 
@@ -1993,7 +1993,7 @@ nfs_getfh(struct nfs_getfh_args *args, model_t model, cred_t *cr)
 			nfslog_getfh(exi, (fhandle_t *)logptr,
 			    STRUCT_FGETP(uap, fname), UIO_USERSPACE, cr);
 		}
-		exi_rele(exi);
+		exi_rele(&exi);
 		if (!error) {
 			if (copyout(&l, STRUCT_FGETP(uap, lenp), sizeof (int)))
 				error = EFAULT;
@@ -2636,7 +2636,7 @@ checkexport4(fsid_t *fsid, fid_t *fid, vnode_t *vp)
 /*
  * Free an entire export list node
  */
-void
+static void
 exportfree(struct exportinfo *exi)
 {
 	struct exportdata *ex;
@@ -2742,15 +2742,24 @@ exi_hold(struct exportinfo *exi)
  * if this is the last user of exi and exi is not on exportinfo list anymore
  */
 void
-exi_rele(struct exportinfo *exi)
+exi_rele(struct exportinfo **exi)
 {
-	mutex_enter(&exi->exi_lock);
-	exi->exi_count--;
-	if (exi->exi_count == 0) {
-		mutex_exit(&exi->exi_lock);
-		exportfree(exi);
+	struct exportinfo *exip = *exi;
+	mutex_enter(&exip->exi_lock);
+	exip->exi_count--;
+	if (exip->exi_count == 0) {
+		mutex_exit(&exip->exi_lock);
+		/*
+		 * The exportinfo structure needs to be cleared here
+		 * since the control point, for when we free the structure,
+		 * is in this function and is triggered by the reference
+		 * count. The caller does not necessarily know when that
+		 * will be the case.
+		 */
+		*exi = NULL;
+		exportfree(exip);
 	} else
-		mutex_exit(&exi->exi_lock);
+		mutex_exit(&exip->exi_lock);
 }
 
 #ifdef VOLATILE_FH_TEST
