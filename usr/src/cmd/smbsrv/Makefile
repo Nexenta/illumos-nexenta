@@ -22,10 +22,10 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
-SUBDIRS = smbadm smbd smbstat dtrace fksmbd bind-helper
+SUBDIRS = smbadm smbd smbstat dtrace fksmbd bind-helper testoplock
 MSGSUBDIRS = smbadm smbstat
 
 include ../Makefile.cmd

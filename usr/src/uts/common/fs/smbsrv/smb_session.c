@@ -38,6 +38,8 @@
 
 #define	SMB_NEW_KID()	atomic_inc_64_nv(&smb_kids)
 
+uint32_t SMB_LEASE_HASH_NBUCKETS = 32; /* multiples of 2 */
+
 static volatile uint64_t smb_kids;
 
 /*
@@ -826,6 +828,9 @@ smb_session_create(ksocket_t new_so, uint16_t port, smb_server_t *sv,
 
 	smb_rwx_init(&session->s_lock);
 
+	session->s_lease_ht = smb_hash_create(sizeof (smb_lease_t),
+	    offsetof(smb_lease_t, ls_lnd), SMB_LEASE_HASH_NBUCKETS);
+
 	if (new_so != NULL) {
 		if (family == AF_INET) {
 			slen = sizeof (sin);
@@ -1017,6 +1022,8 @@ smb_session_delete(smb_session_t *session)
 		smb2_scoreboard_fini(session);
 
 	session->s_magic = 0;
+
+	smb_hash_destroy(session->s_lease_ht);
 
 	smb_rwx_destroy(&session->s_lock);
 	smb_net_txl_destructor(&session->s_txlst);
@@ -1637,7 +1644,6 @@ smb_request_free(smb_request_t *sr)
 	ASSERT(sr->r_xa == NULL);
 
 	if (sr->fid_ofile != NULL) {
-		smb_ofile_request_complete(sr->fid_ofile);
 		smb_ofile_release(sr->fid_ofile);
 	}
 
@@ -1684,10 +1690,6 @@ boolean_t
 smb_session_levelII_oplocks(smb_session_t *session)
 {
 	SMB_SESSION_VALID(session);
-
-	/* Clients using SMB2 and later always know about oplocks. */
-	if (session->dialect > NT_LM_0_12)
-		return (B_TRUE);
 
 	/* Older clients only do Level II oplocks if negotiated. */
 	if ((session->capabilities & CAP_LEVEL_II_OPLOCKS) != 0)

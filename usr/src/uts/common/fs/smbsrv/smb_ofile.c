@@ -194,7 +194,7 @@
  * Transition T7
  *
  *    This transition occurs in smb_session_durable_timers() and
- *    smb_oplock_sched_async_break(). The ofile will soon be closed.
+ *    smb_oplock_send_brk(). The ofile will soon be closed.
  *    In the former case, f_timeout_offset nanoseconds have passed since
  *    the ofile was orphaned. In the latter, an oplock break occured
  *    on the ofile while it was orphaned.
@@ -269,10 +269,13 @@
  * open.timeout = 16 minutes
  */
 
-uint32_t smb2_dh_default_timeout = 60; /* seconds */
-uint32_t smb2_res_max_timeout = 300; /* seconds */
-uint32_t smb2_res_default_timeout = 120; /* seconds */
+uint32_t smb2_dh_def_timeout = 60 * MILLISEC;	/* mSec. */
+uint32_t smb2_dh_max_timeout = 300 * MILLISEC;	/* mSec. */
 
+uint32_t smb2_res_def_timeout = 120 * MILLISEC;	/* mSec. */
+uint32_t smb2_res_max_timeout = 300 * MILLISEC;	/* mSec. */
+
+/* XXX: May need to actually assign GUIDs for these. */
 /* Don't leak object addresses */
 #define	SMB_OFILE_PERSISTID(of) \
 	((uintptr_t)&smb_cache_ofile ^ (uintptr_t)(of))
@@ -285,29 +288,26 @@ static int smb_ofile_netinfo_init(smb_ofile_t *, smb_netfileinfo_t *);
 static void smb_ofile_netinfo_fini(smb_netfileinfo_t *);
 
 /*
- * smb_ofile_open
+ * smb_ofile_alloc
+ * Allocate an ofile and fill in it's "up" pointers, but
+ * do NOT link it into the tree's list of ofiles or the
+ * node's list of ofiles.  An ofile in this state is a
+ * "proposed" open passed to the oplock break code.
+ *
+ * If we don't get as far se smb_ofile_open with this OF,
+ * call smb_ofile_free() to free this object.
  */
 smb_ofile_t *
-smb_ofile_open(
+smb_ofile_alloc(
     smb_request_t	*sr,
-    smb_node_t		*node,
-    struct open_param	*op,
+    smb_arg_open_t	*op,
+    smb_node_t		*node, /* optional (may be NULL) */
     uint16_t		ftype,
-    uint32_t		uniqid,
-    smb_error_t		*err)
+    uint16_t		tree_fid,
+    uint32_t		uniqid)
 {
 	smb_tree_t	*tree = sr->tid_tree;
 	smb_ofile_t	*of;
-	uint16_t	fid;
-	smb_attr_t	attr;
-	int		rc;
-
-	if (smb_idpool_alloc(&tree->t_fid_pool, &fid)) {
-		err->status = NT_STATUS_TOO_MANY_OPENED_FILES;
-		err->errcls = ERRDOS;
-		err->errcode = ERROR_TOO_MANY_OPEN_FILES;
-		return (NULL);
-	}
 
 	of = kmem_cache_alloc(smb_cache_ofile, KM_SLEEP);
 	bzero(of, sizeof (smb_ofile_t));
@@ -317,9 +317,10 @@ smb_ofile_open(
 	list_create(&of->f_notify.nc_waiters, sizeof (smb_request_t),
 	    offsetof(smb_request_t, sr_waiters));
 
-	of->f_state = SMB_OFILE_STATE_OPEN;
+	of->f_state = SMB_OFILE_STATE_ALLOC;
 	of->f_refcnt = 1;
-	of->f_fid = fid;
+	of->f_ftype = ftype;
+	of->f_fid = tree_fid;
 	of->f_persistid = SMB_OFILE_PERSISTID(of);
 	of->f_uniqid = uniqid;
 	of->f_opened_by_pid = sr->smb_pid;
@@ -329,14 +330,29 @@ smb_ofile_open(
 	of->f_cr = (op->create_options & FILE_OPEN_FOR_BACKUP_INTENT) ?
 	    smb_user_getprivcred(sr->uid_user) : sr->uid_user->u_cred;
 	crhold(of->f_cr);
-	of->f_ftype = ftype;
 	of->f_server = tree->t_server;
 	of->f_session = tree->t_session;
 	(void) memset(of->f_lock_seq, -1, SMB_OFILE_LSEQ_MAX);
 
+	of->f_mode = smb_fsop_amask_to_omode(of->f_granted_access);
+	if ((of->f_granted_access & FILE_DATA_ALL) == FILE_EXECUTE)
+		of->f_flags |= SMB_OFLAGS_EXECONLY;
+
+	/*
+	 * In case a lease is requested, copy the lease keys now so
+	 * any oplock breaks during open don't break those on our
+	 * other handles that might have the same lease.
+	 */
+	bcopy(op->lease_key, of->TargetOplockKey, SMB_LEASE_KEY_SZ);
+	bcopy(op->parent_lease_key, of->ParentOplockKey, SMB_LEASE_KEY_SZ);
+
 	/*
 	 * grab a ref for of->f_user and of->f_tree
-	 * released in smb_ofile_delete() or smb_open_reconnect()
+	 * released in smb_ofile_delete() or smb_open_reconnect().
+	 * We know the user and tree must be "live" because
+	 * this SR holds references to them.  The node ref. is
+	 * held by our caller, until smb_ofile_open puts this
+	 * ofile on the node ofile list with smb_node_add_ofile.
 	 */
 	smb_user_hold_internal(sr->uid_user);
 	smb_tree_hold_internal(tree);
@@ -344,105 +360,54 @@ smb_ofile_open(
 	of->f_tree = tree;
 	of->f_node = node;
 
-	if (ftype == SMB_FTYPE_MESG_PIPE) {
+	return (of);
+}
+
+/*
+ * smb_ofile_open
+ *
+ * Complete an open on an ofile that was previously allocated by
+ * smb_ofile_alloc, by putting it on the tree ofile list and
+ * (if it's a file) the node ofile list.
+ */
+void
+smb_ofile_open(
+    smb_request_t	*sr,
+    smb_arg_open_t	*op,
+    smb_ofile_t		*of)
+{
+	smb_tree_t	*tree = sr->tid_tree;
+	smb_node_t	*node = of->f_node;
+
+	ASSERT(of->f_state == SMB_OFILE_STATE_ALLOC);
+	of->f_state = SMB_OFILE_STATE_OPEN;
+
+	switch (of->f_ftype) {
+	case SMB_FTYPE_BYTE_PIPE:
+	case SMB_FTYPE_MESG_PIPE:
 		/* See smb_opipe_open. */
 		of->f_pipe = op->pipe;
 		smb_server_inc_pipes(of->f_server);
-	} else {
-		ASSERT(ftype == SMB_FTYPE_DISK); /* Regular file, not a pipe */
-		ASSERT(node);
-
-		/*
-		 * Note that the common open path often adds bits like
-		 * READ_CONTROL, so the logic "is this open exec-only"
-		 * needs to look at only the FILE_DATA_ALL bits.
-		 */
-		if ((of->f_granted_access & FILE_DATA_ALL) == FILE_EXECUTE)
-			of->f_flags |= SMB_OFLAGS_EXECONLY;
-
-		/*
-		 * This is an "internal" getattr because we need the
-		 * UID and DOS attributes.  Don't want to fail here
-		 * due to permissions, so use kcred.
-		 */
-		bzero(&attr, sizeof (smb_attr_t));
-		attr.sa_mask = SMB_AT_UID | SMB_AT_DOSATTR;
-		rc = smb_node_getattr(NULL, node, zone_kcred(), NULL, &attr);
-		if (rc != 0) {
-			err->status = NT_STATUS_INTERNAL_ERROR;
-			err->errcls = ERRDOS;
-			err->errcode = ERROR_INTERNAL_ERROR;
-			goto errout;
-		}
-		if (crgetuid(of->f_cr) == attr.sa_vattr.va_uid) {
-			/*
-			 * Add this bit for the file's owner even if it's not
-			 * specified in the request (Windows behavior).
-			 */
-			of->f_granted_access |= FILE_READ_ATTRIBUTES;
-		}
-
-		if (smb_node_is_file(node)) {
-			of->f_mode =
-			    smb_fsop_amask_to_omode(of->f_granted_access);
-			if (smb_fsop_open(node, of->f_mode, of->f_cr) != 0) {
-				err->status = NT_STATUS_ACCESS_DENIED;
-				err->errcls = ERRDOS;
-				err->errcode = ERROR_ACCESS_DENIED;
-				goto errout;
-			}
-			/*
-			 * [MS-SMB2] 1.1
-			 * durable opens can't be "permissible to a
-			 * directory, named pipe, or printer".
-			 */
-			if (op->dh_vers == SMB2_DURABLE_V2) {
-				(void) memcpy(of->dh_create_guid,
-				    op->create_guid,
-				    UUID_LEN);
-
-				if ((of->f_session->srv_cap &
-				    SMB2_CAP_PERSISTENT_HANDLES) != 0 &&
-				    of->f_tree->is_CA &&
-				    SMB2_PERSIST(op->dh_v2_flags))
-					of->dh_persist = B_TRUE;
-				else
-					of->dh_persist = B_FALSE;
-			}
-			if (op->dh_vers != SMB2_NOT_DURABLE) {
-				of->dh_expire_time = 0;
-				of->dh_vers = op->dh_vers;
-				of->dh_timeout_offset =
-				    MSEC2NSEC(op->dh_timeout);
-			}
-		}
+		break;
+	case SMB_FTYPE_DISK:
+	case SMB_FTYPE_PRINTER:
+		/* Regular file, not a pipe */
+		ASSERT(node != NULL);
 
 		smb_node_inc_open_ofiles(node);
 		smb_node_add_ofile(node, of);
 		smb_node_ref(node);
 		smb_server_inc_files(of->f_server);
+		break;
+	default:
+		ASSERT(0);
 	}
 	smb_llist_enter(&tree->t_ofile_list, RW_WRITER);
 	smb_llist_insert_tail(&tree->t_ofile_list, of);
 	smb_llist_exit(&tree->t_ofile_list);
 	atomic_inc_32(&tree->t_open_files);
 	atomic_inc_32(&of->f_session->s_file_cnt);
-	return (of);
 
-errout:
-	smb_tree_release(of->f_tree);
-	smb_user_release(of->f_user);
-	crfree(of->f_cr);
-
-	list_destroy(&of->f_notify.nc_waiters);
-	mutex_destroy(&of->f_mutex);
-
-	of->f_magic = 0;
-	kmem_cache_free(smb_cache_ofile, of);
-
-	smb_idpool_free(&tree->t_fid_pool, fid);
-
-	return (NULL);
 }
 
 /*
@@ -486,7 +451,12 @@ smb_ofile_close(smb_ofile_t *of, int32_t mtime_sec)
 		break;
 
 	case SMB_FTYPE_DISK:
-	case SMB_FTYPE_PRINTER:
+		if (of->f_lease != NULL)
+			smb2_lease_ofile_close(of);
+		smb_oplock_break_CLOSE(of->f_node, of);
+		/* FALLTHROUGH */
+
+	case SMB_FTYPE_PRINTER: /* or FTYPE_DISK */
 		/*
 		 * In here we make changes to of->f_pending_attr
 		 * while not holding of->f_mutex.  This is OK
@@ -527,7 +497,6 @@ smb_ofile_close(smb_ofile_t *of, int32_t mtime_sec)
 		if (smb_node_is_file(of->f_node)) {
 			(void) smb_fsop_close(of->f_node, of->f_mode,
 			    of->f_cr);
-			smb_oplock_release(of->f_node, of);
 		} else {
 			/*
 			 * If there was an odir, close it.
@@ -547,6 +516,7 @@ smb_ofile_close(smb_ofile_t *of, int32_t mtime_sec)
 			 * Leave allocsz zero when no open files,
 			 * just to avoid confusion, because it's
 			 * only updated when there are opens.
+			 * XXX: Just do this on _every_ close.
 			 */
 			mutex_enter(&of->f_node->n_mutex);
 			if (of->f_node->flags & NODE_FLAGS_DELETE_ON_CLOSE) {
@@ -677,6 +647,45 @@ smb_ofile_enum(smb_ofile_t *of, smb_svcenum_t *svcenum)
 }
 
 /*
+ * Take a reference on an open file, in any of the states:
+ * OPEN, ORPHANED, RECONNECT (like _is_open_locked)
+ * Return TRUE if ref taken.  Used for oplock breaks.
+ *
+ * Note: When the oplock break code calls this, it holds the
+ * node ofile list lock and node oplock mutex. By waiting for
+ * reconnect to finish, the means nothing in the reconnect
+ * code path can take those locks or we could deadlock.
+ */
+boolean_t
+smb_ofile_hold_olbrk(smb_ofile_t *of)
+{
+	boolean_t ret = B_FALSE;
+
+	ASSERT(of);
+	ASSERT(of->f_magic == SMB_OFILE_MAGIC);
+
+	mutex_enter(&of->f_mutex);
+
+	while (of->f_state == SMB_OFILE_STATE_RECONNECT) {
+		cv_wait(&of->f_cv, &of->f_mutex);
+	}
+
+	switch (of->f_state) {
+	case SMB_OFILE_STATE_OPEN:
+	case SMB_OFILE_STATE_ORPHANED:
+		of->f_refcnt++;
+		ret = B_TRUE;
+		break;
+
+	default:
+		break;
+	}
+	mutex_exit(&of->f_mutex);
+
+	return (ret);
+}
+
+/*
  * Take a reference on an open file.
  */
 boolean_t
@@ -724,6 +733,7 @@ smb_ofile_release(smb_ofile_t *of)
 
 	case SMB_OFILE_STATE_CLOSED:
 		if (of->f_refcnt == 0) {
+			/* Calls smb_ofile_delete */
 			smb_tree_post_ofile(of->f_tree, of);
 			if (of->dh_expired)
 				atomic_inc_32(&of->f_session->s_expire_cnt);
@@ -735,35 +745,6 @@ smb_ofile_release(smb_ofile_t *of)
 		break;
 	}
 	mutex_exit(&of->f_mutex);
-}
-
-/*
- * smb_ofile_request_complete
- *
- * During oplock acquisition, all other oplock requests on the node
- * are blocked until the acquire request completes and the response
- * is on the wire.
- * Call smb_oplock_broadcast to notify the node that the request
- * has completed.
- *
- * THIS MECHANISM RELIES ON THE FACT THAT THE OFILE IS NOT REMOVED
- * FROM THE SR UNTIL REQUEST COMPLETION (when the sr is destroyed)
- */
-void
-smb_ofile_request_complete(smb_ofile_t *of)
-{
-	SMB_OFILE_VALID(of);
-
-	switch (of->f_ftype) {
-	case SMB_FTYPE_DISK:
-		ASSERT(of->f_node);
-		smb_oplock_broadcast(of->f_node);
-		break;
-	case SMB_FTYPE_MESG_PIPE:
-		break;
-	default:
-		break;
-	}
 }
 
 /*
@@ -1081,9 +1062,16 @@ smb_ofile_should_save(smb_ofile_t *of)
 {
 	ASSERT(MUTEX_HELD(&of->f_mutex));
 
-	if (of->dh_vers == SMB2_NOT_DURABLE ||
-	    (of->f_user->preserve_opens == SMB2_DONT_PRESERVE &&
-	    of->f_session->conn_lost == B_FALSE))
+	if (of->dh_vers == SMB2_NOT_DURABLE)
+		return (B_FALSE);
+
+	/*
+	 * These two conditions are set in smb_server_cleanup_sessions,
+	 * to distinguish that from a client-initiated disconnect.
+	 * Don't make (more) durable handles there.
+	 */
+	if (of->f_user->preserve_opens == SMB2_DONT_PRESERVE &&
+	    of->f_session->conn_lost == B_FALSE)
 		return (B_FALSE);
 
 	/*
@@ -1103,30 +1091,37 @@ smb_ofile_should_save(smb_ofile_t *of)
 	 * [MS-SMB2] 3.3.7.1 Handling Loss of a Connection
 	 *
 	 * If any of the following are true, preserve for reconnect:
-	 * - Server supports leasing and dh_vers == SMB2_RESILIENT
-	 * - open.is_durable and oplock_level == BATCH
-	 * - open.is_durable, oplock_level == LEASE with HANDLE_CACHING
-	 * - dh_persist == B_TRUE
 	 *
-	 * We don't yet support leasing or persistent ofiles,
-	 * so only case 1&2 matter.
+	 * - Open.IsResilient is TRUE.
 	 *
-	 * The spec says that we should only save resilient handles
-	 * if we support leasing. Note that the ofile does not have
-	 * to actually *have* a lease, or even request a lease. I see
-	 * nothing in the spec that justifies this requirement, and
-	 * HYPER-V benefits from saving resilient ofiles (and doesn't
-	 * seem to require they be leased), so we'll just save them for now.
+	 * - Open.OplockLevel == SMB2_OPLOCK_LEVEL_BATCH and
+	 *   Open.OplockState == Held, and Open.IsDurable is TRUE.
+	 *
+	 * - Open.OplockLevel == SMB2_OPLOCK_LEVEL_LEASE,
+	 *   Lease.LeaseState SMB2_LEASE_HANDLE_CACHING,
+	 *   Open.OplockState == Held, and Open.IsDurable is TRUE.
+	 *
+	 * - Open.IsPersistent is TRUE.
 	 */
-
-	if (of->dh_vers == SMB2_RESILIENT)
+	switch (of->dh_vers) {
+	case SMB2_RESILIENT:
 		return (B_TRUE);
 
-	if (!SMB_OFILE_OPLOCK_GRANTED(of))
-		return (B_FALSE);
+	case SMB2_DURABLE_V2:
+		if (of->dh_persist)
+			return (B_TRUE);
+		/* FALLTHROUGH */
+	case SMB2_DURABLE_V1:
+		/* IS durable (v1 or v2) */
+		if ((of->f_oplock.og_state & (OPLOCK_LEVEL_BATCH |
+		    OPLOCK_LEVEL_CACHE_HANDLE)) != 0)
+			return (B_TRUE);
+		/* FALLTHROUGH */
+	case SMB2_NOT_DURABLE:
+	default:
+		break;
+	}
 
-	if (of->f_oplock_grant.og_level == SMB_OPLOCK_BATCH)
-		return (B_TRUE);
 	return (B_FALSE);
 }
 
@@ -1203,8 +1198,11 @@ smb_ofile_close_and_next(smb_ofile_t *of)
 /*
  * Delete an ofile.
  *
+ * Called via smb_tree_post_ofile
+ *
  * Remove the ofile from the tree list before freeing resources
  * associated with the ofile.
+ * Approximately the inverse of smb_ofile_alloc()
  */
 void
 smb_ofile_delete(void *arg)
@@ -1215,12 +1213,11 @@ smb_ofile_delete(void *arg)
 	SMB_OFILE_VALID(of);
 	ASSERT(of->f_refcnt == 0);
 	ASSERT(of->f_state == SMB_OFILE_STATE_CLOSED);
-	ASSERT(!SMB_OFILE_OPLOCK_GRANTED(of));
 
 	tree = of->f_tree;
 	smb_llist_enter(&tree->t_ofile_list, RW_WRITER);
 	smb_llist_remove(&tree->t_ofile_list, of);
-	smb_idpool_free(&tree->t_fid_pool, of->f_fid);
+	/* smb_idpool_free(&tree->t_fid_pool, of->f_fid); -- see below */
 	atomic_dec_32(&tree->t_session->s_file_cnt);
 	smb_llist_exit(&tree->t_ofile_list);
 
@@ -1234,6 +1231,10 @@ smb_ofile_delete(void *arg)
 		of->f_pipe = NULL;
 		break;
 	case SMB_FTYPE_DISK:
+		if (of->f_lease != NULL) {
+			smb2_lease_rele(of->f_lease);
+			of->f_lease = NULL;
+		}
 		if (of->f_notify.nc_subscribed) {
 			of->f_notify.nc_subscribed = B_FALSE;
 			smb_node_fcn_unsubscribe(of->f_node);
@@ -1249,12 +1250,23 @@ smb_ofile_delete(void *arg)
 		break;
 	}
 
-	of->f_magic = (uint32_t)~SMB_OFILE_MAGIC;
-	list_destroy(&of->f_notify.nc_waiters);
-	mutex_destroy(&of->f_mutex);
+	smb_idpool_free(&tree->t_fid_pool, of->f_fid);
+	smb_ofile_free(of);
+}
+
+void
+smb_ofile_free(smb_ofile_t *of)
+{
+
+	/* smb_idpool_free(&tree->t_fid_pool, of->f_fid); -- see above */
+
 	smb_tree_release(of->f_tree);
 	smb_user_release(of->f_user);
 	crfree(of->f_cr);
+
+	of->f_magic = (uint32_t)~SMB_OFILE_MAGIC;
+	list_destroy(&of->f_notify.nc_waiters);
+	mutex_destroy(&of->f_mutex);
 	kmem_cache_free(smb_cache_ofile, of);
 }
 
@@ -1464,8 +1476,21 @@ smb_ofile_getcred(smb_ofile_t *of)
  * the fid on which the DeleteOnClose was requested.
  */
 void
-smb_ofile_set_delete_on_close(smb_ofile_t *of)
+smb_ofile_set_delete_on_close(smb_request_t *sr, smb_ofile_t *of)
 {
+	uint32_t	status;
+
+	/*
+	 * Break any oplock handle caching.
+	 */
+	status = smb_oplock_break_SETINFO(of->f_node, of,
+	    FileDispositionInformation);
+	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
+		if (sr->session->dialect >= SMB_VERS_2_BASE)
+			(void) smb2sr_go_async(sr);
+		(void) smb_oplock_wait_break(of->f_node, 0);
+	}
+
 	mutex_enter(&of->f_mutex);
 	of->f_flags |= SMB_OFLAGS_SET_DELETE_ON_CLOSE;
 	mutex_exit(&of->f_mutex);
@@ -1619,20 +1644,21 @@ smb_ofile_set_resilient(smb_request_t *sr, smb_fsctl_t *fsctl)
 
 	if (smb2_enable_dh == 0)
 		return (NT_STATUS_NOT_SUPPORTED);
+
 	/*
 	 * The spec wants us to return INVALID_PARAMETER if the timeout
 	 * is too large, but we have no way of informing the client
 	 * what an appropriate timeout is, so just set the timeout to
 	 * our max and return SUCCESS.
 	 */
-	if (timeout > smb2_res_max_timeout * MILLISEC)
-		timeout = smb2_res_max_timeout * MILLISEC;
+	if (timeout == 0)
+		timeout = smb2_res_def_timeout;
+	if (timeout > smb2_res_max_timeout)
+		timeout = smb2_res_max_timeout;
 
 	mutex_enter(&of->f_mutex);
 	of->dh_vers = SMB2_RESILIENT;
-	of->dh_timeout_offset = (timeout) ?
-	    MSEC2NSEC(timeout) :
-	    (hrtime_t)smb2_res_default_timeout*NANOSEC;
+	of->dh_timeout_offset = MSEC2NSEC(timeout);
 	mutex_exit(&of->f_mutex);
 
 	return (NT_STATUS_SUCCESS);

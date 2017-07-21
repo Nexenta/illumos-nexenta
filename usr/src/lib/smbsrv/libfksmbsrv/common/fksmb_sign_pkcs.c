@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -28,17 +28,40 @@
 #include <security/pkcs11.h>
 
 /*
+ * Common function to see if a mech is available.
+ */
+static int
+find_mech(smb_crypto_mech_t *mech, ulong_t mid)
+{
+	CK_SESSION_HANDLE hdl;
+	CK_RV rv;
+
+	rv = SUNW_C_GetMechSession(mid, &hdl);
+	if (rv != CKR_OK) {
+		cmn_err(CE_NOTE, "PKCS#11: no mech 0x%x",
+		    (unsigned int)mid);
+		return (-1);
+	}
+	(void) C_CloseSession(hdl);
+
+	mech->mechanism = mid;
+	mech->pParameter = NULL;
+	mech->ulParameterLen = 0;
+	return (0);
+}
+
+/*
  * SMB1 signing helpers:
  * (getmech, init, update, final)
  */
 
+/*
+ * Find out if we have this mech.
+ */
 int
 smb_md5_getmech(smb_crypto_mech_t *mech)
 {
-	mech->mechanism = CKM_MD5;
-	mech->pParameter = NULL;
-	mech->ulParameterLen = 0;
-	return (0);
+	return (find_mech(mech, CKM_MD5));
 }
 
 /*
@@ -93,13 +116,13 @@ smb_md5_final(smb_sign_ctx_t ctx, uint8_t *digest16)
  * (getmech, init, update, final)
  */
 
+/*
+ * Find out if we have this mech.
+ */
 int
 smb2_hmac_getmech(smb_crypto_mech_t *mech)
 {
-	mech->mechanism = CKM_SHA256_HMAC;
-	mech->pParameter = NULL;
-	mech->ulParameterLen = 0;
-	return (0);
+	return (find_mech(mech, CKM_SHA256_HMAC));
 }
 
 /*
@@ -167,13 +190,13 @@ smb2_hmac_final(smb_sign_ctx_t ctx, uint8_t *digest16)
  * (getmech, init, update, final)
  */
 
+/*
+ * Find out if we have this mech.
+ */
 int
 smb3_cmac_getmech(smb_crypto_mech_t *mech)
 {
-	mech->mechanism = CKM_AES_CMAC;
-	mech->pParameter = NULL;
-	mech->ulParameterLen = 0;
-	return (0);
+	return (find_mech(mech, CKM_AES_CMAC));
 }
 
 /*

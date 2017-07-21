@@ -22,6 +22,23 @@
 #include <smbsrv/smb_fsops.h>
 
 /*
+ * Compile-time check that the SMB2_LEASE_... definitions
+ * match the (internal) equivalents from ntifs.h
+ */
+#if SMB2_LEASE_NONE != OPLOCK_LEVEL_NONE
+#error "SMB2_LEASE_NONE"
+#endif
+#if SMB2_LEASE_READ_CACHING != OPLOCK_LEVEL_CACHE_READ
+#error "SMB2_LEASE_READ_CACHING"
+#endif
+#if SMB2_LEASE_HANDLE_CACHING != OPLOCK_LEVEL_CACHE_HANDLE
+#error "SMB2_LEASE_HANDLE_CACHING"
+#endif
+#if SMB2_LEASE_WRITE_CACHING != OPLOCK_LEVEL_CACHE_WRITE
+#error "SMB2_LEASE_WRITE_CACHING"
+#endif
+
+/*
  * Some flags used locally to keep track of which Create Context
  * names have been provided and/or requested.
  */
@@ -37,8 +54,6 @@
 #define	CCTX_AAPL_EXT			0x200
 #define	CCTX_DH_REQUEST_V2		0x400
 #define	CCTX_DH_RECONNECT_V2		0x800
-#define	CCTX_REQUEST_LEASE_V2		0X1000
-#define	CCTX_APPINSTANCE_ID		0x2000
 
 typedef struct smb2_create_ctx_elem {
 	uint32_t cce_len;
@@ -46,6 +61,7 @@ typedef struct smb2_create_ctx_elem {
 } smb2_create_ctx_elem_t;
 
 typedef struct smb2_create_ctx {
+	mbuf_chain_t cc_in_mbc;
 	uint_t	cc_in_flags;	/* CCTX_... */
 	uint_t	cc_out_flags;	/* CCTX_... */
 	/* Elements we may see in the request. */
@@ -63,14 +79,15 @@ typedef struct smb2_create_ctx {
 	smb2_create_ctx_elem_t cc_out_max_access;
 	smb2_create_ctx_elem_t cc_out_file_id;
 	smb2_create_ctx_elem_t cc_out_aapl;
+	smb2_create_ctx_elem_t cc_out_req_lease;
 	smb2_create_ctx_elem_t cc_out_dh_request;
 	smb2_create_ctx_elem_t cc_out_dh_request_v2;
 } smb2_create_ctx_t;
 
 static uint32_t smb2_decode_create_ctx(
-	smb_request_t *, mbuf_chain_t *, smb2_create_ctx_t *);
+	smb_request_t *, smb2_create_ctx_t *);
 static uint32_t smb2_encode_create_ctx(
-	smb_request_t *, mbuf_chain_t *, smb2_create_ctx_t *);
+	smb_request_t *, smb2_create_ctx_t *);
 static int smb2_encode_create_ctx_elem(
 	mbuf_chain_t *, smb2_create_ctx_elem_t *, uint32_t);
 static void smb2_free_create_ctx(smb2_create_ctx_t *);
@@ -83,12 +100,10 @@ smb2_create(smb_request_t *sr)
 	smb_attr_t *attr;
 	smb2_create_ctx_elem_t *cce;
 	smb2_create_ctx_t cctx;
-	mbuf_chain_t cc_mbc;
 	smb_arg_open_t *op = &sr->arg.open;
 	smb_ofile_t *of = NULL;
 	uint16_t StructSize;
 	uint8_t SecurityFlags;
-	uint8_t OplockLevel;
 	uint32_t ImpersonationLevel;
 	uint64_t SmbCreateFlags;
 	uint64_t Reserved4;
@@ -96,23 +111,20 @@ smb2_create(smb_request_t *sr)
 	uint16_t NameLength;
 	uint32_t CreateCtxOffset;
 	uint32_t CreateCtxLength;
-	smb2fid_t smb2fid;
+	smb2fid_t smb2fid = { 0, 0 };
 	uint32_t status;
 	int dh_flags;
 	int skip;
 	int rc = 0;
-	boolean_t dh_reconnect = B_FALSE;
 
-	/* XXX Should put cctx in arg.open */
 	bzero(&cctx, sizeof (cctx));
-	bzero(&cc_mbc, sizeof (cc_mbc));
+	op->create_ctx = &cctx;	/* for debugging */
 
 	/*
 	 * Paranoia.  This will set sr->fid_ofile, so
 	 * if we already have one, release it now.
 	 */
 	if (sr->fid_ofile != NULL) {
-		smb_ofile_request_complete(sr->fid_ofile);
 		smb_ofile_release(sr->fid_ofile);
 		sr->fid_ofile = NULL;
 	}
@@ -131,7 +143,7 @@ smb2_create(smb_request_t *sr)
 	    &sr->smb_data, "wbblqqlllllwwll",
 	    &StructSize,		/* w */
 	    &SecurityFlags,		/* b */
-	    &OplockLevel,		/* b */
+	    &op->op_oplock_level,	/* b */
 	    &ImpersonationLevel,	/* l */
 	    &SmbCreateFlags,		/* q */
 	    &Reserved4,			/* q */
@@ -182,30 +194,6 @@ smb2_create(smb_request_t *sr)
 	op->fqi.fq_dnode = sr->tid_tree->t_snode;
 
 	/*
-	 * Convert the SMB2 oplock level into SMB1 form.
-	 * Considering this as part of decode.
-	 */
-	switch (OplockLevel) {
-	case SMB2_OPLOCK_LEVEL_NONE:
-		op->op_oplock_level = SMB_OPLOCK_NONE;
-		break;
-	case SMB2_OPLOCK_LEVEL_II:
-		op->op_oplock_level = SMB_OPLOCK_LEVEL_II;
-		break;
-	case SMB2_OPLOCK_LEVEL_EXCLUSIVE:
-		op->op_oplock_level = SMB_OPLOCK_EXCLUSIVE;
-		break;
-	case SMB2_OPLOCK_LEVEL_BATCH:
-		op->op_oplock_level = SMB_OPLOCK_BATCH;
-		break;
-	case SMB2_OPLOCK_LEVEL_LEASE:
-	default:
-		status = NT_STATUS_INVALID_PARAMETER;
-		goto errout;
-	}
-	op->op_oplock_levelII = B_TRUE;
-
-	/*
 	 * If there is a "Create Context" payload, decode it.
 	 * This may carry things like a security descriptor,
 	 * extended attributes, etc. to be used in create.
@@ -213,7 +201,6 @@ smb2_create(smb_request_t *sr)
 	 * The create ctx buffer must start after the headers
 	 * and file name, and must be 8-byte aligned.
 	 */
-	op->dh_vers = SMB2_NOT_DURABLE;
 	if (CreateCtxLength != 0) {
 		if ((CreateCtxOffset & 7) != 0 ||
 		    (CreateCtxOffset + sr->smb2_cmd_hdr) <
@@ -222,13 +209,13 @@ smb2_create(smb_request_t *sr)
 			goto errout;
 		}
 
-		rc = MBC_SHADOW_CHAIN(&cc_mbc, &sr->smb_data,
+		rc = MBC_SHADOW_CHAIN(&cctx.cc_in_mbc, &sr->smb_data,
 		    sr->smb2_cmd_hdr + CreateCtxOffset, CreateCtxLength);
 		if (rc) {
 			status = NT_STATUS_INVALID_PARAMETER;
 			goto errout;
 		}
-		status = smb2_decode_create_ctx(sr, &cc_mbc, &cctx);
+		status = smb2_decode_create_ctx(sr, &cctx);
 		if (status)
 			goto errout;
 	}
@@ -249,16 +236,22 @@ smb2_create(smb_request_t *sr)
 	 * that need action before the open, starting with the
 	 * Durable Handle ones, which may override others.
 	 */
-	if (smb2_enable_dh == 0) {
+
+	/*
+	 * Only disk trees get durable handles.
+	 */
+	if (smb2_enable_dh == 0 ||
+	    (sr->tid_tree->t_res_type & STYPE_MASK) != STYPE_DISKTREE) {
 		cctx.cc_in_flags &=
-		    ~(CCTX_DH_REQUEST_V2|CCTX_DH_RECONNECT_V2|
-		    CCTX_DH_REQUEST|CCTX_DH_RECONNECT);
-	} else if (sr->session->dialect < SMB_VERS_3_0) {
-		/*
-		 * DH v2 is only valid in SMB3.0 and later.
-		 * If we get them in earlier dialects,
-		 * pretend we didn't see them.
-		 */
+		    ~(CCTX_DH_REQUEST | CCTX_DH_REQUEST_V2 |
+		    CCTX_DH_RECONNECT | CCTX_DH_RECONNECT_V2);
+	}
+
+	/*
+	 * DH v2 is only valid in SMB3.0 and later.
+	 * If seen in earlier dialects, ignore.
+	 */
+	if (sr->session->dialect < SMB_VERS_3_0) {
 		cctx.cc_in_flags &=
 		    ~(CCTX_DH_REQUEST_V2|CCTX_DH_RECONNECT_V2);
 	}
@@ -270,28 +263,31 @@ smb2_create(smb_request_t *sr)
 	 * case, the v1 REQUEST is ignored.
 	 */
 	dh_flags = cctx.cc_in_flags &
-	    (CCTX_DH_RECONNECT|CCTX_DH_RECONNECT_V2|
-	    CCTX_DH_REQUEST|CCTX_DH_REQUEST_V2);
+	    (CCTX_DH_REQUEST | CCTX_DH_REQUEST_V2 |
+	    CCTX_DH_RECONNECT | CCTX_DH_RECONNECT_V2);
 	if ((dh_flags & (dh_flags - 1)) != 0 &&
 	    dh_flags != (CCTX_DH_REQUEST|CCTX_DH_RECONNECT)) {
 		status = NT_STATUS_INVALID_PARAMETER;
 		goto cmd_done;
 	}
 
+	/*
+	 * Reconnect is special in MANY ways, including the
+	 * somewhat surprising (specified) behavior that
+	 * most other creat parameters are ignored, and
+	 * many create context types are ignored too.
+	 */
+	op->dh_vers = SMB2_NOT_DURABLE;
+	op->dh_v2_flags = 0;
 	if ((cctx.cc_in_flags &
 	    (CCTX_DH_RECONNECT|CCTX_DH_RECONNECT_V2)) != 0) {
-		dh_reconnect = B_TRUE;
+
 		if ((cctx.cc_in_flags & CCTX_DH_RECONNECT_V2) != 0)
 			op->dh_vers = SMB2_DURABLE_V2;
 		else
 			op->dh_vers = SMB2_DURABLE_V1;
 
-		/*
-		 * Several create context types don't apply to a
-		 * reconnect: DH_REQUEST(_V2) etc.   Most are
-		 * things set only during an actual create.
-		 * "on disk ID" is per [MS-SMB2]
-		 */
+		/* Ignore these create contexts. */
 		cctx.cc_in_flags &=
 		    ~(CCTX_DH_REQUEST |
 		    CCTX_DH_REQUEST_V2 |
@@ -300,36 +296,135 @@ smb2_create(smb_request_t *sr)
 		    CCTX_ALLOCATION_SIZE |
 		    CCTX_TIMEWARP_TOKEN |
 		    CCTX_QUERY_ON_DISK_ID);
+
+		/*
+		 * Reconnect check needs to know if a lease was requested.
+		 * The requested oplock level is ignored in reconnect, so
+		 * using that to convey this info.
+		 */
+		if (cctx.cc_in_flags & CCTX_REQUEST_LEASE)
+			op->op_oplock_level = SMB2_OPLOCK_LEVEL_LEASE;
+		else
+			op->op_oplock_level = 0;
+
+		status = smb2_open_reconnect(sr);
+		if (status != NT_STATUS_SUCCESS)
+			goto cmd_done;
+
+		/*
+		 * Skip most open execution during reconnect,
+		 * but need (reclaimed) oplock state in *op.
+		 */
+		of = sr->fid_ofile;
+
+		op->op_oplock_state = of->f_oplock.og_state;
+		if (of->f_lease != NULL) {
+			smb_lease_t *ls = of->f_lease;
+
+			op->op_oplock_level = SMB2_OPLOCK_LEVEL_LEASE;
+			op->lease_state = ls->ls_state &
+			    OPLOCK_LEVEL_CACHE_MASK;
+			op->lease_flags = (ls->ls_breaking != 0) ?
+			    SMB2_LEASE_FLAG_BREAK_IN_PROGRESS : 0;
+			op->lease_epoch = ls->ls_epoch;
+			op->lease_version = ls->ls_version;
+		} else {
+			switch (op->op_oplock_state & OPLOCK_LEVEL_TYPE_MASK) {
+			default:
+			case OPLOCK_LEVEL_NONE:
+				op->op_oplock_level = SMB2_OPLOCK_LEVEL_NONE;
+				break;
+			case OPLOCK_LEVEL_TWO:
+				op->op_oplock_level = SMB2_OPLOCK_LEVEL_II;
+				break;
+			case OPLOCK_LEVEL_ONE:
+				op->op_oplock_level =
+				    SMB2_OPLOCK_LEVEL_EXCLUSIVE;
+				break;
+			case OPLOCK_LEVEL_BATCH:
+				op->op_oplock_level = SMB2_OPLOCK_LEVEL_BATCH;
+				break;
+			}
+		}
+
+		goto reconnect_done;
 	}
+
+	/*
+	 * Real create (of a new handle, not reconnect)
+	 */
+
+	/*
+	 * Validate the requested oplock level.
+	 * Conversion to internal form is in smb2_oplock_acquire()
+	 */
+	switch (op->op_oplock_level) {
+	case SMB2_OPLOCK_LEVEL_NONE:		/* OPLOCK_LEVEL_NONE */
+	case SMB2_OPLOCK_LEVEL_II:		/* OPLOCK_LEVEL_TWO */
+	case SMB2_OPLOCK_LEVEL_EXCLUSIVE:	/* OPLOCK_LEVEL_ONE */
+	case SMB2_OPLOCK_LEVEL_BATCH:		/* OPLOCK_LEVEL_BATCH */
+		/*
+		 * Ignore lease create context (if any)
+		 */
+		cctx.cc_in_flags &= ~CCTX_REQUEST_LEASE;
+		break;
+
+	case SMB2_OPLOCK_LEVEL_LEASE:		/* OPLOCK_LEVEL_GRANULAR */
+		/*
+		 * Require a lease create context.
+		 */
+		if ((cctx.cc_in_flags & CCTX_REQUEST_LEASE) == 0) {
+			cmn_err(CE_NOTE, "smb2:create, oplock=ff and no lease");
+			status = NT_STATUS_INVALID_PARAMETER;
+			goto cmd_done;
+		}
+
+		/*
+		 * Validate lease request state
+		 * Only a few valid combinations.
+		 */
+		switch (op->lease_state) {
+		case SMB2_LEASE_NONE:
+		case SMB2_LEASE_READ_CACHING:
+		case SMB2_LEASE_READ_CACHING | SMB2_LEASE_HANDLE_CACHING:
+		case SMB2_LEASE_READ_CACHING | SMB2_LEASE_WRITE_CACHING:
+		case SMB2_LEASE_READ_CACHING | SMB2_LEASE_WRITE_CACHING |
+		    SMB2_LEASE_HANDLE_CACHING:
+			break;
+
+		default:
+			/*
+			 * Invalid lease state flags
+			 * Just force to "none".
+			 */
+			op->lease_state = SMB2_LEASE_NONE;
+			break;
+		}
+		break;
+
+	default:
+		/* Unknown SMB2 oplock level. */
+		status = NT_STATUS_INVALID_PARAMETER;
+		goto cmd_done;
+	}
+
+	/*
+	 * Only disk trees get oplocks or leases.
+	 */
+	if ((sr->tid_tree->t_res_type & STYPE_MASK) != STYPE_DISKTREE) {
+		op->op_oplock_level = SMB2_OPLOCK_LEVEL_NONE;
+		cctx.cc_in_flags &= ~CCTX_REQUEST_LEASE;
+	}
+
+	if (sr->tid_tree->is_CA == B_FALSE)
+		op->dh_v2_flags &= ~SMB2_DHANDLE_FLAG_PERSISTENT;
 
 	if ((cctx.cc_in_flags &
 	    (CCTX_DH_REQUEST|CCTX_DH_REQUEST_V2)) != 0) {
-		/*
-		 * We're supposed to process Durable Handle requests
-		 * if any one of the following conditions is true:
-		 *
-		 * 1. op_oplock_level == SMB_OPLOCK_BATCH
-		 * 2. A lease is requested with handle caching
-		 *    - for v1, the lease must not be on a directory
-		 * 3. For v2, SMB2_PERSIST(dh_v2_flags) && tree->is_CA
-		 *
-		 * Otherwise, the requests are ignored.
-		 * However, because we don't support leases or CA,
-		 * cases 2 and 3 are not of concern to us yet.
-		 */
-		if (op->op_oplock_level != SMB_OPLOCK_BATCH)
-			op->dh_vers = SMB2_NOT_DURABLE;
-		else if ((cctx.cc_in_flags & CCTX_DH_REQUEST_V2) != 0)
+		if ((cctx.cc_in_flags & CCTX_DH_REQUEST_V2) != 0)
 			op->dh_vers = SMB2_DURABLE_V2;
 		else
 			op->dh_vers = SMB2_DURABLE_V1;
-		/*
-		 * Client may provide timeout=0 to request the
-		 * default timeout.
-		 */
-		if (op->dh_timeout == 0 ||
-		    op->dh_timeout > DH_TIMEOUT_MS)
-			op->dh_timeout = DH_TIMEOUT_MS;
 	}
 
 	if (cctx.cc_in_flags & CCTX_EA_BUFFER) {
@@ -337,42 +432,110 @@ smb2_create(smb_request_t *sr)
 		goto cmd_done;
 	}
 
-	/* Don't do open execution during Durable_Reconnect */
-	if (dh_reconnect == B_FALSE) {
-		/*
-		 * ImpersonationLevel (spec. says validate + ignore)
-		 * SmbCreateFlags (spec. says ignore)
-		 */
 
-		if ((op->create_options & FILE_DELETE_ON_CLOSE) &&
-		    !(op->desired_access & DELETE)) {
-			status = NT_STATUS_INVALID_PARAMETER;
-			goto cmd_done;
-		}
+	/*
+	 * ImpersonationLevel (spec. says validate + ignore)
+	 * SmbCreateFlags (spec. says ignore)
+	 */
 
-		if (op->dattr & FILE_FLAG_WRITE_THROUGH)
-			op->create_options |= FILE_WRITE_THROUGH;
-		if (op->dattr & FILE_FLAG_DELETE_ON_CLOSE)
-			op->create_options |= FILE_DELETE_ON_CLOSE;
-		if (op->dattr & FILE_FLAG_BACKUP_SEMANTICS)
-			op->create_options |= FILE_OPEN_FOR_BACKUP_INTENT;
-		if (op->create_options & FILE_OPEN_FOR_BACKUP_INTENT)
-			sr->user_cr = smb_user_getprivcred(sr->uid_user);
-		if (op->create_disposition > FILE_MAXIMUM_DISPOSITION) {
-			status = NT_STATUS_INVALID_PARAMETER;
-			goto cmd_done;
-		}
-
-		/*
-		 * The real open call.   Note: this gets attributes into
-		 * op->fqi.fq_fattr (SMB_AT_ALL).  We need those below.
-		 */
-		status = smb_common_open(sr);
-	} else {
-		status = smb2_open_reconnect(sr);
+	if ((op->create_options & FILE_DELETE_ON_CLOSE) &&
+	    !(op->desired_access & DELETE)) {
+		status = NT_STATUS_INVALID_PARAMETER;
+		goto cmd_done;
 	}
+
+	if (op->dattr & FILE_FLAG_WRITE_THROUGH)
+		op->create_options |= FILE_WRITE_THROUGH;
+	if (op->dattr & FILE_FLAG_DELETE_ON_CLOSE)
+		op->create_options |= FILE_DELETE_ON_CLOSE;
+	if (op->dattr & FILE_FLAG_BACKUP_SEMANTICS)
+		op->create_options |= FILE_OPEN_FOR_BACKUP_INTENT;
+	if (op->create_options & FILE_OPEN_FOR_BACKUP_INTENT)
+		sr->user_cr = smb_user_getprivcred(sr->uid_user);
+	if (op->create_disposition > FILE_MAXIMUM_DISPOSITION) {
+		status = NT_STATUS_INVALID_PARAMETER;
+		goto cmd_done;
+	}
+
+	/*
+	 * The real open call.   Note: this gets attributes into
+	 * op->fqi.fq_fattr (SMB_AT_ALL).  We need those below.
+	 * When of != NULL, goto errout closes it.
+	 */
+	status = smb_common_open(sr);
 	if (status != NT_STATUS_SUCCESS)
 		goto cmd_done;
+	of = sr->fid_ofile;
+
+	/*
+	 * [MS-SMB2] 3.3.5.9.8
+	 * Handling the SMB2_CREATE_REQUEST_LEASE Create Context
+	 */
+	if ((cctx.cc_in_flags & CCTX_REQUEST_LEASE) != 0) {
+		status = smb2_lease_create(sr);
+		if (status != NT_STATUS_SUCCESS) {
+			if (op->action_taken == SMB_OACT_CREATED) {
+				smb_ofile_set_delete_on_close(sr, of);
+			}
+			goto cmd_done;
+		}
+	}
+	if (op->op_oplock_level == SMB2_OPLOCK_LEVEL_LEASE) {
+		smb2_lease_acquire(sr);
+	} else if (op->op_oplock_level != SMB2_OPLOCK_LEVEL_NONE) {
+		smb2_oplock_acquire(sr);
+	}
+
+	/*
+	 * Make this a durable open, but only if:
+	 * (durable handle requested and...)
+	 *
+	 * 1. op_oplock_level == SMB2_OPLOCK_LEVEL_BATCH
+	 * 2. A lease is requested with handle caching
+	 *    - for v1, the lease must not be on a directory
+	 * 3. For v2, SMB2_PERSIST(dh_v2_flags) && tree->is_CA
+	 *
+	 * Otherwise, DH requests are ignored, so we set
+	 * dh_vers = not durable
+	 */
+	if ((cctx.cc_in_flags &
+	    (CCTX_DH_REQUEST|CCTX_DH_REQUEST_V2)) != 0 &&
+	    smb_node_is_file(of->f_node) &&
+	    ((op->op_oplock_level == SMB2_OPLOCK_LEVEL_BATCH) ||
+	    (op->op_oplock_level == SMB2_OPLOCK_LEVEL_LEASE &&
+	    (op->lease_state & OPLOCK_LEVEL_CACHE_HANDLE) != 0))) {
+		/*
+		 * OK, make this handle "durable"
+		 */
+		if (op->dh_vers == SMB2_DURABLE_V2) {
+			(void) memcpy(of->dh_create_guid,
+			    op->create_guid, UUID_LEN);
+
+			if (SMB2_PERSIST(op->dh_v2_flags))
+				of->dh_persist = B_TRUE;
+			else
+				of->dh_persist = B_FALSE;
+		}
+		if (op->dh_vers != SMB2_NOT_DURABLE) {
+			uint32_t msto;
+
+			of->dh_vers = op->dh_vers;
+			of->dh_expire_time = 0;
+
+			/*
+			 * Client may provide timeout=0 to request
+			 * the default timeout (in mSec.)
+			 */
+			msto = op->dh_timeout;
+			if (msto == 0)
+				msto = smb2_dh_def_timeout;
+			if (msto > smb2_dh_max_timeout)
+				msto = smb2_dh_max_timeout;
+			of->dh_timeout_offset = MSEC2NSEC(msto);
+		}
+	} else {
+		op->dh_vers = SMB2_NOT_DURABLE;
+	}
 
 	/*
 	 * NB: after the above smb_common_open() success,
@@ -383,7 +546,7 @@ smb2_create(smb_request_t *sr)
 	 * though it could later be something larger,
 	 * (16 bytes) similar to an NFSv4 open handle.
 	 */
-	of = sr->fid_ofile;
+reconnect_done:
 	smb2fid.persistent = of->f_persistid;
 	smb2fid.temporal = sr->smb_fid;
 
@@ -391,7 +554,7 @@ smb2_create(smb_request_t *sr)
 	case STYPE_DISKTREE:
 	case STYPE_PRINTQ:
 		if (op->create_options & FILE_DELETE_ON_CLOSE)
-			smb_ofile_set_delete_on_close(of);
+			smb_ofile_set_delete_on_close(sr, of);
 		break;
 	}
 
@@ -434,14 +597,22 @@ smb2_create(smb_request_t *sr)
 		status = 0;
 	}
 
+	/*
+	 * If a lease was requested, and we got one...
+	 */
+	if ((cctx.cc_in_flags & CCTX_REQUEST_LEASE) != 0 &&
+	    op->op_oplock_level == SMB2_OPLOCK_LEVEL_LEASE)
+		cctx.cc_out_flags |= CCTX_REQUEST_LEASE;
+
+	/*
+	 * If a durable handle was requested and we got one...
+	 */
 	if ((cctx.cc_in_flags & CCTX_DH_REQUEST) != 0 &&
 	    of->dh_vers == SMB2_DURABLE_V1) {
 		cctx.cc_out_flags |= CCTX_DH_REQUEST;
 	}
 	if ((cctx.cc_in_flags & CCTX_DH_REQUEST_V2) != 0 &&
 	    of->dh_vers == SMB2_DURABLE_V2) {
-		if (of->dh_persist == B_FALSE)
-			op->dh_v2_flags &= ~SMB2_DHANDLE_FLAG_PERSISTENT;
 		cctx.cc_out_flags |= CCTX_DH_REQUEST_V2;
 	}
 
@@ -462,29 +633,9 @@ cmd_done:
 	 */
 	if (cctx.cc_out_flags) {
 		sr->raw_data.max_bytes = smb2_max_trans;
-		status = smb2_encode_create_ctx(sr, &sr->raw_data, &cctx);
+		status = smb2_encode_create_ctx(sr, &cctx);
 		if (status)
 			goto errout;
-	}
-
-	/*
-	 * Convert the negotiated Oplock level back into
-	 * SMB2 encoding form.
-	 */
-	switch (op->op_oplock_level) {
-	default:
-	case SMB_OPLOCK_NONE:
-		OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
-		break;
-	case SMB_OPLOCK_LEVEL_II:
-		OplockLevel = SMB2_OPLOCK_LEVEL_II;
-		break;
-	case SMB_OPLOCK_EXCLUSIVE:
-		OplockLevel = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
-		break;
-	case SMB_OPLOCK_BATCH:
-		OplockLevel = SMB2_OPLOCK_LEVEL_BATCH;
-		break;
 	}
 
 	/*
@@ -495,7 +646,7 @@ cmd_done:
 	    &sr->reply,
 	    "wb.lTTTTqqllqqll",
 	    89,	/* StructSize */	/* w */
-	    OplockLevel,		/* b */
+	    op->op_oplock_level,	/* b */
 	    op->action_taken,		/* l */
 	    &attr->sa_crtime,		/* T */
 	    &attr->sa_vattr.va_atime,	/* T */
@@ -557,11 +708,11 @@ cmd_done:
  * Avoid policy decisions about what's supported here, just decode.
  */
 static uint32_t
-smb2_decode_create_ctx(smb_request_t *sr, mbuf_chain_t *in_mbc,
-    smb2_create_ctx_t *cc)
+smb2_decode_create_ctx(smb_request_t *sr, smb2_create_ctx_t *cc)
 {
 	smb_arg_open_t *op = &sr->arg.open;
 	smb2_create_ctx_elem_t *cce;
+	mbuf_chain_t *in_mbc = &cc->cc_in_mbc;
 	mbuf_chain_t name_mbc;
 	union {
 		uint32_t i;
@@ -664,6 +815,10 @@ smb2_decode_create_ctx(smb_request_t *sr, mbuf_chain_t *in_mbc,
 			cc->cc_in_flags |= CCTX_DH_RECONNECT_V2;
 			cce = &cc->cc_in_dh_reconnect_v2;
 			break;
+		case 0x9ccbcf9e: /* SVHDX_OPEN_DEVICE_CONTEXT */
+			/* 9ccbcf9e 04c1e643 980e158d a1f6ec83 */
+			/* silently ignore */
+			break;
 		default:
 			/*
 			 * Unknown create context values are normal, and
@@ -696,7 +851,7 @@ smb2_decode_create_ctx(smb_request_t *sr, mbuf_chain_t *in_mbc,
 		 * Additonal decoding for some create contexts.
 		 */
 		switch (cc_name.i) {
-			uint64_t timewarp;
+			uint64_t nttime;
 
 		case SMB2_CREATE_SD_BUFFER:		/* ("SecD") */
 			op->sd = kmem_alloc(sizeof (smb_sd_t), KM_SLEEP);
@@ -716,11 +871,45 @@ smb2_decode_create_ctx(smb_request_t *sr, mbuf_chain_t *in_mbc,
 			 * [MS-SMB2] 2.2.13.2.7  Data is an NT time.
 			 */
 			rc = smb_mbc_decodef(&cce->cce_mbc,
-			    "q", &timewarp);
+			    "q", &nttime);
 			if (rc != 0)
 				goto errout;
-			smb_time_nt_to_unix(timewarp, &op->timewarp);
+			smb_time_nt_to_unix(nttime, &op->timewarp);
 			op->create_timewarp = B_TRUE;
+			break;
+
+		/*
+		 * Note: This handles both V1 and V2 leases,
+		 * which differ only by their length.
+		 */
+		case SMB2_CREATE_REQUEST_LEASE:		/* ("RqLs") */
+			if (data_len == 52) {
+				op->lease_version = 2;
+			} else if (data_len == 32) {
+				op->lease_version = 1;
+			} else {
+				cmn_err(CE_NOTE, "Cctx RqLs bad len=0x%x",
+				    data_len);
+			}
+			rc = smb_mbc_decodef(&cce->cce_mbc, "#cllq",
+			    UUID_LEN,			/* # */
+			    op->lease_key,		/* c */
+			    &op->lease_state,		/* l */
+			    &op->lease_flags,		/* l */
+			    &nttime);	/* (ignored)	   q */
+			if (rc != 0)
+				goto errout;
+			if (op->lease_version == 2) {
+				rc = smb_mbc_decodef(&cce->cce_mbc,
+				    "#cw..",
+				    UUID_LEN,
+				    op->parent_lease_key,
+				    &op->lease_epoch);
+				if (rc != 0)
+					goto errout;
+			} else {
+				bzero(op->parent_lease_key, UUID_LEN);
+			}
 			break;
 
 		case SMB2_CREATE_DURABLE_HANDLE_RECONNECT_V2: /* ("DH2C") */
@@ -798,13 +987,15 @@ errout:
  *	CCTX_ALLOCATION_SIZE
  *	CCTX_TIMEWARP_TOKEN
  *
+ * Remember to add code sections to smb2_free_create_ctx()
+ * for each section here that encodes a context element.
  */
 static uint32_t
-smb2_encode_create_ctx(smb_request_t *sr, mbuf_chain_t *mbc,
-    smb2_create_ctx_t *cc)
+smb2_encode_create_ctx(smb_request_t *sr, smb2_create_ctx_t *cc)
 {
 	smb_arg_open_t *op = &sr->arg.open;
 	smb2_create_ctx_elem_t *cce;
+	mbuf_chain_t *mbc = &sr->raw_data;
 	int last_top = -1;
 	int rc;
 
@@ -847,9 +1038,38 @@ smb2_encode_create_ctx(smb_request_t *sr, mbuf_chain_t *mbc,
 	if (cc->cc_out_flags & CCTX_AAPL_EXT) {
 		cce = &cc->cc_out_aapl;
 		/* cc_out_aapl already encoded */
+
 		last_top = mbc->chain_offset;
 		rc = smb2_encode_create_ctx_elem(mbc, cce,
 		    SMB2_CREATE_CTX_AAPL);
+		if (rc)
+			return (NT_STATUS_INTERNAL_ERROR);
+		(void) smb_mbc_poke(mbc, last_top, "l",
+		    mbc->chain_offset - last_top);
+	}
+
+	if (cc->cc_out_flags & CCTX_REQUEST_LEASE) {
+		cce = &cc->cc_out_req_lease;
+
+		cce->cce_mbc.max_bytes = cce->cce_len = 32;
+		(void) smb_mbc_encodef(&cce->cce_mbc, "#cllq",
+		    UUID_LEN,			/* # */
+		    op->lease_key,		/* c */
+		    op->lease_state,		/* l */
+		    op->lease_flags,		/* l */
+		    0LL);			/* q */
+		if (op->lease_version == 2) {
+			cce->cce_mbc.max_bytes = cce->cce_len = 52;
+			(void) smb_mbc_encodef(&cce->cce_mbc,
+			    "#cw..",
+			    UUID_LEN,
+			    op->parent_lease_key,
+			    op->lease_epoch);
+		}
+
+		last_top = mbc->chain_offset;
+		rc = smb2_encode_create_ctx_elem(mbc, cce,
+		    SMB2_CREATE_REQUEST_LEASE);
 		if (rc)
 			return (NT_STATUS_INTERNAL_ERROR);
 		(void) smb_mbc_poke(mbc, last_top, "l",
@@ -860,7 +1080,7 @@ smb2_encode_create_ctx(smb_request_t *sr, mbuf_chain_t *mbc,
 		cce = &cc->cc_out_dh_request;
 
 		cce->cce_mbc.max_bytes = cce->cce_len = 8;
-		(void) smb_mbc_encodef(&cce->cce_mbc, "q", 0);
+		(void) smb_mbc_encodef(&cce->cce_mbc, "q", 0LL);
 
 		last_top = mbc->chain_offset;
 		rc = smb2_encode_create_ctx_elem(mbc, cce,
@@ -895,7 +1115,7 @@ smb2_encode_create_ctx(smb_request_t *sr, mbuf_chain_t *mbc,
 
 static int
 smb2_encode_create_ctx_elem(mbuf_chain_t *out_mbc,
-	smb2_create_ctx_elem_t *cce, uint32_t id)
+    smb2_create_ctx_elem_t *cce, uint32_t id)
 {
 	union {
 		uint32_t i;
@@ -915,6 +1135,7 @@ smb2_encode_create_ctx_elem(mbuf_chain_t *out_mbc,
 	 * 	a: this header (16 bytes)
 	 *	b: the name (4 bytes, 4 pad)
 	 *	c: the payload (variable)
+	 *	d: padding (to align 8)
 	 *
 	 * Note that "Next elem." is filled in later.
 	 */
@@ -925,7 +1146,7 @@ smb2_encode_create_ctx_elem(mbuf_chain_t *out_mbc,
 	    4,		/* NameLength	w */
 	    0,		/* Reserved	w */
 	    24,		/* DataOffset	w */
-	    cce->cce_len);	/*	l */
+	    cce->cce_len); /* DataLen	l */
 	if (rc)
 		return (rc);
 
@@ -937,6 +1158,8 @@ smb2_encode_create_ctx_elem(mbuf_chain_t *out_mbc,
 	    cc_name.ch,		/* 4c4. */
 	    cce->cce_len,	/* # */
 	    &cce->cce_mbc);	/* C */
+
+	(void) smb_mbc_put_align(out_mbc, 8);
 
 	return (rc);
 }
@@ -956,6 +1179,10 @@ smb2_free_create_ctx(smb2_create_ctx_t *cc)
 	}
 	if (cc->cc_out_flags & CCTX_AAPL_EXT) {
 		cce = &cc->cc_out_aapl;
+		MBC_FLUSH(&cce->cce_mbc);
+	}
+	if (cc->cc_out_flags & CCTX_REQUEST_LEASE) {
+		cce = &cc->cc_out_req_lease;
 		MBC_FLUSH(&cce->cce_mbc);
 	}
 	if (cc->cc_out_flags & CCTX_DH_REQUEST) {

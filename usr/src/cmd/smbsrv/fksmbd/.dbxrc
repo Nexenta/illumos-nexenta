@@ -11,10 +11,10 @@
 #
 
 #
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
-# set -o emacs
+set -o emacs
 
 setenv SMBD_DOOR_NAME /tmp/fksmbd_door
 setenv SMB_SHARE_DNAME /tmp/fksmbshare_door

@@ -55,6 +55,7 @@ SKIP		^usr/MACH(lib)/libssagent\.so\.1$	# 4328854
 SKIP		^usr/lib/MACH(iconv)/geniconvtbl.so$	# 4384329
 # Userspace SMB daemon
 SKIP		^usr/lib/smbsrv/fksmbd$
+SKIP		^usr/lib/smbsrv/testoplock$
 
 # picl file exclusions (4385799)
 SKIP		^usr/platform/.*/libpsvcplugin_psr\.so\.1

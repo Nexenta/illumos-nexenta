@@ -20,7 +20,7 @@
 #
 #
 # Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 include ../../../Makefile.master
@@ -52,6 +52,7 @@ HDRS=	alloc.h			\
 	smb_kproto.h		\
 	smb_kstat.h		\
 	smb_ktypes.h		\
+	smb_oplock.h		\
 	smb_privilege.h		\
 	smb_share.h		\
 	smb_token.h		\

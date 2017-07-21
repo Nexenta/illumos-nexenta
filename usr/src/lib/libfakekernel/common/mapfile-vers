@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -64,6 +64,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	ddi_get_pid;
 	ddi_strtoul;
 
+	debug_enter;
 	delay;
 
 	fakekernel_cprintf	{ FLAGS = NODIRECT };

@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -330,8 +330,10 @@ break_loop:
 
 	smb_llist_exit(&node->n_lock_list);
 
-	if (result == NT_STATUS_SUCCESS)
-		smb_oplock_break_levelII(node);
+	if (result == NT_STATUS_SUCCESS) {
+		/* This revokes read cache delegations. */
+		(void) smb_oplock_break_WRITE(node, file);
+	}
 
 	return (result);
 }

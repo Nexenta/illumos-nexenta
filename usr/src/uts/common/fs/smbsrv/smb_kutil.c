@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/param.h>
@@ -468,6 +468,12 @@ smb_llist_post(smb_llist_t *ll, void *object, smb_dtorproc_t dtorproc)
 	list_insert_tail(&ll->ll_deleteq, dtor);
 	++ll->ll_deleteq_count;
 	mutex_exit(&ll->ll_mutex);
+}
+
+void
+smb_llist_enter(smb_llist_t *ll, krw_t mode)
+{
+	rw_enter(&ll->ll_lock, mode);
 }
 
 /*

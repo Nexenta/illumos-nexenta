@@ -132,6 +132,13 @@ to work from their local cache even while offline.
 .It Cm disabled
 Client-side caching is not permitted for this share.
 .El
+.It Cm fso Ns = Ns Cm true Ns | Ns Cm false
+Set the "Force Shared Oplocks" (FSO) policy for the share.
+By default (when FSO is false) the SMB server may grant either
+exclusive oplocks (write cache delegations) or shared oplocks
+(read cache delegations).
+When the FSO policy is set on some share, the SMB server
+never grants exclusive oplocks in that share.
 .It Cm guestok Ns = Ns Cm true Ns | Ns Cm false
 Set the guest access policy for the share.
 When set to

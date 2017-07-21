@@ -38,7 +38,7 @@ file.
 <service
     name='network/smb/server'
     type='service'
-    version='1'>
+    version='2'>
 
 	<!-- 2. Create default service instance. -->
 	<create_default_instance enabled='false' />
@@ -154,7 +154,7 @@ file.
 		<propval name='value_authorization' type='astring'
 			value='solaris.smf.value.smb' />
 		<propval name='oplock_enable' type='boolean'
-			value='false' override='true'/>
+			value='true' override='true'/>
 		<propval name='autohome_map' type='astring'
 			value='/etc' override='true'/>
 		<propval name='bypass_traverse_checking' type='boolean'
@@ -192,8 +192,6 @@ file.
 		<propval name='signing_enabled' type='boolean'
 			value='true' override='true'/>
 		<propval name='signing_required' type='boolean'
-			value='false' override='true'/>
-		<propval name='signing_check' type='boolean'
 			value='false' override='true'/>
 		<propval name='sync_enable' type='boolean'
 			value='false' override='true'/>

@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMBSRV_SMB_H
@@ -211,6 +211,17 @@ typedef uint32_t smb_utime_t;
 #define	SMB_NTCREATE_VALID_OPTIONS (FILE_VALID_OPTION_FLAGS & ~( \
 	FILE_SYNCHRONOUS_IO_ALERT | FILE_SYNCHRONOUS_IO_NONALERT |\
 	FILE_RESERVE_OPFILTER))
+
+/*
+ * Oplocks levels as expressed in the SMB procotol, i.e.
+ * in nt_create_andx and nt_transact_create responses.
+ * The FS-level oplock interface flags are in ntifs.h
+ * (See OPLOCK_LEVEL_...)
+ */
+#define	SMB_OPLOCK_NONE		0
+#define	SMB_OPLOCK_EXCLUSIVE	1
+#define	SMB_OPLOCK_BATCH	2
+#define	SMB_OPLOCK_LEVEL_II	3
 
 /*
  * Define the filter flags for NtNotifyChangeDirectoryFile

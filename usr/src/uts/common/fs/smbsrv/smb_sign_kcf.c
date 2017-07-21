@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -29,6 +29,23 @@
 #include <smbsrv/smb_kcrypt.h>
 
 /*
+ * Common function to see if a mech is available.
+ */
+static int
+find_mech(smb_crypto_mech_t *mech, crypto_mech_name_t name)
+{
+	crypto_mech_type_t t;
+
+	t = crypto_mech2id(name);
+	if (t == CRYPTO_MECH_INVALID) {
+		cmn_err(CE_NOTE, "smb: no kcf mech: %s", name);
+		return (-1);
+	}
+	mech->cm_type = t;
+	return (0);
+}
+
+/*
  * SMB1 signing helpers:
  * (getmech, init, update, final)
  */
@@ -36,13 +53,7 @@
 int
 smb_md5_getmech(smb_crypto_mech_t *mech)
 {
-	crypto_mech_type_t t;
-
-	t = crypto_mech2id(SUN_CKM_MD5);
-	if (t == CRYPTO_MECH_INVALID)
-		return (-1);
-	mech->cm_type = t;
-	return (0);
+	return (find_mech(mech, SUN_CKM_MD5));
 }
 
 /*
@@ -111,13 +122,7 @@ smb_md5_final(smb_sign_ctx_t ctx, uint8_t *digest16)
 int
 smb2_hmac_getmech(smb_crypto_mech_t *mech)
 {
-	crypto_mech_type_t t;
-
-	t = crypto_mech2id(SUN_CKM_SHA256_HMAC);
-	if (t == CRYPTO_MECH_INVALID)
-		return (-1);
-	mech->cm_type = t;
-	return (0);
+	return (find_mech(mech, SUN_CKM_SHA256_HMAC));
 }
 
 /*
@@ -197,13 +202,7 @@ smb2_hmac_final(smb_sign_ctx_t ctx, uint8_t *digest16)
 int
 smb3_cmac_getmech(smb_crypto_mech_t *mech)
 {
-	crypto_mech_type_t t;
-
-	t = crypto_mech2id(SUN_CKM_AES_CMAC);
-	if (t == CRYPTO_MECH_INVALID)
-		return (-1);
-	mech->cm_type = t;
-	return (0);
+	return (find_mech(mech, SUN_CKM_AES_CMAC));
 }
 
 /*

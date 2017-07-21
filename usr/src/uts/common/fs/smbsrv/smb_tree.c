@@ -989,7 +989,7 @@ smb_tree_alloc(smb_request_t *sr, const smb_kshare_t *si,
 	}
 
 	smb_llist_constructor(&tree->t_ofile_list, sizeof (smb_ofile_t),
-	    offsetof(smb_ofile_t, f_lnd));
+	    offsetof(smb_ofile_t, f_tree_lnd));
 
 	smb_llist_constructor(&tree->t_odir_list, sizeof (smb_odir_t),
 	    offsetof(smb_odir_t, d_lnd));
@@ -1240,6 +1240,9 @@ smb_tree_get_flags(const smb_kshare_t *si, vfs_t *vfsp, smb_tree_t *tree)
 
 	if (si->shr_flags & SMB_SHRF_ABE)
 		flags |= SMB_TREE_ABE;
+
+	if (si->shr_flags & SMB_SHRF_FSO)
+		flags |= SMB_TREE_FORCE_L2_OPLOCK;
 
 	if (ssn->s_cfg.skc_oplock_enable) {
 		/* if 'smb' zfs property: oplocks=enabled */

@@ -305,6 +305,7 @@ smb_server_g_init(void)
 	smb_codepage_init();
 	smb_mbc_init();		/* smb_mbc_cache */
 	smb_node_init();	/* smb_node_cache, lists */
+	smb2_lease_init();
 
 	smb_cache_request = kmem_cache_create("smb_request_cache",
 	    sizeof (smb_request_t), 8, NULL, NULL, NULL, NULL, NULL, 0);
@@ -361,6 +362,7 @@ smb_server_g_fini(void)
 	kmem_cache_destroy(smb_cache_event);
 	kmem_cache_destroy(smb_cache_lock);
 
+	smb2_lease_fini();
 	smb_node_fini();
 	smb_mbc_fini();
 	smb_codepage_fini();
@@ -409,7 +411,7 @@ smb_server_create(void)
 	cv_init(&sv->sp_info.sp_cv, NULL, CV_DEFAULT, NULL);
 
 	sv->sv_persistid_ht = smb_hash_create(sizeof (smb_ofile_t),
-	    offsetof(smb_ofile_t, f_hnd), SMB_OFILE_HASH_NBUCKETS);
+	    offsetof(smb_ofile_t, f_dh_lnd), SMB_OFILE_HASH_NBUCKETS);
 
 	smb_llist_constructor(&sv->sv_session_list, sizeof (smb_session_t),
 	    offsetof(smb_session_t, s_lnd));
@@ -1426,6 +1428,10 @@ smb_server_shutdown(smb_server_t *sv)
 #endif	/* _KERNEL */
 	sv->sv_lmshrd = NULL;
 
+	/*
+	 * XXX: This has a shutdown hang, in smb_avl_destroy(),
+	 * apparently due to references held by durable handles.
+	 */
 	smb_export_stop(sv);
 
 	if (sv->sv_session != NULL) {

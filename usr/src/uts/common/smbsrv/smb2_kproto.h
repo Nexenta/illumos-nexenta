@@ -28,13 +28,15 @@ extern uint32_t smb2_max_rwsize;
 extern uint32_t smb2_max_trans;
 
 extern int smb2_aapl_use_file_ids;
-extern uint32_t smb2_dh_default_timeout;
+extern uint32_t smb2_dh_def_timeout;
+extern uint32_t smb2_dh_max_timeout;
+extern uint32_t smb2_res_def_timeout;
+extern uint32_t smb2_res_max_timeout;
 extern int smb2_enable_dh;
 
 #define	SMB2_KEYLEN	16
 #define	SMB3_KEYLEN	16	/* AES-128 keys */
 
-#define	DH_TIMEOUT_MS ((uint32_t)(smb2_dh_default_timeout * MILLISEC))
 #define	SMB2_PERSIST(flags) ((flags & SMB2_DHANDLE_FLAG_PERSISTENT) != 0)
 #define	SMB3_CLIENT_ENCRYPTS(sr) \
 	((sr->session->capabilities & SMB2_CAP_ENCRYPTION) != 0)
@@ -48,6 +50,7 @@ int	smb2sr_newrq(smb_request_t *);
 void	smb2sr_work(smb_request_t *);
 uint32_t smb2sr_go_async(smb_request_t *);
 void	smb2_network_disconnect(smb_session_t *);
+void smb2sr_append_postwork(smb_request_t *, smb_request_t *);
 
 int smb2_decode_header(smb_request_t *);
 int smb2_encode_header(smb_request_t *, boolean_t);
@@ -105,6 +108,7 @@ smb_sdrc_t smb2_change_notify(smb_request_t *);
 smb_sdrc_t smb2_query_info(smb_request_t *);
 smb_sdrc_t smb2_set_info(smb_request_t *);
 smb_sdrc_t smb2_oplock_break_ack(smb_request_t *);
+smb_sdrc_t smb2_lease_break_ack(smb_request_t *);
 
 int smb2_newrq_negotiate(smb_request_t *);
 int smb2_newrq_cancel(smb_request_t *);
@@ -134,6 +138,14 @@ void smb2_scoreboard_fini(smb_session_t *);
 int smb2_scoreboard_cmd_start(smb_request_t *);
 void smb2_scoreboard_cmd_done(smb_request_t *);
 boolean_t smb2_scoreboard_cancel(smb_request_t *);
+
+void smb2_oplock_acquire(smb_request_t *sr);
+void smb2_lease_acquire(smb_request_t *sr);
+uint32_t smb2_lease_create(smb_request_t *sr);
+void smb2_lease_rele(smb_lease_t *);
+void smb2_lease_init(void);
+void smb2_lease_fini(void);
+void smb2_lease_ofile_close(smb_ofile_t *);
 
 #ifdef	__cplusplus
 }
