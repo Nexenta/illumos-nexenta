@@ -823,6 +823,9 @@ void FCHBAPort::getTargetMappings(PHBA_FCPTARGETMAPPINGV2 userMappings) {
 		    sizeof (userMappings->entry[i].LUID.buffer));
 	}
 
+	if (!zeroLength) {
+	    i -= 1;
+	}
 	log.debug("Total mappings: %d %08x %08x",
 	    mappings->numLuns, mappings->entries[i].osLUN, mappings->entries[i].samLUN);
 
