@@ -617,6 +617,7 @@ zio_create(zio_t *pio, spa_t *spa, uint64_t txg, const blkptr_t *bp,
 		zio->io_bookmark = *zb;
 
 	if (pio != NULL) {
+		zio->io_mc = pio->io_mc;
 		if (zio->io_logical == NULL)
 			zio->io_logical = pio->io_logical;
 		if (zio->io_child_type == ZIO_CHILD_GANG)
@@ -1190,7 +1191,7 @@ zio_vdev_child_io(zio_t *pio, blkptr_t *bp, vdev_t *vd, uint64_t offset,
 	 */
 	if (flags & ZIO_FLAG_IO_ALLOCATING &&
 	    (vd != vd->vdev_top || (flags & ZIO_FLAG_IO_RETRY))) {
-		metaslab_class_t *mc = spa_normal_class(pio->io_spa);
+		metaslab_class_t *mc = pio->io_mc;
 
 		ASSERT(mc->mc_alloc_throttle_enabled);
 		ASSERT(type == ZIO_TYPE_WRITE);
@@ -2273,7 +2274,7 @@ static int
 zio_write_gang_block(zio_t *pio)
 {
 	spa_t *spa = pio->io_spa;
-	metaslab_class_t *mc = spa_normal_class(spa);
+	metaslab_class_t *mc = pio->io_mc;
 	blkptr_t *bp = pio->io_bp;
 	zio_t *gio = pio->io_gang_leader;
 	zio_t *zio;
@@ -2369,6 +2370,8 @@ zio_write_gang_block(zio_t *pio)
 		    &gn->gn_child[g], pio->io_priority,
 		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark,
 		    &pio->io_smartcomp);
+
+		cio->io_mc = mc;
 
 		if (pio->io_flags & ZIO_FLAG_IO_ALLOCATING) {
 			ASSERT(pio->io_priority == ZIO_PRIORITY_ASYNC_WRITE);
@@ -2889,13 +2892,13 @@ zio_ddt_free(zio_t *zio)
  */
 
 static zio_t *
-zio_io_to_allocate(spa_t *spa)
+zio_io_to_allocate(metaslab_class_t *mc)
 {
 	zio_t *zio;
 
-	ASSERT(MUTEX_HELD(&spa->spa_alloc_lock));
+	ASSERT(MUTEX_HELD(&mc->mc_alloc_lock));
 
-	zio = avl_first(&spa->spa_alloc_tree);
+	zio = avl_first(&mc->mc_alloc_tree);
 	if (zio == NULL)
 		return (NULL);
 
@@ -2905,12 +2908,12 @@ zio_io_to_allocate(spa_t *spa)
 	 * Try to place a reservation for this zio. If we're unable to
 	 * reserve then we throttle.
 	 */
-	if (!metaslab_class_throttle_reserve(spa_normal_class(spa),
+	if (!metaslab_class_throttle_reserve(mc,
 	    zio->io_prop.zp_copies, zio, 0)) {
 		return (NULL);
 	}
 
-	avl_remove(&spa->spa_alloc_tree, zio);
+	avl_remove(&mc->mc_alloc_tree, zio);
 	ASSERT3U(zio->io_stage, <, ZIO_STAGE_DVA_ALLOCATE);
 
 	return (zio);
@@ -2921,11 +2924,16 @@ zio_dva_throttle(zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
 	zio_t *nio;
-	metaslab_class_t *mc = spa_select_class(spa, zio);
+
+	/* We need to use parent's MetaslabClass */
+	if (zio->io_mc == NULL) {
+		zio->io_mc = spa_select_class(spa, zio);
+		if (zio->io_prop.zp_usewbc)
+			return (ZIO_PIPELINE_CONTINUE);
+	}
 
 	if (zio->io_priority == ZIO_PRIORITY_SYNC_WRITE ||
-	    mc == spa_special_class(spa) ||
-	    !mc->mc_alloc_throttle_enabled ||
+	    !zio->io_mc->mc_alloc_throttle_enabled ||
 	    zio->io_child_type == ZIO_CHILD_GANG ||
 	    zio->io_flags & ZIO_FLAG_NODATA) {
 		return (ZIO_PIPELINE_CONTINUE);
@@ -2936,13 +2944,13 @@ zio_dva_throttle(zio_t *zio)
 	ASSERT3U(zio->io_queued_timestamp, >, 0);
 	ASSERT(zio->io_stage == ZIO_STAGE_DVA_THROTTLE);
 
-	mutex_enter(&spa->spa_alloc_lock);
+	mutex_enter(&zio->io_mc->mc_alloc_lock);
 
 	ASSERT(zio->io_type == ZIO_TYPE_WRITE);
-	avl_add(&spa->spa_alloc_tree, zio);
+	avl_add(&zio->io_mc->mc_alloc_tree, zio);
 
-	nio = zio_io_to_allocate(zio->io_spa);
-	mutex_exit(&spa->spa_alloc_lock);
+	nio = zio_io_to_allocate(zio->io_mc);
+	mutex_exit(&zio->io_mc->mc_alloc_lock);
 
 	if (nio == zio)
 		return (ZIO_PIPELINE_CONTINUE);
@@ -2965,13 +2973,13 @@ zio_dva_throttle(zio_t *zio)
 }
 
 void
-zio_allocate_dispatch(spa_t *spa)
+zio_allocate_dispatch(metaslab_class_t *mc)
 {
 	zio_t *zio;
 
-	mutex_enter(&spa->spa_alloc_lock);
-	zio = zio_io_to_allocate(spa);
-	mutex_exit(&spa->spa_alloc_lock);
+	mutex_enter(&mc->mc_alloc_lock);
+	zio = zio_io_to_allocate(mc);
+	mutex_exit(&mc->mc_alloc_lock);
 	if (zio == NULL)
 		return;
 
@@ -2984,18 +2992,7 @@ static int
 zio_dva_allocate(zio_t *zio)
 {
 	spa_t *spa = zio->io_spa;
-	metaslab_class_t *mc;
-
-	/*
-	 * zio_dva_throttle() called spa_select_class()
-	 * that dropped 'zp_usesc' if special-vdev cannot
-	 * be used for some reasons, so we use the zio-prop
-	 * to use proper class to allocate DVAs
-	 */
-	if (zio->io_prop.zp_usesc)
-		mc = spa_special_class(spa);
-	else
-		mc = spa_normal_class(spa);
+	metaslab_class_t *mc = zio->io_mc;
 
 	blkptr_t *bp = zio->io_bp;
 	int error;
@@ -3012,14 +3009,14 @@ zio_dva_allocate(zio_t *zio)
 	ASSERT3U(zio->io_prop.zp_copies, <=, spa_max_replication(spa));
 	ASSERT3U(zio->io_size, ==, BP_GET_PSIZE(bp));
 
-	if (zio->io_flags & ZIO_FLAG_NODATA ||
-	    zio->io_prop.zp_usesc) {
+	if (zio->io_flags & ZIO_FLAG_NODATA || zio->io_prop.zp_usewbc) {
 		flags |= METASLAB_DONT_THROTTLE;
 	}
 	if (zio->io_flags & ZIO_FLAG_GANG_CHILD) {
 		flags |= METASLAB_GANG_CHILD;
 	}
-	if (zio->io_priority == ZIO_PRIORITY_ASYNC_WRITE) {
+	if (zio->io_priority == ZIO_PRIORITY_ASYNC_WRITE &&
+	    zio->io_flags & ZIO_FLAG_IO_ALLOCATING) {
 		flags |= METASLAB_ASYNC_ALLOC;
 	}
 
@@ -3041,8 +3038,16 @@ zio_dva_allocate(zio_t *zio)
 		spa_dbgmsg(spa, "%s: metaslab allocation failure: zio %p, "
 		    "size %llu, error %d", spa_name(spa), zio, zio->io_size,
 		    error);
-		if (error == ENOSPC && zio->io_size > SPA_MINBLOCKSIZE)
+		if (error == ENOSPC && zio->io_size > SPA_MINBLOCKSIZE) {
+			if (zio->io_prop.zp_usewbc) {
+				zio->io_prop.zp_usewbc = B_FALSE;
+				zio->io_prop.zp_usesc = B_FALSE;
+				zio->io_mc = spa_normal_class(spa);
+			}
+
 			return (zio_write_gang_block(zio));
+		}
+
 		zio->io_error = error;
 	}
 
@@ -3646,10 +3651,9 @@ zio_ready(zio_t *zio)
 			 * We were unable to allocate anything, unreserve and
 			 * issue the next I/O to allocate.
 			 */
-			metaslab_class_throttle_unreserve(
-			    spa_normal_class(zio->io_spa),
+			metaslab_class_throttle_unreserve(zio->io_mc,
 			    zio->io_prop.zp_copies, zio);
-			zio_allocate_dispatch(zio->io_spa);
+			zio_allocate_dispatch(zio->io_mc);
 		}
 	}
 
@@ -3735,15 +3739,14 @@ zio_dva_throttle_done(zio_t *zio)
 	metaslab_group_alloc_decrement(zio->io_spa, vd->vdev_id, pio, flags);
 	mutex_exit(&pio->io_lock);
 
-	metaslab_class_throttle_unreserve(spa_normal_class(zio->io_spa),
-	    1, pio);
+	metaslab_class_throttle_unreserve(pio->io_mc, 1, pio);
 
 	/*
 	 * Call into the pipeline to see if there is more work that
 	 * needs to be done. If there is work to be done it will be
 	 * dispatched to another taskq thread.
 	 */
-	zio_allocate_dispatch(zio->io_spa);
+	zio_allocate_dispatch(pio->io_mc);
 }
 
 static int
@@ -3755,7 +3758,7 @@ zio_done(zio_t *zio)
 	vdev_t *vd = zio->io_vd;
 	uint64_t psize = zio->io_size;
 	zio_t *pio, *pio_next;
-	metaslab_class_t *mc = spa_normal_class(spa);
+	metaslab_class_t *mc = zio->io_mc;
 	zio_link_t *zl = NULL;
 
 	/*

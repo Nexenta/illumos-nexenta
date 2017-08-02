@@ -2007,7 +2007,7 @@ dmu_write_policy(objset_t *os, dnode_t *dn, int level, int wp,
 	zp->zp_nopwrite = nopwrite;
 	zp->zp_zpl_meta_to_special = os->os_zpl_meta_to_special;
 	zp->zp_usewbc = (zp->zp_usesc &&
-	    os->os_wbc_mode == ZFS_WBC_MODE_ON);
+	    os->os_wbc_mode == ZFS_WBC_MODE_ON && !ismd);
 
 	/* explicitly control the number for copies for DDT */
 	if (DMU_OT_IS_DDT_META(type) &&

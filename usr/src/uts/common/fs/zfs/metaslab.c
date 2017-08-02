@@ -248,6 +248,10 @@ metaslab_class_create(spa_t *spa, metaslab_ops_t *ops)
 
 	mc = kmem_zalloc(sizeof (metaslab_class_t), KM_SLEEP);
 
+	mutex_init(&mc->mc_alloc_lock, NULL, MUTEX_DEFAULT, NULL);
+	avl_create(&mc->mc_alloc_tree, zio_timestamp_compare,
+	    sizeof (zio_t), offsetof(zio_t, io_alloc_node));
+
 	mc->mc_spa = spa;
 	mc->mc_rotor = NULL;
 	mc->mc_ops = ops;
@@ -265,6 +269,9 @@ metaslab_class_destroy(metaslab_class_t *mc)
 	ASSERT(mc->mc_deferred == 0);
 	ASSERT(mc->mc_space == 0);
 	ASSERT(mc->mc_dspace == 0);
+
+	avl_destroy(&mc->mc_alloc_tree);
+	mutex_destroy(&mc->mc_alloc_lock);
 
 	refcount_destroy(&mc->mc_alloc_slots);
 	mutex_destroy(&mc->mc_lock);

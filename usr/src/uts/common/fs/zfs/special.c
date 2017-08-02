@@ -489,6 +489,7 @@ spa_select_class(spa_t *spa, zio_t *zio)
 
 	/* drop 'use special class' */
 	zp->zp_usesc = B_FALSE;
+	zp->zp_usewbc = B_FALSE;
 	return (spa_normal_class(spa));
 }
 

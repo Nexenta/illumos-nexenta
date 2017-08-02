@@ -7010,6 +7010,48 @@ spa_sync_upgrades(spa_t *spa, dmu_tx_t *tx)
 	rrw_exit(&dp->dp_config_rwlock, FTAG);
 }
 
+static void
+spa_initialize_alloc_trees(spa_t *spa, uint32_t max_queue_depth,
+    uint64_t queue_depth_total)
+{
+	vdev_t *rvd = spa->spa_root_vdev;
+	boolean_t dva_throttle_enabled = zio_dva_throttle_enabled;
+	metaslab_class_t *mcs[2] = {
+		spa_normal_class(spa),
+		spa_special_class(spa)
+	};
+	size_t mcs_len = sizeof (mcs) / sizeof (metaslab_class_t *);
+
+	for (size_t i = 0; i < mcs_len; i++) {
+		metaslab_class_t *mc = mcs[i];
+
+		ASSERT0(refcount_count(&mc->mc_alloc_slots));
+		mc->mc_alloc_max_slots = queue_depth_total;
+		mc->mc_alloc_throttle_enabled = dva_throttle_enabled;
+
+		ASSERT3U(mc->mc_alloc_max_slots, <=,
+		    max_queue_depth * rvd->vdev_children);
+	}
+}
+
+static void
+spa_check_alloc_trees(spa_t *spa)
+{
+	metaslab_class_t *mcs[2] = {
+		spa_normal_class(spa),
+		spa_special_class(spa)
+	};
+	size_t mcs_len = sizeof (mcs) / sizeof (metaslab_class_t *);
+
+	for (size_t i = 0; i < mcs_len; i++) {
+		metaslab_class_t *mc = mcs[i];
+
+		mutex_enter(&mc->mc_alloc_lock);
+		VERIFY0(avl_numnodes(&mc->mc_alloc_tree));
+		mutex_exit(&mc->mc_alloc_lock);
+	}
+}
+
 /*
  * Sync the specified transaction group.  New blocks may be dirtied as
  * part of the process, so we iterate until it converges.
@@ -7037,9 +7079,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 	spa->spa_syncing_txg = txg;
 	spa->spa_sync_pass = 0;
 
-	mutex_enter(&spa->spa_alloc_lock);
-	VERIFY0(avl_numnodes(&spa->spa_alloc_tree));
-	mutex_exit(&spa->spa_alloc_lock);
+	spa_check_alloc_trees(spa);
 
 	/*
 	 * Another pool management task might be currently preventing
@@ -7127,13 +7167,9 @@ spa_sync(spa_t *spa, uint64_t txg)
 		mg->mg_max_alloc_queue_depth = max_queue_depth;
 		queue_depth_total += mg->mg_max_alloc_queue_depth;
 	}
-	metaslab_class_t *mc = spa_normal_class(spa);
-	ASSERT0(refcount_count(&mc->mc_alloc_slots));
-	mc->mc_alloc_max_slots = queue_depth_total;
-	mc->mc_alloc_throttle_enabled = zio_dva_throttle_enabled;
 
-	ASSERT3U(mc->mc_alloc_max_slots, <=,
-	    max_queue_depth * rvd->vdev_children);
+	spa_initialize_alloc_trees(spa, max_queue_depth,
+	    queue_depth_total);
 
 	/*
 	 * Iterate to convergence.
@@ -7297,9 +7333,7 @@ spa_sync(spa_t *spa, uint64_t txg)
 
 	dsl_pool_sync_done(dp, txg);
 
-	mutex_enter(&spa->spa_alloc_lock);
-	VERIFY0(avl_numnodes(&spa->spa_alloc_tree));
-	mutex_exit(&spa->spa_alloc_lock);
+	spa_check_alloc_trees(spa);
 
 	/*
 	 * Update usable space statistics.

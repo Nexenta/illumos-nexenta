@@ -517,6 +517,9 @@ struct zio {
 	uint64_t		zio_checksum_data_size;
 	struct zio		*zio_checksum_next;
 	zio_cksum_t		actual_cksum;
+
+	/* Metaslab class that will be used */
+	metaslab_class_t *io_mc;
 };
 
 extern int zio_timestamp_compare(const void *, const void *);
