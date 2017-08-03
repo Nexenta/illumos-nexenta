@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Milan Jurik. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2015 Joyent, Inc.
  */
 
@@ -1017,9 +1017,16 @@ ses_present(topo_mod_t *mod, tnode_t *tn, topo_version_t version,
 	if ((np = ses_node_lock(mod, tn)) == NULL)
 		return (-1);
 
-	verify((props = ses_node_props(np)) != NULL);
-	verify(nvlist_lookup_uint64(props,
-	    SES_PROP_STATUS_CODE, &status) == 0);
+	/*
+	 * If the SES properties are not there or
+	 * status cannot be determined, continue
+	 * and indicate status is unknown.
+	 */
+	if (((props = ses_node_props(np)) == NULL) ||
+	    (nvlist_lookup_uint64(props,
+	    SES_PROP_STATUS_CODE, &status) != 0)) {
+		status = SES_ESC_UNKNOWN;
+	}
 
 	ses_node_unlock(mod, tn);
 
