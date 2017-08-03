@@ -291,7 +291,7 @@ static int nvme_devctl_open(dev_t *, int, int, cred_t *);
 static int nvme_devctl_close(dev_t, int, int, cred_t *);
 static int nvme_devctl_ioctl(dev_t, int, intptr_t, int, cred_t *, int *);
 
-#define	NVME_MINOR_INST_SHIFT	14
+#define	NVME_MINOR_INST_SHIFT	9
 #define	NVME_MINOR(inst, nsid)	(((inst) << NVME_MINOR_INST_SHIFT) | (nsid))
 #define	NVME_MINOR_INST(minor)	((minor) >> NVME_MINOR_INST_SHIFT)
 #define	NVME_MINOR_NSID(minor)	((minor) & ((1 << NVME_MINOR_INST_SHIFT) - 1))
