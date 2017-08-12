@@ -44,7 +44,7 @@ extern "C" {
 
 #if !defined(_XPG4_2) || defined(__EXTENSIONS__)
 
-#ifdef _KERNEL
+#if defined(_KERNEL) || defined(_FAKE_KERNEL)
 
 /*
  * XXX  Given that drivers need to include this file,
@@ -52,10 +52,14 @@ extern "C" {
  *	it legitimizes (aka provides prototypes for)
  *	all sorts of functions that aren't in the DKI/SunDDI
  */
+#include <sys/types.h>
 #include <sys/systm.h>
+
+#endif	/* _KERNEL || _FAKE_KERNEL */
+#ifdef	_KERNEL
+
 #include <sys/devops.h>
 #include <sys/model.h>
-#include <sys/types.h>
 #include <sys/buf.h>
 #include <sys/cred.h>
 #include <sys/uio.h>

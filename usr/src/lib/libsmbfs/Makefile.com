@@ -24,7 +24,7 @@
 # Use is subject to license terms.
 # Copyright 2015 Igor Kozhukhov <ikozhukhov@gmail.com>
 #
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #

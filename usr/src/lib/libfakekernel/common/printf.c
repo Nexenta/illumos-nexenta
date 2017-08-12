@@ -34,6 +34,7 @@
 #include <fakekernel.h>
 
 void	abort(void) __NORETURN;
+void	debug_enter(char *);
 
 char *volatile panicstr;
 va_list  panicargs;
@@ -96,6 +97,24 @@ fakekernel_cprintf(const char *fmt, va_list adx, int flags,
 	len = msgp - bufp;
 
 	fakekernel_putlog(bufp, len, flags);
+}
+
+/* ARGSUSED */
+void
+vzprintf(zoneid_t zoneid, const char *fmt, va_list adx)
+{
+	fakekernel_cprintf(fmt, adx, SL_CONSOLE | SL_NOTE, "", "");
+}
+
+/*PRINTFLIKE2*/
+void
+zprintf(zoneid_t zoneid, const char *fmt, ...)
+{
+	va_list adx;
+
+	va_start(adx, fmt);
+	vzprintf(zoneid, fmt, adx);
+	va_end(adx);
 }
 
 /*

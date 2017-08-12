@@ -10,7 +10,8 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 RackTop Systems.
  */
 
 #include <sys/types.h>
@@ -25,6 +26,8 @@
  * use an opaque cred_t object, and all activity happens in the
  * context of the user who runs the program.
  */
+
+extern struct zone zone0;
 
 struct cred {
 	uid_t		cr_uid;
@@ -72,6 +75,48 @@ crgetuid(const cred_t *cr)
 	return (cr->cr_uid);
 }
 
+/*ARGSUSED*/
+uid_t
+crgetruid(const cred_t *cr)
+{
+	return (cr->cr_uid);
+}
+
+/*ARGSUSED*/
+uid_t
+crgetgid(const cred_t *cr)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+int
+crgetngroups(const cred_t *cr)
+{
+	return (0);
+}
+
+/*ARGSUSED*/
+const gid_t *
+crgetgroups(const cred_t *cr)
+{
+	return (NULL);
+}
+
+/*ARGSUSED*/
+zoneid_t
+crgetzoneid(const cred_t *cr)
+{
+	return (GLOBAL_ZONEID);
+}
+
+/*ARGSUSED*/
+struct zone *
+crgetzone(const cred_t *cr)
+{
+	return (&zone0);
+}
+
 cred_t *
 zone_kcred(void)
 {
@@ -83,4 +128,10 @@ ksid_t *
 crgetsid(const cred_t *cr, int i)
 {
 	return (cr->cr_ksid);
+}
+
+cred_t *
+ddi_get_cred(void)
+{
+	return (_curcred());
 }
