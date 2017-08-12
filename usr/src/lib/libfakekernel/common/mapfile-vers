@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -40,11 +40,19 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	aok		{ FLAGS = NODIRECT };
 	boot_time;
 	cmn_err;
+	copyin;
 	copyinstr;
+	copyout;
 	copystr;
 
 	crfree;
 	crgetuid;
+	crgetruid;
+	crgetgid;
+	crgetngroups;
+	crgetgroups;
+	crgetzone;
+	crgetzoneid;
 	crhold;
 
 	cv_broadcast;
@@ -58,11 +66,16 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	cv_wait;
 	cv_wait_sig;
 
+	ddi_copyin;
+	ddi_copyout;
+	ddi_get_cred;
 	ddi_get_lbolt64;
 	ddi_get_lbolt;
 	ddi_get_pid;
 	ddi_strtoul;
+	ddi_strtoull;
 
+	debug_enter;
 	delay;
 
 	fakekernel_cprintf	{ FLAGS = NODIRECT };
@@ -75,6 +88,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 
 	hz;
 
+	kcred;
 	kiconv;
 	kiconv_close;
 	kiconv_open;
@@ -133,6 +147,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	nsec_per_tick;
 
 	ovbcopy;
+	p0;
 	panic;
 	panicargs;
 	panicstr;
@@ -164,7 +179,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 
 	strfree;
 
-	system_taskq_fini;	
+	system_taskq_fini;
 	system_taskq_init;
 	taskq_create;
 	taskq_create_proc;
@@ -184,7 +199,10 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	vcmn_err;
 	vmem_qcache_reap;
 	vpanic;
+	vzprintf;
+	zone0;
 	zone_kcred;
+	zprintf;
 	zthread_create;
 	zthread_exit;
 

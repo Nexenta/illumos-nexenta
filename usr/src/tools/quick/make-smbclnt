@@ -11,14 +11,11 @@
 #
 
 #
-# Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
-# Use distributed make (dmake) by default.
-make=${MAKE:-dmake}
-
-CLOSED_IS_PRESENT=no
-export CLOSED_IS_PRESENT
+# Use ordinary make (not dmake) by default.
+make=${MAKE:-make}
 
 # Do this if you want to use dbx or gdb
 # export SOURCEDEBUG=yes
@@ -32,13 +29,13 @@ cpu=`uname -p`
 case $cpu in
 i386)
 	x=intel
-	kmdb_arch="amd64"
+	kmdb_arch="ia32 amd64"
 	mdb_arch="ia32 amd64"
 	arch64=amd64
 	;;
 sparc)
 	x=sparc
-	kmdb_arch=v9
+	kmdb_arch="v7 v9"
 	mdb_arch="v7 v9"
 	arch64=sparcv9
 	;;
@@ -97,12 +94,17 @@ fi
 
 # Need some library headers too...
 for lib in \
+  libcmdutils \
   libcryptoutil \
+  libfakekernel	\
+  libidmap \
   libmlrpc \
   libpam \
   libsec \
   libshare \
   libsmbfs \
+  libzfs_core \
+  libzfs \
   passwdutil
 do
   (cd $SRC/lib/$lib && $make $targ)
@@ -128,7 +130,18 @@ do_kern() {
 # skip these on clean (but still nuke them for clobber)
 
 do_lib1() {
-  :
+
+for lib in \
+  libavl \
+  libidmap \
+  libsec \
+  libcmdutils \
+  libuutil \
+  libzfs_core \
+  libzfs
+do
+  (cd $SRC/lib/$lib && $make $1)
+done
 }
 
 # lib2 builds stuff we include in the tar file,
@@ -139,7 +152,16 @@ do_lib2() {
 (cd $SRC/lib/libsmbfs && $make $1)
 [ "$1" = install ] &&
   (cd $SRC/lib/libsmbfs && $make _msg)
-(cd $SRC/lib/libmlrpc && $make $1)
+
+for lib in \
+  libfakekernel \
+  libsmbfs \
+  libmlrpc \
+  smbclnt
+do
+  (cd $SRC/lib/$lib && $make $1)
+done
+
 (cd $SRC/lib/libshare && $make $1 PLUGINS=smbfs)
 (cd $SRC/lib/passwdutil && $make $1)
 (cd $SRC/lib/pam_modules/smbfs && $make $1)
@@ -184,6 +206,15 @@ do
   (cd $SRC/cmd/mdb/$x/$a/smbfs &&
 	$make $1 KMDB_LINKTEST_ENABLE= )
 done
+
+# mdb_arch is both 32-bit & 64-bit
+for a in $mdb_arch
+do
+  (cd $SRC/cmd/mdb/$x/$a/libfknsmb &&
+	$make $1 )
+  (cd $SRC/cmd/mdb/$x/$a/libfksmbfs &&
+	$make $1 )
+done
 }
 
 
@@ -199,6 +230,7 @@ do_tags() {
 	find uts/common/netsmb -name '*.[ch]' -print |sort
 	find uts/common/fs/smbclnt -name '*.[ch]' -print |sort
 	find head -name '*.h' -print |sort
+	find lib/smbclnt  -name '*.[ch]' -print |sort
 	find lib/libsmbfs -name '*.[ch]' -print |sort
 	find cmd/fs.d/smbclnt -name '*.[ch]' -print |sort
 	find common/smbclnt -name '*.[ch]' -print |sort
@@ -217,14 +249,15 @@ do_tar() {
 	files="
 lib/svc/manifest/network/smb/client.xml
 lib/svc/method/smb-client
-opt/smbcl-tests/tests/srvenum
-opt/smbcl-tests/tests/srvinfo
-opt/smbcl-tests/tests/tconn
 usr/bin/smbutil
 usr/kernel/drv/$arch64/nsmb
+usr/kernel/drv/nsmb
 usr/kernel/fs/$arch64/smbfs
+usr/kernel/fs/smbfs
 usr/kernel/kmdb/$arch64/nsmb
+usr/kernel/kmdb/nsmb
 usr/kernel/kmdb/$arch64/smbfs
+usr/kernel/kmdb/smbfs
 usr/lib/$arch64/libsmbfs.so.1
 usr/lib/fs/smbfs/$arch64/libshare_smbfs.so.1
 usr/lib/fs/smbfs/chacl
@@ -238,8 +271,8 @@ usr/lib/fs/smbfs/unshare
 usr/lib/libmlrpc.so.2
 usr/lib/libsmbfs.so.1
 usr/lib/mdb/kvm/$arch64/nsmb.so
-usr/lib/mdb/kvm/$arch64/smbfs.so
 usr/lib/mdb/kvm/nsmb.so
+usr/lib/mdb/kvm/$arch64/smbfs.so
 usr/lib/mdb/kvm/smbfs.so
 usr/lib/security/$arch64/pam_smbfs_login.so.1
 usr/lib/security/pam_smbfs_login.so.1

@@ -132,12 +132,20 @@ _NOTE(CONSTCOND) } while (0)
 #define	ASSERT0(x)		((void)0)
 #endif
 
-#ifdef	_KERNEL
+/*
+ * Compile-time assertion. The condition 'x' must be constant.
+ */
+#define	CTASSERT(x)		_CTASSERT(x, __LINE__)
+#define	_CTASSERT(x, y)		__CTASSERT(x, y)
+#define	__CTASSERT(x, y) \
+	typedef char __compile_time_assertion__ ## y [(x) ? 1 : -1]
+
+#if defined(_KERNEL) || defined(_FAKE_KERNEL)
 
 extern void abort_sequence_enter(char *);
 extern void debug_enter(char *);
 
-#endif	/* _KERNEL */
+#endif	/* _KERNEL || _FAKE_KERNEL */
 
 #if defined(DEBUG) && !defined(__sun)
 /* CSTYLED */

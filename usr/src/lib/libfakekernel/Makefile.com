@@ -49,11 +49,15 @@ $(LINTLIB) :=	SRCS = $(SRCDIR)/$(LINTSRC)
 C99MODE =       -xc99=%all
 C99LMODE =      -Xc99=%all
 
-# hack hack - need our sys first
-DTS_ERRNO += -I../common
-INCS += -I$(SRC)/common/smbsrv
-
 CFLAGS +=	$(CCVERBOSE)
+
+# Note: need our sys includes _before_ ENVCPPFLAGS, proto etc.
+# Also Note: intentionally override CPPFLAGS, not +=
+CPPFLAGS.first += -I../common
+CPPFLAGS= $(CPPFLAGS.first)
+
+INCS += -I$(SRC)/uts/common
+
 CPPFLAGS += $(INCS) -D_REENTRANT -D_FAKE_KERNEL
 CPPFLAGS += -D_FILE_OFFSET_BITS=64
 ${NOT_RELEASE_BUILD} CPPFLAGS += -DDEBUG

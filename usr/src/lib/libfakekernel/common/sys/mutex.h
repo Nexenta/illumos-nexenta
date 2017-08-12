@@ -63,6 +63,16 @@ struct _kmutex {
 };
 typedef struct _kmutex kmutex_t;
 
+#if defined(_KERNEL) || defined(_FAKE_KERNEL)
+/* See the real sys/mutex.h */
+typedef struct pad_mutex {
+	kmutex_t	pad_mutex;
+#ifdef _LP64
+	char		pad_pad[64 - sizeof (kmutex_t)];
+#endif
+} pad_mutex_t;
+#endif	/* _KERNEL */
+
 #define	MUTEX_HELD(x)		(mutex_owned(x))
 #define	MUTEX_NOT_HELD(x)	(!mutex_owned(x) || panicstr)
 

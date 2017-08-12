@@ -65,6 +65,8 @@ extern void cred_init(void);
 extern void crhold(cred_t *);
 extern void crfree(cred_t *);
 
+extern int groupmember(gid_t, const cred_t *);
+
 extern cred_t *zone_kcred(void);
 
 extern uid_t crgetuid(const cred_t *);
@@ -74,6 +76,7 @@ extern gid_t crgetgid(const cred_t *);
 extern gid_t crgetrgid(const cred_t *);
 extern gid_t crgetsgid(const cred_t *);
 extern zoneid_t crgetzoneid(const cred_t *);
+extern struct zone *crgetzone(const cred_t *);
 extern projid_t crgetprojid(const cred_t *);
 
 #endif	/* _KERNEL */

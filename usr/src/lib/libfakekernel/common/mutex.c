@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -53,8 +53,11 @@ kmutex_destroy(kmutex_t *mp)
 void
 mutex_enter(kmutex_t *mp)
 {
+	kthread_t *t = _curthread();
+
+	VERIFY(mp->m_owner != t);
 	VERIFY(0 == _lwp_mutex_lock(&mp->m_lock));
-	mp->m_owner = _curthread();
+	mp->m_owner = t;
 }
 
 int

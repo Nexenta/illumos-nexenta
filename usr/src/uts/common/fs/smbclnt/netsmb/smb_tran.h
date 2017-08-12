@@ -35,12 +35,18 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _NETSMB_SMB_TRAN_H_
 #define	_NETSMB_SMB_TRAN_H_
 
 #include <sys/socket.h>
+#include <sys/stream.h>
+#ifndef _KERNEL
+struct file;
+#endif
 
 /*
  * Known transports

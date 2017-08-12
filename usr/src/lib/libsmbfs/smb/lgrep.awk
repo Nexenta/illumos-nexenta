@@ -24,6 +24,7 @@
 # Use is subject to license terms.
 #
 # Copyright 2012 Milan Jurik. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 # This is a "lint tail" that removes all the
@@ -56,6 +57,7 @@
 /: (n|sm)b_ctx_readrcsection .E_FUNC_RET_[A-Z]*_IGNOR/	{ next; }
 /: nls_str_(lower|upper) .E_FUNC_RET_[A-Z]*_IGNOR/	{ next; }
 /: rc_(close|freesect) .E_FUNC_RET_[A-Z]*_IGNOR/	{ next; }
+/: nsmb_close .E_FUNC_RET_[A-Z]*_IGNOR/		{ next; }
 
 # Other functions for which we often ignore return values.
 /: [a-z]*close .E_FUNC_RET_[A-Z]*_IGNOR/	{ next; }

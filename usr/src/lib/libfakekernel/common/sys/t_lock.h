@@ -45,4 +45,14 @@
 #include <sys/semaphore.h>
 #include <sys/condvar.h>
 
+/*
+ * The real sys/semaphore.h pulls in sys/thread and some headers
+ * using sys/t_lock.h rely on that, so let's pull it in here too.
+ * Note that sys/thread.h includes sys/t_lock.h too (a cycle) but
+ * that's OK thanks to the multi-include guards.
+ */
+#if defined(_KERNEL) || defined(_FAKE_KERNEL)
+#include <sys/thread.h>
+#endif
+
 #endif	/* _SYS_T_LOCK_H */

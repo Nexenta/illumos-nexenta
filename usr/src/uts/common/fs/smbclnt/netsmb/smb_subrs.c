@@ -34,6 +34,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -97,10 +98,13 @@ smb_credinit(struct smb_cred *scred, cred_t *cr)
 	/* cr arg is optional */
 	if (cr == NULL)
 		cr = ddi_get_cred();
+#ifdef	_KERNEL
 	if (is_system_labeled()) {
 		cr = crdup(cr);
 		(void) setpflags(NET_MAC_AWARE, 1, cr);
-	} else {
+	} else
+#endif
+	{
 		crhold(cr);
 	}
 	scred->scr_cred = cr;
@@ -593,14 +597,6 @@ static const nt2doserr_t nt2doserr[] = {
 	{ERRHRD,	ERRgeneral,	NT_STATUS_NO_GUID_TRANSLATION},
 	{ERRHRD,	ERRgeneral,	NT_STATUS_CANNOT_IMPERSONATE},
 	{ERRHRD,	ERRgeneral,	NT_STATUS_IMAGE_ALREADY_LOADED},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_NOT_PRESENT},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_LID_NOT_EXIST},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_LID_ALREADY_OWNED},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_NOT_LID_OWNER},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_INVALID_COMMAND},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_INVALID_LID},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_SELECTOR_NOT_AVAILABLE},
-	{ERRHRD,	ERRgeneral,	NT_STATUS_ABIOS_INVALID_SELECTOR},
 	{ERRHRD,	ERRgeneral,	NT_STATUS_NO_LDT},
 	{ERRHRD,	ERRgeneral,	NT_STATUS_INVALID_LDT_SIZE},
 	{ERRHRD,	ERRgeneral,	NT_STATUS_INVALID_LDT_OFFSET},

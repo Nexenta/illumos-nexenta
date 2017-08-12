@@ -47,26 +47,30 @@ extern "C" {
  */
 
 #define	GLOBAL_ZONEID	0
+#define	ZONENAME_MAX	64
 
 #if defined(_KERNEL) || defined(_FAKE_KERNEL)
 
 #include <sys/list.h>
 
+typedef struct zone_ref {
+	struct zone	*zref_zone; /* the zone to which the reference refers */
+	list_node_t	zref_linkage; /* linkage for zone_t::zone_ref_list */
+} zone_ref_t;
+
 typedef struct zone {
+	char		*zone_name;	/* zone's configuration name */
 	zoneid_t	zone_id;	/* ID of zone */
 	struct proc	*zone_zsched;	/* Dummy kernel "zsched" process */
 	time_t		zone_boot_time;
+	struct vnode	*zone_rootvp;	/* zone's root vnode */
+	char		*zone_rootpath;	/* Path to zone's root + '/' */
 	int fake_zone[10];
 } zone_t;
 
 extern zone_t zone0;
 extern zone_t *global_zone;
 extern uint_t maxzones;
-
-typedef struct zone_ref {
-	struct zone	*zref_zone; /* the zone to which the reference refers */
-	list_node_t	zref_linkage; /* linkage for zone_t::zone_ref_list */
-} zone_ref_t;
 
 /*
  * Zone-specific data (ZSD) APIs

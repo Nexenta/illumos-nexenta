@@ -29,10 +29,10 @@
 #ifndef	_SYS_THREAD_H
 #define	_SYS_THREAD_H
 
-
 #include <sys/types.h>
 #include <sys/t_lock.h>
 #include <sys/klwp.h>
+#include <sys/signal.h>  /* expected by including code */
 
 #ifdef	__cplusplus
 extern "C" {
@@ -56,7 +56,9 @@ extern "C" {
 #define	TS_WAIT		0x20	/* Waiting to become runnable */
 
 /* ctxop_t */
-/* afd_t */
+
+/* afd_t needed by sys/file.h via sys/t_lock.h */
+typedef struct _afd_not_used afd_t;
 
 struct turnstile;
 struct panic_trap_info;

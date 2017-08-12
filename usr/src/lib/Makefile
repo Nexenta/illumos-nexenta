@@ -255,6 +255,7 @@ SUBDIRS += \
 	libvscan	\
 	libgrubmgmt	\
 	libfakekernel	\
+	smbclnt		\
 	smbsrv		\
 	libilb		\
 	scsi		\
@@ -675,6 +676,7 @@ libhotplug:	libnvpair
 cfgadm_plugins:	libhotplug
 libilb:		libsocket
 $(INTEL_BUILD)libdiskmgt:libfdisk
+smbclnt:	libfakekernel pkcs11
 smbsrv:		libxnet libpthread librt libshare libidmap pkcs11 libsqlite \
 		libcryptoutil libreparse libcmdutils libresolv2 libsmbfs \
 		libuuid libfakekernel libads libgss libldap5 krb5 libmlrpc
