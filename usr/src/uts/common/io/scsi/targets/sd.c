@@ -17377,7 +17377,7 @@ sdintr(struct scsi_pkt *pktp)
 	struct sd_lun	*un;
 	size_t		actual_len;
 	sd_ssc_t	*sscp;
-	hrtime_t	io_delta;
+	hrtime_t	io_delta = 0LL;
 	int 		bucket;
 
 	ASSERT(pktp != NULL);
@@ -17418,7 +17418,13 @@ sdintr(struct scsi_pkt *pktp)
 	/* If the HBA driver did not set the stop time, set it now. */
 	if (pktp->pkt_stop == 0)
 		pktp->pkt_stop = gethrtime();
-	io_delta = pktp->pkt_stop - pktp->pkt_start;
+	/*
+	 * If there are HBA drivers or layered drivers which do not participate
+	 * in slow-io diagnosis, the start time, set above may be overwritten
+	 * with zero. If pkt_start is zero, the delta should also be zero.
+	 */
+	if (pktp->pkt_start != 0)
+		io_delta = pktp->pkt_stop - pktp->pkt_start;
 	if (io_delta > un->un_slow_io_threshold)
 		sd_slow_io_ereport(pktp);
 	if (un->un_lat_stats) {
