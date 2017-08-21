@@ -3843,8 +3843,13 @@ build_etc_system_dir(char *root)
 		times[1].tv_nsec = 0;
 	}
 
-	if ((files = scandir(path, &filelist, NULL, alphasort)) < 0)
+	if ((files = scandir(path, &filelist, NULL, alphasort)) < 0) {
+		/* Don't fail the update if <ROOT>/etc/system.d doesn't exist */
+		if (errno == ENOENT)
+			return (BAM_SUCCESS);
+		bam_error(_("can't read %s: %s\n"), path, strerror(errno));
 		return (BAM_ERROR);
+	}
 
 	for (i = 0; i < files; i++) {
 		char	filepath[PATH_MAX];
