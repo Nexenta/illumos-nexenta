@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2014, Nexenta Systems Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems Inc.
 #
 
 #
@@ -40,6 +40,7 @@ MODULE		= blkdev
 OBJECTS		= $(BLKDEV_OBJS:%=$(OBJS_DIR)/%)
 LINTS		= $(BLKDEV_OBJS:%.o=$(LINTS_DIR)/%.ln)
 ROOTMODULE	= $(ROOT_DRV_DIR)/$(MODULE)
+CONF_SRCDIR	= $(UTSBASE)/common/io/blkdev
 
 #
 # Include common rules.
@@ -51,7 +52,7 @@ include $(UTSBASE)/intel/Makefile.intel
 #
 ALL_TARGET	= $(BINARY)
 LINT_TARGET	= $(MODULE).lint
-INSTALL_TARGET	= $(BINARY) $(ROOTMODULE)
+INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 
 #
 # Note dependancy on misc/scsi.
