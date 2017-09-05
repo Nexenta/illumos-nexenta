@@ -251,16 +251,6 @@ vdev_disk_rele(vdev_t *vd)
 	}
 }
 
-/*
- * We want to be loud in DEBUG kernels when DKIOCGMEDIAINFOEXT fails, or when
- * even a fallback to DKIOCGMEDIAINFO fails.
- */
-#ifdef DEBUG
-#define	VDEV_DEBUG(...)	cmn_err(CE_NOTE, __VA_ARGS__)
-#else
-#define	VDEV_DEBUG(...)	/* Nothing... */
-#endif
-
 static int
 vdev_disk_open(vdev_t *vd, uint64_t *psize, uint64_t *max_psize,
     uint64_t *ashift)
@@ -527,16 +517,10 @@ skip_open:
 		pbsize = dkmext->dki_pbsize;
 	} else if ((error = ldi_ioctl(dvd->vd_lh, DKIOCGMEDIAINFO,
 	    (intptr_t)dkm, FKIOCTL, kcred, NULL)) == 0) {
-		VDEV_DEBUG(
-		    "vdev_disk_open(\"%s\"): fallback to DKIOCGMEDIAINFO\n",
-		    vd->vdev_path);
 		capacity = dkm->dki_capacity - 1;
 		blksz = dkm->dki_lbsize;
 		pbsize = blksz;
 	} else {
-		VDEV_DEBUG("vdev_disk_open(\"%s\"): "
-		    "both DKIOCGMEDIAINFO{,EXT} calls failed, %d\n",
-		    vd->vdev_path, error);
 		pbsize = DEV_BSIZE;
 	}
 
@@ -564,13 +548,10 @@ skip_open:
 	}
 
 	if (ldi_ioctl(dvd->vd_lh, DKIOCSOLIDSTATE, (intptr_t)&vdev_ssd,
-	    FKIOCTL, kcred, NULL) != 0) {
+	    FKIOCTL, kcred, NULL) != 0)
 		vd->vdev_is_ssd = B_FALSE;
-		VDEV_DEBUG("vdev_disk_open(\"%s\"): DKIOCSOLIDSTATE failed, "
-		    "assuming non-SSD media\n", vd->vdev_path);
-	} else {
+	else
 		vd->vdev_is_ssd = vdev_ssd ? B_TRUE : B_FALSE;
-	}
 
 	/*
 	 * We are done with vd_lh and vdev_tsd, release the vdev_tsd_lock
