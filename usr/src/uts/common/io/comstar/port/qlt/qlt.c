@@ -1184,6 +1184,11 @@ qlt_enable_intr(qlt_state_t *qlt)
 static void
 qlt_disable_intr(qlt_state_t *qlt)
 {
+	if (qlt->qlt_intr_enabled == 0) {
+		/* ---- If we've disabled it once, just return ---- */
+		return;
+	}
+
 	if (qlt->intr_cap & DDI_INTR_FLAG_BLOCK) {
 		(void) ddi_intr_block_disable(qlt->htable, qlt->intr_cnt);
 	} else {
@@ -3841,9 +3846,8 @@ qlt_msix_resp_handler(caddr_t arg, caddr_t arg2)
 				 */
 				qlt_next_invalid_msg = now +
 				    drv_usectohz(MICROSEC * 10);
-				cmn_err(CE_NOTE,
-					"QLT: hardware reporting invalid index: 0x%x",
-					qi);
+				cmn_err(CE_NOTE, "QLT: hardware reporting "
+				    "invalid index: 0x%x", qi);
 			}
 			qi &= MQ_MAX_QUEUES_MASK;
 			qlt_invalid_idx_cnt++;

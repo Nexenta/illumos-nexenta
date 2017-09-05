@@ -975,11 +975,12 @@ pci_disable_intr(dev_info_t *pdip, dev_info_t *rdip,
 	ihdl_plat_datap->ip_ispecp = ispec;
 
 	/* translate the interrupt if needed */
-	(void) (*psm_intr_ops)(rdip, hdlp, PSM_INTR_OP_XLATE_VECTOR, &irq);
-
-	/* Disable the interrupt handler */
-	rem_avintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func, irq);
-	ihdl_plat_datap->ip_ispecp = NULL;
+	if ((*psm_intr_ops)(rdip, hdlp, PSM_INTR_OP_XLATE_VECTOR, &irq) !=
+	    PSM_FAILURE) {
+		/* Disable the interrupt handler */
+		rem_avintr((void *)hdlp, hdlp->ih_pri, hdlp->ih_cb_func, irq);
+		ihdl_plat_datap->ip_ispecp = NULL;
+	}
 }
 
 /*
