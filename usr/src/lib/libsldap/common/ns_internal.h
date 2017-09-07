@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -66,6 +67,9 @@ extern "C" {
 #define	UIDNUMFILTER_SSD 	"(&(%%s)(uidnumber=%s))"
 #define	UIDFILTER		"(&(objectclass=posixAccount)(uid=%s))"
 #define	UIDFILTER_SSD		"(&(%%s)(uid=%s))"
+#define	UIDDNFILTER	"(&(objectclass=posixAccount)(distinguishedName=%s))"
+#define	UIDDNFILTER_SSD 	"(&(%%s)(distinguishedName=%s))"
+
 #define	HOSTFILTER		"(&(objectclass=ipHost)(cn=%s))"
 #define	HOSTFILTER_SSD		"(&(%%s)(cn=%s))"
 
