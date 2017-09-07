@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #include <sys/fm/protocol.h>
@@ -270,7 +271,8 @@ send_ireport_trap(ireport_trap_t *t)
 
 /*ARGSUSED*/
 static void
-send_fm_trap(const char *uuid, const char *code, const char *url)
+send_fm_trap(const char *uuid, const char *code, const char *url,
+    const char *descr)
 {
 	static const oid sunFmProblemTrap_oid[] = { SUNFMPROBLEMTRAP_OID };
 	const size_t sunFmProblemTrap_len = OID_LENGTH(sunFmProblemTrap_oid);
@@ -281,6 +283,8 @@ send_fm_trap(const char *uuid, const char *code, const char *url)
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_CODE };
 	static const oid sunFmProblemURL_oid[] =
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_URL };
+	static const oid sunFmProblemDescr_oid[] =
+	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_DESCR };
 
 	const size_t sunFmProblem_base_len = OID_LENGTH(sunFmProblemUUID_oid);
 
@@ -332,6 +336,10 @@ send_fm_trap(const char *uuid, const char *code, const char *url)
 	    sunFmProblem_base_len * sizeof (oid));
 	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
 	    ASN_OCTET_STR, (uchar_t *)url, strlen(url));
+	(void) memcpy(var_name, sunFmProblemDescr_oid,
+	    sunFmProblem_base_len * sizeof (oid));
+	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
+	    ASN_OCTET_STR, (uchar_t *)descr, strlen(descr));
 
 	/*
 	 * This function is capable of sending both v1 and v2/v3 traps.
@@ -484,10 +492,12 @@ list_cb(fmev_t ev, const char *class, nvlist_t *nvl, void *arg)
 	(void) nvlist_lookup_string(ev_info->ei_payload, FM_SUSPECT_UUID,
 	    &uuid);
 
-	if (strcmp(ev_info->ei_url, ND_UNKNOWN) != 0)
-		send_fm_trap(uuid, ev_info->ei_diagcode, ev_info->ei_url);
-	else
+	if (strcmp(ev_info->ei_url, ND_UNKNOWN) != 0) {
+		send_fm_trap(uuid, ev_info->ei_diagcode, ev_info->ei_url,
+		    ev_info->ei_descr);
+	} else {
 		nd_error(nhdl, "failed to format url for %s", uuid);
+	}
 listcb_done:
 	nd_free_nvlarray(pref_nvl, npref);
 	if (ev_info)

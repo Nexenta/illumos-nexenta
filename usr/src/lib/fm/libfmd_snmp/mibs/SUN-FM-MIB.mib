@@ -21,6 +21,7 @@
 
 --
 -- Copyright (c) 2008, 2010,  Oracle and/or its affiliates. All rights reserved.
+-- Copyright 2017 Nexenta Systems, Inc.
 --
 
 SUN-FM-MIB DEFINITIONS ::= BEGIN
@@ -38,23 +39,16 @@ IMPORTS
 		FROM NETWORK-SERVICES-MIB;
 
 sunFmMIB MODULE-IDENTITY
-	LAST-UPDATED	"200808040000Z"
-	ORGANIZATION	"Oracle Corporation"
-	CONTACT-INFO	"Oracle Corporation
-			 500 Oracle Parkway
-			 Redwood Shores, CA 94065
-
-			 1.650.506.7000 or
-			 1.800.392.2999
-
-			 http://www.oracle.com
-			 or contact your local support representative"
+	LAST-UPDATED	"201709070000Z"
+	ORGANIZATION	"Nexenta Systems, Inc."
+	CONTACT-INFO	"https://www.nexenta.com"
 	DESCRIPTION
 		"Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+		Copyright 2017 Nexenta Systems, Inc."
 
-		MIB providing access to Oracle Fault Manager information"
-	REVISION	"200808040000Z"
-	DESCRIPTION	"Version: 1.1"
+		MIB providing access to Fault Manager information"
+	REVISION	"201709070000Z"
+	DESCRIPTION	"Version: 1.2"
 	::= { fm 1 }
 
 fm OBJECT IDENTIFIER ::= { products 195 }
@@ -135,6 +129,7 @@ SunFmProblemEntry ::= SEQUENCE {
 	sunFmProblemUUID		SunFmUuidString,
 	sunFmProblemCode		DisplayString,
 	sunFmProblemURL			URLString,
+	sunFmProblemDescription		DisplayString,
 	sunFmProblemDiagEngine		URLString,
 	sunFmProblemDiagTime		DateAndTime,
 	sunFmProblemSuspectCount	Gauge32
@@ -164,7 +159,7 @@ sunFmProblemCode OBJECT-TYPE
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"The SUNW-MSG-ID static message identifier for this class of
+		"The static message identifier for this class of
 		problem, as recorded by fmd(1M) and shown by fmdump(1M).  The
 		message identifier can be used as a key at http://illumos.org/msg/"
 	::= { sunFmProblemEntry 3 }
@@ -178,14 +173,22 @@ sunFmProblemURL OBJECT-TYPE
 		detailed information about this problem."
 	::= { sunFmProblemEntry 4 }
 
+sunFmProblemDescription OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	read-only
+	STATUS		current
+	DESCRIPTION
+		"The short problem description."
+	::= { sunFmProblemEntry 5 }
+
 sunFmProblemDiagEngine OBJECT-TYPE
 	SYNTAX		URLString
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"The Sun FMRI of the Fault Manager diagnosis engine that
+		"The FMRI of the Fault Manager diagnosis engine that
 		performed the diagnosis of this problem, including its version."
-	::= { sunFmProblemEntry 5 }
+	::= { sunFmProblemEntry 6 }
 
 sunFmProblemDiagTime OBJECT-TYPE
 	SYNTAX		DateAndTime
@@ -193,7 +196,7 @@ sunFmProblemDiagTime OBJECT-TYPE
 	STATUS		current
 	DESCRIPTION
 		"The date and time at which the problem was diagnosed."
-	::= { sunFmProblemEntry 6 }
+	::= { sunFmProblemEntry 7 }
 
 sunFmProblemSuspectCount OBJECT-TYPE
 	SYNTAX		Gauge32
@@ -203,7 +206,7 @@ sunFmProblemSuspectCount OBJECT-TYPE
 		"The number of individual suspect defects or faults
 		associated with this problem diagnosis, as shown by
 		fmdump(1M) -v -u <UUID>."
-	::= { sunFmProblemEntry 7 }
+	::= { sunFmProblemEntry 8 }
 
 --
 -- Events are indexed by the associated problem UUID and an index ranging
@@ -226,7 +229,7 @@ sunFmFaultEventEntry OBJECT-TYPE
 	MAX-ACCESS	not-accessible
 	STATUS		current
 	DESCRIPTION
-		"Sun Fault Management fault or defect event containing a
+		"Fault Management fault or defect event containing a
 		suspect problem and the corresponding FRU and ASRU."
 	INDEX	{ sunFmFaultEventUUIDIndex, sunFmFaultEventIndex }
 	::= { sunFmFaultEventTable 1 }
@@ -279,7 +282,7 @@ sunFmFaultEventClass OBJECT-TYPE
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"Sun Fault Management event class string."
+		"Fault Management event class string."
 	::= { sunFmFaultEventEntry 4 }
 
 sunFmFaultEventCertainty OBJECT-TYPE
@@ -296,7 +299,7 @@ sunFmFaultEventASRU OBJECT-TYPE
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"Sun FMRI of the Automated System Reconfiguration Unit (ASRU)
+		"FMRI of the Automated System Reconfiguration Unit (ASRU)
 		that is believed to contain the specified fault or defect."
 	::= { sunFmFaultEventEntry 6 }
 
@@ -305,7 +308,7 @@ sunFmFaultEventFRU OBJECT-TYPE
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"Sun FMRI of the Field Replaceable Unit (FRU) that should be
+		"FMRI of the Field Replaceable Unit (FRU) that should be
 		replaced in order to repair the specified fault or defect."
 	::= { sunFmFaultEventEntry 7 }
 
@@ -314,7 +317,7 @@ sunFmFaultEventResource OBJECT-TYPE
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"Sun FMRI of the resource responsible for the generation of
+		"FMRI of the resource responsible for the generation of
 		the telemetry leading to the diagnosis."
 	::= { sunFmFaultEventEntry 8 }
 
@@ -323,7 +326,7 @@ sunFmFaultEventStatus OBJECT-TYPE
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"The current status of this suspect for this diagnosis. 
+		"The current status of this suspect for this diagnosis.
 		See fmadm(1M) faulty."
 	::= { sunFmFaultEventEntry 9 }
 
@@ -333,7 +336,7 @@ sunFmFaultEventLocation OBJECT-TYPE
 	STATUS		current
 	DESCRIPTION
 		"Label of the Field Replaceable Unit (FRU) that should be
-                replaced in order to repair the specified fault or defect."
+		replaced in order to repair the specified fault or defect."
 	::= { sunFmFaultEventEntry 10 }
 
 --
@@ -458,7 +461,7 @@ sunFmResourceFMRI OBJECT-TYPE
 	MAX-ACCESS	read-only
 	STATUS		current
 	DESCRIPTION
-		"Sun FMRI of the Automated System Reconfiguration Unit (ASRU)
+		"FMRI of the Automated System Reconfiguration Unit (ASRU)
 		which the fault manager believes to be faulty."
 	::= { sunFmResourceEntry 2 }
 
@@ -508,10 +511,10 @@ sunFmObjectGroup OBJECT-GROUP OBJECTS {
 	}
 	STATUS	current
 	DESCRIPTION
-		"A collection of objects providing access to Sun Fault
+		"A collection of objects providing access to Fault
 		Manager operational data."
 	::= { sunFmObjectGroups 1 }
-	
+
 
 --
 -- RFC 3584 requires that the next-to-last sub-ID be zero to allow for
@@ -524,7 +527,8 @@ sunFmProblemTrap NOTIFICATION-TYPE
 	OBJECTS	{
 		sunFmProblemUUID,
 		sunFmProblemCode,
-		sunFmProblemURL
+		sunFmProblemURL,
+		sunFmProblemDescription
 	}
 	STATUS	current
 	DESCRIPTION
@@ -538,8 +542,7 @@ sunFmNotificationGroup NOTIFICATION-GROUP NOTIFICATIONS {
 	}
 	STATUS	current
 	DESCRIPTION
-		"A collection of notifications provided by the Sun Fault
-		Manager."
+		"A collection of notifications provided by the Fault Manager."
 	::= { sunFmObjectGroups 2 }
 
 END
