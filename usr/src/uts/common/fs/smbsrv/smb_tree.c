@@ -184,17 +184,14 @@ uint32_t	smb_tree_connect_core(smb_request_t *);
 uint32_t	smb_tree_connect_disk(smb_request_t *, smb_arg_tcon_t *);
 uint32_t	smb_tree_connect_printq(smb_request_t *, smb_arg_tcon_t *);
 uint32_t	smb_tree_connect_ipc(smb_request_t *, smb_arg_tcon_t *);
-static smb_tree_t *smb_tree_alloc(smb_request_t *, const smb_kshare_t *,
-    smb_node_t *, uint32_t, uint32_t);
+static void smb_tree_dealloc(void *);
 static boolean_t smb_tree_is_connected_locked(smb_tree_t *);
 static char *smb_tree_get_sharename(char *);
 static int smb_tree_getattr(const smb_kshare_t *, smb_node_t *, smb_tree_t *);
 static void smb_tree_get_volname(vfs_t *, smb_tree_t *);
 static void smb_tree_get_flags(const smb_kshare_t *, vfs_t *, smb_tree_t *);
 static void smb_tree_log(smb_request_t *, const char *, const char *, ...);
-static void smb_tree_close_odirs(smb_tree_t *, uint16_t);
-static smb_ofile_t *smb_tree_get_ofile(smb_tree_t *, smb_ofile_t *);
-static smb_odir_t *smb_tree_get_odir(smb_tree_t *, smb_odir_t *);
+static void smb_tree_close_odirs(smb_tree_t *, uint32_t);
 static void smb_tree_set_execinfo(smb_tree_t *, smb_shr_execinfo_t *, int);
 static int smb_tree_enum_private(smb_tree_t *, smb_svcenum_t *);
 static int smb_tree_netinfo_encode(smb_tree_t *, uint8_t *, size_t, uint32_t *);
@@ -313,10 +310,13 @@ out:
 
 /*
  * Disconnect a tree.
+ *
+ * The "do_exec" arg is obsolete and ignored.
  */
 void
 smb_tree_disconnect(smb_tree_t *tree, boolean_t do_exec)
 {
+	_NOTE(ARGUNUSED(do_exec))
 	smb_shr_execinfo_t execinfo;
 
 	ASSERT(tree->t_magic == SMB_TREE_MAGIC);
@@ -324,34 +324,27 @@ smb_tree_disconnect(smb_tree_t *tree, boolean_t do_exec)
 	mutex_enter(&tree->t_mutex);
 	ASSERT(tree->t_refcnt);
 
-	if (smb_tree_is_connected_locked(tree)) {
-		/*
-		 * Indicate that the disconnect process has started.
-		 */
-		tree->t_state = SMB_TREE_STATE_DISCONNECTING;
+	if (!smb_tree_is_connected_locked(tree)) {
 		mutex_exit(&tree->t_mutex);
-
-		if (do_exec) {
-			/*
-			 * The files opened under this tree are closed.
-			 */
-			smb_ofile_close_all(tree, 0);
-			/*
-			 * The directories opened under this tree are closed.
-			 */
-			smb_tree_close_odirs(tree, 0);
-		}
-
-		mutex_enter(&tree->t_mutex);
-		tree->t_state = SMB_TREE_STATE_DISCONNECTED;
-		smb_server_dec_trees(tree->t_server);
+		return;
 	}
 
+	/*
+	 * Indicate that the disconnect process has started.
+	 */
+	tree->t_state = SMB_TREE_STATE_DISCONNECTING;
 	mutex_exit(&tree->t_mutex);
 
-	if (do_exec && (tree->t_state == SMB_TREE_STATE_DISCONNECTED) &&
-	    (tree->t_execflags & SMB_EXEC_UNMAP)) {
+	/*
+	 * The files opened under this tree are closed.
+	 */
+	smb_ofile_close_all(tree, 0);
+	/*
+	 * The directories opened under this tree are closed.
+	 */
+	smb_tree_close_odirs(tree, 0);
 
+	if ((tree->t_execflags & SMB_EXEC_UNMAP) != 0) {
 		smb_tree_set_execinfo(tree, &execinfo, SMB_EXEC_UNMAP);
 		(void) smb_kshare_exec(tree->t_server, &execinfo);
 	}
@@ -418,15 +411,15 @@ smb_tree_release(
 	tree->t_refcnt--;
 
 	switch (tree->t_state) {
-	case SMB_TREE_STATE_DISCONNECTED:
+	case SMB_TREE_STATE_DISCONNECTING:
 		if (tree->t_refcnt == 0) {
+			smb_session_t *ssn = tree->t_session;
 			tree->t_state = SMB_TREE_STATE_DISCONNECTED;
-			smb_session_post_tree(tree->t_session, tree);
-			/* smb_llist_exit calls smb_tree_dealloc */
+			smb_llist_post(&ssn->s_tree_list, tree,
+			    smb_tree_dealloc);
 		}
 		break;
 	case SMB_TREE_STATE_CONNECTED:
-	case SMB_TREE_STATE_DISCONNECTING:
 		break;
 	default:
 		ASSERT(0);
@@ -472,30 +465,28 @@ smb_tree_has_feature(smb_tree_t *tree, uint32_t flags)
 int
 smb_tree_enum(smb_tree_t *tree, smb_svcenum_t *svcenum)
 {
+	smb_llist_t	*of_list;
 	smb_ofile_t	*of;
-	smb_ofile_t	*next;
 	int		rc = 0;
-
-	ASSERT(tree);
-	ASSERT(tree->t_magic == SMB_TREE_MAGIC);
 
 	if (svcenum->se_type == SMB_SVCENUM_TYPE_TREE)
 		return (smb_tree_enum_private(tree, svcenum));
 
-	of = smb_tree_get_ofile(tree, NULL);
+	of_list = &tree->t_ofile_list;
+	smb_llist_enter(of_list, RW_READER);
+
+	of = smb_llist_head(of_list);
 	while (of) {
-		ASSERT(of->f_tree == tree);
-
-		rc = smb_ofile_enum(of, svcenum);
-		if (rc != 0) {
+		if (smb_ofile_hold(of)) {
+			rc = smb_ofile_enum(of, svcenum);
 			smb_ofile_release(of);
-			break;
 		}
-
-		next = smb_tree_get_ofile(tree, of);
-		smb_ofile_release(of);
-		of = next;
+		if (rc != 0)
+			break;
+		of = smb_llist_next(of_list, of);
 	}
+
+	smb_llist_exit(of_list);
 
 	return (rc);
 }
@@ -671,6 +662,9 @@ smb_tree_chkaccess(smb_request_t *sr, smb_kshare_t *shr, vnode_t *vp)
 	return (access);
 }
 
+/* How long should tree connect wait for DH import to complete? */
+int smb_tcon_import_wait = 20; /* sec. */
+
 /*
  * Connect a share for use with files and directories.
  */
@@ -680,16 +674,14 @@ smb_tree_connect_disk(smb_request_t *sr, smb_arg_tcon_t *tcon)
 	char			*sharename = tcon->path;
 	const char		*any = "?????";
 	smb_user_t		*user = sr->uid_user;
-	smb_node_t		*dnode = NULL;
 	smb_node_t		*snode = NULL;
 	smb_kshare_t 		*si = tcon->si;
 	char			*service = tcon->service;
-	char			last_component[MAXNAMELEN];
 	smb_tree_t		*tree;
-	cred_t			*kcr;
 	int			rc;
 	uint32_t		access;
 	smb_shr_execinfo_t	execinfo;
+	clock_t	time;
 
 	ASSERT(user);
 	ASSERT(user->u_cred);
@@ -703,32 +695,32 @@ smb_tree_connect_disk(smb_request_t *sr, smb_arg_tcon_t *tcon)
 
 	/*
 	 * Check that the shared directory exists.
-	 * Client might not have access to the path _leading_ to the share,
-	 * so we use "kcred" to get to the share root.
 	 */
-	kcr = zone_kcred();
-	rc = smb_pathname_reduce(sr, kcr, si->shr_path, 0, 0, &dnode,
-	    last_component);
-	if (rc == 0) {
-		rc = smb_fsop_lookup(sr, kcr, SMB_FOLLOW_LINKS,
-		    sr->sr_server->si_root_smb_node, dnode, last_component,
-		    &snode);
-
-		smb_node_release(dnode);
-	}
-
-	if (rc) {
-		if (snode)
-			smb_node_release(snode);
-
+	snode = si->shr_root_node;
+	if (snode == NULL) {
 		smb_tree_log(sr, sharename, "bad path: %s", si->shr_path);
 		return (NT_STATUS_BAD_NETWORK_NAME);
 	}
 
 	if ((access = smb_tree_chkaccess(sr, si, snode->vp)) == 0) {
-		smb_node_release(snode);
 		return (NT_STATUS_ACCESS_DENIED);
 	}
+
+	/*
+	 * Wait for DH import of persistent handles to finish.
+	 * If we timeout, it's not clear what status to return,
+	 * but as the share is not really availale yet, let's
+	 * return the status for "no such share".
+	 */
+	time = SEC_TO_TICK(smb_tcon_import_wait) + ddi_get_lbolt();
+	mutex_enter(&si->shr_mutex);
+	while (si->shr_import_busy != NULL) {
+		if (cv_timedwait(&si->shr_cv, &si->shr_mutex, time) < 0) {
+			mutex_exit(&si->shr_mutex);
+			return (NT_STATUS_BAD_NETWORK_NAME);
+		}
+	}
+	mutex_exit(&si->shr_mutex);
 
 	/*
 	 * Set up the OptionalSupport for this share.
@@ -767,8 +759,6 @@ smb_tree_connect_disk(smb_request_t *sr, smb_arg_tcon_t *tcon)
 
 	tree = smb_tree_alloc(sr, si, snode, access, sr->sr_cfg->skc_execflags);
 
-	smb_node_release(snode);
-
 	if (tree == NULL)
 		return (NT_STATUS_INSUFF_SERVER_RESOURCES);
 
@@ -778,7 +768,17 @@ smb_tree_connect_disk(smb_request_t *sr, smb_arg_tcon_t *tcon)
 		rc = smb_kshare_exec(tree->t_server, &execinfo);
 
 		if ((rc != 0) && (tree->t_execflags & SMB_EXEC_TERM)) {
-			smb_tree_disconnect(tree, B_FALSE);
+			/*
+			 * Inline parts of: smb_tree_disconnect()
+			 * Not using smb_tree_disconnect() for cleanup
+			 * here because: we don't want an exec up-call,
+			 * and there can't be any opens as we never
+			 * returned this TID to the client.
+			 */
+			mutex_enter(&tree->t_mutex);
+			tree->t_state = SMB_TREE_STATE_DISCONNECTING;
+			mutex_enter(&tree->t_mutex);
+
 			smb_tree_release(tree);
 			return (NT_STATUS_ACCESS_DENIED);
 		}
@@ -910,7 +910,7 @@ smb_tree_connect_ipc(smb_request_t *sr, smb_arg_tcon_t *tcon)
 /*
  * Allocate a tree.
  */
-static smb_tree_t *
+smb_tree_t *
 smb_tree_alloc(smb_request_t *sr, const smb_kshare_t *si,
     smb_node_t *snode, uint32_t access, uint32_t execflags)
 {
@@ -1000,7 +1000,7 @@ smb_tree_alloc(smb_request_t *sr, const smb_kshare_t *si,
  * Remove the tree from the user's tree list before freeing resources
  * associated with the tree.
  */
-void
+static void
 smb_tree_dealloc(void *arg)
 {
 	smb_session_t	*session;
@@ -1009,6 +1009,8 @@ smb_tree_dealloc(void *arg)
 	SMB_TREE_VALID(tree);
 	ASSERT(tree->t_state == SMB_TREE_STATE_DISCONNECTED);
 	ASSERT(tree->t_refcnt == 0);
+
+	smb_server_dec_trees(tree->t_server);
 
 	session = tree->t_session;
 	smb_llist_enter(&session->s_tree_list, RW_WRITER);
@@ -1206,6 +1208,9 @@ smb_tree_get_flags(const smb_kshare_t *si, vfs_t *vfsp, smb_tree_t *tree)
 	if (si->shr_flags & SMB_SHRF_ABE)
 		flags |= SMB_TREE_ABE;
 
+	if (si->shr_flags & SMB_SHRF_CA)
+		flags |= SMB_TREE_CA;
+
 	if (si->shr_flags & SMB_SHRF_FSO)
 		flags |= SMB_TREE_FORCE_L2_OPLOCK;
 
@@ -1368,83 +1373,6 @@ smb_tree_is_connected(smb_tree_t *tree)
 }
 
 /*
- * Get the next open ofile in the list.  A reference is taken on
- * the ofile, which can be released later with smb_ofile_release().
- *
- * If the specified ofile is NULL, search from the beginning of the
- * list.  Otherwise, the search starts just after that ofile.
- *
- * Returns NULL if there are no open files in the list.
- */
-static smb_ofile_t *
-smb_tree_get_ofile(smb_tree_t *tree, smb_ofile_t *of)
-{
-	smb_llist_t *ofile_list;
-
-	ASSERT(tree);
-	ASSERT(tree->t_magic == SMB_TREE_MAGIC);
-
-	ofile_list = &tree->t_ofile_list;
-	smb_llist_enter(ofile_list, RW_READER);
-
-	if (of) {
-		ASSERT(of->f_magic == SMB_OFILE_MAGIC);
-		of = smb_llist_next(ofile_list, of);
-	} else {
-		of = smb_llist_head(ofile_list);
-	}
-
-	while (of) {
-		if (smb_ofile_hold(of))
-			break;
-
-		of = smb_llist_next(ofile_list, of);
-	}
-
-	smb_llist_exit(ofile_list);
-	return (of);
-}
-
-/*
- * smb_tree_get_odir
- *
- * Find the next odir in the tree's list of odirs, and obtain a
- * hold on it.
- * If the specified odir is NULL the search starts at the beginning
- * of the tree's odir list, otherwise the search starts after the
- * specified odir.
- */
-static smb_odir_t *
-smb_tree_get_odir(smb_tree_t *tree, smb_odir_t *od)
-{
-	smb_llist_t *od_list;
-
-	ASSERT(tree);
-	ASSERT(tree->t_magic == SMB_TREE_MAGIC);
-
-	od_list = &tree->t_odir_list;
-	smb_llist_enter(od_list, RW_READER);
-
-	if (od) {
-		ASSERT(od->d_magic == SMB_ODIR_MAGIC);
-		od = smb_llist_next(od_list, od);
-	} else {
-		od = smb_llist_head(od_list);
-	}
-
-	while (od) {
-		ASSERT(od->d_magic == SMB_ODIR_MAGIC);
-
-		if (smb_odir_hold(od))
-			break;
-		od = smb_llist_next(od_list, od);
-	}
-
-	smb_llist_exit(od_list);
-	return (od);
-}
-
-/*
  * smb_tree_close_odirs
  *
  * Close all open odirs in the tree's list which were opened by
@@ -1452,25 +1380,34 @@ smb_tree_get_odir(smb_tree_t *tree, smb_odir_t *od)
  * If pid is zero, close all open odirs in the tree's list.
  */
 static void
-smb_tree_close_odirs(smb_tree_t *tree, uint16_t pid)
+smb_tree_close_odirs(smb_tree_t *tree, uint32_t pid)
 {
-	smb_odir_t *od, *next_od;
+	smb_llist_t	*od_list;
+	smb_odir_t	*od;
 
 	ASSERT(tree);
 	ASSERT(tree->t_magic == SMB_TREE_MAGIC);
 
-	od = smb_tree_get_odir(tree, NULL);
-	while (od) {
+	od_list = &tree->t_odir_list;
+	smb_llist_enter(od_list, RW_READER);
+
+	for (od = smb_llist_head(od_list);
+	    od != NULL;
+	    od = smb_llist_next(od_list, od)) {
+
 		ASSERT(od->d_magic == SMB_ODIR_MAGIC);
 		ASSERT(od->d_tree == tree);
 
-		next_od = smb_tree_get_odir(tree, od);
-		if ((pid == 0) || (od->d_opened_by_pid == pid))
-			smb_odir_close(od);
-		smb_odir_release(od);
+		if (pid != 0 && od->d_opened_by_pid != pid)
+			continue;
 
-		od = next_od;
+		if (smb_odir_hold(od)) {
+			smb_odir_close(od);
+			smb_odir_release(od);
+		}
 	}
+
+	smb_llist_exit(od_list);
 }
 
 static void

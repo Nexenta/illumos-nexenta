@@ -61,6 +61,7 @@ extern "C" {
 
 struct __door_handle;	/* <sys/door.h> */
 struct edirent;		/* <sys/extdirent.h> */
+struct nvlist;
 
 struct smb_disp_entry;
 struct smb_request;
@@ -396,8 +397,6 @@ typedef struct smb_bucket {
 	uint32_t	b_max_seen;
 } smb_bucket_t;
 
-#define	b_cnt	b_list.ll_count
-
 typedef struct smb_hash {
 	uint32_t	rshift;
 	uint32_t	num_buckets;
@@ -478,7 +477,6 @@ typedef struct {
 typedef struct smb_export {
 	kmutex_t	e_mutex;
 	boolean_t	e_ready;
-	smb_llist_t	e_vfs_list;
 	smb_avl_t	e_share_avl;
 	smb_slist_t	e_unexport_list;
 	smb_thread_t	e_unexport_thread;
@@ -631,16 +629,6 @@ typedef struct smb_lease {
 	uint8_t			ls_clnt[SMB_LEASE_KEY_SZ];
 } smb_lease_t;
 
-#define	SMB_VFS_MAGIC	0x534D4256	/* 'SMBV' */
-
-typedef struct smb_vfs {
-	list_node_t		sv_lnd;
-	uint32_t		sv_magic;
-	uint32_t		sv_refcnt;
-	vfs_t			*sv_vfsp;
-	vnode_t			*sv_rootvp;
-} smb_vfs_t;
-
 #define	SMB_NODE_MAGIC		0x4E4F4445	/* 'NODE' */
 #define	SMB_NODE_VALID(p)	ASSERT((p)->n_magic == SMB_NODE_MAGIC)
 
@@ -710,6 +698,9 @@ typedef struct _smb_named_stats {
 
 typedef struct smb_kshare {
 	uint32_t	shr_magic;
+	avl_node_t	shr_link;
+	kmutex_t	shr_mutex;
+	kcondvar_t	shr_cv;
 	char		*shr_name;
 	char		*shr_path;
 	char		*shr_cmnt;
@@ -724,8 +715,9 @@ typedef struct smb_kshare {
 	char		*shr_access_none;
 	char		*shr_access_ro;
 	char		*shr_access_rw;
-	avl_node_t	shr_link;
-	kmutex_t	shr_mutex;
+	smb_node_t	*shr_root_node;
+	smb_node_t	*shr_ca_dir;
+	void		*shr_import_busy;
 	kstat_t		*shr_ksp;
 	struct {
 		kstat_t			*ksns;
@@ -1049,8 +1041,9 @@ typedef enum {
 
 typedef enum {
 	SMB2_DH_PRESERVE_NONE = 0,
-	SMB2_DH_PRESERVE_ALL,
+	SMB2_DH_PRESERVE_PERSISTENT,
 	SMB2_DH_PRESERVE_SOME,
+	SMB2_DH_PRESERVE_ALL,
 } smb_preserve_type_t;
 
 typedef struct smb_user {
@@ -1117,6 +1110,7 @@ typedef struct smb_user {
 #define	SMB_TREE_SPARSE			0x00040000
 #define	SMB_TREE_TRAVERSE_MOUNTS	0x00080000
 #define	SMB_TREE_FORCE_L2_OPLOCK	0x00100000
+#define	SMB_TREE_CA			0x00200000
 /* Note: SMB_TREE_... in the mdb module too. */
 
 /*
@@ -1152,7 +1146,6 @@ typedef struct smb_tree {
 	smb_idpool_t		t_odid_pool;
 
 	uint32_t		t_refcnt;
-	boolean_t		is_CA; /* Todo: Store with FsAttributes */
 	uint32_t		t_flags;
 	int32_t			t_res_type;
 	uint16_t		t_tid;
@@ -1430,6 +1423,10 @@ typedef struct smb_ofile {
 	hrtime_t		dh_timeout_offset; /* time offset for timeout */
 	hrtime_t		dh_expire_time; /* time the handle expires */
 	boolean_t		dh_persist;
+	kmutex_t		dh_nvlock;
+	struct nvlist		*dh_nvlist;
+	smb_node_t		*dh_nvfile;
+
 	uint8_t			dh_create_guid[16];
 	char			f_quota_resume[SMB_SID_STRSZ];
 	uint8_t			f_lock_seq[SMB_OFILE_LSEQ_MAX];
@@ -1882,6 +1879,7 @@ typedef struct smb_request {
 	uint8_t			nonce[16];
 
 	boolean_t		encrypted;
+	boolean_t		dh_nvl_dirty;
 
 	boolean_t		smb2_async;
 	uint64_t		smb2_async_id;

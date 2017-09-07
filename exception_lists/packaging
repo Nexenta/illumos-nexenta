@@ -747,6 +747,7 @@ usr/lib/smbsrv/llib-lsmb
 usr/lib/smbsrv/llib-lsmb.ln
 usr/lib/smbsrv/llib-lsmbns
 usr/lib/smbsrv/llib-lsmbns.ln
+usr/lib/smbsrv/nvlprint
 usr/lib/smbsrv/testoplock
 #
 #

@@ -214,6 +214,7 @@
 #define	SMB_USER_SSNID(u) \
 	((uintptr_t)&smb_cache_user ^ (uintptr_t)(u))
 
+static void smb_user_delete(void *);
 static int smb_user_enum_private(smb_user_t *, smb_svcenum_t *);
 static void smb_user_auth_logoff(smb_user_t *);
 
@@ -291,7 +292,6 @@ smb_user_logon(
 	 * we always have an auth. socket to close.
 	 */
 	authsock = user->u_authsock;
-	ASSERT(authsock != NULL);
 	user->u_authsock = NULL;
 
 	user->u_state = SMB_USER_STATE_LOGGED_ON;
@@ -307,7 +307,8 @@ smb_user_logon(
 	mutex_exit(&user->u_mutex);
 
 	/* This close can block, so not under the mutex. */
-	smb_authsock_close(user, authsock);
+	if (authsock != NULL)
+		smb_authsock_close(user, authsock);
 
 	return (0);
 }
@@ -424,9 +425,10 @@ smb_user_release(
 	switch (user->u_state) {
 	case SMB_USER_STATE_LOGGING_OFF:
 		if (user->u_refcnt == 0) {
+			smb_session_t *ssn = user->u_session;
 			user->u_state = SMB_USER_STATE_LOGGED_OFF;
-			smb_session_post_user(user->u_session, user);
-			/* smb_llist_exit calls smb_user_delete */
+			smb_llist_post(&ssn->s_user_list, user,
+			    smb_user_delete);
 		}
 		break;
 
@@ -554,7 +556,7 @@ smb_user_enum(smb_user_t *user, smb_svcenum_t *svcenum)
  * Remove the user from the session's user list before freeing resources
  * associated with the user.
  */
-void
+static void
 smb_user_delete(void *arg)
 {
 	smb_session_t	*session;

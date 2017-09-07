@@ -63,6 +63,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	ddi_get_lbolt;
 	ddi_get_pid;
 	ddi_strtoul;
+	ddi_strtoull;
 
 	debug_enter;
 	delay;
@@ -76,6 +77,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	gethrtime_unscaled;
 
 	highbit;
+	hrt2ts;
 	hz;
 
 	kcred;
@@ -185,6 +187,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	thread_join;
 
 	tick_per_msec;
+	ts2hrt;
 	tsignal;
 	uiomove;
 	uioskip;

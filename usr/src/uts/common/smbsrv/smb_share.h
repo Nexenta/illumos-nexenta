@@ -92,6 +92,7 @@ extern "C" {
 #define	SHOPT_AD_CONTAINER	"ad-container"
 #define	SHOPT_ABE		"abe"
 #define	SHOPT_NAME		"name"
+#define	SHOPT_CA		"ca"
 #define	SHOPT_CSC		"csc"
 #define	SHOPT_CATIA		"catia"
 #define	SHOPT_GUEST		"guestok"
@@ -185,6 +186,7 @@ extern "C" {
 
 #define	SMB_SHRF_QUOTAS		0x1000	/* Enable SMB Quotas */
 #define	SMB_SHRF_FSO		0x2000	/* Force Shared Oplocks */
+#define	SMB_SHRF_CA		0x4000	/* Continuous Availability */
 
 /*
  * Runtime flags

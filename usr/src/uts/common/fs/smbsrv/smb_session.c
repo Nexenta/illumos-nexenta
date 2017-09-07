@@ -72,8 +72,6 @@ static int smb_session_reader(smb_session_t *);
 static int smb_session_xprt_puthdr(smb_session_t *,
     uint8_t msg_type, uint32_t msg_len,
     uint8_t *dst, size_t dstlen);
-static smb_tree_t *smb_session_get_tree(smb_session_t *, smb_tree_t *);
-static void smb_session_logoff(smb_session_t *);
 static void smb_session_disconnect_trees(smb_session_t	*);
 static void smb_request_init_command_mbuf(smb_request_t *sr);
 static void smb_session_genkey(smb_session_t *);
@@ -755,7 +753,22 @@ smb_session_create(ksocket_t new_so, uint16_t port, smb_server_t *sv,
 
 	smb_rwx_init(&session->s_lock);
 
-	if (new_so != NULL) {
+	session->s_srqueue = &sv->sv_srqueue;
+	smb_server_get_cfg(sv, &session->s_cfg);
+
+	if (new_so == NULL) {
+		/*
+		 * This call is creating the special "server" session,
+		 * used for kshare export, oplock breaks, CA import.
+		 * CA import creates temporary trees on this session
+		 * and those should never get map/unmap up-calls, so
+		 * force the map/unmap flags zero on this session.
+		 * Set a "modern" dialect for CA import too, so
+		 * pathname parse doesn't do OS/2 stuff, etc.
+		 */
+		session->s_cfg.skc_execflags = 0;
+		session->dialect = session->s_cfg.skc_max_protocol;
+	} else {
 		if (family == AF_INET) {
 			slen = sizeof (sin);
 			(void) ksocket_getsockname(new_so,
@@ -797,8 +810,6 @@ smb_session_create(ksocket_t new_so, uint16_t port, smb_server_t *sv,
 		else
 			smb_server_inc_tcp_sess(sv);
 	}
-	smb_server_get_cfg(sv, &session->s_cfg);
-	session->s_srqueue = &sv->sv_srqueue;
 
 	/*
 	 * The initial new request handler is special,
@@ -1088,17 +1099,6 @@ smb_session_lookup_uid_st(smb_session_t *session, uint64_t ssnid,
 	return (user);
 }
 
-void
-smb_session_post_user(smb_session_t *session, smb_user_t *user)
-{
-	SMB_USER_VALID(user);
-	ASSERT(user->u_refcnt == 0);
-	ASSERT(user->u_state == SMB_USER_STATE_LOGGED_OFF);
-	ASSERT(user->u_session == session);
-
-	smb_llist_post(&session->s_user_list, user, smb_user_delete);
-}
-
 /*
  * Find a tree by tree-id.
  */
@@ -1136,117 +1136,35 @@ smb_session_lookup_tree(
 }
 
 /*
- * Find the first connected tree that matches the specified sharename.
- * If the specified tree is NULL the search starts from the beginning of
- * the user's tree list.  If a tree is provided the search starts just
- * after that tree.
- */
-smb_tree_t *
-smb_session_lookup_share(
-    smb_session_t	*session,
-    const char		*sharename,
-    smb_tree_t		*tree)
-{
-	SMB_SESSION_VALID(session);
-	ASSERT(sharename);
-
-	smb_llist_enter(&session->s_tree_list, RW_READER);
-
-	if (tree) {
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
-		ASSERT(tree->t_session == session);
-		tree = smb_llist_next(&session->s_tree_list, tree);
-	} else {
-		tree = smb_llist_head(&session->s_tree_list);
-	}
-
-	while (tree) {
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
-		ASSERT(tree->t_session == session);
-		if (smb_strcasecmp(tree->t_sharename, sharename, 0) == 0) {
-			if (smb_tree_hold(tree)) {
-				smb_llist_exit(&session->s_tree_list);
-				return (tree);
-			}
-		}
-		tree = smb_llist_next(&session->s_tree_list, tree);
-	}
-
-	smb_llist_exit(&session->s_tree_list);
-	return (NULL);
-}
-
-/*
- * Find the first connected tree that matches the specified volume name.
- * If the specified tree is NULL the search starts from the beginning of
- * the user's tree list.  If a tree is provided the search starts just
- * after that tree.
- */
-smb_tree_t *
-smb_session_lookup_volume(
-    smb_session_t	*session,
-    const char		*name,
-    smb_tree_t		*tree)
-{
-	SMB_SESSION_VALID(session);
-	ASSERT(name);
-
-	smb_llist_enter(&session->s_tree_list, RW_READER);
-
-	if (tree) {
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
-		ASSERT(tree->t_session == session);
-		tree = smb_llist_next(&session->s_tree_list, tree);
-	} else {
-		tree = smb_llist_head(&session->s_tree_list);
-	}
-
-	while (tree) {
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
-		ASSERT(tree->t_session == session);
-
-		if (smb_strcasecmp(tree->t_volume, name, 0) == 0) {
-			if (smb_tree_hold(tree)) {
-				smb_llist_exit(&session->s_tree_list);
-				return (tree);
-			}
-		}
-
-		tree = smb_llist_next(&session->s_tree_list, tree);
-	}
-
-	smb_llist_exit(&session->s_tree_list);
-	return (NULL);
-}
-
-/*
  * Disconnect all trees that match the specified client process-id.
+ * Used by the SMB1 "process exit" request.
  */
 void
 smb_session_close_pid(
     smb_session_t	*session,
     uint32_t		pid)
 {
+	smb_llist_t	*tree_list = &session->s_tree_list;
 	smb_tree_t	*tree;
 
-	SMB_SESSION_VALID(session);
+	smb_llist_enter(tree_list, RW_READER);
 
-	tree = smb_session_get_tree(session, NULL);
+	tree = smb_llist_head(tree_list);
 	while (tree) {
-		smb_tree_t *next;
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
-		ASSERT(tree->t_session == session);
-		smb_tree_close_pid(tree, pid);
-		next = smb_session_get_tree(session, tree);
-		smb_tree_release(tree);
-		tree = next;
+		if (smb_tree_hold(tree)) {
+			smb_tree_close_pid(tree, pid);
+			smb_tree_release(tree);
+		}
+		tree = smb_llist_next(tree_list, tree);
 	}
+
+	smb_llist_exit(tree_list);
 }
 
 static void
-smb_session_tree_dtor(void *t)
+smb_session_tree_dtor(void *arg)
 {
-	smb_tree_t	*tree = (smb_tree_t *)t;
+	smb_tree_t	*tree = arg;
 
 	smb_tree_disconnect(tree, B_TRUE);
 	/* release the ref acquired during the traversal loop */
@@ -1297,97 +1215,76 @@ static void
 smb_session_disconnect_trees(
     smb_session_t	*session)
 {
-	smb_tree_t	*tree, *next_tree;
+	smb_llist_t	*tree_list = &session->s_tree_list;
+	smb_tree_t	*tree;
 
-	SMB_SESSION_VALID(session);
+	smb_llist_enter(tree_list, RW_READER);
 
-	tree = smb_session_get_tree(session, NULL);
+	tree = smb_llist_head(tree_list);
 	while (tree) {
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
-		ASSERT(tree->t_session == session);
-		smb_tree_disconnect(tree, B_TRUE);
-		next_tree = smb_session_get_tree(session, tree);
-		smb_tree_release(tree);
-		tree = next_tree;
+		if (smb_tree_hold(tree)) {
+			smb_llist_post(tree_list, tree,
+			    smb_session_tree_dtor);
+		}
+		tree = smb_llist_next(tree_list, tree);
 	}
+
+	/* drop the lock and flush the dtor queue */
+	smb_llist_exit(tree_list);
 }
 
 /*
- * Disconnect all trees that match the specified share name.
+ * Variant of smb_session_tree_dtor that also
+ * cancels requests using this tree.
+ */
+static void
+smb_session_tree_kill(void *arg)
+{
+	smb_tree_t	*tree = arg;
+
+	SMB_TREE_VALID(tree);
+
+	smb_tree_disconnect(tree, B_TRUE);
+	smb_session_cancel_requests(tree->t_session, tree, NULL);
+
+	/* release the ref acquired during the traversal loop */
+	smb_tree_release(tree);
+}
+
+/*
+ * Disconnect all trees that match the specified share name,
+ * and kill requests using those trees.
  */
 void
 smb_session_disconnect_share(
     smb_session_t	*session,
     const char		*sharename)
 {
+	smb_llist_t	*ll;
 	smb_tree_t	*tree;
-	smb_tree_t	*next;
 
 	SMB_SESSION_VALID(session);
 
-	tree = smb_session_lookup_share(session, sharename, NULL);
-	while (tree) {
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
+	ll = &session->s_tree_list;
+	smb_llist_enter(ll, RW_READER);
+
+	for (tree = smb_llist_head(ll);
+	    tree != NULL;
+	    tree = smb_llist_next(ll, tree)) {
+
+		SMB_TREE_VALID(tree);
 		ASSERT(tree->t_session == session);
-		smb_tree_disconnect(tree, B_TRUE);
-		smb_session_cancel_requests(session, tree, NULL);
-		next = smb_session_lookup_share(session, sharename, tree);
-		smb_tree_release(tree);
-		tree = next;
-	}
-	smb_llist_flush(&session->s_tree_list);
-}
 
-void
-smb_session_post_tree(smb_session_t *session, smb_tree_t *tree)
-{
-	SMB_SESSION_VALID(session);
-	SMB_TREE_VALID(tree);
-	ASSERT0(tree->t_refcnt);
-	ASSERT(tree->t_state == SMB_TREE_STATE_DISCONNECTED);
-	ASSERT(tree->t_session == session);
+		if (smb_strcasecmp(tree->t_sharename, sharename, 0) != 0)
+			continue;
 
-	smb_llist_post(&session->s_tree_list, tree, smb_tree_dealloc);
-}
-
-/*
- * Get the next connected tree in the list.  A reference is taken on
- * the tree, which can be released later with smb_tree_release().
- *
- * If the specified tree is NULL the search starts from the beginning of
- * the tree list.  If a tree is provided the search starts just after
- * that tree.
- *
- * Returns NULL if there are no connected trees in the list.
- */
-static smb_tree_t *
-smb_session_get_tree(
-    smb_session_t	*session,
-    smb_tree_t		*tree)
-{
-	smb_llist_t	*tree_list;
-
-	SMB_SESSION_VALID(session);
-	tree_list = &session->s_tree_list;
-
-	smb_llist_enter(tree_list, RW_READER);
-
-	if (tree) {
-		ASSERT3U(tree->t_magic, ==, SMB_TREE_MAGIC);
-		tree = smb_llist_next(tree_list, tree);
-	} else {
-		tree = smb_llist_head(tree_list);
+		if (smb_tree_hold(tree)) {
+			smb_llist_post(ll, tree,
+			    smb_session_tree_kill);
+		}
 	}
 
-	while (tree) {
-		if (smb_tree_hold(tree))
-			break;
-
-		tree = smb_llist_next(tree_list, tree);
-	}
-
-	smb_llist_exit(tree_list);
-	return (tree);
+	smb_llist_exit(ll);
 }
 
 /*
@@ -1398,7 +1295,7 @@ smb_session_get_tree(
  * disconnect (SMB_SESSION_STATE_DISCONNECTED).
  * If client-initiated, save durable handles.
  */
-static void
+void
 smb_session_logoff(smb_session_t *session)
 {
 	smb_llist_t	*ulist;
@@ -1424,6 +1321,10 @@ smb_session_logoff(smb_session_t *session)
 			if (user->u_session->s_state ==
 			    SMB_SESSION_STATE_DISCONNECTED)
 				user->preserve_opens = SMB2_DH_PRESERVE_ALL;
+			if (session->s_server->sv_state ==
+			    SMB_SERVER_STATE_STOPPING)
+				user->preserve_opens =
+				    SMB2_DH_PRESERVE_PERSISTENT;
 			smb_user_logoff(user);
 			smb_user_release(user);
 			break;

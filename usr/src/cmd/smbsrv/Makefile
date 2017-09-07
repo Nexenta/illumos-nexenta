@@ -25,7 +25,8 @@
 # Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
-SUBDIRS = smbadm smbd smbstat dtrace fksmbd bind-helper testoplock
+SUBDIRS = smbadm smbd smbstat dtrace fksmbd bind-helper \
+	nvlprint testoplock
 MSGSUBDIRS = smbadm smbstat
 
 include ../Makefile.cmd

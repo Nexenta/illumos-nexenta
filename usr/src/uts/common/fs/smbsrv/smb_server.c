@@ -229,12 +229,12 @@ static void smb_server_fsop_stop(smb_server_t *);
 static void smb_event_cancel(smb_server_t *, uint32_t);
 static uint32_t smb_event_alloc_txid(void);
 
-static void smb_server_disconnect_share(smb_llist_t *, const char *);
-static void smb_server_enum_users(smb_llist_t *, smb_svcenum_t *);
-static void smb_server_enum_trees(smb_llist_t *, smb_svcenum_t *);
-static int smb_server_session_disconnect(smb_llist_t *, const char *,
+static void smb_server_disconnect_share(smb_server_t *, const char *);
+static void smb_server_enum_users(smb_server_t *, smb_svcenum_t *);
+static void smb_server_enum_trees(smb_server_t *, smb_svcenum_t *);
+static int smb_server_session_disconnect(smb_server_t *, const char *,
     const char *);
-static int smb_server_fclose(smb_llist_t *, uint32_t);
+static int smb_server_fclose(smb_server_t *, uint32_t);
 static int smb_server_kstat_update(kstat_t *, int);
 static int smb_server_legacy_kstat_update(kstat_t *, int);
 static void smb_server_listener_init(smb_server_t *, smb_listener_daemon_t *,
@@ -473,14 +473,8 @@ smb_server_create(void)
  * activity associated that server has ceased before destroying it.
  */
 int
-smb_server_delete(void)
+smb_server_delete(smb_server_t	*sv)
 {
-	smb_server_t	*sv;
-	int		rc;
-
-	rc = smb_server_lookup(&sv);
-	if (rc != 0)
-		return (rc);
 
 	mutex_enter(&sv->sv_mutex);
 	switch (sv->sv_state) {
@@ -875,11 +869,11 @@ smb_server_enum(smb_ioc_svcenum_t *ioc)
 
 	switch (svcenum->se_type) {
 	case SMB_SVCENUM_TYPE_USER:
-		smb_server_enum_users(&sv->sv_session_list, svcenum);
+		smb_server_enum_users(sv, svcenum);
 		break;
 	case SMB_SVCENUM_TYPE_TREE:
 	case SMB_SVCENUM_TYPE_FILE:
-		smb_server_enum_trees(&sv->sv_session_list, svcenum);
+		smb_server_enum_trees(sv, svcenum);
 		break;
 	default:
 		rc = EINVAL;
@@ -895,7 +889,6 @@ smb_server_enum(smb_ioc_svcenum_t *ioc)
 int
 smb_server_session_close(smb_ioc_session_t *ioc)
 {
-	smb_llist_t	*ll;
 	smb_server_t	*sv;
 	int		cnt;
 	int		rc;
@@ -903,8 +896,7 @@ smb_server_session_close(smb_ioc_session_t *ioc)
 	if ((rc = smb_server_lookup(&sv)) != 0)
 		return (rc);
 
-	ll = &sv->sv_session_list;
-	cnt = smb_server_session_disconnect(ll, ioc->client, ioc->username);
+	cnt = smb_server_session_disconnect(sv, ioc->client, ioc->username);
 
 	smb_server_release(sv);
 
@@ -920,15 +912,13 @@ int
 smb_server_file_close(smb_ioc_fileid_t *ioc)
 {
 	uint32_t	uniqid = ioc->uniqid;
-	smb_llist_t	*ll;
 	smb_server_t	*sv;
 	int		rc;
 
 	if ((rc = smb_server_lookup(&sv)) != 0)
 		return (rc);
 
-	ll = &sv->sv_session_list;
-	rc = smb_server_fclose(ll, uniqid);
+	rc = smb_server_fclose(sv, uniqid);
 
 	smb_server_release(sv);
 	return (rc);
@@ -949,17 +939,16 @@ smb_server_get_session_count(smb_server_t *sv)
 }
 
 /*
- * Gets the vnode of the specified share path.
- *
- * A hold on the returned vnode pointer is taken so the caller
- * must call VN_RELE.
+ * Gets the smb_node of the specified share path.
+ * Node is returned held (caller must rele.)
  */
 int
-smb_server_sharevp(smb_server_t *sv, const char *shr_path, vnode_t **vp)
+smb_server_share_lookup(smb_server_t *sv, const char *shr_path,
+    smb_node_t **nodepp)
 {
 	smb_request_t	*sr;
 	smb_node_t	*fnode = NULL;
-	smb_node_t	*dnode;
+	smb_node_t	*dnode = NULL;
 	char		last_comp[MAXNAMELEN];
 	int		rc = 0;
 
@@ -996,10 +985,7 @@ smb_server_sharevp(smb_server_t *sv, const char *shr_path, vnode_t **vp)
 
 	ASSERT(fnode->vp && fnode->vp->v_vfsp);
 
-	VN_HOLD(fnode->vp);
-	*vp = fnode->vp;
-
-	smb_node_release(fnode);
+	*nodepp = fnode;
 
 	return (0);
 }
@@ -1041,7 +1027,6 @@ int
 smb_server_unshare(const char *sharename)
 {
 	smb_server_t	*sv;
-	smb_llist_t	*ll;
 	int		rc;
 
 	if ((rc = smb_server_lookup(&sv)))
@@ -1059,8 +1044,7 @@ smb_server_unshare(const char *sharename)
 	}
 	mutex_exit(&sv->sv_mutex);
 
-	ll = &sv->sv_session_list;
-	smb_server_disconnect_share(ll, sharename);
+	smb_server_disconnect_share(sv, sharename);
 
 	smb_server_release(sv);
 	return (0);
@@ -1071,10 +1055,12 @@ smb_server_unshare(const char *sharename)
  * Typically called when a share has been removed.
  */
 static void
-smb_server_disconnect_share(smb_llist_t *ll, const char *sharename)
+smb_server_disconnect_share(smb_server_t *sv, const char *sharename)
 {
+	smb_llist_t	*ll;
 	smb_session_t	*session;
 
+	ll = &sv->sv_session_list;
 	smb_llist_enter(ll, RW_READER);
 
 	session = smb_llist_head(ll);
@@ -1494,6 +1480,9 @@ smb_server_shutdown(smb_server_t *sv)
 	if (sv->sv_session != NULL) {
 		smb_slist_wait_for_empty(&sv->sv_session->s_req_list);
 
+		/* Just in case import left users and trees */
+		smb_session_logoff(sv->sv_session);
+
 		smb_session_delete(sv->sv_session);
 		sv->sv_session = NULL;
 	}
@@ -1794,8 +1783,9 @@ smb_server_release(smb_server_t *sv)
  * Enumerate the users associated with a session list.
  */
 static void
-smb_server_enum_users(smb_llist_t *ll, smb_svcenum_t *svcenum)
+smb_server_enum_users(smb_server_t *sv, smb_svcenum_t *svcenum)
 {
+	smb_llist_t	*ll = &sv->sv_session_list;
 	smb_session_t	*sn;
 	smb_llist_t	*ulist;
 	smb_user_t	*user;
@@ -1836,8 +1826,9 @@ smb_server_enum_users(smb_llist_t *ll, smb_svcenum_t *svcenum)
  * Enumerate the trees/files associated with a session list.
  */
 static void
-smb_server_enum_trees(smb_llist_t *ll, smb_svcenum_t *svcenum)
+smb_server_enum_trees(smb_server_t *sv, smb_svcenum_t *svcenum)
 {
+	smb_llist_t	*ll = &sv->sv_session_list;
 	smb_session_t	*sn;
 	smb_llist_t	*tlist;
 	smb_tree_t	*tree;
@@ -1879,9 +1870,10 @@ smb_server_enum_trees(smb_llist_t *ll, smb_svcenum_t *svcenum)
  * Empty strings are treated as wildcards.
  */
 static int
-smb_server_session_disconnect(smb_llist_t *ll,
+smb_server_session_disconnect(smb_server_t *sv,
     const char *client, const char *name)
 {
+	smb_llist_t	*ll = &sv->sv_session_list;
 	smb_session_t	*sn;
 	smb_llist_t	*ulist;
 	smb_user_t	*user;
@@ -1926,13 +1918,15 @@ smb_server_session_disconnect(smb_llist_t *ll,
  * Close a file by its unique id.
  */
 static int
-smb_server_fclose(smb_llist_t *ll, uint32_t uniqid)
+smb_server_fclose(smb_server_t *sv, uint32_t uniqid)
 {
+	smb_llist_t	*ll;
 	smb_session_t	*sn;
 	smb_llist_t	*tlist;
 	smb_tree_t	*tree;
 	int		rc = ENOENT;
 
+	ll = &sv->sv_session_list;
 	smb_llist_enter(ll, RW_READER);
 	sn = smb_llist_head(ll);
 

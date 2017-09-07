@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -18,9 +18,9 @@
 #include <sys/thread.h>
 #include <sys/proc.h>
 #include <sys/zone.h>
-
 #include <sys/poll.h>
 
+#include <errno.h>
 #include <time.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -59,8 +59,17 @@ ddi_get_pid(void)
 int
 ddi_strtoul(const char *str, char **endp, int base, unsigned long *res)
 {
+	errno = 0;
 	*res = strtoul(str, endp, base);
-	return (0);
+	return (errno);
+}
+
+int
+ddi_strtoull(const char *str, char **endp, int base, u_longlong_t *res)
+{
+	errno = 0;
+	*res = strtoull(str, endp, base);
+	return (errno);
 }
 
 void

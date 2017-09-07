@@ -76,6 +76,12 @@ object class
 .Em domainDns
 object class
 .El
+.It Cm ca Ns = Ns Cm true Ns | Ns Cm false
+Enable "Continuous Availability" (CA) for the share.
+CA shares may have persistent handles, which can be
+reclaimed by an SMB client after a server restart or
+cluster fail-over.
+The default is ca=false.
 .It Cm catia Ns = Ns Cm true Ns | Ns Cm false
 CATIA V4 uses characters in file names that are considered to be invalid by
 Windows.
