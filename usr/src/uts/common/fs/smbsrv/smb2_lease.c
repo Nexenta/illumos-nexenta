@@ -126,8 +126,9 @@ smb2_lease_create(smb_request_t *sr)
 {
 	smb_arg_open_t *op = &sr->arg.open;
 	uint8_t *key = op->lease_key;
+	uint8_t *clnt = sr->session->clnt_uuid;
 	smb_ofile_t *of = sr->fid_ofile;
-	smb_hash_t *ht = sr->session->s_lease_ht;
+	smb_hash_t *ht = sr->sr_server->sv_lease_ht;
 	smb_llist_t *bucket;
 	smb_lease_t *lease;
 	smb_lease_t *newlease;
@@ -153,6 +154,7 @@ smb2_lease_create(smb_request_t *sr)
 	newlease->ls_epoch = op->lease_epoch;
 	newlease->ls_version = op->lease_version;
 	bcopy(key, newlease->ls_key, UUID_LEN);
+	bcopy(clnt, newlease->ls_clnt, UUID_LEN);
 
 	smb_llist_enter(bucket, RW_WRITER);
 	for (lease = smb_llist_head(bucket); lease != NULL;
@@ -162,6 +164,7 @@ smb2_lease_create(smb_request_t *sr)
 		 * that's not being deleted.
 		 */
 		if (bcmp(lease->ls_key, key, UUID_LEN) == 0 &&
+		    bcmp(lease->ls_clnt, clnt, UUID_LEN) == 0 &&
 		    (lease->ls_node->flags & NODE_FLAGS_DELETING) == 0)
 			break;
 	}
@@ -199,7 +202,6 @@ smb2_lease_create(smb_request_t *sr)
 	}
 
 	if (lease != NULL) {
-		/* XXX: Any more lease fields to set? */
 		of->f_lease = lease;
 		status = NT_STATUS_SUCCESS;
 	}
@@ -208,29 +210,26 @@ smb2_lease_create(smb_request_t *sr)
 }
 
 /*
- * Find the node referred to by a given lease
- * (in the per-session lease table)
- * Returns the node with a new ref.
- *
- * With multi-channel, this lease table should be on
- * the per-client-GUID object instead.
+ * Find the lease for a given: client_uuid, lease_key
+ * Returns the lease with a new ref.
  */
 smb_lease_t *
-smb2_lease_lookup(smb_request_t *sr, uint8_t *key)
+smb2_lease_lookup(smb_server_t *sv, uint8_t *clnt_uuid, uint8_t *lease_key)
 {
-	smb_hash_t *ht = sr->session->s_lease_ht;
+	smb_hash_t *ht = sv->sv_lease_ht;
 	smb_llist_t *bucket;
 	smb_lease_t *lease;
 	size_t hashkey;
 
-	hashkey = smb_hash_uuid(key);
+	hashkey = smb_hash_uuid(lease_key);
 	hashkey &= (ht->num_buckets - 1);
 	bucket = &ht->buckets[hashkey].b_list;
 
 	smb_llist_enter(bucket, RW_READER);
 	lease = smb_llist_head(bucket);
 	while (lease != NULL) {
-		if (bcmp(lease->ls_key, key, UUID_LEN) == 0) {
+		if (bcmp(lease->ls_key, lease_key, UUID_LEN) == 0 &&
+		    bcmp(lease->ls_clnt, clnt_uuid, UUID_LEN) == 0) {
 			smb2_lease_hold(lease);
 			break;
 		}
@@ -648,7 +647,10 @@ done:
 		 * so we'll know what we had when sending a break later.
 		 * Also update the lease with the new oplock state.
 		 * Also track which ofile on the lease owns the oplock.
+		 * The og_dialect here is the oplock dialect, not the
+		 * SMB dialect.  Leasing, so SMB 2.1 (or later).
 		 */
+		ofile->f_oplock.og_dialect = SMB_VERS_2_1;
 		ofile->f_oplock.og_state = op->op_oplock_state;
 		mutex_enter(&lease->ls_mutex);
 		lease->ls_state = op->op_oplock_state & CACHE_RWH;

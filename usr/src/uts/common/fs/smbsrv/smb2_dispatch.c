@@ -988,7 +988,7 @@ cmd_done:
 
 cleanup:
 	if (disconnect)
-		smb2_network_disconnect(session);
+		smb_session_disconnect(session);
 
 	if (sr->sr_postwork != NULL)
 		smb2sr_run_postwork(sr);
@@ -1494,7 +1494,7 @@ smb2_send_reply(smb_request_t *sr)
 
 errout:
 	kmem_free(tmpbuf, buflen);
-	smb2_network_disconnect(sr->session);
+	smb_session_disconnect(sr->session);
 }
 
 /*
@@ -1678,22 +1678,6 @@ smb2_dispatch_stats_update(smb_server_t *sv,
 			mutex_exit(&sds[i].sdt_lat.ly_mutex);
 		}
 	}
-}
-
-void
-smb2_network_disconnect(smb_session_t *session)
-{
-	smb_rwx_rwenter(&session->s_lock, RW_WRITER);
-	switch (session->s_state) {
-	case SMB_SESSION_STATE_DISCONNECTED:
-	case SMB_SESSION_STATE_TERMINATED:
-		break;
-	default:
-		smb_soshutdown(session->sock);
-		session->s_state = SMB_SESSION_STATE_DISCONNECTED;
-		break;
-	}
-	smb_rwx_rwexit(&session->s_lock);
 }
 
 /*

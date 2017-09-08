@@ -117,7 +117,14 @@ smb1_oplock_acquire(smb_request_t *sr, boolean_t level2ok)
 	/*
 	 * Keep track of what we got (in ofile->f_oplock.og_state)
 	 * so we'll know what we had when sending a break later.
+	 * The og_dialect here is the oplock dialect, which may be
+	 * different than SMB dialect.  Pre-NT clients did not
+	 * support "Level II" oplocks.  If we're talking to a
+	 * client that didn't set the CAP_LEVEL_II_OPLOCKS in
+	 * its capabilities, let og_dialect = LANMAN2_1.
 	 */
+	ofile->f_oplock.og_dialect = (level2ok) ?
+	    NT_LM_0_12 : LANMAN2_1;
 	switch (status) {
 	case NT_STATUS_SUCCESS:
 		ofile->f_oplock.og_state = op->op_oplock_state;

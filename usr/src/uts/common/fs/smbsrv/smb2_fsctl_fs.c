@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -191,7 +191,7 @@ smb2_fsctl_netfs(smb_request_t *sr, smb_fsctl_t *fsctl)
 		func = smb2_fsctl_notsup;
 		break;
 	case FSCTL_LMR_REQUEST_RESILIENCY:	/* 0x75 */
-		func = smb_ofile_set_resilient;
+		func = smb2_fsctl_set_resilient;
 		break;
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO: /* 0x7f */
 		need_disk_file = B_FALSE;

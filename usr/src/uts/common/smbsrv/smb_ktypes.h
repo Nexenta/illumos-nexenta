@@ -601,6 +601,7 @@ typedef struct smb_oplock_grant {
 	/* smb protocol-level state */
 	uint32_t		og_state;	/* latest sent to client */
 	uint32_t		og_breaking;	/* BREAK_TO... flags */
+	uint16_t		og_dialect;	/* how to send breaks */
 	/* File-system level state */
 	uint8_t			onlist_II;
 	uint8_t			onlist_R;
@@ -612,18 +613,22 @@ typedef struct smb_oplock_grant {
 #define	SMB_LEASE_KEY_SZ	16
 
 typedef struct smb_lease {
-	list_node_t		ls_lnd;
+	list_node_t		ls_lnd;		/* sv_lease_ht */
 	kmutex_t		ls_mutex;
 	smb_llist_t		*ls_bucket;
 	struct smb_node		*ls_node;
-	/* With a lease, just one ofile has the oplock. */
-	struct smb_ofile	*ls_oplock_ofile;
+	/*
+	 * With a lease, just one ofile has the oplock.
+	 * This (used only for comparison) identifies which.
+	 */
+	void			*ls_oplock_ofile;
 	uint32_t		ls_refcnt;
 	uint32_t		ls_state;
 	uint32_t		ls_breaking;	/* BREAK_TO... flags */
 	uint16_t		ls_epoch;
 	uint16_t		ls_version;
 	uint8_t			ls_key[SMB_LEASE_KEY_SZ];
+	uint8_t			ls_clnt[SMB_LEASE_KEY_SZ];
 } smb_lease_t;
 
 #define	SMB_VFS_MAGIC	0x534D4256	/* 'SMBV' */
@@ -910,7 +915,6 @@ typedef enum {
 	SMB_SESSION_STATE_ESTABLISHED,
 	SMB_SESSION_STATE_NEGOTIATED,
 	SMB_SESSION_STATE_TERMINATED,
-	SMB_SESSION_STATE_DURABLE,
 	SMB_SESSION_STATE_SHUTDOWN,
 	SMB_SESSION_STATE_SENTINEL
 } smb_session_state_t;
@@ -925,9 +929,7 @@ typedef struct smb_session {
 	smb_rwx_t		s_lock;
 	uint64_t		s_kid;
 	smb_session_state_t	s_state;
-	uint32_t		s_refcnt;
 	uint32_t		s_flags;
-	boolean_t		conn_lost;
 	taskqid_t		s_receiver_tqid;
 	kthread_t		*s_thread;
 	kt_did_t		s_ktdid;
@@ -970,13 +972,10 @@ typedef struct smb_session {
 	smb_idpool_t		s_uid_pool;
 	smb_idpool_t		s_tid_pool;
 	smb_txlst_t		s_txlst;
-	smb_hash_t		*s_lease_ht;
 
 	volatile uint32_t	s_tree_cnt;
 	volatile uint32_t	s_file_cnt;
 	volatile uint32_t	s_dir_cnt;
-	volatile uint32_t	s_dh_cnt;
-	volatile uint32_t	s_expire_cnt;
 
 	uint16_t		cli_secmode;
 	uint16_t		srv_secmode;
@@ -984,7 +983,6 @@ typedef struct smb_session {
 	uint32_t		challenge_len;
 	unsigned char		challenge_key[SMB_CHALLENGE_SZ];
 	int64_t			activity_timestamp;
-	hrtime_t		logoff_time;
 
 	/*
 	 * Maximum negotiated buffer sizes between SMB client and server
@@ -1050,9 +1048,9 @@ typedef enum {
 } smb_user_state_t;
 
 typedef enum {
-	SMB2_DONT_PRESERVE = 0,
-	SMB2_PRESERVE_ALL,
-	SMB2_PRESERVE_SOME
+	SMB2_DH_PRESERVE_NONE = 0,
+	SMB2_DH_PRESERVE_ALL,
+	SMB2_DH_PRESERVE_SOME,
 } smb_preserve_type_t;
 
 typedef struct smb_user {
@@ -1076,7 +1074,6 @@ typedef struct smb_user {
 	uint32_t		u_refcnt;
 	uint32_t		u_flags;
 	smb_preserve_type_t	preserve_opens;
-	hrtime_t		logoff_time;
 	uint32_t		u_privileges;
 	uint16_t		u_uid;		/* unique per-session */
 	uint32_t		u_audit_sid;
@@ -1129,7 +1126,6 @@ typedef enum {
 	SMB_TREE_STATE_CONNECTED = 0,
 	SMB_TREE_STATE_DISCONNECTING,
 	SMB_TREE_STATE_DISCONNECTED,
-	SMB_TREE_STATE_DURABLE,
 	SMB_TREE_STATE_SENTINEL
 } smb_tree_state_t;
 
@@ -1379,6 +1375,8 @@ typedef enum {
 typedef enum {
 	SMB_OFILE_STATE_ALLOC = 0,
 	SMB_OFILE_STATE_OPEN,
+	SMB_OFILE_STATE_SAVE_DH,
+	SMB_OFILE_STATE_SAVING,
 	SMB_OFILE_STATE_CLOSING,
 	SMB_OFILE_STATE_CLOSED,
 	SMB_OFILE_STATE_ORPHANED,
@@ -1391,7 +1389,6 @@ typedef struct smb_ofile {
 	list_node_t		f_tree_lnd;	/* t_ofile_list */
 	list_node_t		f_node_lnd;	/* n_ofile_list */
 	list_node_t		f_dh_lnd;	/* sv_persistid_ht */
-	list_node_t		f_lease_lnd;	/* s_lease_ht */
 	uint32_t		f_magic;
 	kmutex_t		f_mutex;
 	smb_ofile_state_t	f_state;
@@ -1433,9 +1430,6 @@ typedef struct smb_ofile {
 	hrtime_t		dh_timeout_offset; /* time offset for timeout */
 	hrtime_t		dh_expire_time; /* time the handle expires */
 	boolean_t		dh_persist;
-	boolean_t		dh_expired;
-	struct smb_request	*dh_reclaimer;
-
 	uint8_t			dh_create_guid[16];
 	char			f_quota_resume[SMB_SID_STRSZ];
 	uint8_t			f_lock_seq[SMB_OFILE_LSEQ_MAX];
@@ -2120,6 +2114,7 @@ typedef struct smb_server {
 	smb_session_t		*sv_session;
 	smb_llist_t		sv_session_list;
 	smb_hash_t		*sv_persistid_ht;
+	smb_hash_t		*sv_lease_ht;
 
 	struct smb_export	sv_export;
 	struct __door_handle	*sv_lmshrd;

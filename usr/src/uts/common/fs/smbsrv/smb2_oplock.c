@@ -304,7 +304,10 @@ smb2_oplock_acquire(smb_request_t *sr)
 	/*
 	 * Keep track of what we got (in ofile->f_oplock.og_state)
 	 * so we'll know what we had when sending a break later.
+	 * The og_dialect here is the oplock dialect, not the
+	 * SMB dialect.  No lease here, so SMB 2.0.
 	 */
+	ofile->f_oplock.og_dialect = SMB_VERS_2_002;
 	switch (status) {
 	case NT_STATUS_SUCCESS:
 		ofile->f_oplock.og_state = op->op_oplock_state;

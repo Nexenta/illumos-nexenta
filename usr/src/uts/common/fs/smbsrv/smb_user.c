@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -240,8 +240,6 @@ smb_user_new(smb_session_t *session)
 		goto errout;
 	user->u_ssnid = SMB_USER_SSNID(user);
 
-	smb_session_hold(session); /* for user->u_session */
-
 	mutex_init(&user->u_mutex, NULL, MUTEX_DEFAULT, NULL);
 	user->u_state = SMB_USER_STATE_LOGGING_ON;
 	user->u_magic = SMB_USER_MAGIC;
@@ -317,8 +315,11 @@ smb_user_logon(
 /*
  * smb_user_logoff
  *
- * Change the user state and disconnect trees.
+ * Change the user state to "logging off" and disconnect trees.
  * The user list must not be entered or modified here.
+ *
+ * We remain in state "logging off" until the last ref. is gone,
+ * then smb_user_release takes us to state "logged off".
  */
 void
 smb_user_logoff(
@@ -334,8 +335,12 @@ smb_user_logoff(
 	case SMB_USER_STATE_LOGGING_ON:
 		authsock = user->u_authsock;
 		user->u_authsock = NULL;
-		user->u_state = SMB_USER_STATE_LOGGED_OFF;
-		smb_server_dec_users(user->u_server);
+		user->u_state = SMB_USER_STATE_LOGGING_OFF;
+		mutex_exit(&user->u_mutex);
+		/* This close can block, so not under the mutex. */
+		if (authsock != NULL) {
+			smb_authsock_close(user, authsock);
+		}
 		break;
 
 	case SMB_USER_STATE_LOGGED_ON:
@@ -344,29 +349,20 @@ smb_user_logoff(
 		 * process has started.
 		 */
 		user->u_state = SMB_USER_STATE_LOGGING_OFF;
-		if (user->preserve_opens != SMB2_DONT_PRESERVE)
-			user->logoff_time = gethrtime();
 		mutex_exit(&user->u_mutex);
 		smb_session_disconnect_owned_trees(user->u_session, user);
 		smb_user_auth_logoff(user);
-		mutex_enter(&user->u_mutex);
-		user->u_state = SMB_USER_STATE_LOGGED_OFF;
-		smb_server_dec_users(user->u_server);
 		break;
 
 	case SMB_USER_STATE_LOGGED_OFF:
 	case SMB_USER_STATE_LOGGING_OFF:
+		mutex_exit(&user->u_mutex);
 		break;
 
 	default:
 		ASSERT(0);
+		mutex_exit(&user->u_mutex);
 		break;
-	}
-	mutex_exit(&user->u_mutex);
-
-	/* This close can block, so not under the mutex. */
-	if (authsock != NULL) {
-		smb_authsock_close(user, authsock);
 	}
 }
 
@@ -414,23 +410,31 @@ void
 smb_user_release(
     smb_user_t		*user)
 {
-	ASSERT(user->u_magic == SMB_USER_MAGIC);
+	smb_session_t *ssn = user->u_session;
+
+	SMB_USER_VALID(user);
+
+	/* flush the tree list delete queue */
+	smb_llist_flush(&ssn->s_tree_list);
 
 	mutex_enter(&user->u_mutex);
 	ASSERT(user->u_refcnt);
 	user->u_refcnt--;
 
 	switch (user->u_state) {
-	case SMB_USER_STATE_LOGGED_OFF:
-		if (user->u_refcnt == 0)
+	case SMB_USER_STATE_LOGGING_OFF:
+		if (user->u_refcnt == 0) {
+			user->u_state = SMB_USER_STATE_LOGGED_OFF;
 			smb_session_post_user(user->u_session, user);
+			/* smb_llist_exit calls smb_user_delete */
+		}
 		break;
 
 	case SMB_USER_STATE_LOGGING_ON:
 	case SMB_USER_STATE_LOGGED_ON:
-	case SMB_USER_STATE_LOGGING_OFF:
 		break;
 
+	case SMB_USER_STATE_LOGGED_OFF:
 	default:
 		ASSERT(0);
 		break;
@@ -562,11 +566,12 @@ smb_user_delete(void *arg)
 	ASSERT(user->u_authsock == NULL);
 
 	session = user->u_session;
+
+	smb_server_dec_users(session->s_server);
 	smb_llist_enter(&session->s_user_list, RW_WRITER);
 	smb_llist_remove(&session->s_user_list, user);
 	smb_idpool_free(&session->s_uid_pool, user->u_uid);
 	smb_llist_exit(&session->s_user_list);
-	smb_session_release(session);
 
 	mutex_enter(&user->u_mutex);
 	mutex_exit(&user->u_mutex);
@@ -734,20 +739,33 @@ smb_user_netinfo_fini(smb_netuserinfo_t *info)
 	bzero(info, sizeof (smb_netuserinfo_t));
 }
 
+/*
+ * Tell smbd this user is going away so it can clean up their
+ * audit session, autohome dir, etc.
+ *
+ * Note that when we're shutting down, smbd will already have set
+ * smbd.s_shutting_down and therefore will ignore door calls.
+ * Skip this during shutdown to reduce upcall noise.
+ */
 static void
 smb_user_auth_logoff(smb_user_t *user)
 {
-	uint32_t audit_sid = user->u_audit_sid;
+	smb_server_t *sv = user->u_server;
+	uint32_t audit_sid;
 
-	(void) smb_kdoor_upcall(user->u_server, SMB_DR_USER_AUTH_LOGOFF,
+	if (sv->sv_state != SMB_SERVER_STATE_RUNNING)
+		return;
+
+	audit_sid = user->u_audit_sid;
+	(void) smb_kdoor_upcall(sv, SMB_DR_USER_AUTH_LOGOFF,
 	    &audit_sid, xdr_uint32_t, NULL, NULL);
 }
 
 boolean_t
-smb_is_same_user(smb_user_t *u1, smb_user_t *u2)
+smb_is_same_user(cred_t *cr1, cred_t *cr2)
 {
-	ksid_t *ks1 = crgetsid(u1->u_cred, KSID_USER);
-	ksid_t *ks2 = crgetsid(u2->u_cred, KSID_USER);
+	ksid_t *ks1 = crgetsid(cr1, KSID_USER);
+	ksid_t *ks2 = crgetsid(cr2, KSID_USER);
 
 	return (ks1->ks_rid == ks2->ks_rid &&
 	    strcmp(ks1->ks_domain->kd_name, ks2->ks_domain->kd_name) == 0);

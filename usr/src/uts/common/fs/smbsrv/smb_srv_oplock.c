@@ -157,7 +157,6 @@ void
 smb_oplock_ind_break_in_ack(smb_request_t *ack_sr, smb_ofile_t *ofile,
     uint32_t NewLevel, boolean_t AckRequired)
 {
-	smb_server_t *sv = ofile->f_server;
 	smb_request_t *new_sr;
 
 	/*
@@ -172,7 +171,7 @@ smb_oplock_ind_break_in_ack(smb_request_t *ack_sr, smb_ofile_t *ofile,
 
 	/*
 	 * We're going to schedule a request that will have a
-	 * reference to this ofile. Get the reference first.
+	 * reference to this ofile. Get the hold first.
 	 */
 	if (!smb_ofile_hold_olbrk(ofile)) {
 		/* It's closing (or whatever).  Nothing to do. */
@@ -180,13 +179,22 @@ smb_oplock_ind_break_in_ack(smb_request_t *ack_sr, smb_ofile_t *ofile,
 	}
 
 	/*
-	 * We'll allocate this special "post work" request on the
-	 * (internal) "server" session regardless of the state of
-	 * the session on which this request came in.  When this
-	 * SR is processed, we'll figure out whether we can send
-	 * to the client or if we need to handle this locally.
+	 * When called from Ack processing, we want to use a
+	 * request on the session doing the ack.  If we can't
+	 * allocate a request on that session (because it's
+	 * now disconnecting) just fall-back to the normal
+	 * oplock break code path which deals with that.
+	 * Once we have a request on the ack session, that
+	 * session won't go away until the request is done.
 	 */
-	new_sr = smb_request_alloc(sv->sv_session, 0);
+	new_sr = smb_request_alloc(ack_sr->session, 0);
+	if (new_sr == NULL) {
+		smb_oplock_ind_break(ofile, NewLevel,
+		    AckRequired, STATUS_CANT_GRANT);
+		smb_ofile_release(ofile);
+		return;
+	}
+
 	new_sr->sr_state = SMB_REQ_STATE_SUBMITTED;
 	new_sr->smb2_async = B_TRUE;
 	new_sr->user_cr = zone_kcred();
@@ -209,9 +217,8 @@ smb_oplock_ind_break_in_ack(smb_request_t *ack_sr, smb_ofile_t *ofile,
  * This is the function described in [MS-FSA] 2.1.5.17.3
  * which is called many places in the oplock break code.
  *
- * Schedule a request on sv_session to do oplock break work
+ * Schedule a request & taskq job to do oplock break work
  * as requested by the FS-level code (smb_cmn_oplock.c).
- * Using sv_session so this is not subject to cancellation.
  *
  * Note called with the node ofile list rwlock held and
  * the oplock mutex entered.
@@ -221,7 +228,7 @@ smb_oplock_ind_break(smb_ofile_t *ofile, uint32_t NewLevel,
     boolean_t AckRequired, uint32_t CompletionStatus)
 {
 	smb_server_t *sv = ofile->f_server;
-	smb_request_t *sr;
+	smb_request_t *sr = NULL;
 
 	/*
 	 * See notes at smb_oplock_async_break re. CompletionStatus
@@ -248,7 +255,7 @@ smb_oplock_ind_break(smb_ofile_t *ofile, uint32_t NewLevel,
 
 	/*
 	 * We're going to schedule a request that will have a
-	 * reference to this ofile. Get the reference first.
+	 * reference to this ofile. Get the hold first.
 	 */
 	if (!smb_ofile_hold_olbrk(ofile)) {
 		/* It's closing (or whatever).  Nothing to do. */
@@ -256,13 +263,23 @@ smb_oplock_ind_break(smb_ofile_t *ofile, uint32_t NewLevel,
 	}
 
 	/*
-	 * We'll taskq_dispatch these FS-level "up-calls" on the
-	 * (internal) "server" session regardless of the state of
-	 * the session to which this ofile belongs.  When this
-	 * taskq job runs, we'll figure out whether we can send
-	 * to the client or if we need to handle this locally.
+	 * We need a request allocated on the session that owns
+	 * this ofile in order to safely send on that session.
+	 *
+	 * Note that while we hold a ref. on the ofile, it's
+	 * f_session will not change.  An ofile in state
+	 * _ORPHANED will have f_session == NULL, but the
+	 * f_session won't _change_ while we have a ref,
+	 * and won't be torn down under our feet.
+	 *
+	 * If f_session is NULL, or it's in a state that doesn't
+	 * allow new requests, use the special "server" session.
 	 */
-	sr = smb_request_alloc(sv->sv_session, 0);
+	if (ofile->f_session != NULL)
+		sr = smb_request_alloc(ofile->f_session, 0);
+	if (sr == NULL)
+		sr = smb_request_alloc(sv->sv_session, 0);
+
 	sr->sr_state = SMB_REQ_STATE_SUBMITTED;
 	sr->smb2_async = B_TRUE;
 	sr->user_cr = zone_kcred();
@@ -341,13 +358,20 @@ int smb_oplock_debug_wait = 0;
  * Send an oplock break over the wire, or if we can't,
  * then process the oplock break locally.
  *
- * Note: sr->fid_ofile is released in smb_request_free
+ * Note that we have sr->fid_ofile here but all the other
+ * normal sr members are NULL:  uid_user, tid_tree.
+ * Also sr->session may or may not be the same session as
+ * the ofile came from (ofile->f_session) depending on
+ * whether this is a "live" open or an orphaned DH,
+ * where ofile->f_session will be NULL.
+ *
+ * Given that we don't always have a session, we determine
+ * the oplock type (lease etc) from f_oplock.og_dialect.
  */
 void
 smb_oplock_send_brk(smb_request_t *sr)
 {
 	smb_ofile_t	*ofile;
-	smb_session_t	*session;
 	smb_lease_t	*lease;
 	uint32_t	NewLevel;
 	boolean_t	AckReq;
@@ -355,19 +379,17 @@ smb_oplock_send_brk(smb_request_t *sr)
 	int		rc;
 
 	ofile = sr->fid_ofile;
-
-	/* Note: ofile->f_session != sr->session */
-	session = ofile->f_session;
-	lease = ofile->f_lease;
 	NewLevel = sr->arg.olbrk.NewLevel;
 	AckReq = sr->arg.olbrk.AckRequired;
+	lease = ofile->f_lease;
 
 	/*
 	 * Build the break message in sr->reply.
 	 * It's free'd in smb_request_free().
+	 * Also updates the lease and NewLevel.
 	 */
 	sr->reply.max_bytes = MLEN;
-	if (session->dialect >= SMB_VERS_2_BASE) {
+	if (ofile->f_oplock.og_dialect >= SMB_VERS_2_BASE) {
 		if (lease != NULL) {
 			/*
 			 * Oplock state has changed, so
@@ -390,7 +412,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 		 * set the capability indicating they know about them.
 		 */
 		if (NewLevel == OPLOCK_LEVEL_TWO &&
-		    !smb_session_levelII_oplocks(session))
+		    ofile->f_oplock.og_dialect < NT_LM_0_12)
 			NewLevel = OPLOCK_LEVEL_NONE;
 		smb1_oplock_break_notification(sr, NewLevel);
 	}
@@ -416,12 +438,11 @@ smb_oplock_send_brk(smb_request_t *sr)
 			else
 				BreakTo = BREAK_TO_NONE;
 		}
-		/* Update og_state in ack. */
+		/* Will update og_state in ack. */
 		ofile->f_oplock.og_breaking = BreakTo;
 	} else {
-		if (lease != NULL) {
+		if (lease != NULL)
 			lease->ls_state = NewLevel & CACHE_RWH;
-		}
 		ofile->f_oplock.og_state = NewLevel;
 	}
 
@@ -430,10 +451,19 @@ smb_oplock_send_brk(smb_request_t *sr)
 	 * When we get to multi-channel, this is supposed to
 	 * try to send on every channel before giving up.
 	 */
-	rc = smb_session_send(session, 0, &sr->reply);
+	if (sr->session == ofile->f_session)
+		rc = smb_session_send(sr->session, 0, &sr->reply);
+	else
+		rc = ENOTCONN;
+
 	if (rc == 0) {
+		/*
+		 * OK, we were able to send the break message.
+		 * If no ack. required, we're done.
+		 */
 		if (!AckReq)
 			return;
+
 		/*
 		 * We're expecting an ACK.  Wait in this thread
 		 * so we can log clients that don't respond.
@@ -449,7 +479,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 			if (status == 0)
 				return;
 			cmn_err(CE_NOTE, "clnt %s oplock break wait debug",
-			    session->ip_addr_str);
+			    sr->session->ip_addr_str);
 			debug_enter("oplock_wait");
 		}
 #endif
@@ -459,20 +489,17 @@ smb_oplock_send_brk(smb_request_t *sr)
 			return;
 
 		cmn_err(CE_NOTE, "clnt %s oplock break timeout",
-		    session->ip_addr_str);
+		    sr->session->ip_addr_str);
 		DTRACE_PROBE1(break_timeout, smb_ofile_t, ofile);
 
 		/*
 		 * Will do local ack below.  Note, after timeout,
 		 * do a break to none or "no caching" regardless
 		 * of what the passed in cache level was.
+		 * That means: clear all except GRANULAR.
 		 */
 		NewLevel &= OPLOCK_LEVEL_GRANULAR;
 	} else {
-#ifdef	DEBUG
-		cmn_err(CE_NOTE, "clnt %s N/C during oplock break",
-		    session->ip_addr_str);
-#endif
 		/*
 		 * We were unable to send the oplock break request.
 		 * Generally, that means we have no connection to this
@@ -480,6 +507,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 		 * SMB_OFILE_STATE_ORPHANED.  We either close the handle
 		 * or break the oplock locally, in which case the client
 		 * gets the updated oplock state when they reconnect.
+		 * Decide whether to keep or close.
 		 *
 		 * Relevant [MS-SMB2] sections:
 		 *
@@ -540,15 +568,14 @@ smb_oplock_send_brk(smb_request_t *sr)
 	status = smb_oplock_ack_break(sr, ofile, &NewLevel);
 	if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 		/* Not expecting this status return. */
-		cmn_err(CE_NOTE, "clnt %s local oplock ack wait?",
-		    session->ip_addr_str);
+		cmn_err(CE_NOTE, "clnt local oplock ack wait?");
 		(void) smb_oplock_wait_break(ofile->f_node,
 		    smb_oplock_timeout_ack);
 		status = 0;
 	}
 	if (status != 0) {
-		cmn_err(CE_NOTE, "clnt %s local oplock ack, "
-		    "status=0x%x", session->ip_addr_str, status);
+		cmn_err(CE_NOTE, "clnt local oplock ack, "
+		    "status=0x%x", status);
 	}
 
 	/* Update og_state as if we heard from the client. */

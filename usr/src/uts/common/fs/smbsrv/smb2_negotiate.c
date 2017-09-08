@@ -461,6 +461,6 @@ smb2_nego_validate(smb_request_t *sr, smb_fsctl_t *fsctl)
 		return (rc);
 
 drop:
-	smb2_network_disconnect(s);
+	smb_session_disconnect(s);
 	return (NT_STATUS_ACCESS_DENIED);
 }

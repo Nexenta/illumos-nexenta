@@ -77,14 +77,14 @@
  *		    | T1
  *		    |
  *		    v
- *    +------------------------------+	T3	+------------------------+
- *    | SMB_TREE_STATE_DISCONNECTING |--------->| SMB_TREE_STATE_DURABLE |
- *    +------------------------------+		+------------------------+
- *		    |					    | T4
- *		    | T2	+---------------------------+
- *		    |		|
- *		    v		v
- *    +-----------------------------+    T5
+ *    +------------------------------+
+ *    | SMB_TREE_STATE_DISCONNECTING |
+ *    +------------------------------+
+ *		    |
+ *		    | T2
+ *		    |
+ *		    v
+ *    +-----------------------------+    T3
  *    | SMB_TREE_STATE_DISCONNECTED |----------> Deletion/Free
  *    +-----------------------------+
  *
@@ -102,12 +102,6 @@
  *      - References will not be given out if the tree is looked up.
  *      - The files and directories open under the tree are being closed.
  *      - The resources associated with the tree remain.
- *
- * SMB_TREE_STATE_DURABLE
- *
- *    While in this state:
- *      - Although the tree is disconnected, ofiles remain under the tree.
- *      - Otherwise identical to DISCONNECTED
  *
  * SMB_TREE_STATE_DISCONNECTED
  *
@@ -128,18 +122,14 @@
  *
  * Transition T2
  *
- *    This transition occurs in smb_tree_disconnect() if no files remain open.
+ *    This transition occurs in smb_tree_disconnect()
  *
  * Transition T3
  *
- *    This transition occurs in smb_tree_disconnect() if files are still open.
- *
- * Transition T4, T5
- *
  *    This transition occurs in smb_tree_release(). The resources associated
  *    with the tree are freed as well as the tree structure. For the transition
- *    to occur, the tree must be in the SMB_TREE_STATE_DISCONNECTED or
- *    SMB_TREE_STATE_DURABLE state and the reference count be zero.
+ *    to occur, the tree must be in the SMB_TREE_STATE_DISCONNECTED and the
+ *    reference count must be zero.
  *
  * Comments
  * --------
@@ -196,6 +186,7 @@ uint32_t	smb_tree_connect_printq(smb_request_t *, smb_arg_tcon_t *);
 uint32_t	smb_tree_connect_ipc(smb_request_t *, smb_arg_tcon_t *);
 static smb_tree_t *smb_tree_alloc(smb_request_t *, const smb_kshare_t *,
     smb_node_t *, uint32_t, uint32_t);
+static boolean_t smb_tree_is_connected_locked(smb_tree_t *);
 static char *smb_tree_get_sharename(char *);
 static int smb_tree_getattr(const smb_kshare_t *, smb_node_t *, smb_tree_t *);
 static void smb_tree_get_volname(vfs_t *, smb_tree_t *);
@@ -344,7 +335,7 @@ smb_tree_disconnect(smb_tree_t *tree, boolean_t do_exec)
 			/*
 			 * The files opened under this tree are closed.
 			 */
-			smb_ofile_close_all(tree);
+			smb_ofile_close_all(tree, 0);
 			/*
 			 * The directories opened under this tree are closed.
 			 */
@@ -352,10 +343,7 @@ smb_tree_disconnect(smb_tree_t *tree, boolean_t do_exec)
 		}
 
 		mutex_enter(&tree->t_mutex);
-		if (tree->t_open_files == 0)
-			tree->t_state = SMB_TREE_STATE_DISCONNECTED;
-		else
-			tree->t_state = SMB_TREE_STATE_DURABLE;
+		tree->t_state = SMB_TREE_STATE_DISCONNECTED;
 		smb_server_dec_trees(tree->t_server);
 	}
 
@@ -430,11 +418,11 @@ smb_tree_release(
 	tree->t_refcnt--;
 
 	switch (tree->t_state) {
-	case SMB_TREE_STATE_DURABLE:
 	case SMB_TREE_STATE_DISCONNECTED:
 		if (tree->t_refcnt == 0) {
 			tree->t_state = SMB_TREE_STATE_DISCONNECTED;
 			smb_session_post_tree(tree->t_session, tree);
+			/* smb_llist_exit calls smb_tree_dealloc */
 		}
 		break;
 	case SMB_TREE_STATE_CONNECTED:
@@ -448,30 +436,6 @@ smb_tree_release(
 	mutex_exit(&tree->t_mutex);
 }
 
-void
-smb_tree_post_ofile(smb_tree_t *tree, smb_ofile_t *of)
-{
-	SMB_TREE_VALID(tree);
-	SMB_OFILE_VALID(of);
-	ASSERT(of->f_refcnt == 0);
-	ASSERT(of->f_state == SMB_OFILE_STATE_CLOSED);
-	ASSERT(of->f_tree == tree);
-
-	smb_llist_post(&tree->t_ofile_list, of, smb_ofile_delete);
-}
-
-void
-smb_tree_post_odir(smb_tree_t *tree, smb_odir_t *od)
-{
-	SMB_TREE_VALID(tree);
-	SMB_ODIR_VALID(od);
-	ASSERT(od->d_refcnt == 0);
-	ASSERT(od->d_state == SMB_ODIR_STATE_CLOSED);
-	ASSERT(od->d_tree == tree);
-
-	smb_llist_post(&tree->t_odir_list, od, smb_odir_delete);
-}
-
 /*
  * Close ofiles and odirs that match pid.
  */
@@ -483,7 +447,7 @@ smb_tree_close_pid(
 	ASSERT(tree);
 	ASSERT(tree->t_magic == SMB_TREE_MAGIC);
 
-	smb_ofile_close_all_by_pid(tree, pid);
+	smb_ofile_close_all(tree, pid);
 	smb_tree_close_odirs(tree, pid);
 }
 
@@ -548,8 +512,9 @@ smb_tree_fclose(smb_tree_t *tree, uint32_t uniqid)
 	ASSERT(tree->t_magic == SMB_TREE_MAGIC);
 
 	/*
-	 * Note that ORPHANED ofiles aren't fclosable, but will still
-	 * eventually expire
+	 * Note that ORPHANED ofiles aren't fclosable, as they have
+	 * no session, user, or tree by which they might be found.
+	 * They will eventually expire.
 	 */
 	if ((of = smb_ofile_lookup_by_uniqid(tree, uniqid)) == NULL)
 		return (ENOENT);
@@ -1081,7 +1046,7 @@ smb_tree_dealloc(void *arg)
  * Determine whether or not a tree is connected.
  * This function must be called with the tree mutex held.
  */
-boolean_t
+static boolean_t
 smb_tree_is_connected_locked(smb_tree_t *tree)
 {
 	switch (tree->t_state) {
@@ -1090,7 +1055,6 @@ smb_tree_is_connected_locked(smb_tree_t *tree)
 
 	case SMB_TREE_STATE_DISCONNECTING:
 	case SMB_TREE_STATE_DISCONNECTED:
-	case SMB_TREE_STATE_DURABLE:
 		/*
 		 * The tree exists but is being disconnected or destroyed.
 		 */
@@ -1143,6 +1107,7 @@ smb_tree_getattr(const smb_kshare_t *si, smb_node_t *node, smb_tree_t *tree)
 {
 	vfs_t *vfsp = SMB_NODE_VFS(node);
 	smb_cfg_val_t srv_encrypt;
+
 	ASSERT(vfsp);
 
 	if (getvfs(&vfsp->vfs_fsid) != vfsp)

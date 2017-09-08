@@ -151,9 +151,10 @@ smb2_session_setup(smb_request_t *sr)
 			break;
 		prev_user = smb_server_lookup_ssnid(sr->sr_server, PrevSsnId);
 		if (prev_user != NULL) {
-			if (smb_is_same_user(prev_user, sr->uid_user)) {
+			if (smb_is_same_user(prev_user->u_cred, sr->user_cr)) {
 				/* Treat this as if we lost the connection */
-				prev_user->preserve_opens = SMB2_PRESERVE_SOME;
+				prev_user->preserve_opens =
+				    SMB2_DH_PRESERVE_SOME;
 				smb_user_logoff(prev_user);
 			}
 			smb_user_release(prev_user); /* from lookup */

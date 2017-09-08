@@ -49,7 +49,6 @@ void	smb2_dispatch_stats_update(smb_server_t *,
 int	smb2sr_newrq(smb_request_t *);
 void	smb2sr_work(smb_request_t *);
 uint32_t smb2sr_go_async(smb_request_t *);
-void	smb2_network_disconnect(smb_session_t *);
 void smb2sr_append_postwork(smb_request_t *, smb_request_t *);
 
 int smb2_decode_header(smb_request_t *);
@@ -77,6 +76,7 @@ uint32_t smb2_fsctl_netfs(smb_request_t *, smb_fsctl_t *);
 uint32_t smb2_fsctl_copychunk(smb_request_t *, smb_fsctl_t *);
 uint32_t smb2_fsctl_odx_read(smb_request_t *, smb_fsctl_t *);
 uint32_t smb2_fsctl_odx_write(smb_request_t *, smb_fsctl_t *);
+uint32_t smb2_fsctl_set_resilient(smb_request_t *, smb_fsctl_t *);
 
 /* smb2_fsctl_sparse.c */
 uint32_t smb2_fsctl_set_sparse(smb_request_t *, smb_fsctl_t *);
@@ -115,7 +115,6 @@ int smb2_newrq_cancel(smb_request_t *);
 
 uint32_t smb2_aapl_crctx(smb_request_t *,
 	mbuf_chain_t *, mbuf_chain_t *);
-uint32_t smb2_open_reconnect(smb_request_t *);
 
 uint32_t smb2_ofile_getattr(smb_request_t *, smb_ofile_t *, smb_attr_t *);
 uint32_t smb2_ofile_getstd(smb_ofile_t *, smb_queryinfo_t *);
@@ -148,6 +147,10 @@ void smb2_lease_fini(void);
 void smb2_lease_ofile_close(smb_ofile_t *);
 
 void smb2_durable_timers(smb_server_t *);
+
+uint32_t smb2_dh_reconnect(smb_request_t *);
+boolean_t smb_dh_should_save(smb_ofile_t *);
+extern void smb2_dh_shutdown(smb_server_t *);
 
 #ifdef	__cplusplus
 }

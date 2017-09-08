@@ -1746,13 +1746,13 @@ smb_threshold_wake_all(smb_cmd_threshold_t *ct)
 }
 
 /* taken from mod_hash_byptr */
-size_t
-smb_ptr_hash(uint32_t rshift, void *key)
+uint_t
+smb_hash_uint64(smb_hash_t *hash, uint64_t val)
 {
-	uintptr_t k = (uintptr_t)key;
-	k >>= (int)rshift;
+	uint64_t k = val >> hash->rshift;
+	uint_t idx = ((uint_t)k) & (hash->num_buckets - 1);
 
-	return ((size_t)k);
+	return (idx);
 }
 
 boolean_t
@@ -1791,64 +1791,4 @@ smb_hash_destroy(smb_hash_t *hash)
 
 	kmem_free(hash->buckets, hash->num_buckets * sizeof (smb_bucket_t));
 	kmem_free(hash, sizeof (*hash));
-}
-
-size_t
-smb_hash_get_key(smb_hash_t *hash, void *elem)
-{
-	return (smb_ptr_hash(hash->rshift, elem) &
-	    (hash->num_buckets - 1));
-}
-
-void
-smb_ptrhash_insert(smb_hash_t *hash, void *elem)
-{
-	size_t hashkey = smb_hash_get_key(hash, elem);
-	smb_bucket_t *bucket;
-	smb_llist_t *ll;
-
-	bucket = &hash->buckets[hashkey];
-	ll = &bucket->b_list;
-
-	smb_llist_enter(ll, RW_WRITER);
-	smb_llist_insert_head(ll, elem);
-	if (bucket->b_cnt > bucket->b_max_seen)
-		bucket->b_max_seen = bucket->b_cnt;
-	smb_llist_exit(ll);
-}
-
-void
-smb_ptrhash_remove(smb_hash_t *hash, void *elem)
-{
-	size_t hashkey = smb_hash_get_key(hash, elem);
-	smb_llist_t *bucket;
-
-	bucket = &hash->buckets[hashkey].b_list;
-
-	smb_llist_enter(bucket, RW_WRITER);
-	smb_llist_remove(bucket, elem);
-	smb_llist_exit(bucket);
-}
-
-void *
-smb_ptrhash_find(smb_hash_t *hash, void *elem, void *(cb)(void *))
-{
-	size_t hashkey = smb_hash_get_key(hash, elem);
-	smb_llist_t *bucket;
-	void *obj;
-
-	bucket = &hash->buckets[hashkey].b_list;
-
-	smb_llist_enter(bucket, RW_READER);
-	obj = smb_llist_head(bucket);
-	while (obj != NULL) {
-		if (obj == elem)
-			break;
-		obj = smb_llist_next(bucket, obj);
-	}
-	if (cb != NULL)
-		obj = cb(obj);
-	smb_llist_exit(bucket);
-
-	return (obj);
 }

@@ -300,14 +300,14 @@ smb2_create(smb_request_t *sr)
 		/*
 		 * Reconnect check needs to know if a lease was requested.
 		 * The requested oplock level is ignored in reconnect, so
-		 * using that to convey this info.
+		 * using op_oplock_level to convey this info.
 		 */
 		if (cctx.cc_in_flags & CCTX_REQUEST_LEASE)
 			op->op_oplock_level = SMB2_OPLOCK_LEVEL_LEASE;
 		else
 			op->op_oplock_level = 0;
 
-		status = smb2_open_reconnect(sr);
+		status = smb2_dh_reconnect(sr);
 		if (status != NT_STATUS_SUCCESS)
 			goto cmd_done;
 
@@ -466,6 +466,15 @@ smb2_create(smb_request_t *sr)
 	if (status != NT_STATUS_SUCCESS)
 		goto cmd_done;
 	of = sr->fid_ofile;
+
+	/*
+	 * Set the "persistent" part of the file ID
+	 * (only for DISK shares).  Need this even for
+	 * non-durable handles in case we get the ioctl
+	 * to set "resiliency" on this handle.
+	 */
+	if (of->f_ftype == SMB_FTYPE_DISK)
+		smb_ofile_set_persistid(of);
 
 	/*
 	 * [MS-SMB2] 3.3.5.9.8

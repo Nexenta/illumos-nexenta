@@ -1807,6 +1807,7 @@ typedef struct mdb_smb_ofile {
 	int			f_mode;
 	cred_t			*f_cr;
 	pid_t			f_pid;
+	uintptr_t		f_lease;
 	smb_dh_vers_t		dh_vers;
 } mdb_smb_ofile_t;
 
@@ -1883,6 +1884,7 @@ smbofile_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 			mdb_printf("State: %d (%s)\n", of->f_state, state);
 			mdb_printf("DH Type: %d (%s)\n", of->dh_vers,
 			    durable);
+			mdb_printf("Lease: %p\n", of->f_lease);
 			mdb_printf("SMB Node: %p\n", of->f_node);
 			mdb_printf("LLF Offset: 0x%llx (%s)\n",
 			    of->f_llf_pos,
@@ -1905,11 +1907,17 @@ smbofile_dcmd(uintptr_t addr, uint_t flags, int argc, const mdb_arg_t *argv)
 				    "%<b>%<u>%-?s "
 				    "%-5s "
 				    "%-?s "
-				    "%-?s%</u>%</b>\n",
-				    "OFILE", "FID", "SMB NODE", "CRED");
+				    "%-?s "
+				    "%-?s "
+				    "%</u>%</b>\n",
+				    "OFILE",
+				    "FID",
+				    "NODE",
+				    "CRED",
+				    "LEASE");
 
-			mdb_printf("%?p %-5u %-p %p\n", addr,
-			    of->f_fid, of->f_node, of->f_cr);
+			mdb_printf("%?p %-5u %-p %-p %-p\n", addr,
+			    of->f_fid, of->f_node, of->f_cr, of->f_lease);
 		}
 	}
 	return (DCMD_OK);
@@ -2082,8 +2090,11 @@ smb_hashstat_walk_step(mdb_walk_state_t *wsp)
 	return (rc);
 }
 
+/*
+ * smbsrv_leases
+ */
 static int
-smbsess_leases_dcmd(uintptr_t addr, uint_t flags, int argc,
+smbsrv_leases_dcmd(uintptr_t addr, uint_t flags, int argc,
     const mdb_arg_t *argv)
 {
 	uint_t		opts;
@@ -2094,19 +2105,19 @@ smbsess_leases_dcmd(uintptr_t addr, uint_t flags, int argc,
 		return (DCMD_USAGE);
 
 	if (!(flags & DCMD_ADDRSPEC)) {
-		mdb_printf("require address of an smb_session_t\n");
+		mdb_printf("require address of an smb_server_t\n");
 		return (DCMD_USAGE);
 	}
 
-	ht_off = mdb_ctf_offsetof_by_name("smb_session_t", "s_lease_ht");
+	ht_off = mdb_ctf_offsetof_by_name("smb_server_t", "sv_lease_ht");
 	if (ht_off < 0) {
-		mdb_warn("No .s_lease_ht in session (old kernel?)");
+		mdb_warn("No .sv_lease_ht in server (old kernel?)");
 		return (DCMD_ERR);
 	}
 	addr += ht_off;
 
 	if (mdb_vread(&ht_addr, sizeof (ht_addr), addr) <= 0) {
-		mdb_warn("failed to read session .s_lease_ht");
+		mdb_warn("failed to read server .sv_lease_ht");
 		return (DCMD_ERR);
 	}
 
@@ -3863,10 +3874,6 @@ static const mdb_dcmd_t dcmds[] = {
 	    "print smb_session_t information",
 	    smbsess_dcmd,
 	    smbsess_help},
-	{   "smbsess_leases",
-	    "[-v]",
-	    "print lease table for a session",
-	    smbsess_leases_dcmd },
 	{   "smbreq",
 	    ":[-v]",
 	    "print smb_request_t information",
@@ -3898,6 +3905,10 @@ static const mdb_dcmd_t dcmds[] = {
 	    "[-v]",
 	    "print smb_file_t information",
 	    smbofile_dcmd },
+	{   "smbsrv_leases",
+	    "[-v]",
+	    "print lease table for a server",
+	    smbsrv_leases_dcmd },
 	{   "smblease",
 	    "[-v]",
 	    "print smb_lease_t information",
