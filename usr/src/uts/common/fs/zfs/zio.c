@@ -133,7 +133,6 @@ zio_init(void)
 	size_t c;
 	vmem_t *data_alloc_arena = NULL;
 
-	zio_parallel_checksum_init();
 #ifdef _KERNEL
 	data_alloc_arena = zio_alloc_arena;
 #endif
@@ -229,8 +228,6 @@ zio_fini(void)
 	kmem_cache_destroy(zio_cache);
 
 	zio_inject_fini();
-
-	zio_parallel_checksum_fini();
 }
 
 /*
@@ -2043,7 +2040,7 @@ zio_rewrite_gang(zio_t *pio, blkptr_t *bp, zio_gang_node_t *gn, void *data)
 			 * drop the error code
 			 */
 			(void) zio_checksum_compute(zio, BP_GET_CHECKSUM(bp),
-			    data, BP_GET_PSIZE(bp), B_FALSE);
+			    data, BP_GET_PSIZE(bp));
 		}
 		/*
 		 * If we are here to damage data for testing purposes,
@@ -3541,8 +3538,9 @@ zio_checksum_generate(zio_t *zio)
 		}
 	}
 
-	return (zio_checksum_compute(zio, checksum, zio->io_data,
-	    zio->io_size, B_TRUE));
+	zio_checksum_compute(zio, checksum, zio->io_data, zio->io_size);
+
+	return (ZIO_PIPELINE_CONTINUE);
 }
 
 static int
@@ -3550,7 +3548,7 @@ zio_checksum_verify(zio_t *zio)
 {
 	zio_bad_cksum_t info;
 	blkptr_t *bp = zio->io_bp;
-	int error, zio_progress = ZIO_PIPELINE_CONTINUE;
+	int error;
 
 	ASSERT(zio->io_vd != NULL);
 
@@ -3565,7 +3563,7 @@ zio_checksum_verify(zio_t *zio)
 		ASSERT(zio->io_prop.zp_checksum == ZIO_CHECKSUM_LABEL);
 	}
 
-	if ((error = zio_checksum_error(zio, &info, &zio_progress)) != 0) {
+	if ((error = zio_checksum_error(zio, &info)) != 0) {
 		zio->io_error = error;
 		if (error == ECKSUM &&
 		    !(zio->io_flags & ZIO_FLAG_SPECULATIVE)) {
@@ -3575,7 +3573,7 @@ zio_checksum_verify(zio_t *zio)
 		}
 	}
 
-	return (zio_progress);
+	return (ZIO_PIPELINE_CONTINUE);
 }
 
 /*

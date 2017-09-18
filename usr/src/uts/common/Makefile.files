@@ -1452,7 +1452,6 @@ ZFS_COMMON_OBJS +=		\
 	zio_inject.o		\
 	zle.o			\
 	zrlock.o		\
-	zio_parallel_checksum.o	\
 	special.o		\
 	cos.o			\
 	spa_vdev_props.o	\
@@ -1469,7 +1468,7 @@ ZFS_SHARED_OBJS +=		\
 	zpool_prop.o		\
 	zprop_common.o		\
 	cos_prop.o		\
-	vdev_prop.o		
+	vdev_prop.o
 
 ZFS_OBJS +=			\
 	$(ZFS_COMMON_OBJS)	\

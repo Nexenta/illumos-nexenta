@@ -21,7 +21,6 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2015 by Delphix. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
  * Copyright Saso Kiselkov 2013, All rights reserved.
  */
 
@@ -82,11 +81,6 @@ extern zio_checksum_info_t zio_checksum_table[ZIO_CHECKSUM_FUNCTIONS];
 /*
  * Checksum routines.
  */
-extern void zio_parallel_checksum_init(void);
-extern void zio_parallel_checksum_fini(void);
-extern int zio_parallel_checksum_fsm(zio_t *, enum zio_checksum,
-    void *, uint64_t, boolean_t, zio_cksum_t *, int *);
-
 extern zio_checksum_t zio_checksum_SHA256;
 extern zio_checksum_t zio_checksum_SHA512_native;
 extern zio_checksum_t zio_checksum_SHA512_byteswap;
@@ -105,10 +99,11 @@ extern zio_checksum_tmpl_free_t zio_checksum_edonr_tmpl_free;
 
 extern int zio_checksum_equal(spa_t *, blkptr_t *, enum zio_checksum,
     void *, uint64_t, uint64_t, zio_bad_cksum_t *);
-extern int zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
-    void *data, uint64_t size, boolean_t can_accumulate);
-extern int zio_checksum_error(zio_t *zio, zio_bad_cksum_t *out,
-    int *zio_progress_p);
+extern void zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
+    void *data, uint64_t size);
+extern int zio_checksum_error_impl(spa_t *, blkptr_t *, enum zio_checksum,
+    void *, uint64_t, uint64_t, zio_bad_cksum_t *);
+extern int zio_checksum_error(zio_t *zio, zio_bad_cksum_t *out);
 extern enum zio_checksum spa_dedup_checksum(spa_t *spa);
 extern void zio_checksum_templates_free(spa_t *spa);
 extern spa_feature_t zio_checksum_to_feature(enum zio_checksum cksum);

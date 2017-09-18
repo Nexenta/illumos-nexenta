@@ -2033,7 +2033,7 @@ arc_cksum_is_equal(arc_buf_hdr_t *hdr, zio_t *zio)
 	 * generated using the correct checksum algorithm and accounts for the
 	 * logical I/O size and not just a gang fragment.
 	 */
-	valid_cksum = (zio_checksum_error(zio, NULL, NULL) == 0);
+	valid_cksum = (zio_checksum_error(zio, NULL) == 0);
 	zio_pop_transforms(zio);
 	return (valid_cksum);
 }

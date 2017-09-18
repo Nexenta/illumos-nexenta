@@ -22,7 +22,6 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2013, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  */
 
@@ -33,17 +32,6 @@
 #include <sys/zio_checksum.h>
 #include <sys/zil.h>
 #include <zfs_fletcher.h>
-#include <sys/isal.h>
-
-/*
- * Tunables
- *
- * enable accelleration by default (acceleration module is required)
- * set min size to the point where FPU save/restore overhead is breaking
- * even with the speedup obtained by acceleration
- */
-int zfs_parallel_checksum_enabled_write = 1;
-int zfs_parallel_checksum_enabled_read = 1;
 
 /*
  * Checksum vectors.
@@ -261,15 +249,14 @@ zio_checksum_template_init(enum zio_checksum checksum, spa_t *spa)
 /*
  * Generate the checksum.
  */
-int
+void
 zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
-    void *data, uint64_t size, boolean_t can_accumulate)
+    void *data, uint64_t size)
 {
 	blkptr_t *bp = zio->io_bp;
 	uint64_t offset = zio->io_offset;
 	zio_checksum_info_t *ci = &zio_checksum_table[checksum];
 	zio_cksum_t cksum;
-	int zio_progress = ZIO_PIPELINE_CONTINUE;
 	spa_t *spa = zio->io_spa;
 
 	ASSERT((uint_t)checksum < ZIO_CHECKSUM_FUNCTIONS);
@@ -300,31 +287,15 @@ zio_checksum_compute(zio_t *zio, enum zio_checksum checksum,
 		    &cksum);
 		eck->zec_cksum = cksum;
 	} else {
-		/* ci_eck is 0 for sha256 */
-		if ((zfs_parallel_checksum_enabled_write == 0) ||
-		    (zio_parallel_checksum_fsm(zio, checksum, data, size,
-		    can_accumulate, &bp->blk_cksum, &zio_progress))) {
-			/* fall back on the non-accelerated algo */
-			ci->ci_func[0](data, size, spa->spa_cksum_tmpls[checksum],
-			    &bp->blk_cksum);
-		}
+		ci->ci_func[0](data, size, spa->spa_cksum_tmpls[checksum],
+		    &bp->blk_cksum);
 	}
-
-	return (zio_progress);
 }
 
-static int
-zio_checksum_error_impl(zio_t *zio, zio_bad_cksum_t *info, int *zio_progress_p)
+int
+zio_checksum_error_impl(spa_t *spa, blkptr_t *bp, enum zio_checksum checksum,
+    void *data, uint64_t size, uint64_t offset, zio_bad_cksum_t *info)
 {
-	blkptr_t *bp = zio->io_bp;
-	uint_t checksum = (bp == NULL ? zio->io_prop.zp_checksum :
-	    (BP_IS_GANG(bp) ? ZIO_CHECKSUM_GANG_HEADER : BP_GET_CHECKSUM(bp)));
-	uint64_t size = (bp == NULL ? zio->io_size :
-	    (BP_IS_GANG(bp) ? SPA_GANGBLOCKSIZE : BP_GET_PSIZE(bp)));
-	uint64_t offset = zio->io_offset;
-	void *data = zio->io_data;
-	spa_t *spa = zio->io_spa;
-
 	zio_checksum_info_t *ci = &zio_checksum_table[checksum];
 	zio_cksum_t actual_cksum, expected_cksum;
 	int byteswap;
@@ -366,6 +337,7 @@ zio_checksum_error_impl(zio_t *zio, zio_bad_cksum_t *info, int *zio_progress_p)
 			verifier = bp->blk_cksum;
 
 		byteswap = (eck->zec_magic == BSWAP_64(ZEC_MAGIC));
+
 		if (byteswap)
 			byteswap_uint64_array(&verifier, sizeof (zio_cksum_t));
 
@@ -380,41 +352,10 @@ zio_checksum_error_impl(zio_t *zio, zio_bad_cksum_t *info, int *zio_progress_p)
 			    sizeof (zio_cksum_t));
 		}
 	} else {
-		boolean_t cksum_ready = B_FALSE;
-		/* ci_eck is 0 for sha256 */
 		byteswap = BP_SHOULD_BYTESWAP(bp);
 		expected_cksum = bp->blk_cksum;
-
-		if ((byteswap == 0) && (zfs_parallel_checksum_enabled_read)) {
-			int zio_progress = ZIO_PIPELINE_CONTINUE;
-			int rc = 0;
-			boolean_t can_accumulate = (zio_progress_p != NULL);
-
-			DTRACE_PROBE(parallel_cksum_verify_start);
-			rc = zio_parallel_checksum_fsm(zio, checksum,
-			    data, size, can_accumulate,
-			    &zio->actual_cksum, &zio_progress);
-			DTRACE_PROBE(parallel_cksum_verify_end);
-			if (rc == 0) {
-				ASSERT(can_accumulate);
-				*zio_progress_p = zio_progress;
-				/* return if not completed calculation */
-				if (zio_progress ==
-				    ZIO_PIPELINE_RESTART_STAGE) {
-					return (0);
-				} else {
-					/* actual checksum calculated */
-					actual_cksum = zio->actual_cksum;
-					cksum_ready = B_TRUE;
-				}
-			}
-		}
-
-		if (!cksum_ready) {
-			/* invoke standard algo because of byteswap */
-			ci->ci_func[byteswap](data, size,
-			    spa->spa_cksum_tmpls[checksum], &actual_cksum);
-		}
+		ci->ci_func[byteswap](data, size,
+		    spa->spa_cksum_tmpls[checksum], &actual_cksum);
 	}
 
 	if (info != NULL) {
@@ -426,21 +367,27 @@ zio_checksum_error_impl(zio_t *zio, zio_bad_cksum_t *info, int *zio_progress_p)
 		info->zbc_has_cksum = 1;
 	}
 
-	if (!(ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))) {
-		DTRACE_PROBE2(cksum_error, zio_cksum_t *, &actual_cksum,
-		    zio_cksum_t *, &expected_cksum);
+	if (!ZIO_CHECKSUM_EQUAL(actual_cksum, expected_cksum))
 		return (SET_ERROR(ECKSUM));
-	}
 
 	return (0);
 }
 
 int
-zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info, int *zio_progress_p)
+zio_checksum_error(zio_t *zio, zio_bad_cksum_t *info)
 {
+	blkptr_t *bp = zio->io_bp;
+	uint_t checksum = (bp == NULL ? zio->io_prop.zp_checksum :
+	    (BP_IS_GANG(bp) ? ZIO_CHECKSUM_GANG_HEADER : BP_GET_CHECKSUM(bp)));
 	int error;
+	uint64_t size = (bp == NULL ? zio->io_size :
+	    (BP_IS_GANG(bp) ? SPA_GANGBLOCKSIZE : BP_GET_PSIZE(bp)));
+	uint64_t offset = zio->io_offset;
+	void *data = zio->io_data;
+	spa_t *spa = zio->io_spa;
 
-	error = zio_checksum_error_impl(zio, info, zio_progress_p);
+	error = zio_checksum_error_impl(spa, bp, checksum, data, size,
+	    offset, info);
 
 	if (zio_injection_enabled && error == 0 && zio->io_error == 0) {
 		error = zio_handle_fault_injection(zio, ECKSUM);
@@ -470,4 +417,3 @@ zio_checksum_templates_free(spa_t *spa)
 		}
 	}
 }
-
