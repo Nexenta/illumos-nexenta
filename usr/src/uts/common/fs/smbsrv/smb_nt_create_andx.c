@@ -343,6 +343,14 @@ smb_com_nt_create_andx(struct smb_request *sr)
 		 * This means we can't use smbsr_encode_result() to
 		 * build this response, because the rules it breaks
 		 * would cause errors in smbsr_check_result().
+		 *
+		 * And that's not all (it gets worse...)
+		 * Because of the bogus word count, some clients will
+		 * read the byte count from within what should be the
+		 * fileid field below.  Leave that zero, like Win7.
+		 *
+		 * Apparently the only really useful thing in this
+		 * extended response is MaxAccess.
 		 */
 		sr->smb_wct = 50; /* real word count */
 		sr->smb_bcc = 0;
@@ -365,7 +373,7 @@ smb_com_nt_create_andx(struct smb_request *sr)
 		    op->devstate,		/* (w) */
 		    DirFlag,			/* (b) */
 		    /* volume guid		  (16.) */
-		    op->fileid,			/* (q) */
+		    0,	/* file ID (see above)	   (q) */
 		    MaxAccess,			/* (l) */
 		    0,		/* guest access	   (l) */
 		    0);		/* byte count	   (w) */
