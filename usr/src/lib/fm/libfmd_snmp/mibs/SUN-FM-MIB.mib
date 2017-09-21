@@ -44,7 +44,7 @@ sunFmMIB MODULE-IDENTITY
 	CONTACT-INFO	"https://www.nexenta.com"
 	DESCRIPTION
 		"Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
-		Copyright 2017 Nexenta Systems, Inc."
+		Copyright 2017 Nexenta Systems, Inc.
 
 		MIB providing access to Fault Manager information"
 	REVISION	"201709070000Z"
