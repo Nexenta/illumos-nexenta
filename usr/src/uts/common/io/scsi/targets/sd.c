@@ -247,10 +247,9 @@ int sd_reinstate_resv_delay		= SD_REINSTATE_RESV_DELAY;
 int sd_enable_lun_reset			= FALSE;
 
 /*
- * Default safe I/O delay threshold of 2s for all devices.
+ * Default safe I/O delay threshold of 3s for all devices.
  * Can be overriden for vendor/device id in sd.conf
  */
-
 hrtime_t sd_g_slow_io_threshold		= 3LL * NANOSEC;
 
 _NOTE(SCHEME_PROTECTS_DATA("safe sharing", sd_reinstate_resv_delay))
@@ -17425,7 +17424,7 @@ sdintr(struct scsi_pkt *pktp)
 	 */
 	if (pktp->pkt_start != 0)
 		io_delta = pktp->pkt_stop - pktp->pkt_start;
-	if (io_delta > un->un_slow_io_threshold)
+	if (un->un_slow_io_threshold > 0 && io_delta > un->un_slow_io_threshold)
 		sd_slow_io_ereport(pktp);
 	if (un->un_lat_stats) {
 		un->un_lat_stats->l_nrequest++;
@@ -22076,7 +22075,7 @@ UNMAP_blk_descr_i(void *buf, uint64_t i)
 static int
 sd_send_scsi_UNMAP_issue(dev_t dev, sd_ssc_t *ssc, const dkioc_free_list_t *dfl)
 {
-	struct sd_lun *		un = ssc->ssc_un;
+	struct sd_lun		*un = ssc->ssc_un;
 	unmap_param_hdr_t	*uph;
 	sd_blk_limits_t		*lim = &un->un_blk_lim;
 	int			rval = 0;
