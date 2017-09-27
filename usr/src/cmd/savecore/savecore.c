@@ -96,6 +96,7 @@ static dumpdatahdr_t datahdr;		/* compression info */
 static long	coreblksize;		/* preferred write size (st_blksize) */
 static int	cflag;			/* run as savecore -c */
 static int	mflag;			/* run as savecore -m */
+static int	fflag;			/* -f option used */
 
 /*
  * Payload information for the events we raise.  These are used
@@ -1708,6 +1709,7 @@ main(int argc, char *argv[])
 		case 'f':
 			dumpfile = optarg;
 			filebounds = getbounds(dumpfile);
+			fflag++;
 			break;
 		case '?':
 			usage();
@@ -1904,7 +1906,7 @@ main(int argc, char *argv[])
 	else
 		bounds = filebounds;
 
-	if (disregard_valid_flag && bounds > 0)
+	if (!fflag && disregard_valid_flag && bounds > 0)
 		bounds--;
 
 	(void) snprintf(boundslink, MAXPATHLEN, "%s/%d", savedir, bounds);
@@ -1912,7 +1914,7 @@ main(int argc, char *argv[])
 	/*
 	 * Create a symbolic link to easily maintain the sequential ordering.
 	 */
-	if (fma_layout && symlink(uuiddir, boundslink) != 0) {
+	if (!fflag && fma_layout && symlink(uuiddir, boundslink) != 0) {
 		if (errno == EEXIST) {
 			char symbuf[MAXPATHLEN] = {'\0'};
 
