@@ -1182,6 +1182,9 @@ dsl_dataset_snapshot_check(void *arg, dmu_tx_t *tx)
 	nvpair_t *pair;
 	int rv = 0;
 
+	if (ddsa->ddsa_autosnap && dmu_tx_is_syncing(tx))
+		autosnap_invalidate_list(dp, ddsa->ddsa_snaps);
+
 	/*
 	 * Pre-compute how many total new snapshots will be created for each
 	 * level in the tree and below. This is needed for validating the

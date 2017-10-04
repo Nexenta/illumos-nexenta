@@ -173,6 +173,7 @@ void autosnap_fini(spa_t *spa);
 
 void autosnap_create_snapshot(autosnap_zone_t *azone, char *snap,
     dsl_pool_t *dp, uint64_t txg, dmu_tx_t *tx);
+void autosnap_invalidate_list(dsl_pool_t *dp, nvlist_t *snapshots);
 
 #ifdef	__cplusplus
 }

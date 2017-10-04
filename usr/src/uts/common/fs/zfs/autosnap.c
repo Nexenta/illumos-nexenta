@@ -1593,3 +1593,44 @@ autosnap_create_snapshot(autosnap_zone_t *azone, char *snap,
 		autosnap_error_snap(azone, txg, err);
 	}
 }
+
+/*
+ * This function is called from dsl_dataset_snapshot_check() before
+ * any other checks.
+ *
+ * It is possible to destroy datasets and attempt to create recursive
+ * autosnapshots for the destroyed datasets in the same TXG. In such cases
+ * autosnap sync-task will fail. To avoid this, the function puts a hold
+ * on the datasets used for autosnapshots. The datasets names to be held
+ * are derived from the nvlist of autosnapshots passed into the function.
+ * If the hold fails due to ENOENT, the corresponding nvpair is removed
+ * from the nvlist.
+ */
+void
+autosnap_invalidate_list(dsl_pool_t *dp, nvlist_t *snapshots)
+{
+	nvpair_t *pair, *prev;
+	int rc;
+
+	pair = nvlist_next_nvpair(snapshots, NULL);
+	while (pair != NULL) {
+		dsl_dataset_t *ds = NULL;
+		char *nvp_name, *atp;
+		char dsname[ZFS_MAX_DATASET_NAME_LEN];
+
+		nvp_name = nvpair_name(pair);
+		atp = strchr(nvp_name, '@');
+		prev = pair;
+		pair = nvlist_next_nvpair(snapshots, pair);
+
+		if (strlen(nvp_name) >= ZFS_MAX_DATASET_NAME_LEN || atp == NULL)
+			continue;
+
+		(void) strncpy(dsname, nvp_name, atp - nvp_name + 1);
+		rc = dsl_dataset_hold(dp, dsname, FTAG, &ds);
+		if (rc == 0)
+			dsl_dataset_rele(ds, FTAG);
+		else if (rc == ENOENT)
+			fnvlist_remove_nvpair(snapshots, prev);
+	}
+}
