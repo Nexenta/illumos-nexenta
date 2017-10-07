@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -714,7 +715,7 @@ cfga_change_state(
 
 		devpath = sata_get_devicepath(ap_id);
 		if (devpath == NULL) {
-			(void) printf(
+			DPRINTF(
 			    "cfga_change_state: get device path failed\n");
 			rv = CFGA_SATA_DEV_UNCONFIGURE;
 			break;
@@ -771,7 +772,7 @@ cfga_change_state(
 		    pmult == B_FALSE) {
 			devpath = sata_get_devicepath(ap_id);
 			if (devpath == NULL) {
-				(void) printf(
+				DPRINTF(
 				    "cfga_change_state: get path failed\n");
 				rv = CFGA_SATA_DEV_UNCONFIGURE;
 				break;
@@ -946,7 +947,7 @@ cfga_private_func(
 	}
 
 	if (func == NULL) {
-		(void) printf("No valid option specified\n");
+		DPRINTF("No valid option specified\n");
 		rv = CFGA_SATA_OPTIONS;
 		goto bailout;
 	}
@@ -1257,7 +1258,7 @@ sata_make_dyncomp(const char *ap_id, char **dyncomp, const char *type)
 	devpath = sata_get_devicepath(ap_id);
 	if (devpath == NULL) {
 
-		(void) printf("cfga_list_ext: cannot locate target device\n");
+		DPRINTF("cfga_list_ext: cannot locate target device\n");
 		return (CFGA_SATA_DYNAMIC_AP);
 
 	} else {
@@ -1573,7 +1574,7 @@ cfga_list_ext(
 		 */
 		if ((rv = do_control_ioctl(ap_id, SATA_CFGA_GET_MODEL_INFO,
 		    NULL, (void **)&str_p, &size)) != CFGA_SATA_OK) {
-			(void) printf(
+			DPRINTF(
 			    "SATA_CFGA_GET_MODULE_INFO ioctl failed\n");
 			goto bailout;
 		}
@@ -1600,7 +1601,7 @@ cfga_list_ext(
 		if ((rv = do_control_ioctl(ap_id,
 		    SATA_CFGA_GET_REVFIRMWARE_INFO,
 		    NULL, (void **)&str_p, &size)) != CFGA_SATA_OK) {
-			(void) printf(
+			DPRINTF(
 			    "SATA_CFGA_GET_REVFIRMWARE_INFO ioctl failed\n");
 			goto bailout;
 		}
@@ -1627,7 +1628,7 @@ cfga_list_ext(
 		if ((rv = do_control_ioctl(ap_id,
 		    SATA_CFGA_GET_SERIALNUMBER_INFO,
 		    NULL, (void **)&str_p, &size)) != CFGA_SATA_OK) {
-			(void) printf(
+			DPRINTF(
 			    "SATA_CFGA_GET_SERIALNUMBER_INFO ioctl failed\n");
 			goto bailout;
 		}
@@ -1652,7 +1653,7 @@ cfga_list_ext(
 		/* call do_control_ioctl TBD */
 		if ((rv = do_control_ioctl(ap_id, SATA_CFGA_GET_AP_TYPE, NULL,
 		    (void **)&str_p, &size)) != CFGA_SATA_OK) {
-			(void) printf(
+			DPRINTF(
 			    "SATA_CFGA_GET_AP_TYPE ioctl failed\n");
 			goto bailout;
 		}
@@ -1731,17 +1732,17 @@ cfga_msg(struct cfga_msg *msgp, const char *str)
 	char *q;
 
 	if (msgp == NULL || msgp->message_routine == NULL) {
-		(void) printf("cfga_msg: NULL msgp\n");
+		DPRINTF("cfga_msg: msg\n");
 		return;
 	}
 
 	if ((len = strlen(str)) == 0) {
-		(void) printf("cfga_msg: null str\n");
+		DPRINTF("cfga_msg: null str\n");
 		return;
 	}
 
 	if ((q = (char *)calloc(len + 1, 1)) == NULL) {
-		perror("cfga_msg");
+		DPRINTF("cfga_msg: null q\n");
 		return;
 	}
 
@@ -1824,6 +1825,8 @@ verify_params(
 	}
 
 	if (options != NULL) {
+		DPRINTF("verify_params: hardware-specific options not "
+		    "supported.\n");
 		return (CFGA_SATA_OPTIONS);
 	}
 
@@ -1837,6 +1840,7 @@ verify_params(
 	}
 
 	if (verify_valid_apid(lap_id) != 0) {
+		DPRINTF("verify_params: not a SATA ap_id.\n");
 		rv = CFGA_SATA_AP;
 	} else {
 		rv = CFGA_SATA_OK;
@@ -1926,7 +1930,7 @@ setup_for_devctl_cmd(
 	if (nvlist_alloc(user_nvlistp, NV_UNIQUE_NAME_TYPE, NULL) != 0) {
 		*user_nvlistp = NULL;
 		rv = CFGA_SATA_NVLIST;
-		(void) printf("nvlist_alloc failed\n");
+		DPRINTF("nvlist_alloc failed\n");
 		goto bailout;
 	}
 
@@ -1938,7 +1942,7 @@ setup_for_devctl_cmd(
 	 * the port number of sata port multiplier port.
 	 */
 	if ((rv = get_port_num(lap_id, &port)) != CFGA_SATA_OK) {
-		(void) printf(
+		DPRINTF(
 		    "setup_for_devctl_cmd: get_port_num, errno: %d\n",
 		    errno);
 		goto bailout;
@@ -1946,7 +1950,7 @@ setup_for_devctl_cmd(
 
 	/* Creates an int32_t entry */
 	if (nvlist_add_int32(*user_nvlistp, PORT, port) == -1) {
-		(void) printf("nvlist_add_int32 failed\n");
+		DPRINTF("nvlist_add_int32 failed\n");
 		rv = CFGA_SATA_NVLIST;
 		goto bailout;
 	}
@@ -1969,7 +1973,7 @@ port_state(devctl_hdl_t hdl, nvlist_t *list,
 	devctl_ap_state_t	devctl_ap_state;
 
 	if (devctl_ap_getstate(hdl, list, &devctl_ap_state) == -1) {
-		(void) printf("devctl_ap_getstate failed, errno: %d\n", errno);
+		DPRINTF("devctl_ap_getstate failed, errno: %d\n", errno);
 		return (CFGA_SATA_IOCTL);
 	}
 	*rstate = devctl_ap_state.ap_rstate;
@@ -2005,7 +2009,7 @@ do_control_ioctl(const char *ap_id, sata_cfga_apctl_t subcommand, uint_t arg,
 	}
 
 	if ((fd = open(ap_id, O_RDONLY)) == -1) {
-		(void) printf("do_control_ioctl: open failed: errno:%d\n",
+		DPRINTF("do_control_ioctl: open failed: errno:%d\n",
 		    errno);
 		rv = CFGA_SATA_OPEN;
 		if (errno == EBUSY) {
@@ -2040,12 +2044,12 @@ do_control_ioctl(const char *ap_id, sata_cfga_apctl_t subcommand, uint_t arg,
 		*sizep = local_size;
 
 		if (local_size == 0) {
-			(void) printf("zero length data\n");
+			DPRINTF("zero length data\n");
 			rv = CFGA_SATA_ZEROLEN;
 			goto bailout;
 		}
 		if ((*descrp = malloc(*sizep)) == NULL) {
-			(void) printf("do_control_ioctl: malloc failed\n");
+			DPRINTF("do_control_ioctl: malloc failed\n");
 			rv = CFGA_SATA_ALLOC_FAIL;
 			goto bailout;
 		}

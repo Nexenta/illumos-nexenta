@@ -21,6 +21,7 @@
 
 /*
  * Copyright 2005 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -58,7 +59,7 @@ extern "C" {
  * Debug stuff
  */
 #ifdef	DEBUG
-#define	DPRINTF printf
+#define	DPRINTF (void) printf
 #else
 #define	DPRINTF 0 &&
 #endif /* DEBUG */

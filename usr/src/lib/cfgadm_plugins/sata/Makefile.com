@@ -20,6 +20,7 @@
 #
 #
 # Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
 # Use is subject to license terms.
 #
 
@@ -46,6 +47,7 @@ CFLAGS64 +=	$(CCVERBOSE)
 CERRWARN +=	-_gcc=-Wno-parentheses
 CERRWARN +=	-_gcc=-Wno-char-subscripts
 CERRWARN +=	-_gcc=-Wno-uninitialized
+CERRWARN +=	-_gcc=-Wno-unused-value
 
 LDLIBS +=	-lc -ldevice -ldevinfo -lrcm -lnvpair
 
