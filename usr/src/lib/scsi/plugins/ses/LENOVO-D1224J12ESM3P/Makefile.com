@@ -10,13 +10,16 @@
 #
 
 #
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
 #
 
 MODULE =	LENOVO-D1224J12ESM3P
 SRCS =		lenovo.c
 SRCDIR =	../common
 PLUGINTYPE =	vendor
-ALIASES =	LENOVO-D1212J12ESM3P
+ALIASES =			\
+	LENOVO-D1212J12ESM3P	\
+	LENOVO-2U24ENCJ12ESM3P	\
+	SANDISK-SDIFHS02
 
 include ../../Makefile.lib
