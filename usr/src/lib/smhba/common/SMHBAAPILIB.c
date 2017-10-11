@@ -1085,6 +1085,7 @@ HBA_LoadLibrary()
 	/* successfully loaded library */
 	lib_infop->status = HBA_LIBRARY_LOADED;
 	}
+	fclose(hbaconf);
 #endif /* WIN32 or UNIX */
 #ifdef POSIX_THREADS
 	/*
