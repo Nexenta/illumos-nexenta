@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -77,7 +77,7 @@ int
 krrp_stream_te_read_create(krrp_stream_te_t **result_te,
     const char *dataset, krrp_stream_read_flag_t flags,
     krrp_check_enough_mem *mem_check_cb, void *mem_check_cb_arg,
-    krrp_error_t *error)
+    const char *skip_snaps_mask, krrp_error_t *error)
 {
 	int rc;
 	krrp_stream_te_t *task_engine;
@@ -90,6 +90,42 @@ krrp_stream_te_read_create(krrp_stream_te_t **result_te,
 		return (-1);
 
 	task_engine = *result_te;
+
+	if (skip_snaps_mask != NULL) {
+		char buf[ZAP_MAXNAMELEN + ZAP_MAXVALUELEN + 1];
+		char *eq_sym;
+
+		if (strlcpy(buf, skip_snaps_mask,
+		    sizeof (buf)) >= sizeof (buf)) {
+			krrp_error_set(error, KRRP_ERRNO_SKIP_SNAPS_MASK, EMSGSIZE);
+			return (-1);
+		}
+
+		eq_sym = strchr(buf, '=');
+		if (eq_sym != NULL) {
+			*eq_sym = '\0';
+			eq_sym++;
+		}
+
+		if (eq_sym == NULL || *eq_sym == '\0') {
+			krrp_error_set(error, KRRP_ERRNO_SKIP_SNAPS_MASK, EINVAL);
+			return (-1);
+		}
+
+		if (strlcpy(task_engine->skip_snaps_prop_name, buf,
+		    sizeof (task_engine->skip_snaps_prop_name)) >=
+		    sizeof (task_engine->skip_snaps_prop_name)) {
+			krrp_error_set(error, KRRP_ERRNO_SKIP_SNAPS_MASK, ENAMETOOLONG);
+			return (-1);
+		}
+
+		if (strlcpy(task_engine->skip_snaps_prop_val, eq_sym,
+		    sizeof (task_engine->skip_snaps_prop_val)) >=
+		    sizeof (task_engine->skip_snaps_prop_val)) {
+			krrp_error_set(error, KRRP_ERRNO_SKIP_SNAPS_MASK, E2BIG);
+			return (-1);
+		}
+	}
 
 	task_engine->recursive =
 	    krrp_stream_is_read_flag_set(flags, KRRP_STRMRF_RECURSIVE);
@@ -394,6 +430,11 @@ krrp_stream_task_constructor(void *opaque_task,
 			task->process = &krrp_stream_task_read_handler;
 			task->start = &krrp_stream_task_read_start;
 			task->shutdown = &krrp_stream_task_common_stop;
+
+			task->zargs.skip_snaps_prop_name =
+			    task_engine->skip_snaps_prop_name;
+			task->zargs.skip_snaps_prop_val =
+			    task_engine->skip_snaps_prop_val;
 
 			task->zargs.mem_check_cb =
 			    task_engine->mem_check_cb;

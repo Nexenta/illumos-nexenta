@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_ERROR_H
@@ -87,6 +87,7 @@ typedef enum {
 	X(RESUMETOKEN)        \
 	X(KEEPSNAPS)          \
 	X(GETSOCKOPTFAIL)     \
+	X(SKIP_SNAPS_MASK)    \
 
 
 #define	KRRP_ERRNO_EXPAND(enum_name) KRRP_ERRNO_##enum_name,

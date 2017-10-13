@@ -422,7 +422,8 @@ int
 krrp_sess_create_read_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
     const char *dataset, const char *common_snap, const char *src_snap,
     uint64_t fake_data_sz, krrp_sess_stream_flags_t krrp_sess_stream_flags,
-    const char *resume_token, uint32_t keep_snaps)
+    const char *resume_token, uint32_t keep_snaps,
+	const char *skip_snaps_mask)
 {
 	nvlist_t *params = NULL;
 	int rc;
@@ -453,6 +454,11 @@ krrp_sess_create_read_stream(libkrrp_handle_t *hdl, uuid_t sess_id,
 	if (krrp_sess_stream_flags & KRRP_STREAM_INCLUDE_ALL_SNAPS) {
 		(void) krrp_param_put(KRRP_PARAM_INCLUDE_ALL_SNAPSHOTS,
 		    params, NULL);
+	}
+
+	if (skip_snaps_mask != NULL) {
+		(void) krrp_param_put(KRRP_PARAM_SKIP_SNAPS_MASK,
+		    params, (void *)skip_snaps_mask);
 	}
 
 	rc = krrp_ioctl_perform(hdl, KRRP_IOCTL_SESS_CREATE_READ_STREAM,

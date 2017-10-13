@@ -55,6 +55,10 @@ typedef struct kreplication_zfs_args {
 	char from_incr_base[ZFS_MAX_DATASET_NAME_LEN];
 	char to_ds[ZFS_MAX_DATASET_NAME_LEN];
 	char to_snap[ZFS_MAX_DATASET_NAME_LEN];
+
+	const char *skip_snaps_prop_name;
+	const char *skip_snaps_prop_val;
+
 	boolean_t force;
 	boolean_t properties;
 	boolean_t recursive;

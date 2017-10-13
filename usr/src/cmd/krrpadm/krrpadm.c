@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -261,7 +261,8 @@ krrp_usage_sess(int rc, krrp_cmd_t *cmd, boolean_t use_return)
 		    "-s <sess_id> -d <src dataset> [-z <src snapshot>] "
 		    "[-c <common snapshot>] [-I] [-r] [-p] [-e] [-k] "
 		    "[-j] [-b] [-f <fake_data_sz>] [-t <resume_token>] "
-		    "[-n <keep snaps>]\n", tool_name);
+		    "[-n <keep snaps>] [-m <user_prop_name>=<val>]\n",
+		    tool_name);
 		break;
 	case KRRP_CMD_SESS_CREATE_WRITE_STREAM:
 		fprintf_msg("Usage: %s sess-create-write-stream "
@@ -855,13 +856,13 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 	uuid_t sess_id;
 	uint64_t fake_data_sz = 0;
 	char *dataset = NULL, *common_snap = NULL, *src_snap = NULL,
-	    *resume_token = NULL;
+	    *resume_token = NULL, *skip_snaps_mask = NULL;
 	krrp_sess_stream_flags_t flags = 0;
 	uint32_t keep_snaps = 0;
 
 	uuid_clear(sess_id);
 
-	while ((c = getopt(argc, argv, "hs:d:c:z:Irpejbkf:t:n:")) != -1) {
+	while ((c = getopt(argc, argv, "hs:d:c:z:Irpejbkf:t:n:m:")) != -1) {
 		switch (c) {
 		case 's':
 			if (krrp_parse_and_check_sess_id(optarg, sess_id) != 0)
@@ -987,6 +988,14 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 			keep_snaps = i;
 			break;
+		case 'm':
+			if (skip_snaps_mask != NULL) {
+				krrp_print_err_already_defined("m");
+				exit(1);
+			}
+
+			skip_snaps_mask = optarg;
+			break;
 		case '?':
 			krrp_print_err_unknown_param(argv[optind - 1]);
 			cmd->usage_func(1, cmd, B_FALSE);
@@ -1012,7 +1021,7 @@ krrp_do_sess_create_read_stream(int argc, char **argv, krrp_cmd_t *cmd)
 
 	rc = krrp_sess_create_read_stream(libkrrp_hdl, sess_id,
 	    dataset, common_snap, src_snap, fake_data_sz, flags,
-	    resume_token, keep_snaps);
+	    resume_token, keep_snaps, skip_snaps_mask);
 	if (rc != 0) {
 		fprintf_err("Failed to create read-stream\n");
 		krrp_print_libkrrp_error();

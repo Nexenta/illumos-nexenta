@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_KRRP_PARAMS_H_
@@ -74,6 +74,7 @@ extern "C" {
 	X(IGNORE_PROPS_LIST, NVLIST) \
 	X(REPLACE_PROPS_LIST, NVLIST) \
 	X(RESUME_TOKEN, STRING) \
+	X(SKIP_SNAPS_MASK, STRING) \
 \
 	X(ONLY_ONCE, BOOLEAN) \
 	X(GRACEFUL_SHUTDOWN, BOOLEAN) \
@@ -101,7 +102,7 @@ typedef enum {
 	KRRP_PARAM_LAST /* To exclude lint-errors */
 } krrp_param_t;
 
-typedef struct krrp_param_array_s {
+typedef struct krrp_param_nvlist_array_s {
 	nvlist_t	**array;
 	uint_t		nelem;
 } krrp_param_array_t;

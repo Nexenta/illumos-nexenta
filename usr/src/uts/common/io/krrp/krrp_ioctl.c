@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/sdt.h>
@@ -555,7 +555,8 @@ krrp_ioctl_sess_create_read_stream(krrp_stream_t **result_stream,
 {
 	int rc;
 	const char *dataset = NULL, *base_snap_name = NULL,
-	    *common_snap_name = NULL, *resume_token = NULL;
+	    *common_snap_name = NULL, *resume_token = NULL,
+	    *skip_snaps_mask = NULL;
 	uint32_t keep_snaps;
 	krrp_stream_read_flag_t flags;
 
@@ -574,6 +575,9 @@ krrp_ioctl_sess_create_read_stream(krrp_stream_t **result_stream,
 	(void) krrp_param_get(KRRP_PARAM_SRC_SNAPSHOT,
 	    params, (void *) &base_snap_name);
 
+	(void) krrp_param_get(KRRP_PARAM_SKIP_SNAPS_MASK,
+	    params, (void *) &skip_snaps_mask);
+
 	rc = krrp_param_get(KRRP_PARAM_STREAM_KEEP_SNAPS,
 	    params, (void *) &keep_snaps);
 	if (rc != 0) {
@@ -586,8 +590,10 @@ krrp_ioctl_sess_create_read_stream(krrp_stream_t **result_stream,
 	}
 
 	flags = krrp_fill_read_stream_flags(params);
+
 	return (krrp_stream_read_create(result_stream, keep_snaps, dataset,
-	    base_snap_name, common_snap_name, resume_token, flags, error));
+	    base_snap_name, common_snap_name, resume_token, flags,
+	    skip_snaps_mask, error));
 }
 
 static int

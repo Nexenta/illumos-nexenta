@@ -89,7 +89,8 @@ int
 krrp_stream_read_create(krrp_stream_t **result_stream,
     size_t keep_snaps, const char *dataset, const char *base_snap_name,
     const char *incr_snap_name, const char *resume_token,
-    krrp_stream_read_flag_t flags, krrp_error_t *error)
+    krrp_stream_read_flag_t flags, const char *skip_snaps_mask,
+    krrp_error_t *error)
 {
 	krrp_stream_t *stream;
 	int rc;
@@ -154,7 +155,7 @@ krrp_stream_read_create(krrp_stream_t **result_stream,
 
 	rc = krrp_stream_te_read_create(&stream->task_engine,
 	    stream->dataset, flags, &krrp_stream_check_mem,
-	    stream, error);
+	    stream, skip_snaps_mask, error);
 	if (rc != 0)
 		goto err;
 

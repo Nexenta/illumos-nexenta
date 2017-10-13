@@ -167,6 +167,15 @@ typedef enum {
 #define	LIBKRRP_EMSG_RESUMETOKEN_ENODATA \
 	    "Resume token is corrupt (nvlist_unpack failed)"
 
+#define	LIBKRRP_EMSG_SKIP_SNAPS_MASK_EINVAL \
+	    "Skip snapshots mask is invalid"
+#define	LIBKRRP_EMSG_SKIP_SNAPS_MASK_EMSGSIZE \
+	    "Skip snapshots mask is too long"
+#define	LIBKRRP_EMSG_SKIP_SNAPS_MASK_ENAMETOOLONG \
+	    "Skip snapshots mask (property name) is too long"
+#define	LIBKRRP_EMSG_SKIP_SNAPS_MASK_E2BIG \
+	    "Skip snapshots mask (property value) is too long"
+
 #define	LIBKRRP_EMSG_RUN_ONCE_RECV "Impossible to use the option 'run-once' " \
 	    "at the receiver side"
 #define	LIBKRRP_EMSG_STREAM_POOL_FAULT "Failed to read configuration of " \

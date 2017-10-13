@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_STREAM_TASK_H
@@ -35,6 +35,16 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/*
+ * A skip mask is a string that looks like
+ *		prop_name=prop_value
+ *
+ * max len of prop_name is ZAP_MAXNAMELEN
+ * max len of prop_value is ZAP_MAXVALUELEN
+ * and 1 byte to store '='
+ */
+#define	KRRP_SKIP_SNAP_MASK_LEN ZAP_MAXNAMELEN + ZAP_MAXVALUELEN + 1
 
 #define	KRRP_DBLK_TAIL_SIZE	sizeof (kreplication_buffer_t)
 
@@ -71,6 +81,9 @@ typedef struct krrp_stream_te_s {
 	void					*global_zfs_ctx;
 
 	const char				*dataset;
+
+	char					skip_snaps_prop_name[ZAP_MAXNAMELEN];
+	char					skip_snaps_prop_val[ZAP_MAXVALUELEN];
 
 	boolean_t				fake_mode;
 	boolean_t				discard_head;
@@ -124,7 +137,7 @@ struct krrp_stream_task_s {
 int krrp_stream_te_read_create(krrp_stream_te_t **result_te,
     const char *dataset, krrp_stream_read_flag_t flags,
     krrp_check_enough_mem *mem_check_cb, void *mem_check_cb_arg,
-    krrp_error_t *error);
+	const char *skip_snaps_mask, krrp_error_t *error);
 int krrp_stream_te_write_create(krrp_stream_te_t **result_te,
     const char *dataset, krrp_stream_write_flag_t flags,
     nvlist_t *ignore_props_list, nvlist_t *replace_props_list,

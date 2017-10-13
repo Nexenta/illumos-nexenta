@@ -481,12 +481,48 @@ zfs_construct_snap_node(dsl_dataset_t *snap_ds, char *full_snap_name)
 }
 
 /*
+ * This function is used to make decision about include
+ * the given snap_ds into stream or not.
+ *
+ * Returns B_TRUE if the given snapshot has the given
+ * prop_name and its value is not equal to the given prop_val,
+ * otherwise returns B_FALSE
+ */
+static boolean_t
+zfs_skip_check(dsl_dataset_t *snap_ds,
+    const char *prop_name, const char *prop_val)
+{
+	uint64_t zapobj;
+	objset_t *mos;
+	char val[ZAP_MAXVALUELEN];
+	uint64_t cnt = 0, el = 0;
+
+	if (prop_name == NULL || prop_val == NULL)
+		return (B_FALSE);
+
+	mos = snap_ds->ds_dir->dd_pool->dp_meta_objset;
+	zapobj = dsl_dataset_phys(snap_ds)->ds_props_obj;
+
+	if (zap_length(mos, zapobj, prop_name, &el, &cnt) == 0) {
+		if (zap_lookup(mos, zapobj, prop_name,
+			STRING_PROP_EL_SIZE, cnt, val) != 0)
+			return (B_FALSE);
+
+		if (strcmp(prop_val, val) != 0)
+			return (B_TRUE);
+	}
+
+	return (B_FALSE);
+}
+
+/*
  * Collects all snapshots (txg_first < Creation TXG < txg_last)
  * for the given FS and adds them to the resulting AVL-tree
  */
 static int
-zfs_collect_interim_snaps(zfs_ds_node_t *fs_el,
-    uint64_t txg_first, uint64_t txg_last, void *owner)
+zfs_collect_interim_snaps(dmu_krrp_task_t *krrp_task,
+    zfs_ds_node_t *fs_el, uint64_t txg_first,
+    uint64_t txg_last)
 {
 	int err;
 	uint64_t ds_creation_txg;
@@ -536,7 +572,7 @@ zfs_collect_interim_snaps(zfs_ds_node_t *fs_el,
 		if (autosnap_check_name(snap_name))
 			continue;
 
-		err = dsl_dataset_hold(dp, full_snap_name, owner, &snap_ds);
+		err = dsl_dataset_hold(dp, full_snap_name, krrp_task, &snap_ds);
 		if (err != 0) {
 			ASSERT(err != ENOENT);
 			break;
@@ -552,14 +588,20 @@ zfs_collect_interim_snaps(zfs_ds_node_t *fs_el,
 		 */
 		if (ds_creation_txg <= txg_first ||
 		    ds_creation_txg >= txg_last) {
-			dsl_dataset_rele(snap_ds, owner);
+			dsl_dataset_rele(snap_ds, krrp_task);
+			continue;
+		}
+
+		if (zfs_skip_check(snap_ds,
+		    krrp_task->buffer_args.skip_snaps_prop_name,
+		    krrp_task->buffer_args.skip_snaps_prop_val)) {
+			dsl_dataset_rele(snap_ds, krrp_task);
 			continue;
 		}
 
 		snap_el = zfs_construct_snap_node(snap_ds,
 		    full_snap_name);
-		dsl_dataset_long_hold(snap_ds, owner);
-
+		dsl_dataset_long_hold(snap_ds, krrp_task);
 		avl_add(snapshots, snap_el);
 	}
 
@@ -575,9 +617,9 @@ zfs_collect_interim_snaps(zfs_ds_node_t *fs_el,
  * Collects interim snapshots if incl_interim_snaps == B_TRUE
  */
 static int
-zfs_collect_snaps(zfs_ds_node_t *fs_el,
-    char *from_snap, char *to_snap, boolean_t incl_interim_snaps,
-    void *owner)
+zfs_collect_snaps(dmu_krrp_task_t *krrp_task,
+    zfs_ds_node_t *fs_el, char *from_snap,
+    char *to_snap, boolean_t incl_interim_snaps)
 {
 	int err = 0;
 	dsl_dataset_t *snap_ds = NULL;
@@ -608,7 +650,7 @@ zfs_collect_snaps(zfs_ds_node_t *fs_el,
 	    "%s@%s", fs_el->name, to_snap);
 	snap_name = strchr(full_snap_name, '@') + 1;
 
-	err = dsl_dataset_hold(dp, full_snap_name, owner, &snap_ds);
+	err = dsl_dataset_hold(dp, full_snap_name, krrp_task, &snap_ds);
 	if (err != 0) {
 		dsl_pool_config_exit(dp, FTAG);
 
@@ -625,7 +667,7 @@ zfs_collect_snaps(zfs_ds_node_t *fs_el,
 	to_snap_el = zfs_construct_snap_node(snap_ds,
 	    full_snap_name);
 	txg_last = dsl_dataset_phys(snap_ds)->ds_creation_txg;
-	dsl_dataset_long_hold(to_snap_el->ds, owner);
+	dsl_dataset_long_hold(to_snap_el->ds, krrp_task);
 	avl_add(&fs_el->snapshots, to_snap_el);
 
 	/* check left boundary */
@@ -634,14 +676,14 @@ zfs_collect_snaps(zfs_ds_node_t *fs_el,
 		snap_name[0] = '\0';
 		(void) strcat(full_snap_name, from_snap);
 		err = dsl_dataset_hold(dp, full_snap_name,
-		    owner, &snap_ds);
+		    krrp_task, &snap_ds);
 
 		if (err == 0) {
 			txg_first =
 			    dsl_dataset_phys(snap_ds)->ds_creation_txg;
 			from_snap_el =
 			    zfs_construct_snap_node(snap_ds, full_snap_name);
-			dsl_dataset_long_hold(from_snap_el->ds, owner);
+			dsl_dataset_long_hold(from_snap_el->ds, krrp_task);
 			avl_add(&fs_el->snapshots, from_snap_el);
 			no_from_snap = B_FALSE;
 		} else {
@@ -673,11 +715,23 @@ zfs_collect_snaps(zfs_ds_node_t *fs_el,
 			return (err);
 		}
 
-		from_snap_el = zfs_construct_snap_node(snap_ds,
-		    fs_el->origin_name);
-		from_snap_el->origin = B_TRUE;
-		dsl_dataset_long_hold(from_snap_el->ds, fs_el);
-		avl_add(&fs_el->snapshots, from_snap_el);
+		/*
+		 * Need to be sure that origin's name doesn't
+		 * match the skip_mask. If origin was not/will
+		 * not be replicated to the destination, then
+		 * its clone will be replicated as a regular DS.
+		 */
+		if (zfs_skip_check(snap_ds,
+		    krrp_task->buffer_args.skip_snaps_prop_name,
+		    krrp_task->buffer_args.skip_snaps_prop_val)) {
+			dsl_dataset_rele(snap_ds, fs_el);
+		} else {
+			dsl_dataset_long_hold(snap_ds, fs_el);
+			from_snap_el = zfs_construct_snap_node(snap_ds,
+			    fs_el->origin_name);
+			from_snap_el->origin = B_TRUE;
+			avl_add(&fs_el->snapshots, from_snap_el);
+		}
 	}
 
 	dsl_pool_config_exit(dp, FTAG);
@@ -697,8 +751,8 @@ zfs_collect_snaps(zfs_ds_node_t *fs_el,
 	if (!incl_interim_snaps)
 		return (0);
 
-	err = zfs_collect_interim_snaps(fs_el,
-	    txg_first, txg_last, owner);
+	err = zfs_collect_interim_snaps(krrp_task, fs_el,
+	    txg_first, txg_last);
 
 	return (err);
 }
@@ -878,7 +932,7 @@ zfs_construct_ds_node(dsl_pool_t *dp, uint64_t ds_object,
  * Clones also are placed into the given AVL.
  */
 static int
-zfs_collect_children(void *owner, dsl_pool_t *dp,
+zfs_collect_children(dmu_krrp_task_t *krrp_task, dsl_pool_t *dp,
     zfs_ds_node_t *parent_node, list_t *ds_list, avl_tree_t *clones)
 {
 	zap_cursor_t zc;
@@ -904,7 +958,7 @@ zfs_collect_children(void *owner, dsl_pool_t *dp,
 
 		err = zfs_construct_ds_node(dp,
 		    dsl_dir_phys(dd)->dd_head_dataset_obj,
-		    owner, &node);
+		    krrp_task, &node);
 		dsl_dir_rele(dd, FTAG);
 		if (err != 0) {
 			break;
@@ -930,9 +984,7 @@ zfs_collect_children(void *owner, dsl_pool_t *dp,
  * in case of existing cloned datasets.
  */
 static int
-zfs_collect_ds(spa_t *spa, char *from_ds, char *from_snap, char *to_snap,
-    boolean_t incl_interim_snaps, boolean_t recursive,
-    list_t *ds_list, void *owner)
+zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 {
 	int err = 0;
 	dsl_pool_t *dp;
@@ -941,6 +993,12 @@ zfs_collect_ds(spa_t *spa, char *from_ds, char *from_snap, char *to_snap,
 	zfs_ds_node_t *clone_node, *node, *parent_node;
 	void *cookie = NULL;
 	avl_tree_t clones;
+
+	char *from_ds = krrp_task->buffer_args.from_ds;
+	char *from_snap = krrp_task->buffer_args.from_incr_base;
+	char *to_snap = krrp_task->buffer_args.from_snap;
+	boolean_t incl_interim_snaps = krrp_task->buffer_args.do_all;
+	boolean_t recursive = krrp_task->buffer_args.recursive;
 
 	dp = spa_get_dsl(spa);
 
@@ -957,7 +1015,7 @@ zfs_collect_ds(spa_t *spa, char *from_ds, char *from_snap, char *to_snap,
 
 	node = NULL;
 	err = zfs_construct_ds_node(dp, root_ds_object,
-	    owner, &node);
+	    krrp_task, &node);
 	if (err != 0) {
 		dsl_pool_config_exit(dp, FTAG);
 		return (err);
@@ -977,7 +1035,7 @@ zfs_collect_ds(spa_t *spa, char *from_ds, char *from_snap, char *to_snap,
 		 *
 		 */
 		while (node != NULL) {
-			err = zfs_collect_children(owner,
+			err = zfs_collect_children(krrp_task,
 			    dp, node, ds_list, &clones);
 			if (err != 0)
 				break;
@@ -1045,8 +1103,8 @@ zfs_collect_ds(spa_t *spa, char *from_ds, char *from_snap, char *to_snap,
 
 	node = list_head(ds_list);
 	while (err == 0 && node != NULL) {
-		err = zfs_collect_snaps(node, from_snap,
-		    to_snap, incl_interim_snaps, owner);
+		err = zfs_collect_snaps(krrp_task, node,
+		    from_snap, to_snap, incl_interim_snaps);
 		node = list_next(ds_list, node);
 	}
 
@@ -1515,7 +1573,7 @@ zfs_send_ds(dmu_krrp_task_t *krrp_task, list_t *ds_to_send)
 }
 
 static void
-zfs_cleanup_send_list(list_t *ds_list, void *owner)
+zfs_cleanup_send_list(dmu_krrp_task_t *krrp_task, list_t *ds_list)
 {
 	zfs_ds_node_t *fs_el;
 
@@ -1530,15 +1588,15 @@ zfs_cleanup_send_list(list_t *ds_list, void *owner)
 				dsl_dataset_long_rele(snap_el->ds, fs_el);
 				dsl_dataset_rele(snap_el->ds, fs_el);
 			} else {
-				dsl_dataset_long_rele(snap_el->ds, owner);
-				dsl_dataset_rele(snap_el->ds, owner);
+				dsl_dataset_long_rele(snap_el->ds, krrp_task);
+				dsl_dataset_rele(snap_el->ds, krrp_task);
 			}
 
 			kmem_free(snap_el, sizeof (zfs_snap_avl_node_t));
 		}
 
-		dsl_dataset_long_rele(fs_el->ds, owner);
-		dsl_dataset_rele(fs_el->ds, owner);
+		dsl_dataset_long_rele(fs_el->ds, krrp_task);
+		dsl_dataset_rele(fs_el->ds, krrp_task);
 
 		kmem_free(fs_el, sizeof (zfs_ds_node_t));
 	}
@@ -1610,10 +1668,7 @@ zfs_send_thread(void *krrp_task_void)
 	if (err != 0)
 		goto final;
 
-	err = zfs_collect_ds(spa, buffer_args->from_ds,
-	    buffer_args->from_incr_base, buffer_args->from_snap,
-	    buffer_args->do_all, buffer_args->recursive,
-	    &ds_to_send, krrp_task);
+	err = zfs_collect_ds(krrp_task, spa, &ds_to_send);
 
 	autosnap_unlock(spa);
 
@@ -1634,7 +1689,7 @@ zfs_send_thread(void *krrp_task_void)
 
 final:
 
-	zfs_cleanup_send_list(&ds_to_send, krrp_task);
+	zfs_cleanup_send_list(krrp_task, &ds_to_send);
 
 	list_destroy(&ds_to_send);
 
