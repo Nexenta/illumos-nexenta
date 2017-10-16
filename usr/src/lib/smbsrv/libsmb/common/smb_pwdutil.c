@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <syslog.h>
@@ -278,7 +278,7 @@ smb_pwd_getpwnam(const char *name, smb_passwd_t *smbpw)
 	pwbuf.pw_pwd = smbpw;
 
 	while (smb_pwd_fgetent(fp, &pwbuf, SMB_PWD_GETF_ALL) != NULL) {
-		if (strcmp(name, smbpw->pw_name) == 0) {
+		if (strcasecmp(name, smbpw->pw_name) == 0) {
 			found = B_TRUE;
 			break;
 		}
