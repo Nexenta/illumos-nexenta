@@ -1623,10 +1623,10 @@ autosnap_invalidate_list(dsl_pool_t *dp, nvlist_t *snapshots)
 		prev = pair;
 		pair = nvlist_next_nvpair(snapshots, pair);
 
-		if (strlen(nvp_name) >= ZFS_MAX_DATASET_NAME_LEN || atp == NULL)
+		if (atp == NULL || (atp - nvp_name) >= sizeof (dsname))
 			continue;
 
-		(void) strncpy(dsname, nvp_name, atp - nvp_name + 1);
+		(void) strlcpy(dsname, nvp_name, atp - nvp_name + 1);
 		rc = dsl_dataset_hold(dp, dsname, FTAG, &ds);
 		if (rc == 0)
 			dsl_dataset_rele(ds, FTAG);
