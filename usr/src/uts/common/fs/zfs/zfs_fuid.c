@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/zfs_context.h>
@@ -687,6 +688,51 @@ zfs_fuid_info_free(zfs_fuid_info_t *fuidp)
 	}
 
 	kmem_free(fuidp, sizeof (zfs_fuid_info_t));
+}
+
+/*
+ * Check to see if user ID is in the list of SIDs in CR.
+ *
+ * Will use a straight FUID compare when possible.
+ */
+boolean_t
+zfs_user_in_cred(zfsvfs_t *zfsvfs, uint64_t id, cred_t *cr)
+{
+	ksid_t		*ksid = crgetsid(cr, KSID_USER);
+	ksidlist_t	*ksidlist = crgetsidlist(cr);
+
+	if (ksid && ksidlist) {
+		int 		i;
+		ksid_t		*ksid_vec;
+		uint32_t	idx = FUID_INDEX(id);
+		uint32_t	rid = FUID_RID(id);
+
+		ksid_vec = ksidlist->ksl_sids;
+
+		for (i = 0; i != ksidlist->ksl_nsid; i++) {
+			if (idx == 0) {
+				if (id != IDMAP_WK_CREATOR_OWNER_UID &&
+				    id == ksid_vec[i].ks_id) {
+					return (B_TRUE);
+				}
+			} else {
+				const char *domain;
+
+				domain = zfs_fuid_find_by_idx(zfsvfs, idx);
+				ASSERT(domain != NULL);
+
+				if (strcmp(domain,
+				    IDMAP_WK_CREATOR_SID_AUTHORITY) == 0)
+					return (B_FALSE);
+
+				if ((strcmp(domain,
+				    ksid_vec[i].ks_domain->kd_name) == 0) &&
+				    rid == ksid_vec[i].ks_rid)
+					return (B_TRUE);
+			}
+		}
+	}
+	return (B_FALSE);
 }
 
 /*
