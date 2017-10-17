@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SYS_FS_ZFS_FUID_H
@@ -111,6 +113,7 @@ extern void zfs_fuid_map_ids(struct znode *zp, cred_t *cr,
     uid_t *uid, uid_t *gid);
 extern zfs_fuid_info_t *zfs_fuid_info_alloc(void);
 extern void zfs_fuid_info_free(zfs_fuid_info_t *);
+extern boolean_t zfs_user_in_cred(zfsvfs_t *, uint64_t, cred_t *);
 extern boolean_t zfs_groupmember(zfsvfs_t *, uint64_t, cred_t *);
 void zfs_fuid_sync(zfsvfs_t *, dmu_tx_t *);
 extern int zfs_fuid_find_by_domain(zfsvfs_t *, const char *domain,
