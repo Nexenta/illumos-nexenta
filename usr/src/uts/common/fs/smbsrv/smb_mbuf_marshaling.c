@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -918,6 +918,23 @@ smb_mbc_put_mem(mbuf_chain_t *mbc, void *vmem, int mem_len)
 	}
 
 	return (0);
+}
+
+/*
+ * Put padding sufficient to align to A, where
+ * A is some power of 2 greater than zero.
+ */
+int
+smb_mbc_put_align(mbuf_chain_t *mbc, int align)
+{
+	int mask = align - 1;
+	int padsz;
+
+	ASSERT(align > 0 && (align & mask) == 0);
+	if ((mbc->chain_offset & mask) == 0)
+		return (0);
+	padsz = align - (mbc->chain_offset & mask);
+	return (smb_mbc_encodef(mbc, "#.", padsz));
 }
 
 /*

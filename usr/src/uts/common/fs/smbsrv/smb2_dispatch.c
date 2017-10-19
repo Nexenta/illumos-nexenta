@@ -935,11 +935,9 @@ cmd_done:
 	 * Pad the reply to align(8) if there will be another.
 	 * (We don't compound async replies.)
 	 */
-	if (!sr->smb2_async && sr->smb2_next_command != 0 &&
-	    (sr->reply.chain_offset & 7) != 0) {
-		int padsz = 8 - (sr->reply.chain_offset & 7);
-		(void) smb_mbc_encodef(&sr->reply, "#.", padsz);
-	}
+	if (!sr->smb2_async && sr->smb2_next_command != 0)
+		(void) smb_mbc_put_align(&sr->reply, 8);
+
 
 	/*
 	 * Record some statistics.  Uses:
@@ -1199,11 +1197,8 @@ cmd_start:
 	 * Pad the reply to align(8) if there will be another.
 	 * This (interim) reply uses compounding.
 	 */
-	if (sr->smb2_next_command != 0 &&
-	    (sr->reply.chain_offset & 7) != 0) {
-		int padsz = 8 - (sr->reply.chain_offset & 7);
-		(void) smb_mbc_encodef(&sr->reply, "#.", padsz);
-	}
+	if (sr->smb2_next_command != 0)
+		(void) smb_mbc_put_align(&sr->reply, 8);
 
 	/*
 	 * Record some statistics.  Uses:

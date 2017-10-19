@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -342,8 +342,7 @@ fop_access(
 static int
 fake_lookup_xattrdir(
 	vnode_t *dvp,
-	vnode_t **vpp,
-	int flags)
+	vnode_t **vpp)
 {
 	int len, fd;
 	int omode = O_RDWR | O_NOFOLLOW;
@@ -369,9 +368,6 @@ fake_lookup_xattrdir(
 		return (0);
 	}
 	mutex_exit(&dvp->v_lock);
-
-	if ((flags & CREATE_XATTR_DIR) == 0)
-		return (ENOENT);
 
 	omode = O_RDONLY|O_XATTR;
 	fd = openat(dvp->v_fd, ".", omode);
@@ -429,7 +425,7 @@ fop_lookup(
 	struct stat st;
 
 	if (flags & LOOKUP_XATTR)
-		return (fake_lookup_xattrdir(dvp, vpp, flags));
+		return (fake_lookup_xattrdir(dvp, vpp));
 
 	/*
 	 * If lookup is for "", just return dvp.

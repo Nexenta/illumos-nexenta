@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -1048,11 +1048,16 @@ smb_odir_next_odirent(smb_odir_t *od, smb_odirent_t *odirent)
 	dirent64_t	*dp;
 	edirent_t	*edp;
 	char		*np;
-	uint32_t	abe_flag = 0;
+	uint32_t	rddir_flags = 0;
 
 	ASSERT(MUTEX_HELD(&od->d_mutex));
 
 	bzero(odirent, sizeof (smb_odirent_t));
+
+	if (od->d_flags & SMB_ODIR_FLAG_ABE)
+		rddir_flags |= SMB_ABE;
+	if (od->d_flags & SMB_ODIR_FLAG_EDIRENT)
+		rddir_flags |= SMB_EDIRENT;
 
 	if (od->d_bufptr != NULL) {
 		if (od->d_flags & SMB_ODIR_FLAG_EDIRENT)
@@ -1075,11 +1080,8 @@ smb_odir_next_odirent(smb_odir_t *od, smb_odirent_t *odirent)
 
 		od->d_bufsize = sizeof (od->d_buf);
 
-		if (od->d_flags & SMB_ODIR_FLAG_ABE)
-			abe_flag = SMB_ABE;
-
 		rc = smb_vop_readdir(od->d_dnode->vp, od->d_offset,
-		    od->d_buf, &od->d_bufsize, &eof, abe_flag, od->d_cred);
+		    od->d_buf, &od->d_bufsize, &eof, rddir_flags, od->d_cred);
 
 		if ((rc == 0) && (od->d_bufsize == 0))
 			rc = ENOENT;

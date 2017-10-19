@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -1001,7 +1001,8 @@ smb_vop_readdir(vnode_t *vp, uint32_t offset,
 	if (vp->v_type != VDIR)
 		return (ENOTDIR);
 
-	if (vfs_has_feature(vp->v_vfsp, VFSFT_DIRENTFLAGS)) {
+	if ((rddir_flag & SMB_EDIRENT) != 0 &&
+	    vfs_has_feature(vp->v_vfsp, VFSFT_DIRENTFLAGS)) {
 		flags |= V_RDDIR_ENTFLAGS;
 		rdirent_size = sizeof (edirent_t);
 	} else {
