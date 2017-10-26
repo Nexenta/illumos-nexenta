@@ -25,7 +25,9 @@
 
 /*
  * Override bay number if the invalid bit is set for the AES descriptor
- * Same approach used for Lenovo and Sun Loki
+ * Same approach used for Lenovo and Sun Loki, with a minor change
+ * to add 1 to the bay number to address the requirement for the bay numbering
+ * on the Ericsson SRU-0101 to start with 1 rather than 0.
  */
 static int
 ercsn_0101_fix_bay(ses_plugin_t *sp, ses_node_t *np)
@@ -58,14 +60,16 @@ ercsn_0101_fix_bay(ses_plugin_t *sp, ses_node_t *np)
 	 * This nested macro can return -1 on error
 	 */
 	SES_NV_ADD(uint64, nverr, props, SES_PROP_BAY_NUMBER,
-	    s0ep->sadsi_bay_number);
+	    s0ep->sadsi_bay_number + 1);
 
 	return (0);
 }
 
 /*
  * FC protocol specific parsing for the given (fp) AES element descriptor.
- * Copy-pasted elem_parse_aes_fc() from ses2_elements.c
+ * Copy-pasted elem_parse_aes_fc() from ses2_elements.c with a minor change
+ * to add 1 to the bay number to address the requirement for the bay numbering
+ * on the Ericsson SRU-0101 to start with 1 rather than 0.
  */
 static int
 ercsn_0101_elem_parse_aes_fc(const ses2_aes_descr_fc_eip_impl_t *fp,
@@ -80,7 +84,7 @@ ercsn_0101_elem_parse_aes_fc(const ses2_aes_descr_fc_eip_impl_t *fp,
 		return (0);
 
 	SES_NV_ADD(uint64, nverr, nvl, SES_PROP_BAY_NUMBER,
-	    fp->sadfi_bay_number);
+	    fp->sadfi_bay_number + 1);
 	SES_NV_ADD(uint64, nverr, nvl, SES_FC_PROP_NODE_NAME,
 	    SCSI_READ64(&fp->sadfi_node_name));
 
@@ -131,7 +135,9 @@ fail:
 
 /*
  * Parse AES descriptor for the given element (dep).
- * Copy-pasted elem_parse_aes_device() from ses2_elements.c
+ * Copy-pasted elem_parse_aes_device() from ses2_elements.c with a minor change
+ * to add 1 to the bay number to address the requirement for the bay numbering
+ * on the Ericsson SRU-0101 to start with 1 rather than 0.
  */
 static int
 ercsn_0101_elem_parse_aes_device(const ses2_aes_descr_eip_impl_t *dep, nvlist_t *nvl,
@@ -181,7 +187,7 @@ ercsn_0101_elem_parse_aes_device(const ses2_aes_descr_eip_impl_t *dep, nvlist_t 
 	    s0p->sadsi_not_all_phys);
 	if (s0ep != NULL) {
 		SES_NV_ADD(uint64, nverr, nvl, SES_PROP_BAY_NUMBER,
-		    s0ep->sadsi_bay_number);
+		    s0ep->sadsi_bay_number + 1);
 		nphy = MIN(s0ep->sadsi_n_phy_descriptors,
 		    (len - offsetof(ses2_aes_descr_sas0_eip_impl_t,
 		    sadsi_phys)) / sizeof (ses2_aes_phy0_descr_impl_t));
@@ -257,7 +263,7 @@ fail:
 }
 
 /*
- * Ericcson KDU-137-976-1 specific ses node parsing is needed to correct
+ * Ericcson SRU-0101 specific ses node parsing is needed to correct
  * libses assumptions about index numbering.
  */
 static int
