@@ -23,6 +23,7 @@
 #
 # Copyright (c) 2007, 2011, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2015, OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
 #
 
 #
@@ -38,29 +39,18 @@ export PKG_IMAGE
 
 f_a_obs=$(gettext "-a publisher=uri option is obsolete, use -P instead.")
 f_pkg5_missing=$(gettext "pkg(5) does not seem to be present on this system.\n")
-f_no_pref_publisher=$(gettext "Unable to get global zone preferred publisher information, and none was supplied.\nYou must specify one using the -P option.")
-f_key_file=$(gettext "Key file not allowed without -P")
-f_cert_file=$(gettext "Cert file not allowed without -P")
 f_img=$(gettext "failed to create image\n")
 f_pkg=$(gettext "failed to install package\n")
 f_interrupted=$(gettext "Installation cancelled due to interrupt.\n")
 f_bad_publisher=$(gettext "Syntax error in publisher information.")
 f_no_entire_in_pref=$(gettext "Unable to locate the incorporation '%s' in the preferred publisher '%s'.\nUse -P to supply a publisher which contains this package.\n")
-f_key_prop=$(gettext "Unable to propagate key %s to %s")
-f_cert_prop=$(gettext "Unable to propagate cert %s to %s")
-f_get_secinfo=$(gettext "Failed to get key/cert information for publisher %s")
-f_nosuch_key=$(gettext "Failed to find key %s")
-f_nosuch_cert=$(gettext "Failed to find cert %s")
 
 m_publisher=$(gettext   "   Publisher: Using %s (%s).")
 m_cache=$(gettext       "       Cache: Using %s.")
 m_image=$(gettext       "       Image: Preparing at %s.")
-m_incorp=$(gettext      "Sanity Check: Looking for 'entire' incorporation.\n")
-m_key_prop=$(gettext    " Credentials: Propagating %s\n")
-m_cert_prop=$(gettext   " Credentials: Propagating %s\n")
-m_core=$(gettext	"  Installing: Packages (output follows)\n")
+m_incorp=$(gettext      "Sanity Check: Looking for 'entire' incorporation.")
+m_core=$(gettext	"  Installing: Packages (output follows)")
 m_smf=$(gettext		" Postinstall: Copying SMF seed repository ...")
-m_more_brokenness=$(gettext " Postinstall: Applying workarounds.")
 m_mannote=$(gettext     "        Note: Man pages can be obtained by installing pkg:/system/manual")
 
 m_usage=$(gettext "\n        install [-h]\n        install [-c certificate_file] [-k key_file] [-P publisher=uri]\n                [-e extrapkg [...]]\n        install {-a archive|-d path} {-p|-u} [-s|-v]")
@@ -79,7 +69,6 @@ extra_packages=""
 ZONENAME=""
 ZONEPATH=""
 pub_and_origins=""
-pub_and_mirrors=""
 
 # Setup i18n output
 TEXTDOMAIN="SUNW_OST_OSCMD"
@@ -175,128 +164,47 @@ if [[ -z $install_archive && -z $source_dir ]]; then
 fi
 
 #
-# If the user didn't give us a publisher, and there's a preferred publisher set
-# for the system, set that as the default.
-#
-propagate_secinfo=
-propagate_extra=
-if [[ -z $pub_and_origins ]]; then
-	if [[ $keyfile != "None" ]]; then
-		fail_usage "$f_key_file"
-	fi
-	if [[ $certfile != "None" ]]; then
-		fail_usage "$f_cert_file"
-	fi
-
-	# Look for a preferred online origin.
-	# tpub_and_origins=$(get_publisher_urls preferred origin)
-
-	# XXX there is no concept of preferred publisher in newer pkg5
-	tpub_and_origins=$(get_publisher_urls all origin|head -1)
-
-	[[ $? -eq 0 && -n $tpub_and_origins ]] && \
-	    pub_and_origins="$tpub_and_origins"
-
-	# Get preferred mirror information as well if the above succeeded.
-	if [[ -n "$tpub_and_origins" ]]; then
-		# tpub_and_mirrors=$(get_publisher_urls preferred mirror)
-		# XXX there is no concept of preferred publisher in newer pkg5
-		echo $tpub_and_mirrors|IFS="=" read preferred_publisher pub_urls
-		tpub_and_mirrors=$(get_publisher_urls all mirror|grep ^$preferred_publisher=)
-		[[ $? -eq 0 && -n $tpub_and_mirrors ]] && \
-		    pub_and_mirrors="$tpub_and_mirrors"
-	fi
-
-	# Note that later we need to propagate key & cert.
-	propagate_secinfo=1
-
-	#
-	# since the user didn't specify a publisher, propagate all the
-	# publishers that don't have a key.
-	#
-	propagate_extra=1
-fi
-[[ -z $pub_and_origins ]] && fail_usage "$f_no_pref_publisher"
-
-# find the remaining publishers in the global zone
-publishers_extra_origins=""
-publishers_extra_mirrors=""
-
-if [[ -n $propagate_extra ]]; then
-
-	# If cert and key information are ever allowed at the origin or
-	# mirror level, then this will have to be changed.
-	# XXX there is no concept of preferred publisher in newer pkg5
-	get_publisher_urls all origin | awk 'BEGIN { getline } { print }' | \
-	    while IFS="=" read pub pub_urls; do
-		if [[ "$pub_urls" != "None" ]]; then
-			# skip extra publishers that need a key/cert
-			[[ "`get_pub_secinfo $pub`" != "None None" ]] && \
-			    continue
-		else
-			pub_urls=""
-		fi
-
-		if [[ -z "$publishers_extra_origins" ]]; then
-			publishers_extra_origins="$pub=$pub_urls"
-		else
-			publishers_extra_origins=$(printf "%s\n%s" \
-			    "$publishers_extra_origins" \
-			    "$pub=$pub_urls")
-		fi
-	done
-
-	get_publisher_urls all mirror | grep -v ^$preferred_publisher= | \
-	    while IFS="=" read pub pub_urls; do
-		# skip extra publishers that need a key/cert
-		[[ "`get_pub_secinfo $pub`" != "None None" ]] && \
-		    continue
-
-		if [[ -z "$publishers_extra_mirrors" ]]; then
-			publishers_extra_mirrors="$pub=$pub_urls"
-		else
-			publishers_extra_mirrors=$(printf "%s\n%s" \
-			    "$publishers_extra_mirrors" \
-			    "$pub=$pub_urls")
-		fi
-	done
-fi
-
-#
-# Crack pub=url into two pieces.
-#
-echo $pub_and_origins | IFS="=" read publisher pub_origins
-if [[ -z $publisher || -z $pub_origins ]]; then
-	fail_usage "$f_bad_publisher"
-fi
-echo $pub_and_mirrors | IFS="=" read ignored pub_mirrors
-
-if [[ -n $propagate_secinfo ]]; then
-	#
-	# Get the global zone's cert and key (if any) so that we can propagate
-	# them into the new image.
-	#
-	get_pub_secinfo $publisher | read keyfile certfile
-	if [[ $? -ne 0 ]]; then
-		fail_usage "$f_get_secinfo" $publisher
-	fi
-fi
-#
-# Do some sanity checks on key and cert.
-#
-[[ $keyfile != "None" && ! -f $keyfile ]] && \
-    fail_usage "$f_nosuch_key" $keyfile
-[[ $certfile != "None" && ! -f $certfile ]] && \
-    fail_usage "$f_nosuch_cert" $certfile
-
-#
 # Look for the 'entire' incorporation's FMRI in the current image; due to users
 # doing weird machinations with their publishers, we strip off the publisher
 # from the FMRI if it is present.
 # It's ok to not find entire in the current image, since this means the user
 # can install pre-release development bits for testing purposes.
 #
-entire_fmri=$(get_entire_incorp)
+# Comment out get_entire_incorp call below, would like to install only minimal set
+# of packages into NexentaStor zone
+#entire_fmri=$(get_entire_incorp)
+
+#
+# If we found an "entire" incorporation in the current image, then
+# check to see if the user's choice of preferred publisher contains the
+# version of the 'entire' incorporation needed.  This helps us to prevent
+# mishaps in the event the user selected some weirdo publisher as their
+# preferred one, or passed a preferred pub on the command line which doesn't
+# have a suitable 'entire' in it.
+#
+if [[ -n $entire_fmri ]]; then
+	# If we have a user-specified publisher and origin from -P, consult
+	# only that one; otherwise any origin from the first publisher will do.
+	list_origin=
+	if [[ -n "$pub_and_origins" ]]; then
+		#
+		# Crack pub=url into two pieces.
+		#
+		echo $pub_and_origins | IFS="=" read publisher pub_origins
+		if [[ -z $publisher || -z $pub_origins ]]; then
+			fail_usage "$f_bad_publisher"
+		fi
+		list_origin="-g $pub_origins"
+	else
+		$PKG publisher -HPn -F tsv | cut -f1 | read publisher
+	fi
+	printf "$m_incorp\n"
+	LC_ALL=C $PKG list $list_origin -af pkg://$publisher/$entire_fmri \
+		> /dev/null 2>&1
+	if [[ $? -ne 0 ]]; then
+		fail_fatal "$f_no_entire_in_pref" $entire_fmri $publisher
+	fi
+fi
 
 #
 # Before installing the zone, set up ZFS dataset hierarchy for the zone root
@@ -319,85 +227,19 @@ if [[ -n $install_archive || -n $source_dir ]]; then
 	exit $ZONE_SUBPROC_OK
 fi
 
-# Display preferred publisher origin and mirror information.
-printf "$m_publisher\n" $publisher "$pub_origins $pub_mirrors"
-
-# Display extra publisher origin and mirror information.  This does mean that
-# the extras have to be displayed twice to show mirror information.
-if [[ -n "$publishers_extra_origins" ]]; then
-	echo "$publishers_extra_origins" | while IFS="=" read pub pub_urls; do
-		printf "$m_publisher\n" $pub "$pub_urls"
-	done
-	if [[ -n "$publishers_extra_mirrors" ]]; then
-		echo "$publishers_extra_mirrors" | while IFS="=" read pub pub_urls; do
-			printf "$m_publisher\n" $pub "$pub_urls"
-		done
-	fi
-fi
-
 printf "$m_image\n" $ZONEROOT
 
-#
-# We copy the credentials from the global zone into the new image
-# we're about to create.
-#
-if [[ $keyfile != "None" ]]; then
-	newkeylocation="$KEYDIR/$(basename $keyfile)"
-	secinfo="$secinfo -k $newkeylocation"
-	printf "$m_key_prop\n" $(basename $keyfile)
-	mkdir -p -m 755 $ZONEROOT/$KEYDIR || fail_fatal "$f_key_prop"
-	cp $keyfile $ZONEROOT/$newkeylocation || fail_fatal "$f_key_prop"
-	chmod 644 $ZONEROOT/$newkeylocation
-	chown -h root:root $ZONEROOT/$newkeylocation
+# If we have a publisher specified by -P, pass it to image-create and use no
+# other publishers. Otherwise, use all of the publishers from the GZ.
+if [[ -n $pub_and_origins ]]; then
+	LC_ALL=C $PKG image-create --zone --full -p $pub_and_origins \
+	    $ZONEROOT || fail_incomplete "$f_img"
+else
+	LC_ALL=C $PKG image-create --zone --full $ZONEROOT \
+	    || fail_incomplete "$f_img"
+	LC_ALL=C $PKG -R $ZONEROOT copy-publishers-from $GZ_IMAGE \
+	    || fail_incomplete "$f_img"
 fi
-if [[ $certfile != "None" ]]; then
-	newcertlocation="$KEYDIR/$(basename $certfile)"
-	secinfo="$secinfo -c $newcertlocation"
-	printf "$m_cert_prop\n" $(basename $certfile)
-	mkdir -p -m 755 $ZONEROOT/$KEYDIR || fail_fatal "$f_cert_prop"
-	cp $certfile $ZONEROOT/$newcertlocation || fail_fatal "$f_cert_prop"
-	chmod 644 $ZONEROOT/$newcertlocation
-	chown -h root:root $ZONEROOT/$newcertlocation
-fi
-
-#
-# Regrettably, since we already copied the key information into place,
-# we must pass the -f (force) option to image-create, since it thinks that
-# something must be wrong, as the image exists.
-#
-pub_first_origin=""
-pub_add_origins=""
-for origin in $pub_origins; do
-	if [[ -z "$pub_first_origin" ]]; then
-		# The first origin is semi-special in that the publisher
-		# argument to image-create requires it to be specified
-		# by itself and then any additional origins after that.
-		# Technically, image-create doesn't care if you specify
-		# the first one again using -g, but there's no point in
-		# doing so.
-		pub_first_origin=$origin
-		continue
-	fi
-	pub_add_origins="${pub_add_origins}-g $origin "
-done
-
-pub_add_mirrors=""
-for mirror in $pub_mirrors; do
-	pub_add_mirrors="${pub_add_mirrors}-m $mirror "
-done
-
-#
-# The image is created with --no-refresh so that all of the publisher
-# configuration can be put into place first before attempting to retrieve
-# and build catalog information.  This substantially reduces the amount of
-# time needed to create a zone.
-#
-LC_ALL=C $PKG image-create -f --no-refresh --zone --full \
-    -p $publisher=$pub_first_origin $pub_add_origins $pub_add_mirrors $secinfo \
-    $ZONEROOT || fail_incomplete "$f_img"
-
-# Retrieve publisher attributes and update our new publisher
-attrs=$(get_publisher_attr_args $publisher "origin")
 
 # Change the value of PKG_IMAGE so that future PKG operation will work
 # on the newly created zone rather than the global zone
@@ -405,94 +247,14 @@ attrs=$(get_publisher_attr_args $publisher "origin")
 PKG_IMAGE="$ZONEROOT"
 export PKG_IMAGE
 
-# --no-refresh is used here so that update operations can be
-# coalesced.
-# Update our new publisher
-LC_ALL=C $PKG set-publisher --no-refresh $attrs $publisher \
-    || fail_incomplete "$f_img"
-
-# add extra publishers
-# If cert and key information are ever allowed at the origin or
-# mirror level, then this will have to be changed.
-if [[ -n "$publishers_extra_origins" ]]; then
-	echo "$publishers_extra_origins" | while IFS="=" read pub pub_urls; do
-		pub_prefix=$pub
-		pub_add_origins=""
-		for origin in $pub_urls; do
-			pub_add_origins="${pub_add_origins}-g $origin "
-		done
-
-		# Retrieve publisher attributes. Since we are retrieving
-		# these attributes from the GLOBAL zone, we must reset
-		# PKG_IMAGE temporarily
-		SAVE_PKG_IMAGE=$PKG_IMAGE
-		PKG_IMAGE=$GZ_IMAGE
-		export PKG_IMAGE
-		attrs=$(get_publisher_attr_args $pub_prefix "origin")
-		# Now restore the save PKG_IMAGE value
-		PKG_IMAGE=$SAVE_PKG_IMAGE
-		export PKG_IMAGE
-		# --no-refresh is used here so that update operations can be
-		# coalesced.
-		LC_ALL=C $PKG set-publisher --no-refresh $attrs \
-                    ${pub_add_origins}${pub_prefix} || fail_incomplete "$f_img"
-	done
-
-	if [[ -n "$publishers_extra_mirrors" ]]; then
-		echo "$publishers_extra_mirrors" | \
-		    while IFS="=" read pub pub_urls; do
-			pub_prefix=$pub
-			pub_add_mirrors=""
-			for mirror in $pub_urls; do
-				pub_add_mirrors="${pub_add_mirrors}-m $mirror "
-			done
-
-			# Retrieve publisher attributes. Since we are retrieving
-			# these attributes from the GLOBAL zone, we must reset
-			# PKG_IMAGE temporarily
-			SAVE_PKG_IMAGE=$PKG_IMAGE
-			PKG_IMAGE=$GZ_IMAGE
-			export PKG_IMAGE
-			attrs=$(get_publisher_attr_args $pub_prefix "mirror")
-			PKG_IMAGE=$SAVE_PKG_IMAGE
-			export PKG_IMAGE
-			# --no-refresh is used here so that update operations
-			# can be coalesced.
-			LC_ALL=C $PKG set-publisher --no-refresh $attrs \
-			    ${pub_add_mirrors}${pub_prefix} || \
-			    fail_incomplete "$f_img"
-		done
-	fi
-fi
-
-# Now that all of the publisher configurations are in place, attempt a refresh.
-# If this fails, assume the image is incomplete.
-LC_ALL=C $PKG refresh || fail_incomplete "$f_img"
+LC_ALL=C $PKG publisher -Hn -F tsv | cut -f1,7 | while read pub url; do
+	printf "$m_publisher\n" $pub $url
+done
 
 if [[ -f /var/pkg/pkg5.image && -d /var/pkg/publisher ]]; then
 	PKG_CACHEROOT=/var/pkg/publisher
 	export PKG_CACHEROOT
 	printf "$m_cache\n" $PKG_CACHEROOT
-fi
-
-#
-# If we found an "entire" incorporation in the current image, then
-# check to see if the user's choice of preferred publisher contains the
-# version of the 'entire' incorporation needed.  This helps us to prevent
-# mishaps in the event the user selected some weirdo publisher as their
-# preferred one, or passed a preferred pub on the command line which doesn't
-# have a suitable 'entire' in it.
-#
-# n.b. it would be nice to do this before we provision the zfs dataset, etc.
-# but since the publisher specified by the user might not be known to
-# the system, we can't do this test without first configuring the image.
-#
-if [[ -n $entire_fmri ]]; then
-	printf "$m_incorp\n"
-	LC_ALL=C $PKG list -af pkg://$publisher/$entire_fmri > /dev/null 2>&1
-	if [[ $? -ne 0 ]]; then
-		fail_fatal "$f_no_entire_in_pref" $entire_fmri $publisher
-	fi
 fi
 
 printf "$m_core\n"
@@ -502,15 +264,15 @@ if [[ -n $entire_fmri ]]; then
 fi
 
 pkglist="$pkglist
-	pkg:/SUNWcs
-	pkg:/SUNWcsd
-	pkg:/system/network
-	pkg:/system/extended-system-utilities
-	pkg:/compress/bzip2
-	pkg:/compress/gzip
-	pkg:/compress/zip
-	pkg:/compress/unzip
-	pkg:/package/pkg"
+	pkg:///SUNWcs
+	pkg:///SUNWcsd
+	pkg:///system/network
+	pkg:///system/extended-system-utilities
+	pkg:///compress/bzip2
+	pkg:///compress/gzip
+	pkg:///compress/zip
+	pkg:///compress/unzip
+	pkg:///package/pkg"
 
 #
 # Get some diagnostic tools, truss, dtrace, etc.
@@ -527,14 +289,14 @@ pkglist="$pkglist
 	pkg:/network/ftp"
 
 #
-# Get at least one sensible shell, vim, ssh, ssh key utils, sshd.
+# Get at least one sensible shell, vim, openssh.
 #
 pkglist="$pkglist
-	pkg:/shell/bash
-	pkg:/editor/vim
-	pkg:/network/ssh
-	pkg:/network/ssh/ssh-key
-	pkg:/service/network/ssh"
+	pkg:///shell/bash
+	pkg:///shell/zsh
+	pkg:///editor/vim
+	pkg:///network/openssh
+	pkg:///network/openssh-server"
 
 #
 # Get some name services and DNS.

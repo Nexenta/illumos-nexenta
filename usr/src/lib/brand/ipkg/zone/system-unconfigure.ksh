@@ -79,6 +79,7 @@ disable_ldap() {
   SVCCFG=${ROOTDIR}/usr/sbin/svccfg
   export ROOTDIR SVCCFG_DTD SVCCFG_REPOSITORY SVCCFG
   $SVCCFG -s "network/ldap/client:default" setprop general/enabled=false
+  return 0
 }
 
 reset_hosts() {
@@ -133,7 +134,12 @@ reset_networking() {
   rm -f $ALTROOT/etc/resolv.conf
   rm -f $ALTROOT/etc/inet/netmasks
   rm -f $ALTROOT/etc/inet/static_routes
-  cp /dev/null $ALTROOT/etc/ipadm/ipadm.conf
+  for file in $ALTROOT/etc/ipadm/*\.conf $ALTROOT/etc/dladm/*\.conf ; do
+	if [ -f "$file" ]; then
+		cp /dev/null "$file" || \
+		    bomb "Failed to blank $ALTROOT/$file"
+	fi
+  done
 }
 
 reset_nsswitch() {
