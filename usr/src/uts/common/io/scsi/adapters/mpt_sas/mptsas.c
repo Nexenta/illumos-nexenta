@@ -11096,7 +11096,7 @@ mptsas_do_passthru(mptsas_t *mpt, uint8_t *request, uint8_t *reply,
 	pkt->pkt_ha_private	= (opaque_t)&pt;
 	pkt->pkt_flags		= FLAG_HEAD;
 	pkt->pkt_time		= timeout;
-	pkt->pkt_start          = gethrtime();
+	pkt->pkt_start		= gethrtime();
 	cmd->cmd_pkt		= pkt;
 	cmd->cmd_flags		= CFLAG_CMDIOC | CFLAG_PASSTHRU;
 
