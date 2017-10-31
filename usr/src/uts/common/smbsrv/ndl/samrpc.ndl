@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _MLSVC_SAM_NDL_
@@ -482,6 +482,33 @@ OPERATION(SAMR_OPNUM_CloseHandle)
 struct samr_CloseHandle {
 	IN	samr_handle_t handle;
 	OUT	samr_handle_t result_handle;
+	OUT	DWORD status;
+};
+
+
+/*
+ ***********************************************************************
+ * QuerySecObject
+ *
+ * Returns the SecurityDescriptor of the object. Support not complete.
+ *
+ * QuerySecObject (
+ *	IN samr_handle_t obj_handle,
+ *	IN SECURITY_INFO secinfo,
+ *	OUT samr_sd_t *sd,
+ *	OUT DWORD status
+ * )
+ *
+ ***********************************************************************
+ */
+
+typedef DWORD SECURITY_INFO;
+
+OPERATION(SAMR_OPNUM_QuerySecObject)
+struct samr_QuerySecObject {
+	IN	samr_handle_t obj_handle;
+	IN	SECURITY_INFO secinfo;
+	OUT	samr_sd_t *sd;
 	OUT	DWORD status;
 };
 
@@ -1392,6 +1419,8 @@ union samr_interface {
 		struct samr_Connect		Connect;
 	CASE(SAMR_OPNUM_CloseHandle)
 		struct samr_CloseHandle		CloseHandle;
+	CASE(SAMR_OPNUM_QuerySecObject)
+		struct samr_QuerySecObject	QuerySecObject;
 	CASE(SAMR_OPNUM_LookupDomain)
 		struct samr_LookupDomain	LookupDomain;
 	CASE(SAMR_OPNUM_EnumLocalDomains)
