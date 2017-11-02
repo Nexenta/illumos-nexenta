@@ -992,6 +992,14 @@ create:
 		}
 
 		/*
+		 * Don't create in directories marked "Delete on close".
+		 */
+		if (dnode->flags & NODE_FLAGS_DELETE_ON_CLOSE) {
+			smb_node_release(dnode);
+			return (NT_STATUS_DELETE_PENDING);
+		}
+
+		/*
 		 * lock the parent dir node in case another create
 		 * request to the same parent directory comes in.
 		 */
