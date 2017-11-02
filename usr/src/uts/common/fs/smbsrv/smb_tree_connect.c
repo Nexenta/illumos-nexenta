@@ -338,26 +338,27 @@ smb_com_tree_connect_andx(smb_request_t *sr)
 	}
 
 	if (sr->session->dialect < NT_LM_0_12) {
-		rc = smbsr_encode_result(sr, 2, VAR_BCC, "bb.wwss",
+		rc = smbsr_encode_result(sr, 2, VAR_BCC, "bb.ww%ss",
 		    (char)2,		/* wct */
 		    sr->andx_com,
 		    VAR_BCC,
 		    VAR_BCC,
+		    sr,
 		    service,
 		    tree->t_typename);
 	} else if ((tcon->flags & SMB_TCONX_EXTENDED_RESPONSE) == 0) {
-		rc = smbsr_encode_result(sr, 3, VAR_BCC, "bb.wwws%u",
+		rc = smbsr_encode_result(sr, 3, VAR_BCC, "bb.www%su",
 		    (char)3,		/* wct */
 		    sr->andx_com,
 		    (short)64,
 		    tcon->optional_support,
 		    VAR_BCC,
-		    service,
 		    sr,
+		    service,
 		    tree->t_typename);
 
 	} else {
-		rc = smbsr_encode_result(sr, 7, VAR_BCC, "bb.wwllws%u",
+		rc = smbsr_encode_result(sr, 7, VAR_BCC, "bb.wwllw%su",
 		    (char)7,		/* wct (b) */
 		    sr->andx_com,	/* AndXcmd (b) */
 		    (short)72,		/* AndXoff (w) */
@@ -365,8 +366,8 @@ smb_com_tree_connect_andx(smb_request_t *sr)
 		    tree->t_access,		/* (l) */
 		    0,		/*    guest_access (l) */
 		    VAR_BCC,		/* (w) */
-		    service,		/* (s) */
 		    sr,			/* (%) */
+		    service,		/* (s) */
 		    tree->t_typename);	/* (u) */
 	}
 
