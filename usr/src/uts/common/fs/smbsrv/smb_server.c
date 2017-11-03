@@ -1224,7 +1224,9 @@ smb_server_timers(smb_thread_t *thread, void *arg)
 	 * handles. The session code expects one call per minute.
 	 */
 	while (smb_thread_continue_timedwait(thread, 60 /* Seconds */)) {
-		smb_session_timers(sv);
+		if (sv->sv_cfg.skc_keepalive != 0)
+			smb_session_timers(sv);
+		smb2_durable_timers(sv);
 	}
 }
 
@@ -2007,9 +2009,6 @@ smb_server_store_cfg(smb_server_t *sv, smb_ioc_cfg_t *ioc)
 		    "forcing max_protocol to 3.0");
 		ioc->max_protocol = SMB_VERS_3_0;
 	}
-
-	smb_session_correct_keep_alive_values(
-	    &sv->sv_session_list, ioc->keepalive);
 
 	sv->sv_cfg.skc_maxworkers = ioc->maxworkers;
 	sv->sv_cfg.skc_maxconnections = ioc->maxconnections;

@@ -252,7 +252,6 @@ uint32_t smb_make_link(smb_request_t *, smb_fqi_t *, smb_fqi_t *);
  * Logging functions
  */
 void smb_log_flush(void);
-void smb_correct_keep_alive_values(uint32_t new_keep_alive);
 void smb_close_all_connections(void);
 
 int smb_net_id(uint32_t);

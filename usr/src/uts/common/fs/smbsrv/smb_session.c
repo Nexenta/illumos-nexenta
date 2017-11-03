@@ -91,8 +91,8 @@ smb_durable_expire(void *arg)
 	smb_ofile_release(of);
 }
 
-static void
-smb_durable_timers(smb_server_t *sv)
+void
+smb2_durable_timers(smb_server_t *sv)
 {
 	smb_hash_t *hash;
 	int i;
@@ -106,9 +106,22 @@ smb_durable_timers(smb_server_t *sv)
 	for (i = 0; i < hash->num_buckets; i++) {
 		bucket = &hash->buckets[i].b_list;
 		smb_llist_enter(bucket, RW_READER);
-		of = smb_llist_head(bucket);
-		while (of != NULL) {
+		for (of = smb_llist_head(bucket);
+		    of != NULL;
+		    of = smb_llist_next(bucket, of)) {
 			SMB_OFILE_VALID(of);
+
+			/*
+			 * Check outside the mutex first to avoid some
+			 * mutex_enter work in this loop.  If the state
+			 * changes under foot, the worst that happens
+			 * is we either enter the mutex when we might
+			 * not have needed to, or we miss some DH in
+			 * this pass and get it on the next.
+			 */
+			if (of->f_state != SMB_OFILE_STATE_ORPHANED)
+				continue;
+
 			mutex_enter(&of->f_mutex);
 			/* STATE_ORPHANED implies dh_expire_time != 0 */
 			if (of->f_state == SMB_OFILE_STATE_ORPHANED &&
@@ -119,19 +132,28 @@ smb_durable_timers(smb_server_t *sv)
 				smb_llist_post(bucket, of, smb_durable_expire);
 			}
 			mutex_exit(&of->f_mutex);
-			of = smb_llist_next(bucket, of);
 		}
 		smb_llist_exit(bucket);
 	}
 }
 
+/*
+ * This (legacy) code is in support of an "idle timeout" feature,
+ * which is apparently incomplete.  To complete it, we should:
+ * when the keep_alive timer expires, check whether the client
+ * has any open files, and if not then kill their session.
+ * Right now the timers are there, but nothing happens when
+ * a timer expires.
+ *
+ * Todo: complete logic to kill idle sessions.
+ *
+ * Only called when sv_cfg.skc_keepalive != 0
+ */
 void
 smb_session_timers(smb_server_t *sv)
 {
 	smb_session_t	*session;
 	smb_llist_t	*ll;
-
-	smb_durable_timers(sv);
 
 	ll = &sv->sv_session_list;
 	smb_llist_enter(ll, RW_READER);
@@ -160,39 +182,6 @@ smb_session_timers(smb_server_t *sv)
 			smb_llist_flush(&session->s_user_list);
 		}
 		session = smb_llist_next(ll, session);
-	}
-	smb_llist_exit(ll);
-}
-
-void
-smb_session_correct_keep_alive_values(smb_llist_t *ll, uint32_t new_keep_alive)
-{
-	smb_session_t		*sn;
-
-	/*
-	 * Caller specifies seconds, but we track in minutes, so
-	 * convert to minutes (rounded up).
-	 */
-	new_keep_alive = (new_keep_alive + 59) / 60;
-
-	if (new_keep_alive == smb_keep_alive)
-		return;
-	/*
-	 * keep alive == 0 means do not drop connection if it's idle
-	 */
-	smb_keep_alive = (new_keep_alive) ? new_keep_alive : -1;
-
-	/*
-	 * Walk through the table and set each session to the new keep_alive
-	 * value if they have not already timed out.  Block clock interrupts.
-	 */
-	smb_llist_enter(ll, RW_READER);
-	sn = smb_llist_head(ll);
-	while (sn != NULL) {
-		SMB_SESSION_VALID(sn);
-		if (sn->keep_alive != 0)
-			sn->keep_alive = new_keep_alive;
-		sn = smb_llist_next(ll, sn);
 	}
 	smb_llist_exit(ll);
 }

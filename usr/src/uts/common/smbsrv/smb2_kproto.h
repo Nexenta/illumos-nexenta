@@ -147,6 +147,8 @@ void smb2_lease_init(void);
 void smb2_lease_fini(void);
 void smb2_lease_ofile_close(smb_ofile_t *);
 
+void smb2_durable_timers(smb_server_t *);
+
 #ifdef	__cplusplus
 }
 #endif
