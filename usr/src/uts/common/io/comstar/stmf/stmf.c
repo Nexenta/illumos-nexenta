@@ -4237,54 +4237,6 @@ dai_scan_done:
 	return (STMF_SUCCESS);
 }
 
-stmf_status_t
-stmf_get_itl_handle(stmf_lu_t *lu, uint8_t *lun, stmf_scsi_session_t *ss,
-    uint64_t session_id, void **itl_handle_retp)
-{
-	stmf_i_scsi_session_t *iss;
-	stmf_lun_map_ent_t *ent;
-	stmf_lun_map_t *lm;
-	stmf_status_t ret;
-	int i;
-	uint16_t n;
-
-	if (ss == NULL) {
-		iss = stmf_session_id_to_issptr(session_id, 1);
-		if (iss == NULL)
-			return (STMF_NOT_FOUND);
-	} else {
-		iss = (stmf_i_scsi_session_t *)ss->ss_stmf_private;
-		rw_enter(iss->iss_lockp, RW_WRITER);
-	}
-
-	ent = NULL;
-	if (lun == NULL) {
-		lm = iss->iss_sm;
-		for (i = 0; i < lm->lm_nentries; i++) {
-			if (lm->lm_plus[i] == NULL)
-				continue;
-			ent = (stmf_lun_map_ent_t *)lm->lm_plus[i];
-			if (ent->ent_lu == lu)
-				break;
-		}
-	} else {
-		n = ((uint16_t)lun[1] | (((uint16_t)(lun[0] & 0x3F)) << 8));
-		ent = (stmf_lun_map_ent_t *)
-		    stmf_get_ent_from_map(iss->iss_sm, n);
-		if (lu && (ent->ent_lu != lu))
-			ent = NULL;
-	}
-	if (ent && ent->ent_itl_datap) {
-		*itl_handle_retp = ent->ent_itl_datap->itl_handle;
-		ret = STMF_SUCCESS;
-	} else {
-		ret = STMF_NOT_FOUND;
-	}
-
-	rw_exit(iss->iss_lockp);
-	return (ret);
-}
-
 stmf_data_buf_t *
 stmf_alloc_dbuf(scsi_task_t *task, uint32_t size, uint32_t *pminsize,
     uint32_t flags)
