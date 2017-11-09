@@ -1446,8 +1446,8 @@ zio_write_compress(zio_t *zio)
 
 	DTRACE_PROBE1(zio_compress_ready, zio_t *, zio);
 	/* If it's a compressed write that is not raw, compress the buffer. */
-	if (compress != ZIO_COMPRESS_OFF && ZIO_SHOULD_COMPRESS(zio) &&
-	    psize == lsize) {
+	if (compress != ZIO_COMPRESS_OFF && psize == lsize &&
+	    ZIO_SHOULD_COMPRESS(zio)) {
 		void *cbuf = zio_buf_alloc(lsize);
 		psize = zio_compress_data(compress, zio->io_abd, cbuf, lsize);
 		if (psize == 0 || psize == lsize) {
@@ -1515,7 +1515,17 @@ zio_write_compress(zio_t *zio)
 		zio->io_pipeline = zio->io_orig_pipeline;
 	} else {
 		ASSERT3U(psize, !=, 0);
-		compress = ZIO_COMPRESS_OFF;
+
+		/*
+		 * We are here because of:
+		 *	- compress == ZIO_COMPRESS_OFF
+		 *	- SmartCompression decides don't compress this data
+		 *	- this is a RAW-write
+		 *
+		 *	In case of RAW-write we should not override "compress"
+		 */
+		if ((zio->io_flags & ZIO_FLAG_RAW) == 0)
+			compress = ZIO_COMPRESS_OFF;
 	}
 
 	/*
