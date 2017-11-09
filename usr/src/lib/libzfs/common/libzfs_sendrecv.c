@@ -1226,12 +1226,6 @@ dump_snapshot(zfs_handle_t *zhp, void *arg)
 			}
 		}
 
-		enum lzc_send_flags flags = 0;
-		if (sdd->large_block)
-			flags |= LZC_SEND_FLAG_LARGE_BLOCK;
-		if (sdd->embed_data)
-			flags |= LZC_SEND_FLAG_EMBED_DATA;
-
 		/*
 		 * We need to reset the sendsize flag being sent to
 		 * kernel if sdd->dedup is set. With dedup, the file
