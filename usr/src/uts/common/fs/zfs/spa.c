@@ -716,6 +716,12 @@ spa_prop_validate(spa_t *spa, nvlist_t *props)
 			if (!error && (intval > SPA_DVAS_PER_BP))
 				error = SET_ERROR(EINVAL);
 			break;
+		case ZPOOL_PROP_SCRUB_PRIO:
+		case ZPOOL_PROP_RESILVER_PRIO:
+			error = nvpair_value_uint64(elem, &intval);
+			if (error || intval > 100)
+				error = SET_ERROR(EINVAL);
+			break;
 		}
 
 		if (error)
@@ -2921,6 +2927,10 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 	spa_set_ddt_classes(spa,
 	    zpool_prop_default_numeric(ZPOOL_PROP_DDT_DESEGREGATION));
 
+	spa->spa_resilver_prio =
+	    zpool_prop_default_numeric(ZPOOL_PROP_RESILVER_PRIO);
+	spa->spa_scrub_prio = zpool_prop_default_numeric(ZPOOL_PROP_SCRUB_PRIO);
+
 	error = spa_dir_prop(spa, DMU_POOL_PROPS, &spa->spa_pool_props_object);
 	if (error && error != ENOENT)
 		return (spa_vdev_err(rvd, VDEV_AUX_CORRUPT_DATA, EIO));
@@ -2952,6 +2962,11 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		    &spa->spa_ddt_meta_copies);
 		spa_prop_find(spa, ZPOOL_PROP_DDT_DESEGREGATION, &val);
 		spa_set_ddt_classes(spa, val);
+
+		spa_prop_find(spa, ZPOOL_PROP_RESILVER_PRIO,
+		    &spa->spa_resilver_prio);
+		spa_prop_find(spa, ZPOOL_PROP_SCRUB_PRIO,
+		    &spa->spa_scrub_prio);
 
 		spa_prop_find(spa, ZPOOL_PROP_DEDUP_BEST_EFFORT,
 		    &spa->spa_dedup_best_effort);
@@ -4096,6 +4111,10 @@ spa_create(const char *pool, nvlist_t *nvroot, nvlist_t *props,
 	spa->spa_dedup_hi_best_effort =
 	    zpool_prop_default_numeric(ZPOOL_PROP_DEDUP_HI_BEST_EFFORT);
 	spa->spa_force_trim = zpool_prop_default_numeric(ZPOOL_PROP_FORCETRIM);
+
+	spa->spa_resilver_prio =
+	    zpool_prop_default_numeric(ZPOOL_PROP_RESILVER_PRIO);
+	spa->spa_scrub_prio = zpool_prop_default_numeric(ZPOOL_PROP_SCRUB_PRIO);
 
 	mutex_enter(&spa->spa_auto_trim_lock);
 	spa->spa_auto_trim = zpool_prop_default_numeric(ZPOOL_PROP_AUTOTRIM);
@@ -6943,6 +6962,12 @@ spa_sync_props(void *arg, dmu_tx_t *tx)
 				break;
 			case ZPOOL_PROP_SMALL_DATA_TO_METADEV:
 				mp->spa_small_data_to_special = intval;
+				break;
+			case ZPOOL_PROP_RESILVER_PRIO:
+				spa->spa_resilver_prio = intval;
+				break;
+			case ZPOOL_PROP_SCRUB_PRIO:
+				spa->spa_scrub_prio = intval;
 				break;
 			default:
 				break;

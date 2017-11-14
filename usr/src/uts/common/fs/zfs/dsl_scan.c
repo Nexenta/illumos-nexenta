@@ -107,10 +107,6 @@ static void scan_ds_queue_sync(dsl_scan_t *scn, dmu_tx_t *tx);
  */
 int zfs_top_maxinflight = 32;
 
-int zfs_resilver_delay = 1;		/* number of ticks to delay resilver */
-int zfs_scrub_delay = 2;		/* number of ticks to delay scrub */
-int zfs_scan_idle = 0;			/* idle window in clock ticks */
-
 /*
  * Minimum amount of data we dequeue if our queues are full and the
  * dirty data limit for a txg has been reached.
@@ -2688,20 +2684,14 @@ scan_exec_io(dsl_pool_t *dp, const blkptr_t *bp, int zio_flags,
 	size_t size = BP_GET_PSIZE(bp);
 	vdev_t *rvd = spa->spa_root_vdev;
 	uint64_t maxinflight = rvd->vdev_children * zfs_top_maxinflight;
+	dsl_scan_t *scn = dp->dp_scan;
+	zio_priority_t prio;
 
 	mutex_enter(&spa->spa_scrub_lock);
 	while (limit_inflight && spa->spa_scrub_inflight >= maxinflight)
 		cv_wait(&spa->spa_scrub_io_cv, &spa->spa_scrub_lock);
 	spa->spa_scrub_inflight++;
 	mutex_exit(&spa->spa_scrub_lock);
-
-	/*
-	 * If we're seeing recent (zfs_scan_idle) "important" I/Os
-	 * then throttle our workload to limit the impact of a scan.
-	 */
-	if (ddi_get_lbolt64() - spa->spa_last_io <= zfs_scan_idle)
-		delay(dp->dp_scan->scn_phys.scn_func == POOL_SCAN_SCRUB ?
-		    zfs_scrub_delay : zfs_resilver_delay);
 
 	for (int i = 0; i < BP_GET_NDVAS(bp); i++)
 		atomic_add_64(&spa->spa_scan_pass_work,
@@ -2710,9 +2700,10 @@ scan_exec_io(dsl_pool_t *dp, const blkptr_t *bp, int zio_flags,
 	count_block(dp->dp_scan, dp->dp_blkstats, bp);
 	DTRACE_PROBE3(do_io, uint64_t, dp->dp_scan->scn_phys.scn_func,
 	    boolean_t, B_TRUE, spa_t *, spa);
+	prio = (scn->scn_phys.scn_func == POOL_SCAN_RESILVER ?
+	    ZIO_PRIORITY_RESILVER : ZIO_PRIORITY_SCRUB);
 	zio_nowait(zio_read(NULL, spa, bp, abd_alloc_for_io(size, B_FALSE),
-	    size, dsl_scan_scrub_done, NULL, ZIO_PRIORITY_SCRUB,
-	    zio_flags, zb));
+	    size, dsl_scan_scrub_done, NULL, prio, zio_flags, zb));
 }
 
 /*

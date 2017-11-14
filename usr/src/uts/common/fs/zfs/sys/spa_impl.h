@@ -244,7 +244,6 @@ struct spa {
 	uberblock_t	spa_ubsync;		/* last synced uberblock */
 	uberblock_t	spa_uberblock;		/* current uberblock */
 	boolean_t	spa_extreme_rewind;	/* rewind past deferred frees */
-	uint64_t	spa_last_io;		/* lbolt of last non-scan I/O */
 	kmutex_t	spa_scrub_lock;		/* resilver/scrub lock */
 	uint64_t	spa_scrub_inflight;	/* in-flight scrub I/Os */
 	kcondvar_t	spa_scrub_io_cv;	/* scrub I/O completion */
@@ -367,6 +366,10 @@ struct spa {
 		uint64_t spa_active;
 		uint64_t spa_queued;
 	} spa_queue_stats[ZIO_PRIORITY_NUM_QUEUEABLE];
+
+	/* Pool-wide scrub & resilver priority values. */
+	uint64_t	spa_scrub_prio;
+	uint64_t	spa_resilver_prio;
 
 	/* TRIM/UNMAP kstats */
 	spa_trimstats_t	*spa_trimstats;		/* alloc'd by kstat_create */

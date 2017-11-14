@@ -148,6 +148,8 @@ uint32_t zfs_vdev_async_read_min_active = 1;
 uint32_t zfs_vdev_async_read_max_active = 3;
 uint32_t zfs_vdev_async_write_min_active = 1;
 uint32_t zfs_vdev_async_write_max_active = 10;
+uint32_t zfs_vdev_resilver_min_active = 1;
+uint32_t zfs_vdev_resilver_max_active = 3;
 uint32_t zfs_vdev_scrub_min_active = 1;
 uint32_t zfs_vdev_scrub_max_active = 2;
 
@@ -409,6 +411,35 @@ vdev_queue_agg_io_done(zio_t *aio)
 	abd_free(aio->io_abd);
 }
 
+static uint64_t
+scan_prio2active(uint64_t prio, boolean_t max_active)
+{
+	uint64_t act, act_max;
+
+	if (max_active) {
+		act_max = MAX(MAX(zfs_vdev_sync_read_max_active,
+		    zfs_vdev_sync_write_max_active),
+		    MAX(zfs_vdev_async_read_max_active,
+		    zfs_vdev_async_write_max_active));
+		act = ((prio * (zfs_vdev_sync_read_max_active +
+		    zfs_vdev_sync_write_max_active +
+		    zfs_vdev_async_read_max_active +
+		    zfs_vdev_async_write_max_active)) / 100);
+	} else {
+		act_max = MAX(MAX(zfs_vdev_sync_read_min_active,
+		    zfs_vdev_sync_write_min_active),
+		    MAX(zfs_vdev_async_read_min_active,
+		    zfs_vdev_async_write_min_active));
+		act = ((prio * (zfs_vdev_sync_read_min_active +
+		    zfs_vdev_sync_write_min_active +
+		    zfs_vdev_async_read_min_active +
+		    zfs_vdev_async_write_min_active)) / 100);
+	}
+	act = MAX(MIN(act, act_max), 1);
+
+	return (act);
+}
+
 static int
 vdev_queue_class_min_active(zio_priority_t p, vdev_queue_t *vq)
 {
@@ -432,9 +463,22 @@ vdev_queue_class_min_active(zio_priority_t p, vdev_queue_t *vq)
 	case ZIO_PRIORITY_ASYNC_WRITE:
 		zfs_min_active = zfs_vdev_async_write_min_active;
 		break;
-	case ZIO_PRIORITY_SCRUB:
-		zfs_min_active = zfs_vdev_scrub_min_active;
+	case ZIO_PRIORITY_RESILVER: {
+		uint64_t prio = vq->vq_vdev->vdev_spa->spa_resilver_prio;
+		if (prio > 0)
+			zfs_min_active = scan_prio2active(prio, B_FALSE);
+		else
+			zfs_min_active = zfs_vdev_resilver_min_active;
 		break;
+	}
+	case ZIO_PRIORITY_SCRUB: {
+		uint64_t prio = vq->vq_vdev->vdev_spa->spa_scrub_prio;
+		if (prio > 0)
+			zfs_min_active = scan_prio2active(prio, B_FALSE);
+		else
+			zfs_min_active = zfs_vdev_scrub_min_active;
+		break;
+	}
 	default:
 		panic("invalid priority %u", p);
 		return (0);
@@ -518,9 +562,22 @@ vdev_queue_class_max_active(spa_t *spa, zio_priority_t p, vdev_queue_t *vq)
 		vqc_max_active = vdev_queue_max_async_writes(spa, vq);
 		ASSERT(vqc_max_active);
 		break;
-	case ZIO_PRIORITY_SCRUB:
-		zfs_max_active = zfs_vdev_scrub_max_active;
+	case ZIO_PRIORITY_RESILVER: {
+		uint64_t prio = vq->vq_vdev->vdev_spa->spa_resilver_prio;
+		if (prio > 0)
+			zfs_max_active = scan_prio2active(prio, B_TRUE);
+		else
+			zfs_max_active = zfs_vdev_resilver_max_active;
 		break;
+	}
+	case ZIO_PRIORITY_SCRUB: {
+		uint64_t prio = vq->vq_vdev->vdev_spa->spa_scrub_prio;
+		if (prio > 0)
+			zfs_max_active = scan_prio2active(prio, B_TRUE);
+		else
+			zfs_max_active = zfs_vdev_scrub_max_active;
+		break;
+	}
 	default:
 		panic("invalid priority %u", p);
 		return (0);

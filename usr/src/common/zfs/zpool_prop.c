@@ -145,6 +145,12 @@ zpool_prop_init(void)
 	zprop_register_number(ZPOOL_PROP_DEDUP_HI_BEST_EFFORT,
 	    "dedup_hi_best_effort", 80, PROP_DEFAULT, ZFS_TYPE_POOL,
 	    "0-100", "DEDUP_HI_BEST_EFFORT");
+	zprop_register_number(ZPOOL_PROP_SCRUB_PRIO,
+	    "scrubprio", 5, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "0-100", "SCRUB_PRIO");
+	zprop_register_number(ZPOOL_PROP_RESILVER_PRIO,
+	    "resilverprio", 10, PROP_DEFAULT, ZFS_TYPE_POOL,
+	    "0-100", "RESILVER_PRIO");
 
 	/* default index (boolean) properties */
 	zprop_register_index(ZPOOL_PROP_DELEGATION, "delegation", 1,

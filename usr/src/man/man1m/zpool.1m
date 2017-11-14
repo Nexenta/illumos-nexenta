@@ -748,6 +748,38 @@ The default value is
 .Sy off .
 This property can also be referred to by its shortened name,
 .Sy listsnaps .
+.It Sy scrubprio Ns = Ns Ar 0-100 Ns
+Sets the priority of scrub I/O for this pool.
+This is a number from 0 to 100, higher numbers meaning a higher priority
+and thus more bandwidth allocated to scrub I/O, provided there is other
+I/O competing for bandwidth.
+If no other I/O is competing for bandwidth, scrub is allowed to consume
+as much bandwidth as the pool is capable of providing.
+A priority of
+.Ar 100
+means that scrub I/O has equal priority to any other user-generated I/O.
+The value
+.Ar 0
+is special, because it turns per-pool scrub priority control.
+In that case, scrub I/O priority is determined by the
+.Sy zfs_vdev_scrub_min_active
+and
+.Sy zfs_vdev_scrub_max_active
+tunables.
+The default value is
+.Ar 5 .
+.It Sy resilverprio Ns = Ns Ar 0-100 Ns
+Same as the
+.Sy scrubprio
+property, but controls the priority for resilver I/O.
+The default value is
+.Ar 10 .
+When set to
+.Ar 0
+the global tunables used for queue sizing are
+.Sy zfs_vdev_resilver_min_active
+and
+.Sy zfs_vdev_resilver_max_active .
 .It Sy version Ns = Ns Ar version
 The current on-disk version of the pool.
 This can be increased, but never decreased.

@@ -102,6 +102,12 @@ vdev_prop_init(void)
 	zprop_register_number(VDEV_PROP_SCRUB_MAXACTIVE, "scrub_maxactive", 0,
 	    PROP_DEFAULT, ZFS_TYPE_VDEV, "<scrub max active (0..1000)>",
 	    "SCRUB_MAXACTIVE");
+	zprop_register_number(VDEV_PROP_RESILVER_MINACTIVE,
+	    "resilver_minactive", 0, PROP_DEFAULT, ZFS_TYPE_VDEV,
+	    "<resilver min active (0..1000)>", "RESILVER_MINACTIVE");
+	zprop_register_number(VDEV_PROP_RESILVER_MAXACTIVE,
+	    "resilver_maxactive", 0, PROP_DEFAULT, ZFS_TYPE_VDEV,
+	    "<resilver max active (0..1000)>", "RESILVER_MAXACTIVE");
 	zprop_register_number(VDEV_PROP_PREFERRED_READ, "prefread", 0,
 	    PROP_DEFAULT, ZFS_TYPE_VDEV, "<preferred read (0..100)>",
 	    "PREFREAD");
