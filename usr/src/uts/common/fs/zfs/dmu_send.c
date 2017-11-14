@@ -397,12 +397,13 @@ dump_write_embedded(dmu_sendarg_t *dsp, uint64_t object, uint64_t offset,
 }
 
 static int
-dump_spill(dmu_sendarg_t *dsp, uint64_t object, int blksz,
+dump_spill(dmu_sendarg_t *dsp, uint64_t object,
     const blkptr_t *bp, const zbookmark_phys_t *zb)
 {
 	int rc = 0;
 	struct drr_spill *drrs = &(dsp->dsa_drr->drr_u.drr_spill);
 	enum arc_flags aflags = ARC_FLAG_WAIT;
+	int blksz = BP_GET_LSIZE(bp);
 	arc_buf_t *abuf;
 
 	if (dsp->dsa_pending_op != PENDING_NONE) {
@@ -706,17 +707,12 @@ do_dump(dmu_sendarg_t *dsa, struct send_block_record *data)
 		}
 		arc_buf_destroy(abuf, &abuf);
 	} else if (type == DMU_OT_SA) {
-		arc_flags_t aflags = ARC_FLAG_WAIT;
-		arc_buf_t *abuf;
-		int blksz = BP_GET_LSIZE(bp);
-
-		if (arc_read(NULL, spa, bp, arc_getbuf_func, &abuf,
-		    ZIO_PRIORITY_ASYNC_READ, ZIO_FLAG_CANFAIL,
-		    &aflags, zb) != 0)
-			return (SET_ERROR(EIO));
-
-		err = dump_spill(dsa, zb->zb_object, blksz, abuf->b_data, zb);
-		arc_buf_destroy(abuf, &abuf);
+		/*
+		 * The upstream code has arc_read() call here, but we moved
+		 * it to dump_spill() since we want to take advantage of
+		 * zero copy of the buffer if possible
+		 */
+		err = dump_spill(dsa, zb->zb_object, bp, zb);
 	} else if (backup_do_embed(dsa, bp)) {
 		/* it's an embedded level-0 block of a regular object */
 		int blksz = dblkszsec << SPA_MINBLOCKSHIFT;
