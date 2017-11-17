@@ -18,9 +18,11 @@
 #
 # CDDL HEADER END
 #
+
+#
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
+#
 
 # The profile that all logins get before using their own .profile.
 
@@ -59,7 +61,6 @@ case "$0" in
 
 	if [ ! -f .hushlogin ]
 	then
-		/usr/sbin/quota
 		#	Allow the user to break the Message-Of-The-Day only.
 		trap "trap '' 2"  2
 		/bin/cat -s /etc/motd

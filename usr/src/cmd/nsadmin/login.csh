@@ -18,9 +18,10 @@
 #
 # CDDL HEADER END
 #
+
+#
 # Copyright 1998 Sun Microsystems, Inc.  All rights reserved.
-# Use is subject to license terms.
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 # The initial machine wide defaults for csh.
@@ -47,7 +48,6 @@ endif
 setenv PAGER "/usr/bin/less -ins"
 
 if (! -e .hushlogin ) then
-	/usr/sbin/quota
 	/bin/cat -s /etc/motd
 	/bin/mail -E
 	switch ( $status )
