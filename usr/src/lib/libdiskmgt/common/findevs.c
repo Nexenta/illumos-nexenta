@@ -151,6 +151,7 @@ findevs(struct search_args *args)
 
 	args->dev_walk_status = 0;
 	args->handle = di_devlink_init(NULL, 0);
+	args->ph = di_prom_init();
 
 	/*
 	 * Have to make several passes at this with the new devfs caching.
@@ -158,7 +159,6 @@ findevs(struct search_args *args)
 	 * devices.
 	 */
 	di_root = di_init("/", DINFOCACHE);
-	args->ph = di_prom_init();
 	(void) di_walk_minor(di_root, NULL, 0, args, add_devs);
 	di_fini(di_root);
 
@@ -166,6 +166,8 @@ findevs(struct search_args *args)
 	(void) di_walk_minor(di_root, NULL, 0, args, add_devs);
 	di_fini(di_root);
 
+	if (args->ph != DI_PROM_HANDLE_NIL)
+		di_prom_fini(args->ph);
 	(void) di_devlink_fini(&(args->handle));
 
 	clean_paths(args);
