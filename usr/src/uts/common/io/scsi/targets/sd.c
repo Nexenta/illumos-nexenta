@@ -4346,6 +4346,7 @@ sd_set_properties(struct sd_lun *un, char *name, char *value)
 		    ISP2(val) && val >= un->un_tgt_blocksize &&
 		    val >= un->un_sys_blocksize) {
 			un->un_phy_blocksize = val;
+			un->un_f_sdconf_phy_blocksize = TRUE;
 		} else {
 			goto value_invalid;
 		}
@@ -7713,6 +7714,7 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 	 * set it before calling sd_read_unit_properties().
 	 */
 	un->un_phy_blocksize = DEV_BSIZE;
+	un->un_f_sdconf_phy_blocksize = FALSE;
 
 	/*
 	 * Retrieve the properties from the static driver table or the driver
@@ -23988,11 +23990,10 @@ sd_get_media_info_com(dev_t dev, uint_t *dki_media_type, uint_t *dki_lbsize,
 		rval = sd_send_scsi_READ_CAPACITY_16(ssc, &capacity, &lbasize,
 		    &pbsize, SD_PATH_DIRECT);
 
-		/*
-		 * Override the physical blocksize if the instance already
-		 * has a larger value.
-		 */
-		pbsize = MAX(pbsize, un->un_phy_blocksize);
+		if (un->un_f_sdconf_phy_blocksize) /* keep sd.conf's pbs */
+			pbsize = un->un_phy_blocksize;
+		else /* override the pbs if the instance has a larger value */
+			pbsize = MAX(pbsize, un->un_phy_blocksize);
 	}
 
 	if (dki_pbsize == NULL || rval != 0 ||
@@ -32416,10 +32417,13 @@ sd_check_emulation_mode(sd_ssc_t *ssc)
 		} else {
 			if (!ISP2(pbsize % DEV_BSIZE) || pbsize == 0) {
 				un->un_phy_blocksize = DEV_BSIZE;
-			} else if (pbsize > un->un_phy_blocksize) {
+			} else if (pbsize > un->un_phy_blocksize &&
+			    !un->un_f_sdconf_phy_blocksize) {
 				/*
-				 * Don't reset the physical blocksize
-				 * unless we've detected a larger value.
+				 * Reset the physical block size
+				 * if we've detected a larger value and
+				 * we didn't already set the physical
+				 * block size in sd.conf
 				 */
 				un->un_phy_blocksize = pbsize;
 			}

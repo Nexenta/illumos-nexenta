@@ -275,7 +275,7 @@ struct sd_lun {
 	 * Various configuration data
 	 */
 	uchar_t	un_ctype;		/* Controller type */
-	char 	*un_node_type;		/* minor node type */
+	char	*un_node_type;		/* minor node type */
 	uchar_t	un_interconnect_type;	/* Interconnect for underlying HBA */
 
 	uint_t	un_notready_retry_count; /* Per disk notready retry count */
@@ -416,7 +416,7 @@ struct sd_lun {
 						/* SCSI Logical Unit Reset */
 	    un_f_doorlock_supported	:1,	/* Device supports Doorlock */
 	    un_f_start_stop_supported	:1,	/* device has motor */
-	    un_f_reserved1		:1;
+	    un_f_sdconf_phy_blocksize	:1;	/* take pbs from sd.conf */
 
 	uint32_t
 	    un_f_mboot_supported	:1,	/* mboot supported */
@@ -438,7 +438,7 @@ struct sd_lun {
 	    un_f_attach_spinup		:1,	/* spin up once the */
 						/* device is attached */
 	    un_f_log_sense_supported	:1,	/* support log sense */
-	    un_f_pm_supported		:1, 	/* support power-management */
+	    un_f_pm_supported		:1,	/* support power-management */
 	    un_f_cfg_is_lsi		:1,	/* Is LSI device, */
 						/* default to NO */
 	    un_f_wcc_inprog		:1,	/* write cache change in */
