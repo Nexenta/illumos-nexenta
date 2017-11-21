@@ -4624,7 +4624,40 @@ stmf_check_freetask()
 	}
 }
 
-void
+/*
+ * Since this method is looking to find tasks that are stuck, lost, or senile
+ * it should be more willing to give up scaning during this time period. This
+ * is why mutex_tryenter is now used instead of the standard mutex_enter.
+ * There has been at least one case were the following occurred.
+ *
+ * 1) The iscsit_deferred() method is trying to register a session and
+ *    needs the global lock which is held.
+ * 2) Another thread which holds the global lock is trying to deregister a
+ *    session and needs the session lock.
+ * 3) A third thread is allocating a stmf task that has grabbed the session
+ *    lock and is trying to grab the lun task lock.
+ * 4) There's a timeout thread that has the lun task lock and is trying to grab
+ *    a specific task lock.
+ * 5) The thread that has the task lock is waiting for the ref count to go to
+ *    zero.
+ * 6) There's a task that would drop the count to zero, but it's in the task
+ *    queue waiting to run and is stuck because of #1 is currently block.
+ *
+ * This method is number 4 in the above chain of events. Had this code
+ * originally used mutex_tryenter the chain would have been broken and the
+ * system wouldn't have hung. So, now this method uses mutex_tryenter and
+ * you know why it does so.
+ */
+/* ---- Only one thread calls stmf_do_ilu_timeouts so no lock required ---- */
+typedef struct stmf_bailout_cnt {
+	int	no_ilu_lock;
+	int	no_task_lock;
+	int	tasks_checked;
+} stmf_bailout_cnt_t;
+
+stmf_bailout_cnt_t stmf_bailout;
+
+static void
 stmf_do_ilu_timeouts(stmf_i_lu_t *ilu)
 {
 	clock_t l = ddi_get_lbolt();
@@ -4633,10 +4666,18 @@ stmf_do_ilu_timeouts(stmf_i_lu_t *ilu)
 	scsi_task_t *task;
 	uint32_t to;
 
-	mutex_enter(&ilu->ilu_task_lock);
+	if (mutex_tryenter(&ilu->ilu_task_lock) == 0) {
+		stmf_bailout.no_ilu_lock++;
+		return;
+	}
+
 	for (itask = ilu->ilu_tasks; itask != NULL;
 	    itask = itask->itask_lu_next) {
-		mutex_enter(&itask->itask_mutex);
+		if (mutex_tryenter(&itask->itask_mutex) == 0) {
+			stmf_bailout.no_task_lock++;
+			continue;
+		}
+		stmf_bailout.tasks_checked++;
 		if (itask->itask_flags & (ITASK_IN_FREE_LIST |
 		    ITASK_BEING_ABORTED)) {
 			mutex_exit(&itask->itask_mutex);
