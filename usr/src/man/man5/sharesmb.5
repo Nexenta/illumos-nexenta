@@ -1,0 +1,232 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2017 Nexenta Systems, Inc.
+.\"
+.Dd November 22, 2017
+.Dt SHARESMB 5
+.Os
+.Sh NAME
+.Nm sharesmb
+.Nd SMB share options
+.Sh DESCRIPTION
+The following options are supported:
+.Bl -tag -width Ds
+.It Cm abe Ns = Ns Cm true Ns | Ns Cm false
+Set the access-based enumeration
+.Pq ABE
+policy for the share.
+When set to
+.Cm true ,
+ABE filtering is enabled on the share and directory entries to which the
+requesting user has no access will be omitted from directory listings
+returned to the client.
+When set to
+.Cm false
+or not defined, ABE filtering will not be performed on this share.
+This property is not defined by default.
+.It Cm ad-container
+Specifies the AD container in which to publish shares.
+.Pp
+The AD container is specified as a comma-separated list of attribute name-value
+pairs using the LDAP distinguished name
+.Pq DN
+or relative distinguished name
+.Pq RDN
+format.
+The DN or RDN must be specified in LDAP format using the
+.Cm cn Ns = ,
+.Cm ou Ns = ,
+and
+.Cm dc Ns =
+prefixes:
+.Bl -tag -compact -width "cn"
+.It Cm cn
+represents the common name
+.It Cm ou
+represents the organizational unit
+.It Cm dc
+represents the domain component
+.El
+.Pp
+.Cm cn Ns = ,
+.Cm ou Ns = ,
+and
+.Cm dc Ns =
+are attribute types.
+The attribute type used to describe an object's RDN is called the naming
+attribute, which, for ADS, includes the following object classes:
+.Bl -tag -compact -width "cn"
+.It Cm cn
+.Em user
+object class
+.It Cm ou
+organizational unit
+.Pq OU
+object class
+.It Cm dc
+.Em domainDns
+object class
+.El
+.It Cm catia Ns = Ns Cm true Ns | Ns Cm false
+CATIA V4 uses characters in file names that are considered to be invalid by
+Windows.
+CATIA V5 is available on Windows.
+A CATIA V4 file could be inaccessible to Windows clients if the file name
+contains any of the characters that are considered illegal in Windows.
+By default, CATIA character substitution is not performed.
+.Pp
+If the
+.Cm catia
+property is set to
+.Cm true ,
+the following character substitution is applied to file names:
+.Bd -literal
+CATIA    CATIA
+V4 UNIX  V5 Windows
+  "      \e250   0x00a8  Dieresis
+  *      \e244   0x00a4  Currency Sign
+  /      \e370   0x00f8  Latin Small Letter O with Stroke
+  :      \e367   0x00f7  Division Sign
+  <      \e253   0x00ab  Left-Pointing Double Angle Quotation Mark
+  >      \e273   0x00bb  Right-Pointing Double Angle Quotation Mark
+  ?      \e277   0x00bf  Inverted Question Mark
+  \e      \e377   0x00ff  Latin Small Letter Y with Dieresis
+  |      \e246   0x00a6  Broken Bar
+.Ed
+.It Cm cksum Ns = Ns Ar cksumlist
+Set the share to attempt to use end-to-end checksums.
+The value
+.Ar cksumlist
+specifies the checksum algorithms that should be used.
+.It Cm csc Ns = Ns Cm manual Ns | Ns Cm auto Ns | Ns Cm vdo Ns | Ns Cm disabled
+Set the client-side caching policy for a share.
+Client-side caching is a client feature and offline files are managed entirely
+by the clients.
+.Pp
+The following are valid values for the
+.Cm csc
+property:
+.Bl -tag -width "disabled"
+.It Cm manual
+Clients are permitted to cache files from the specified share for offline use as
+requested by users.
+However, automatic file-by-file reintegration is not permitted.
+.Cm manual
+is the default value.
+.It Cm auto
+Clients are permitted to automatically cache files from the specified share for
+offline use and file-by-file reintegration is permitted.
+.It Cm vdo
+Clients are permitted to automatically cache files from the specified share for
+offline use, file-by-file reintegration is permitted, and clients are permitted
+to work from their local cache even while offline.
+.It Cm disabled
+Client-side caching is not permitted for this share.
+.El
+.It Cm guestok Ns = Ns Cm true Ns | Ns Cm false
+Set the guest access policy for the share.
+When set to
+.Cm true
+guest access is allowed on this share.
+When set to
+.Cm false
+or not defined guest access is not allowed on this share.
+This property is not defined by default.
+.Pp
+An
+.Xr idmap 1M
+name-based rule can be used to map
+.Em guest
+to any local username, such as
+.Em guest
+or
+.Em nobody .
+If the local account has a password in
+.Pa /var/smb/smbpasswd
+the guest connection will be authenticated against that password.
+Any connection made using an account that maps to the local guest account will
+be treated as a guest connection.
+.It Cm encrypt Ns = Ns Cm disabled Ns | Ns Cm enabled Ns | Ns Cm required
+Controls SMB3 per-share encryption.
+This is similar to the global
+.Em smbd/encrypt
+option.
+For requests on a particular share, the server's behavior is controlled by the
+stricter of this option and
+.Em smbd/encrypt .
+.Pp
+When set to
+.Cm disabled ,
+the server will not ask clients to encrypt requests.
+When set to
+.Cm enabled ,
+the server will ask clients to encrypt requests,
+but will not require that they do so.
+Any message than can be encrypted will be encrypted.
+When set to
+.Cm required ,
+the server will deny access to or disconnect any client that does not support
+encryption or fails to encrypt requests that they should.
+.Pp
+In other words, the
+.Cm enabled
+behavior is that any message that CAN be encrypted SHOULD be encrypted, while
+the
+.Cm required
+behavior is that any message that CAN be encrypted MUST be encrypted.
+.Pp
+This property is not defined by default.
+.It Cm none Ns = Ns Ar access-list
+Access is not allowed to any client that matches the access list.
+The exception is when the access list is an asterisk
+.Pq Qq * ,
+in which case
+.Cm ro
+or
+.Cm rw
+can override
+.Cm none .
+See
+.Xr shareacl 5
+for the description of
+.Ar access-list .
+.It Cm ro
+Sharing is read-only to all clients.
+.It Cm ro Ns = Ns Ar access-list
+Sharing is read-only to the clients listed in
+.Ar access-list ;
+overrides the
+.Cm rw
+option for the clients specified.
+See
+.Xr shareacl 5
+for the description of
+.Ar access-list .
+.It Cm rw
+Sharing is read-write to all clients.
+.It Cm rw Ns = Ns Ar access-list
+Sharing is read-write to the clients listed in
+.Ar access-list ;
+overrides the
+.Cm ro
+option for the clients specified.
+See
+.Xr shareacl 5
+for the description of
+.Ar access-list .
+.El
+.Sh SEE ALSO
+.Xr sharectl 1M ,
+.Xr smbadm 1M ,
+.Xr zfs 1M ,
+.Xr smb 4 ,
+.Xr shareacl 5

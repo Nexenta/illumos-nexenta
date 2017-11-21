@@ -11,7 +11,7 @@
 
 #
 # Copyright 2011, Richard Lowe
-# Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright (c) 2017, Chris Fraire <cfraire@me.com>.
 #
@@ -56,7 +56,6 @@ file path=usr/share/man/man1m/dd.1m
 file path=usr/share/man/man1m/devattr.1m
 file path=usr/share/man/man1m/devfree.1m
 file path=usr/share/man/man1m/devfsadm.1m
-link path=usr/share/man/man1m/audlinks.1m target=devfsadm.1m
 file path=usr/share/man/man1m/devinfo.1m
 file path=usr/share/man/man1m/devlinks.1m
 file path=usr/share/man/man1m/devnm.1m
@@ -221,7 +220,6 @@ file path=usr/share/man/man1m/saf.1m
 file path=usr/share/man/man1m/savecore.1m
 file path=usr/share/man/man1m/setuname.1m
 file path=usr/share/man/man1m/share.1m
-file path=usr/share/man/man1m/share_nfs.1m
 file path=usr/share/man/man1m/shareall.1m
 file path=usr/share/man/man1m/sharectl.1m
 file path=usr/share/man/man1m/sharemgr.1m
@@ -264,7 +262,6 @@ file path=usr/share/man/man1m/ucodeadm.1m
 file path=usr/share/man/man1m/ufsdump.1m
 file path=usr/share/man/man1m/ufsrestore.1m
 file path=usr/share/man/man1m/unshare.1m
-file path=usr/share/man/man1m/unshare_nfs.1m
 file path=usr/share/man/man1m/update_drv.1m
 file path=usr/share/man/man1m/useradd.1m
 file path=usr/share/man/man1m/userdel.1m
@@ -278,6 +275,7 @@ file path=usr/share/man/man1m/whodo.1m
 file path=usr/share/man/man1m/wracct.1m
 file path=usr/share/man/man1m/zdump.1m
 file path=usr/share/man/man1m/zic.1m
+link path=usr/share/man/man1m/audlinks.1m target=devfsadm.1m
 link path=usr/share/man/man1m/dcopy.1m target=clri.1m
 link path=usr/share/man/man1m/devfsadmd.1m target=devfsadm.1m
 link path=usr/share/man/man1m/grpck.1m target=pwck.1m
@@ -285,6 +283,7 @@ link path=usr/share/man/man1m/intro.1m target=Intro.1m
 link path=usr/share/man/man1m/poweroff.1m target=halt.1m
 link path=usr/share/man/man1m/quotaoff.1m target=quotaon.1m
 link path=usr/share/man/man1m/restricted_shell.1m target=rsh.1m
+link path=usr/share/man/man1m/share_nfs.1m target=../man5/sharenfs.5
 link path=usr/share/man/man1m/telinit.1m target=init.1m
 link path=usr/share/man/man1m/umount.1m target=mount.1m
 link path=usr/share/man/man1m/umountall.1m target=mountall.1m

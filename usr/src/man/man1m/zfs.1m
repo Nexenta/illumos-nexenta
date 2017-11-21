@@ -1438,14 +1438,9 @@ Otherwise, the file system is automatically shared and unshared with the
 and
 .Nm zfs Cm unshare
 commands.
-If the property is set to
-.Sy on ,
-the
-.Xr sharemgr 1M
-command is invoked with no options.
-Otherwise, the
-.Xr sharemgr 1M
-command is invoked with options equivalent to the contents of this property.
+See
+.Xr sharesmb 5
+for the share options description.
 .Pp
 Because SMB shares requires a resource name, a unique resource name is
 constructed from the dataset name.
@@ -1509,13 +1504,9 @@ Otherwise, the file system is automatically shared and unshared with the
 and
 .Nm zfs Cm unshare
 commands.
-If the property is set to
-.Sy on ,
-.Xr share 1M
-command is invoked with no options.
-Otherwise, the
-.Xr share 1M
-command is invoked with options equivalent to the contents of this property.
+See
+.Xr sharenfs 5
+for the share options description.
 .Pp
 When the
 .Sy sharenfs
@@ -3935,9 +3926,7 @@ M       F       /tank/test/modified
 .Xr gzip 1 ,
 .Xr ssh 1 ,
 .Xr mount 1M ,
-.Xr share 1M ,
 .Xr sharemgr 1M ,
-.Xr unshare 1M ,
 .Xr zonecfg 1M ,
 .Xr zpool 1M ,
 .Xr chmod 2 ,
@@ -3946,4 +3935,6 @@ M       F       /tank/test/modified
 .Xr fsync 3C ,
 .Xr dfstab 4 ,
 .Xr acl 5 ,
-.Xr attributes 5
+.Xr attributes 5 ,
+.Xr sharenfs 5 ,
+.Xr sharesmb 5

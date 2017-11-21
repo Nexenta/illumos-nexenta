@@ -1,0 +1,130 @@
+.\"
+.\" This file and its contents are supplied under the terms of the
+.\" Common Development and Distribution License ("CDDL"), version 1.0.
+.\" You may only use this file in accordance with the terms of version
+.\" 1.0 of the CDDL.
+.\"
+.\" A full copy of the text of the CDDL should have accompanied this
+.\" source.  A copy of the CDDL is also available via the Internet at
+.\" http://www.illumos.org/license/CDDL.
+.\"
+.\"
+.\" Copyright 2017 Nexenta Systems, Inc.
+.\"
+.Dd November 22, 2017
+.Dt SHAREACL 5
+.Os
+.Sh NAME
+.Nm shareacl
+.Nd access list used by NFS and SMB services
+.Sh DESCRIPTION
+The
+.Ar access_list
+is a colon-separated list whose components may be any number of the following:
+.Bl -tag -width Ds
+.It Em hostname
+The name of a host.
+With a server configured for DNS or LDAP naming in the nsswitch
+.Cm hosts
+entry, any hostname must be represented as a fully qualified DNS or LDAP name.
+.It Em netgroup
+A netgroup contains a number of hostnames.
+With a server configured for DNS or LDAP naming in the nsswitch
+.Cm hosts
+entry, any hostname in a netgroup must be represented as a fully qualified DNS
+or LDAP name.
+.It Em domain name suffix
+To use domain membership the server must use DNS or LDAP to resolve hostnames to
+IP addresses; that is, the
+.Cm hosts
+entry in the
+.Pa /etc/nsswitch.conf
+must specify
+.Cm dns
+or
+.Cm ldap
+ahead of
+.Cm nis
+since only DNS and LDAP return the full domain name of the host.
+Other name services like NIS cannot be used to resolve hostnames on the server
+because when mapping an IP address to a hostname they do not return domain
+information.
+For example,
+.Pq NIS
+.Ql 172.16.45.9 --> "myhost"
+and
+.Pq DNS or LDAP
+.Ql 172.16.45.9 --> "myhost.mydomain.mycompany.com"
+.Pp
+The domain name suffix is distinguished from hostnames and netgroups by a
+prefixed dot.
+For example,
+.Ql rw=.mydomain.mycompany.com
+.Pp
+A single dot can be used to match a hostname with no suffix.
+For example,
+.Ql rw=.
+matches
+.Em mydomain
+but not
+.Em mydomain.mycompany.com .
+This feature can be used to match hosts resolved through NIS rather
+than DNS and LDAP.
+.It Em network
+The network or subnet component is preceded by an at-sign
+.Pq Qq @ .
+It can be either a name or a dotted address.
+If a name, it is converted to a dotted address by
+.Xr getnetbyname 3SOCKET .
+For example,
+.Ql =@mynet
+would be equivalent to
+.Ql =@172.16
+or
+.Ql =@172.16.0.0
+.Pp
+The network prefix assumes an octet-aligned netmask determined from the zeroth
+octet in the low-order part of the address up to and including the high-order
+octet, if you want to specify a single IP address
+.Pq see below .
+In the case where network prefixes are not byte-aligned, the syntax allows a
+mask length to be specified explicitly following a slash
+.Pq Qq /
+delimiter.
+For example,
+.Ql =@theothernet/17
+or
+.Ql =@172.16.132/22 ,
+where the mask is the number of leftmost contiguous significant bits in the
+corresponding IP address.
+.Pp
+When specifying individual IP addresses, use the same @ notation described
+above, without a netmask specification.
+For example,
+.Ql =@172.16.132.14 .
+Multiple, individual IP addresses would be specified, for example, as
+.Ql root=@172.16.132.20:@172.16.134.20 .
+.El
+.Pp
+A prefixed minus sign
+.Pq Qq -
+denies access to that component of
+.Ar access_list .
+The list is searched sequentially until a match is found that either grants or
+denies access, or until the end of the list is reached.
+For example, if host
+.Em terra
+is in the
+.Em engineering
+netgroup, then
+.Ql rw=-terra:engineering
+denies access to
+.Em terra
+but
+.Ql rw=engineering:-terra
+grants access to
+.Em terra .
+.Sh SEE ALSO
+.Xr getnetbyname 3SOCKET ,
+.Xr sharenfs 5 ,
+.Xr sharesmb 5

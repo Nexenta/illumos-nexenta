@@ -442,7 +442,6 @@ _MANFILES=	6to4relay.1m		\
 		sendmail.1m		\
 		setuname.1m		\
 		share.1m		\
-		share_nfs.1m		\
 		shareall.1m		\
 		sharectl.1m		\
 		sharemgr.1m		\
@@ -511,7 +510,6 @@ _MANFILES=	6to4relay.1m		\
 		ufsdump.1m		\
 		ufsrestore.1m		\
 		unshare.1m		\
-		unshare_nfs.1m		\
 		update_drv.1m		\
 		updatehome.1m		\
 		useradd.1m		\
@@ -623,6 +621,7 @@ MANLINKS=	acctcon1.1m			\
 		sa1.1m				\
 		sa2.1m				\
 		sadc.1m				\
+		share_nfs.1m			\
 		shutacct.1m			\
 		sprayd.1m			\
 		startup.1m			\
@@ -744,6 +743,8 @@ sa2.1m				:= LINKSRC = sar.1m
 sadc.1m				:= LINKSRC = sar.1m
 
 unshareall.1m			:= LINKSRC = shareall.1m
+
+share_nfs.1m			:= LINKSRC = ../man5/sharenfs.5
 
 ypxfrd.1m			:= LINKSRC = ypserv.1m
 

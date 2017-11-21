@@ -12,7 +12,7 @@
 #
 # Copyright 2011, Richard Lowe
 # Copyright (c) 2012 by Delphix. All rights reserved.
-# Copyright 2014 Nexenta Systems, Inc.
+# Copyright 2017 Nexenta Systems, Inc.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright (c) 2015, Joyent, Inc.  All rights reserved.
 #
@@ -123,6 +123,9 @@ MANFILES=	Intro.5			\
 		regexp.5		\
 		resource_controls.5	\
 		security-flags.5	\
+		shareacl.5		\
+		sharenfs.5		\
+		sharesmb.5		\
 		smf.5			\
 		smf_bootstrap.5		\
 		smf_method.5		\

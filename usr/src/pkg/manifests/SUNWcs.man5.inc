@@ -11,7 +11,7 @@
 
 #
 # Copyright 2011, Richard Lowe
-# Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2017 Nexenta Systems, Inc.
 #
 
 file path=usr/share/man/man5/Intro.5
@@ -29,6 +29,9 @@ file path=usr/share/man/man5/privileges.5
 file path=usr/share/man/man5/rbac.5
 file path=usr/share/man/man5/resource_controls.5
 file path=usr/share/man/man5/security-flags.5
+file path=usr/share/man/man5/shareacl.5
+file path=usr/share/man/man5/sharenfs.5
+file path=usr/share/man/man5/sharesmb.5
 file path=usr/share/man/man5/smf.5
 file path=usr/share/man/man5/smf_bootstrap.5
 file path=usr/share/man/man5/smf_method.5
