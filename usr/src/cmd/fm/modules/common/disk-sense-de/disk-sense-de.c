@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
  */
 
 #include <fm/fmd_api.h>
@@ -79,7 +79,7 @@ disk_sense_case_solve(fmd_hdl_t *hdl, const char *faultclass, fmd_case_t *c,
 
 void
 disk_sense_recv(fmd_hdl_t *hdl, fmd_event_t *event, nvlist_t *nvl,
-	const char *class)
+    const char *class)
 {
 	nvlist_t *detector = NULL;
 	char *devid = NULL;
@@ -104,8 +104,15 @@ disk_sense_recv(fmd_hdl_t *hdl, fmd_event_t *event, nvlist_t *nvl,
 		return;
 	}
 
-        (void) nvlist_lookup_uint8(nvl, "asc", &asc);
-        (void) nvlist_lookup_uint8(nvl, "ascq", &ascq);
+	/*
+	 * Ignore illegal requests (key=0x5), none of the related asc/ascq
+	 * show an error condition which should lead to device retire.
+	 */
+	if (key == 0x5)
+		return;
+
+	(void) nvlist_lookup_uint8(nvl, "asc", &asc);
+	(void) nvlist_lookup_uint8(nvl, "ascq", &ascq);
 
 	if (key == 0x1 && asc == 0xb && ascq == 0x1) {
 		/* over temp reported by drive sense data */
@@ -117,12 +124,6 @@ disk_sense_recv(fmd_hdl_t *hdl, fmd_event_t *event, nvlist_t *nvl,
 		return;
 	}
 
-	if (key == 0x5 && asc == 0x26 &&
-	    (fmd_prop_get_int32(hdl, "ignore-illegal-request") == FMD_B_TRUE)) {
-		fmd_hdl_debug(hdl, "Illegal request for device, ignoring");
-		return;
-	}
-
 	if (key == 0x7 && asc == 0x20 && ascq == 0x2 &&
 	    (fmd_prop_get_int32(hdl, "ignore-locked-device") == FMD_B_TRUE)) {
 		fmd_hdl_debug(hdl, "Locked device, ignoring");
@@ -130,7 +131,7 @@ disk_sense_recv(fmd_hdl_t *hdl, fmd_event_t *event, nvlist_t *nvl,
 	}
 
 	fmd_hdl_debug(hdl, "Recording event in SERD %s: key: %x, asc: %x "
-            "ascq: %x", devid, key, asc, ascq);
+	    "ascq: %x", devid, key, asc, ascq);
 
 	if (fmd_serd_exists(hdl, devid) == 0) {
 		fmd_serd_create(hdl, devid, fmd_prop_get_int32(hdl, "io_N"),
