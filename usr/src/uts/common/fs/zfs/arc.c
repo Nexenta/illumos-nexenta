@@ -1259,7 +1259,6 @@ static void arc_hdr_alloc_pabd(arc_buf_hdr_t *);
 static void arc_access(arc_buf_hdr_t *, kmutex_t *);
 static boolean_t arc_is_overflowing();
 static void arc_buf_watch(arc_buf_t *);
-static void l2arc_read_done(zio_t *zio);
 static l2arc_dev_t *l2arc_vdev_get(vdev_t *vd);
 
 static arc_buf_contents_t arc_buf_type(arc_buf_hdr_t *);
@@ -2002,6 +2001,8 @@ arc_cksum_is_equal(arc_buf_hdr_t *hdr, zio_t *zio)
 
 		void *cbuf = zio_buf_alloc(HDR_GET_PSIZE(hdr));
 		csize = zio_compress_data(compress, zio->io_abd, cbuf, lsize);
+		abd_t *cdata = abd_get_from_buf(cbuf, HDR_GET_PSIZE(hdr));
+		abd_take_ownership_of_buf(cdata, B_TRUE);
 
 		ASSERT3U(csize, <=, HDR_GET_PSIZE(hdr));
 		if (csize < HDR_GET_PSIZE(hdr)) {
@@ -2017,10 +2018,10 @@ arc_cksum_is_equal(arc_buf_hdr_t *hdr, zio_t *zio)
 			 * and zero out any part that should not contain
 			 * data.
 			 */
-			bzero((char *)cbuf + csize, HDR_GET_PSIZE(hdr) - csize);
+			abd_zero_off(cdata, csize, HDR_GET_PSIZE(hdr) - csize);
 			csize = HDR_GET_PSIZE(hdr);
 		}
-		zio_push_transform(zio, cbuf, csize, HDR_GET_PSIZE(hdr), NULL);
+		zio_push_transform(zio, cdata, csize, HDR_GET_PSIZE(hdr), NULL);
 	}
 
 	/*
@@ -3121,7 +3122,9 @@ arc_hdr_free_on_write(arc_buf_hdr_t *hdr)
 		    size, hdr);
 	}
 	(void) refcount_remove_many(&state->arcs_size, size, hdr);
-	if (type == ARC_BUFC_METADATA) {
+	if (type == ARC_BUFC_DDT) {
+		arc_space_return(size, ARC_SPACE_DDT);
+	} else if (type == ARC_BUFC_METADATA) {
 		arc_space_return(size, ARC_SPACE_META);
 	} else {
 		ASSERT(type == ARC_BUFC_DATA);
@@ -3153,7 +3156,7 @@ arc_share_buf(arc_buf_hdr_t *hdr, arc_buf_t *buf)
 	refcount_transfer_ownership(&state->arcs_size, buf, hdr);
 	hdr->b_l1hdr.b_pabd = abd_get_from_buf(buf->b_data, arc_buf_size(buf));
 	abd_take_ownership_of_buf(hdr->b_l1hdr.b_pabd,
-	    HDR_ISTYPE_METADATA(hdr));
+	    !HDR_ISTYPE_DATA(hdr));
 	arc_hdr_set_flags(hdr, ARC_FLAG_SHARED_DATA);
 	buf->b_flags |= ARC_BUF_FLAG_SHARED;
 
@@ -4972,7 +4975,7 @@ arc_get_data_abd(arc_buf_hdr_t *hdr, uint64_t size, void *tag)
 	arc_buf_contents_t type = arc_buf_type(hdr);
 
 	arc_get_data_impl(hdr, size, tag);
-	if (type == ARC_BUFC_METADATA) {
+	if (type == ARC_BUFC_METADATA || type == ARC_BUFC_DDT) {
 		return (abd_alloc(size, B_TRUE));
 	} else {
 		ASSERT(type == ARC_BUFC_DATA);
@@ -4986,7 +4989,7 @@ arc_get_data_buf(arc_buf_hdr_t *hdr, uint64_t size, void *tag)
 	arc_buf_contents_t type = arc_buf_type(hdr);
 
 	arc_get_data_impl(hdr, size, tag);
-	if (type == ARC_BUFC_METADATA) {
+	if (type == ARC_BUFC_METADATA || type == ARC_BUFC_DDT) {
 		return (zio_buf_alloc(size));
 	} else {
 		ASSERT(type == ARC_BUFC_DATA);
@@ -5100,7 +5103,7 @@ arc_free_data_buf(arc_buf_hdr_t *hdr, void *buf, uint64_t size, void *tag)
 	arc_buf_contents_t type = arc_buf_type(hdr);
 
 	arc_free_data_impl(hdr, size, tag);
-	if (type == ARC_BUFC_METADATA) {
+	if (type == ARC_BUFC_METADATA || type == ARC_BUFC_DDT) {
 		zio_buf_free(buf, size);
 	} else {
 		ASSERT(type == ARC_BUFC_DATA);
@@ -5812,7 +5815,7 @@ top:
 				asize = vdev_psize_to_asize(vd, size);
 				if (asize != size) {
 					abd = abd_alloc_for_io(asize,
-					    HDR_ISTYPE_METADATA(hdr));
+					    !HDR_ISTYPE_DATA(hdr));
 					cb->l2rcb_abd = abd;
 				} else {
 					abd = hdr->b_l1hdr.b_pabd;
@@ -7948,7 +7951,7 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 				to_write = hdr->b_l1hdr.b_pabd;
 			} else {
 				to_write = abd_alloc_for_io(asize,
-				    HDR_ISTYPE_METADATA(hdr));
+				    !HDR_ISTYPE_DATA(hdr));
 				abd_copy(to_write, hdr->b_l1hdr.b_pabd, psize);
 				if (asize != psize) {
 					abd_zero_off(to_write, psize,
