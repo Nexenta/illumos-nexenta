@@ -3113,7 +3113,9 @@ arc_hdr_free_on_write(arc_buf_hdr_t *hdr)
 		    size, hdr);
 	}
 	(void) refcount_remove_many(&state->arcs_size, size, hdr);
-	if (type == ARC_BUFC_METADATA) {
+	if (type == ARC_BUFC_DDT) {
+		arc_space_return(size, ARC_SPACE_DDT);
+	} else if (type == ARC_BUFC_METADATA) {
 		arc_space_return(size, ARC_SPACE_META);
 	} else {
 		ASSERT(type == ARC_BUFC_DATA);
@@ -7206,7 +7208,8 @@ l2arc_do_free_on_write()
 	for (df = list_tail(buflist); df; df = df_prev) {
 		df_prev = list_prev(buflist, df);
 		ASSERT3P(df->l2df_data, !=, NULL);
-		if (df->l2df_type == ARC_BUFC_METADATA) {
+		if (df->l2df_type == ARC_BUFC_METADATA ||
+		    df->l2df_type == ARC_BUFC_DDT) {
 			zio_buf_free(df->l2df_data, df->l2df_size);
 		} else {
 			ASSERT(df->l2df_type == ARC_BUFC_DATA);
@@ -7832,7 +7835,8 @@ l2arc_write_buffers(spa_t *spa, l2arc_dev_t *dev, uint64_t target_sz,
 				to_write = hdr->b_l1hdr.b_pdata;
 			} else {
 				arc_buf_contents_t type = arc_buf_type(hdr);
-				if (type == ARC_BUFC_METADATA) {
+				if (type == ARC_BUFC_METADATA ||
+				    type == ARC_BUFC_DDT) {
 					to_write = zio_buf_alloc(size);
 				} else {
 					ASSERT3U(type, ==, ARC_BUFC_DATA);
