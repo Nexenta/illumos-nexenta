@@ -656,6 +656,7 @@ void smb_domain_set_dns_info(char *, char *, char *, char *, char *,
 void smb_domain_set_trust_info(char *, char *, char *,
     uint32_t, uint32_t, uint32_t, smb_domain_t *);
 void smb_domain_current_dc(smb_dcinfo_t *);
+void smb_domain_bad_dc(void);
 
 typedef struct smb_gsid {
 	smb_sid_t *gs_sid;

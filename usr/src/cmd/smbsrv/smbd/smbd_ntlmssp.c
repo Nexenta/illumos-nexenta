@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -451,7 +451,9 @@ smbd_ntlmssp_authenticate(authsvc_context_t *ctx)
 	 */
 	token = smbd_user_auth_logon(&user_info);
 	if (token == NULL) {
-		status = NT_STATUS_ACCESS_DENIED;
+		status = user_info.lg_status;
+		if (status == 0) /* should not happen */
+			status = NT_STATUS_INTERNAL_ERROR;
 		goto errout;
 	}
 
