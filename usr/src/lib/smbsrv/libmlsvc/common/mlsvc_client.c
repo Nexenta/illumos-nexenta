@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -57,6 +57,7 @@ static void ndr_xa_preserve(ndr_client_t *, ndr_xa_t *);
 static void ndr_xa_destruct(ndr_client_t *, ndr_xa_t *);
 static void ndr_xa_release(ndr_client_t *);
 
+int smb_pipe_open_retries = 5;
 
 /*
  * This call must be made to initialize an RPC client structure and bind
@@ -71,13 +72,15 @@ static void ndr_xa_release(ndr_client_t *);
  * unbind and teardown the connection.  As each handle is initialized it
  * will inherit a reference to the client context.
  *
- * Returns 0 or an NT_STATUS:
+ * Returns 0 or an NT_STATUS:		(failed in...)
+ *
  *	NT_STATUS_BAD_NETWORK_PATH	(get server addr)
  *	NT_STATUS_NETWORK_ACCESS_DENIED	(connect, auth)
- *	NT_STATUS_BAD_NETWORK_NAME	(tcon, open)
+ *	NT_STATUS_BAD_NETWORK_NAME	(tcon)
+ *	RPC_NT_SERVER_TOO_BUSY		(open pipe)
+ *	RPC_NT_SERVER_UNAVAILABLE	(open pipe)
  *	NT_STATUS_ACCESS_DENIED		(open pipe)
  *	NT_STATUS_INVALID_PARAMETER	(rpc bind)
- *
  *	NT_STATUS_INTERNAL_ERROR	(bad args etc)
  *	NT_STATUS_NO_MEMORY
  */
@@ -92,6 +95,7 @@ ndr_rpc_bind(mlsvc_handle_t *handle, char *server, char *domain,
 	DWORD			status;
 	int			fd = -1;
 	int			rc;
+	int			retries;
 
 	if (handle == NULL || server == NULL || server[0] == '\0' ||
 	    domain == NULL || username == NULL)
@@ -136,26 +140,53 @@ ndr_rpc_bind(mlsvc_handle_t *handle, char *server, char *domain,
 		    "(Srv=%s Dom=%s User=%s), %s (0x%x)",
 		    server, domain, username,
 		    xlate_nt_status(status), status);
-		/* Tell the DC Locator this DC failed. */
-		smb_ddiscover_bad_dc(server);
+		/*
+		 * If the error is one where changing to a new DC
+		 * might help, try looking for a different DC.
+		 */
+		switch (status) {
+		case NT_STATUS_BAD_NETWORK_PATH:
+		case NT_STATUS_BAD_NETWORK_NAME:
+			/* Look for a new DC */
+			smb_ddiscover_bad_dc(server);
+		default:
+			break;
+		}
 		goto errout;
 	}
 
 	/*
 	 * Open the named pipe.
+	 *
+	 * Sometimes a DC may return NT_STATUS_PIPE_NOT_AVAILABLE for
+	 * the first few seconds during service auto-start.  The client
+	 * translates that to EBUSY, so when we see that, wait a little
+	 * and retry the open a few times.  If we still can't open the
+	 * named pipe, we'll try to find a new DC.
 	 */
+	retries = smb_pipe_open_retries;
+retry_open:
 	fd = smb_fh_open(ctx, svc->endpoint, O_RDWR);
 	if (fd < 0) {
 		rc = errno;
-		syslog(LOG_DEBUG, "ndr_rpc_bind: "
+		syslog(LOG_ERR, "ndr_rpc_bind: "
 		    "smb_fh_open (%s) err=%d",
 		    svc->endpoint, rc);
 		switch (rc) {
+		case EBUSY:
+			if (--retries > 0) {
+				(void) sleep(1);
+				goto retry_open;
+			}
+			/* Look for a new DC */
+			smb_ddiscover_bad_dc(server);
+			status = RPC_NT_SERVER_TOO_BUSY;
+			break;
 		case EACCES:
 			status = NT_STATUS_ACCESS_DENIED;
 			break;
 		default:
-			status = NT_STATUS_BAD_NETWORK_NAME;
+			status = RPC_NT_SERVER_UNAVAILABLE;
 			break;
 		}
 		goto errout;
