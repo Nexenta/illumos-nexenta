@@ -1296,7 +1296,7 @@ save_date_token_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp)
 
 	nlp->nlp_tokseq++;
 	tok = ((u_longlong_t)nlp->nlp_tokseq << 32) | nlp->nlp_cdate;
-	(void) snprintf(val, sizeof (val), "%lu", tok);
+	(void) snprintf(val, sizeof (val), "%llu", tok);
 
 	if (MOD_SETENV(params, "DUMP_DATE", val) != 0) {
 		MOD_LOGV3(params, NDMP_LOG_ERROR,
