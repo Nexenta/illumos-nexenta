@@ -1906,7 +1906,7 @@ zfs_recv_one_ds(spa_t *spa, char *ds, dmu_replay_record_t *drr,
 				    (unsigned long long)drrb->drr_fromguid);
 			}
 
-			return (SET_ERROR(EINVAL));
+			return (SET_ERROR(ENOLINK));
 		}
 
 		originp = origin;

@@ -121,6 +121,7 @@ typedef enum {
 #define	LIBKRRP_EMSG_SESSPINGTIMEOUT "Session ping timeout"
 #define	LIBKRRP_EMSG_OK "No error"
 #define	LIBKRRP_EMSG_UNKNOWN "Unknown error"
+#define	LIBKRRP_EMSG_NOORIGIN "Destination does not have origin snapshot"
 #define	LIBKRRP_EMSG_WRITEFAIL "Session write stream error (%s)"
 #define	LIBKRRP_EMSG_SNAPMISMATCH "Most recent snapshot does not match " \
 	    "incremental source"
