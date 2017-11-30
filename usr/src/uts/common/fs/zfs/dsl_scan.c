@@ -104,9 +104,9 @@ static void scan_ds_queue_sync(dsl_scan_t *scn, dmu_tx_t *tx);
  */
 int zfs_top_maxinflight = 32;
 
-int zfs_resilver_delay = 2;		/* number of ticks to delay resilver */
-int zfs_scrub_delay = 4;		/* number of ticks to delay scrub */
-int zfs_scan_idle = 50;			/* idle window in clock ticks */
+int zfs_resilver_delay = 1;		/* number of ticks to delay resilver */
+int zfs_scrub_delay = 2;		/* number of ticks to delay scrub */
+int zfs_scan_idle = 0;			/* idle window in clock ticks */
 
 /*
  * Minimum amount of data we dequeue if our queues are full and the
