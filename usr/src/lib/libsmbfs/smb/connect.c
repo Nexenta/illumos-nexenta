@@ -22,7 +22,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -378,7 +378,7 @@ int
 smb_iod_connect(smb_ctx_t *ctx)
 {
 	struct sockaddr *sa;
-	int err, err2;
+	int err;
 	struct mbdata blob;
 
 	memset(&blob, 0, sizeof (blob));
@@ -429,18 +429,6 @@ smb_iod_connect(smb_ctx_t *ctx)
 
 	case AF_INET:
 		err = conn_tcp4(ctx, sa, IPPORT_SMB);
-		/*
-		 * If port 445 was not listening, try port 139.
-		 * Note: Not doing NetBIOS name lookup here.
-		 * We already have the IP address.
-		 */
-		switch (err) {
-		case ECONNRESET:
-		case ECONNREFUSED:
-			err2 = conn_nbt(ctx, sa, NULL);
-			if (err2 == 0)
-				err = 0;
-		}
 		break;
 
 	case AF_NETBIOS:
