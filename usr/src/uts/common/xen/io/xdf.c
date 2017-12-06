@@ -3631,7 +3631,6 @@ errout1:
 	xvdi_remove_event_handler(dip, XS_OE_STATE);
 errout0:
 	if (vdp->xdf_vd_lbl != NULL) {
-		cmlb_detach(vdp->xdf_vd_lbl, NULL);
 		cmlb_free_handle(&vdp->xdf_vd_lbl);
 		vdp->xdf_vd_lbl = NULL;
 	}
