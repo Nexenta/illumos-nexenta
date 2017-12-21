@@ -991,12 +991,6 @@ usr/bin/diskfltinj
 usr/bin/test-getdc
 
 #
-# disk-light should not be shipped
-#
-usr/lib/fm/fmd/plugins/disk-lights.conf
-usr/lib/fm/fmd/plugins/disk-lights.so
-
-#
 # libficl-sys is private
 #
 usr/include/ficllocal.h
