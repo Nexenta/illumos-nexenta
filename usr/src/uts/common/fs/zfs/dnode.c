@@ -60,7 +60,7 @@ static kmem_cache_t *dnode_cache;
 static dnode_phys_t dnode_phys_zero;
 
 int zfs_default_bs = SPA_MINBLOCKSHIFT;
-int zfs_default_ibs = DN_MAX_INDBLKSHIFT;
+int zfs_default_ibs = DN_DFL_INDBLKSHIFT;
 
 static kmem_cbrc_t dnode_move(void *, void *, size_t, void *);
 

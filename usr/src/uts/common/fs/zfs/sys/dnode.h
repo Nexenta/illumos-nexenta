@@ -60,6 +60,7 @@ extern "C" {
  */
 #define	DNODE_SHIFT		9	/* 512 bytes */
 #define	DN_MIN_INDBLKSHIFT	12	/* 4k */
+#define	DN_DFL_INDBLKSHIFT	14	/* 16k */
 /*
  * If we ever increase this value beyond 20, we need to revisit all logic that
  * does x << level * ebps to handle overflow.  With a 1M indirect block size,
