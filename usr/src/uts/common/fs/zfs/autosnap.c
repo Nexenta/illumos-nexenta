@@ -1248,74 +1248,57 @@ autosnap_destroyer_thread(void *void_spa)
 	mutex_enter(&autosnap->autosnap_lock);
 	while (!autosnap->need_stop) {
 		nvlist_t *nvl, *errlist;
-		nvpair_t *pair;
-		autosnap_snapshot_t *snapshot, *tmp;
+		autosnap_snapshot_t *snapshot;
+		char ds[ZFS_MAX_DATASET_NAME_LEN];
+		char *snap;
 		int err;
 
-		if (list_head(&autosnap->autosnap_destroy_queue) == NULL) {
+		snapshot = list_head(&autosnap->autosnap_destroy_queue);
+		if (snapshot == NULL) {
 			cv_wait(&autosnap->autosnap_cv,
 			    &autosnap->autosnap_lock);
 			continue;
 		}
 
-		nvl = fnvlist_alloc();
-		errlist = fnvlist_alloc();
+		(void) strlcpy(ds, snapshot->name, sizeof (ds));
+		snap = strchr(ds, '@');
+		VERIFY(snap != NULL);
+		*snap++ = '\0';
 
-		/* iterate through list of snapshots to be destroyed */
-		snapshot = list_head(&autosnap->autosnap_destroy_queue);
-		while (snapshot) {
-			char ds[ZFS_MAX_DATASET_NAME_LEN];
-			char *snap;
-
-			(void) strlcpy(ds, snapshot->name, sizeof (ds));
-			snap = strchr(ds, '@');
-			VERIFY(snap != NULL);
-			*snap++ = '\0';
-
-			mutex_exit(&autosnap->autosnap_lock);
-			err = dsl_pool_collect_ds_for_autodestroy(spa, ds, snap,
-			    snapshot->recursive, nvl);
-			mutex_enter(&autosnap->autosnap_lock);
-			if (err)
-				break;
-
-			tmp = list_next(&autosnap->autosnap_destroy_queue,
-			    snapshot);
-			list_remove(&autosnap->autosnap_destroy_queue,
-			    snapshot);
-			kmem_free(snapshot, sizeof (autosnap_snapshot_t));
-			snapshot = tmp;
-		}
-
-		/* destroy pack of snpashots */
 		mutex_exit(&autosnap->autosnap_lock);
-		err = dsl_destroy_snapshots_nvl(nvl, B_TRUE, errlist);
-		mutex_enter(&autosnap->autosnap_lock);
 
-		/* return not destroyed snapshots to the queue */
-		if (err) {
-			for (pair = nvlist_next_nvpair(errlist, NULL);
-			    pair != NULL;
-			    pair = nvlist_next_nvpair(errlist, pair)) {
-				cmn_err(CE_WARN,
-				    "Can't destroy snapshots %s : [%d]\n",
-				    nvpair_name(pair),
-				    fnvpair_value_int32(pair));
-				if (err != EBUSY && err != EEXIST)
-					continue;
-				snapshot = kmem_zalloc(
-				    sizeof (autosnap_snapshot_t), KM_SLEEP);
-				(void) strlcpy(snapshot->name,
-				    nvpair_name(pair), sizeof (snapshot->name));
-				snapshot->recursive = B_FALSE;
-				list_insert_tail(
-				    &autosnap->autosnap_destroy_queue,
-				    snapshot);
-			}
+		nvl = fnvlist_alloc();
+		err = dsl_pool_collect_ds_for_autodestroy(spa, ds, snap,
+		    snapshot->recursive, nvl);
+
+		mutex_enter(&autosnap->autosnap_lock);
+		if (err != 0) {
+			fnvlist_free(nvl);
+			continue;
 		}
 
+		/*
+		 * remove it from the queue for now.
+		 * will add it back to the tail of the queue
+		 * if destroy fails
+		 */
+		list_remove(&autosnap->autosnap_destroy_queue, snapshot);
+		mutex_exit(&autosnap->autosnap_lock);
+
+		errlist = fnvlist_alloc();
+		err = dsl_destroy_snapshots_nvl(nvl, B_TRUE, errlist);
 		fnvlist_free(errlist);
 		fnvlist_free(nvl);
+
+		if (err == 0)
+			kmem_free(snapshot, sizeof (autosnap_snapshot_t));
+
+		mutex_enter(&autosnap->autosnap_lock);
+
+		if (err != 0) {
+			list_insert_tail(&autosnap->autosnap_destroy_queue,
+			    snapshot);
+		}
 	}
 
 	autosnap->destroyer = NULL;
