@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2013 Gary Mills
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -252,7 +252,7 @@ log_init(void)
 	    utsname.release, utsname.version, NBBY * (uint_t)sizeof (void *));
 	printf("Copyright (c) 1983, 2010, Oracle and/or its affiliates. "
 	    "All rights reserved.\n");
-	printf("Copyright 2017 Nexenta Systems, Inc.  All rights reserved.\n");
+	printf("Copyright 2018 Nexenta Systems, Inc.  All rights reserved.\n");
 #ifdef DEBUG
 	printf("DEBUG enabled\n");
 #endif
