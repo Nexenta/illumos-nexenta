@@ -20,9 +20,8 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2016 Toomas Soome <tsoome@me.com>
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
@@ -8224,22 +8223,26 @@ build_event_attributes(char *class, char *subclass, char *node_path,
 
 	if (strcmp(subclass, ESC_DISK) == 0) {
 		/*
-		 * While we're removing labeled lofi device, we will receive
-		 * event for every registered minor device and lastly,
-		 * an event with minor set to NULL, as in following example:
-		 * class: EC_dev_remove subclass: disk
-		 * node_path: /pseudo/lofi@1 driver: lofi minor: u,raw
-		 * class: EC_dev_remove subclass: disk
-		 * node_path: /pseudo/lofi@1 driver: lofi minor: NULL
+		 * FIXME Currently we will get ESC_devfs_devi_remove for labeled
+		 * lofi devices only after all its minors are already removed,
+		 * so the lookup_disk_dev_name() call below will fail.
 		 *
-		 * When we receive this last event with minor set to NULL,
-		 * all lofi minor devices are already removed and the call to
-		 * lookup_disk_dev_name() would result in error.
-		 * To prevent name lookup error messages for this case, we
-		 * need to filter out that last event.
+		 * Given the above, ignore all lofi events except for lofi minor
+		 * remove event for minor 'a' (chosen arbitrarily) so that we
+		 * post exactly one ESC_dev_remove/disk event for labeled lofi
+		 * devices, and don't get error from lookup_disk_dev_name().
 		 */
 		if (strcmp(class, EC_DEV_REMOVE) == 0 &&
-		    strcmp(driver_name, "lofi") ==  0 && minor == NULL) {
+		    strcmp(driver_name, "lofi") == 0 &&
+		    (minor == NULL || strcmp(minor, "a") != 0)) {
+			nvlist_free(nvl);
+			return (NULL);
+		}
+		/*
+		 * Don't post disk minor events (except for lofi workaround),
+		 * they don't provide any useful information.
+		 */
+		if (minor != NULL && strcmp(minor, "a") != 0) {
 			nvlist_free(nvl);
 			return (NULL);
 		}
