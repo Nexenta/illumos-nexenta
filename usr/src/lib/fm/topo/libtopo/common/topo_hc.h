@@ -161,6 +161,19 @@ extern "C" {
 #define	TOPO_PROP_SAS_PHY_MASK	"phy-mask"
 #define	TOPO_PROP_SAS_CONNECTOR_TYPE	"sas-connector-type"
 
+/*
+ * These properties will exist on nodes enumerated by the ipmi module. They
+ * are consumed by the fac_prov_ipmi module
+ */
+#define	TOPO_PROP_IPMI_ENTITY_ID	"entity-id"
+#define	TOPO_PROP_IPMI_ENTITY_INST	"entity-instance"
+
+/*
+ * This property can be statically set in a map file and is consumed by the
+ * fac_prov_ipmi module.
+ */
+#define	TOPO_PROP_IPMI_ENTITY_LIST	"entity-list"
+
 #ifdef	__cplusplus
 }
 #endif
