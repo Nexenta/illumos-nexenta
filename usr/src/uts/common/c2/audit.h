@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -490,6 +491,7 @@ extern "C" {
 
 struct fcntla;
 struct t_audit_data;
+struct t_audit_sacl;
 struct audit_path;
 struct priv_set;
 struct devplcysys;
@@ -547,6 +549,8 @@ void	audit_async_finish(caddr_t *, au_event_t, au_emod_t, timestruc_t *);
 void	audit_async_discard_backend(void *);
 void	audit_async_done(caddr_t *, int);
 void	audit_async_drop(caddr_t *, int);
+void	audit_sacl(char *, cred_t *, uint32_t, boolean_t,
+    struct t_audit_sacl *);
 
 #ifndef AUK_CONTEXT_T
 #define	AUK_CONTEXT_T
@@ -577,6 +581,9 @@ int	    au_zone_getstate(const au_kcontext_t *);
 	(audit_active == C2AUDIT_LOADED &&  \
 	    ((AU_AUDIT_MASK) & au_zone_getstate((zcontext))))
 
+#define	AU_AUDIT_PERZONE()	\
+	((audit_policy & AUDIT_PERZONE) != 0)
+
 /*
  * Get auditing status
  */
@@ -584,6 +591,7 @@ int	    au_zone_getstate(const au_kcontext_t *);
 
 int	audit_success(au_kcontext_t *, struct t_audit_data *, int, cred_t *);
 int	auditme(au_kcontext_t *, struct t_audit_data *, au_state_t);
+int	auditev(au_event_t, cred_t *);
 void	audit_fixpath(struct audit_path *, int);
 void	audit_ipc(int, int, void *);
 void	audit_ipcget(int, void *);

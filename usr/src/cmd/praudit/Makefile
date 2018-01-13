@@ -24,6 +24,8 @@
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+#
 #
 
 XLATEDIR = $(SRC)/lib/libbsm/common
@@ -45,7 +47,7 @@ CPPFLAGS += -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 CERRWARN += -_gcc=-Wno-parentheses
 CERRWARN += -_gcc=-Wno-uninitialized
 
-LDLIBS += -lbsm -lnsl -lpam -ltsol
+LDLIBS += -lbsm -lnsl -lpam -ltsol -lidmap
 
 .KEEP_STATE:
 

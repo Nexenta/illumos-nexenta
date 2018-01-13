@@ -32,12 +32,14 @@ cpu=`uname -p`
 case $cpu in
 i386)
 	x=intel
+	kmdb_arch="amd64"
 	mdb_arch="ia32 amd64"
 	arch64=amd64
 	;;
 sparc)
 	x=sparc
-	mdb_arch=v9
+	kmdb_arch=v9
+	mdb_arch="v7 v9"
 	arch64=sparcv9
 	;;
 *)  echo "Huh?" ; exit 1;;
@@ -77,56 +79,27 @@ then
   test -f $SRC/uts/common/sys/priv_names.h ||
     (cd $SRC/uts && $make -k all_h)
 
-  test -f $SRC/head/rpcsvc/nispasswd.h ||
-    (cd $SRC/head && $make -k $targ)
-
   # ... stuff under $ROOT (proto area)
   test -d $ROOT/usr/include/sys ||
     (cd $SRC && $make rootdirs)
   test -f $ROOT/usr/include/sys/types.h ||
     (cd $SRC/uts && $make -k $targ)
-  test -f $ROOT/usr/include/rpcsvc/daemon_utils.h ||
-    (cd $SRC/head && $make $targ)
 
-  # always update the smbsrv headers to be safe
-  (cd $SRC/uts/common/gssapi && $make -k $targ)
+  # always update headers to be safe
   (cd $SRC/uts/common/sys && $make -k $targ)
-  (cd $SRC/uts/common/smb && $make -k $targ)
-  (cd $SRC/uts/common/smbsrv && $make -k $targ)
   (cd $SRC/uts/common/c2 && $make -k $targ)
 fi
 
 if [ "$targ" = lint ]
 then
   targ=check
-  (cd $SRC/uts/common/smb && $make -k $targ)
-  (cd $SRC/uts/common/smbsrv && $make -k $targ)
+  (cd $SRC/uts/common/c2 && $make -k $targ)
 fi
 
 # Need some library headers too...
 for lib in \
-  libads \
   libbsm \
-  libcmdutils \
-  libcryptoutil \
-  libdevid \
-  libfakekernel	\
-  libgss \
-  libidmap \
-  libkrb5 \
-  libmlrpc \
-  libpam \
-  libsec \
-  libscf \
-  libshare \
-  libsmbfs \
-  libsqlite \
-  libuutil \
-  libzfs_core \
-  libzfs \
-  passwdutil \
-  pkcs11 \
-  smbsrv
+  auditd_plugins
 do
   (cd $SRC/lib/$lib && $make $targ)
 done
@@ -140,9 +113,7 @@ do_kern() {
   *) targ=$1 ;;
   esac
   ( unset SOURCEDEBUG ;
-  (cd $SRC/uts/$x/nsmb && $make $targ) ;
-  (cd $SRC/uts/$x/smbfs && $make $targ) ;
-  (cd $SRC/uts/$x/smbsrv && $make $targ) )
+  (cd $SRC/uts/$x/c2audit && $make $targ) )
 }
 
 ################################################################
@@ -154,12 +125,8 @@ do_kern() {
 do_lib1() {
 
 for lib in \
-  libavl \
-  libgss \
-  libkrb5 \
-  libcmdutils \
-  libsqlite \
-  libuutil
+  libinetutil \
+  smbsrv/libsmb
 do
   (cd $SRC/lib/$lib && $make $1)
 done
@@ -171,18 +138,11 @@ done
 do_lib2() {
 
 for lib in \
-  libfakekernel \
-  libads \
-  libsmbfs \
-  libmlrpc
+  auditd_plugins \
+  libbsm
 do
   (cd $SRC/lib/$lib && $make $1)
 done
-
-(cd $SRC/lib/libshare && $make $1 PLUGINS=smb)
-(cd $SRC/lib/smbsrv && $make $1)
-(cd $SRC/lib/passwdutil && $make $1)
-(cd $SRC/lib/pam_modules/smb && $make $1)
 
 }
 
@@ -190,78 +150,37 @@ done
 
 do_cmds() {
 
-case $1 in
-install)
-  # mount programs need fslib.o
-  (cd $SRC/cmd/fs.d && $make fslib.o)
-  ;;
-clean|clobber)
-  (cd $SRC/cmd/fs.d && $make ${1}_local)
-  ;;
-esac
+(cd $SRC/cmd/audit && $make $1)
+(cd $SRC/cmd/auditconfig && $make $1)
+(cd $SRC/cmd/auditd && $make $1)
+(cd $SRC/cmd/auditrecord && $make $1)
+(cd $SRC/cmd/auditreduce && $make $1)
+(cd $SRC/cmd/auditset && $make $1)
+(cd $SRC/cmd/auditstat && $make $1)
+(cd $SRC/cmd/audit_warn && $make $1)
+(cd $SRC/cmd/praudit && $make $1)
 
-(cd $SRC/cmd/smbsrv && $make $1)
-
-# Build the MDB modules, WITH the linktest
-(cd $SRC/cmd/mdb/tools && $make $1)
-for a in $mdb_arch
-do
-  case $1 in
-  install|lint)
-    (cd $SRC/cmd/mdb/$x/$a/kmdb &&
-	$make kmdb_modlinktest.o )
-    ;;
-  clean|clobber)
-    (cd $SRC/cmd/mdb/$x/$a/kmdb &&
-	$make -k $1 )
-    ;;
-  esac
-
-  (cd $SRC/cmd/mdb/$x/$a/nsmb &&
-	$make $1 KMDB_LINKTEST_ENABLE= )
-  (cd $SRC/cmd/mdb/$x/$a/smbfs &&
-	$make $1 KMDB_LINKTEST_ENABLE= )
-  (cd $SRC/cmd/mdb/$x/$a/smbsrv &&
-	$make $1 KMDB_LINKTEST_ENABLE= )
-done
-
-# mdb_arch is both 32-bit & 64-bit
-for a in $mdb_arch
-do
-  # We build these libraries (to the proto area), so we need to
-  # build the mdb modules for all dependent libraries too.
-
-  for lib in libfksmbsrv libmlsvc libcmdutils libavl
-  do
-    (cd $SRC/cmd/mdb/$x/$a/$lib && $make $1 )
-
-  done
-done
+#Doesn't look like there are any audit mdb modules.
 }
-
-
 ################################################################
 # This builds $SRC/TAGS (and cscope.files) in a helpful order.
 
 do_tags() {
 	(cd $SRC ;
 	find uts/common/sys -name '*.[ch]' -print |sort
-	find uts/common/net -name '*.[ch]' -print |sort
-	find uts/common/netinet -name '*.[ch]' -print |sort
-	find uts/common/smb -name '*.[ch]' -print |sort
-	find uts/common/smbsrv -name '*.ndl' -print |sort
-	find uts/common/smbsrv -name '*.[ch]' -print |sort
-	find uts/common/fs/smbsrv -name '*.[ch]' -print |sort
-	find uts/common/gssapi -name '*.[ch]' -print |sort
-	find common/smbsrv -name '*.[ch]' -print |sort
+	find uts/common/c2 -name '*.[ch]' -print |sort
 	find head -name '*.h' -print |sort
-	find lib/smbsrv -name '*.[ch]' -print |sort
-	find lib/libsmbfs -name '*.[ch]' -print |sort
-	find lib/libmlrpc -name '*.ndl' -print |sort
-	find lib/libmlrpc -name '*.[ch]' -print |sort
-	find lib/libads -name '*.[ch]' -print |sort
-	find lib/libgss -name '*.[ch]' -print |sort
-	find cmd/smbsrv -name '*.[ch]' -print |sort
+	find lib/auditd_plugins -name '*.[ch]' -print |sort
+	find lib/libbsm -name '*.[ch]' -print |sort
+	find cmd/audit -name '*.[ch]' -print |sort
+	find cmd/auditconfig -name '*.[ch]' -print |sort
+	find cmd/auditd -name '*.[ch]' -print |sort
+	find cmd/auditrecord -name '*.[ch]' -print |sort
+	find cmd/auditreduce -name '*.[ch]' -print |sort
+	find cmd/auditset -name '*.[ch]' -print |sort
+	find cmd/auditstat -name '*.[ch]' -print |sort
+	find cmd/audit_warn -name '*.[ch]' -print |sort
+	find cmd/praudit -name '*.[ch]' -print |sort
 	) > $SRC/cscope.files
 
 	(cd $SRC ;
@@ -275,31 +194,37 @@ do_tags() {
 do_tar() {
 	git_rev=`git rev-parse --short=8 HEAD`
 	files="
-lib/svc/manifest/network/smb/server.xml
-usr/kernel/drv/$arch64/smbsrv
-usr/kernel/drv/smbsrv
-usr/kernel/kmdb/$arch64/smbsrv
-usr/kernel/kmdb/smbsrv
-usr/lib/fs/smb/$arch64/libshare_smb.so.1
-usr/lib/fs/smb/libshare_smb.so.1
-usr/lib/libsmbfs.so.1
-usr/lib/mdb/kvm/$arch64/smbsrv.so
-usr/lib/mdb/kvm/smbsrv.so
-usr/lib/mdb/proc/libmlsvc.so
-usr/lib/reparse/libreparse_smb.so.1
-usr/lib/security/pam_smb_passwd.so.1
-usr/lib/smbsrv/dtrace
-usr/lib/libmlrpc.so.2
-usr/lib/smbsrv/libmlsvc.so.1
-usr/lib/smbsrv/libsmb.so.1
-usr/lib/smbsrv/libsmbns.so.1
-usr/lib/smbsrv/nvlprint
-usr/lib/smbsrv/smbd
-usr/sbin/smbadm
-usr/sbin/smbstat
+etc/security/audit_warn
+etc/security/audit_event
+etc/security/audit
+etc/security/audit_class
+lib/svc/manifest/system/auditd.xml
+lib/svc/manifest/system/auditset.xml
+lib/svc/method/svc-auditd
+lib/svc/method/svc-auditset
+lib/amd64/libbsm.so.1
+lib/libbsm.so.1
+kernel/sys/$arch64/c2audit
+usr/lib/amd64/libbsm.so.1
+usr/lib/libbsm.so.1
+usr/lib/audit/audit_record_attr
+usr/lib/security/audit_binfile.so.1
+usr/lib/security/audit_remote.so.1
+usr/lib/security/audit_syslog.so.1
+usr/sbin/auditreduce
+usr/sbin/praudit
+usr/sbin/auditstat
+usr/sbin/auditrecord
+usr/sbin/auditd
+usr/sbin/auditconfig
+usr/sbin/audit
+usr/share/lib/xml/dtd/adt_record.dtd.1
+usr/share/lib/xml/style/adt_record.xsl.1
 "
-
-	(cd $ROOT && tar cfj ../../smbsrv-${git_rev}.tar.bz2 $files)
+# NOTE: usr/lib/security/audit_*.so.1 will have incorrect owners
+# after untarring. You'll need to set them to root.
+# chown root $ROOT/usr/lib/security/audit_*.so.1
+	(cd $ROOT && tar cfj ../../audit-${git_rev}.tar.bz2 $files)
 }
 
 ################################################################

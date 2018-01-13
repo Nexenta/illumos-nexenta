@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_TOKTABLE_H
@@ -156,6 +158,7 @@ enum tagnum_t { TAG_INVALID = MAXTOKEN,
 	TAG_ACETYPE,			/* with ace token */
 	TAG_ACEID,			/* with ace token */
 	TAG_USERNAME,			/* with user token */
+	TAG_WSID,			/* with wsid token */
 	MAXTAG
 };
 
@@ -269,6 +272,8 @@ extern int	ip_addr_ex_token();
 extern int	socket_ex_token();
 extern int	tid_token();
 
+extern int	access_mask_token();
+extern int	wsid_token();
 #ifdef __cplusplus
 }
 #endif

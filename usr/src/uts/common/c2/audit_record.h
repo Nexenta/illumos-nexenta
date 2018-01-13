@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _BSM_AUDIT_RECORD_H
@@ -34,6 +36,7 @@
 #endif
 #include <sys/socket.h>
 #include <sys/acl.h>
+#include <sys/sid.h>
 
 #include <sys/tsol/label.h>
 
@@ -189,6 +192,12 @@ extern "C" {
 #define	AUT_IN_ADDR_EX		((char)0x7e)
 #define	AUT_SOCKET_EX		((char)0x7f)
 
+/*
+ * Can't do >= 0x80 because these are chars. 0x16/0x17 seem to be free here,
+ * but who knows if they have historical uses
+ */
+#define	AUT_ACCESS_MASK		((char)0x16)
+#define	AUT_WSID		((char)0x17)
 
 /*
  * Audit print suggestion types.
@@ -266,6 +275,8 @@ void au_free_rec(au_buff_t *);
 
 token_t *au_to_acl();
 token_t *au_to_ace();
+token_t *au_to_access_mask(uint32_t);
+token_t *au_to_wsid(ksid_t *);
 token_t *au_to_attr(struct vattr *);
 token_t *au_to_data(char, char, char, char *);
 token_t *au_to_header(int, au_event_t, au_emod_t);
@@ -278,6 +289,7 @@ token_t *au_to_in_addr_ex(int32_t *);
 token_t *au_to_ip(struct ip *);
 token_t *au_to_groups(const gid_t *, uint_t);
 token_t *au_to_path(struct audit_path *);
+token_t *au_to_path_string(const char *);
 token_t *au_to_seq();
 token_t *au_to_process(uid_t, gid_t, uid_t, gid_t, pid_t,
 			au_id_t, au_asid_t, const au_tid_addr_t *);

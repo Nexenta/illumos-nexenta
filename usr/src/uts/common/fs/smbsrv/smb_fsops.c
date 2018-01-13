@@ -134,6 +134,7 @@ smb_fsop_create_with_sd(smb_request_t *sr, cred_t *cr,
 	int flags = 0;
 	int rc;
 	boolean_t is_dir;
+	boolean_t do_audit;
 
 	ASSERT(fs_sd);
 	ASSERT(ret_snode != NULL);
@@ -147,6 +148,7 @@ smb_fsop_create_with_sd(smb_request_t *sr, cred_t *cr,
 
 	is_dir = ((fs_sd->sd_flags & SMB_FSSD_FLAGS_DIR) != 0);
 
+	do_audit = smb_audit_init(sr);
 	if (smb_tree_has_feature(sr->tid_tree, SMB_TREE_ACLONCREATE)) {
 		if (fs_sd->sd_secinfo & SMB_ACL_SECINFO) {
 			dacl = fs_sd->sd_zdacl;
@@ -183,6 +185,12 @@ smb_fsop_create_with_sd(smb_request_t *sr, cred_t *cr,
 			if (SMB_TREE_HAS_ACCESS(sr, ACE_ADD_FILE) != 0)
 				rc = smb_vop_create(dnode->vp, name, attr,
 				    &vp, flags, cr, vsap);
+		}
+
+		if (do_audit) {
+			smb_audit_fini(sr,
+			    is_dir ? ACE_ADD_SUBDIRECTORY : ACE_ADD_FILE,
+			    dnode, rc == 0);
 		}
 
 		if (vsap != NULL)
@@ -237,6 +245,12 @@ smb_fsop_create_with_sd(smb_request_t *sr, cred_t *cr,
 		} else {
 			rc = smb_vop_create(dnode->vp, name, attr, &vp,
 			    flags, cr, NULL);
+		}
+
+		if (do_audit) {
+			smb_audit_fini(sr,
+			    is_dir ? ACE_ADD_SUBDIRECTORY : ACE_ADD_FILE,
+			    dnode, rc == 0);
 		}
 
 		if (rc != 0)
@@ -528,9 +542,18 @@ smb_fsop_create_file(smb_request_t *sr, cred_t *cr,
 		/*
 		 * No incoming SD and filesystem is not ZFS
 		 * let the filesystem handles the inheritance.
+		 *
+		 * fsop_create_with_sd handles auditing in the other cases.
+		 * Handle it explicitly here.
 		 */
+		boolean_t do_audit = smb_audit_init(sr);
+
 		rc = smb_vop_create(dnode->vp, name, attr, &vp,
 		    flags, cr, NULL);
+
+		if (do_audit) {
+			smb_audit_fini(sr, ACE_ADD_FILE, dnode, rc == 0);
+		}
 
 		if (rc == 0) {
 			*ret_snode = smb_node_lookup(sr, op, cr, vp,
@@ -667,8 +690,19 @@ smb_fsop_mkdir(
 	} else
 #endif	/* _KERNEL */
 	{
+		/*
+		 * fsop_create_with_sd handles auditing in the other cases.
+		 * Handle it explicitly here.
+		 */
+		boolean_t do_audit = smb_audit_init(sr);
+
 		rc = smb_vop_mkdir(dnode->vp, name, attr, &vp, flags, cr,
 		    NULL);
+
+		if (do_audit) {
+			smb_audit_fini(sr, ACE_ADD_SUBDIRECTORY, dnode,
+			    rc == 0);
+		}
 
 		if (rc == 0) {
 			*ret_snode = smb_node_lookup(sr, op, cr, vp, name,
@@ -1165,8 +1199,13 @@ smb_fsop_rename(
 	 * XXX: Lock required through smb_node_release() below?
 	 */
 
+	/*
+	 * Don't audit the lookup
+	 */
+	smb_audit_save();
 	rc = smb_vop_lookup(from_dnode->vp, from_name, &from_vp, NULL,
 	    flags, &ret_flags, NULL, &from_attr, cr);
+	smb_audit_load();
 
 	if (rc != 0)
 		return (rc);
@@ -1206,6 +1245,7 @@ smb_fsop_rename(
 			return (EACCES);
 		}
 
+		/* TODO: rename drops ATTR_NOACLCHECK, so this is a no-op. */
 		if (smb_tree_has_feature(sr->tid_tree,
 		    SMB_TREE_ACEMASKONACCESS))
 			flags = ATTR_NOACLCHECK;

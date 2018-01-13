@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -2374,4 +2376,40 @@ secflags_token(pr_context_t *context)
 
 	/* set */
 	return (pa_adr_string(context, returnstat, 1));
+}
+
+/*
+ * -----------------------------------------------------------------------
+ * access_mask_token()	: Process access_mask token and display contents
+ * return codes 	: -1 - error
+ *			:  0 - successful
+ * NOTE: At the time of call, the access_mask token id has been retrieved
+ *
+ * Format of access_mask token:
+ *	access_mask token id	adr_char
+ *	access_mask		adr_u_int32
+ * -----------------------------------------------------------------------
+ */
+int
+access_mask_token(pr_context_t *context)
+{
+	return (pa_access_mask(context, 0, 1));
+}
+
+/*
+ * -----------------------------------------------------------------------
+ * wsid_token()	: Process wsid token and display contents
+ * return codes 	: -1 - error
+ *			:  0 - successful
+ * NOTE: At the time of call, the wsid token id has been retrieved
+ *
+ * Format of wsid token:
+ *	wsid token id	adr_char
+ *	wsid		adr_string
+ * -----------------------------------------------------------------------
+ */
+int
+wsid_token(pr_context_t *context)
+{
+	return (pa_wsid(context, 0, 1));
 }

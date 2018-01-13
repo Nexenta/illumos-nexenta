@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/synch.h>
@@ -101,6 +101,11 @@ smb_common_rename(smb_request_t *sr, smb_fqi_t *src_fqi, smb_fqi_t *dst_fqi)
 	char *new_name, *path;
 	DWORD status;
 	int rc;
+	boolean_t have_src = B_FALSE;
+	boolean_t dst_exists = B_FALSE;
+	boolean_t do_audit;
+	char *srcpath = NULL;
+	char *dstpath = NULL;
 
 	tnode = sr->tid_tree->t_snode;
 	path = dst_fqi->fq_path.pn_path;
@@ -120,6 +125,7 @@ smb_common_rename(smb_request_t *sr, smb_fqi_t *src_fqi, smb_fqi_t *dst_fqi)
 	if (src_fqi->fq_fnode) {
 		smb_node_ref(src_fqi->fq_dnode);
 		smb_node_ref(src_fqi->fq_fnode);
+		have_src = B_TRUE;
 	} else {
 		/* lookup and validate src node */
 		rc = smb_rename_lookup_src(sr);
@@ -298,11 +304,41 @@ smb_common_rename(smb_request_t *sr, smb_fqi_t *src_fqi, smb_fqi_t *dst_fqi)
 		}
 
 		new_name = dst_fnode->od_name;
+		dst_exists = B_TRUE;
+	}
+
+	do_audit = smb_audit_rename_init(sr);
+	/* save paths for later auditing */
+	if (do_audit) {
+		if (!have_src) {
+			srcpath = kmem_alloc(SMB_MAXPATHLEN, KM_SLEEP);
+			smb_node_getpath_nofail(src_fnode, smb_audit_rootvp(sr),
+			    srcpath, SMB_MAXPATHLEN);
+		}
+		if (dst_exists) {
+			dstpath = kmem_alloc(SMB_MAXPATHLEN, KM_SLEEP);
+			smb_node_getpath_nofail(dst_fnode, smb_audit_rootvp(sr),
+			    dstpath, SMB_MAXPATHLEN);
+		}
 	}
 
 	rc = smb_fsop_rename(sr, sr->user_cr,
 	    src_dnode, src_fnode->od_name,
 	    dst_dnode, new_name);
+
+	if (do_audit) {
+		smb_audit_rename_fini(sr,
+		    srcpath,
+		    dst_dnode,
+		    dstpath,
+		    rc == 0,
+		    smb_node_is_dir(src_fnode));
+
+		if (srcpath != NULL)
+			kmem_free(srcpath, SMB_MAXPATHLEN);
+		if (dstpath != NULL)
+			kmem_free(dstpath, SMB_MAXPATHLEN);
+	}
 
 	if (rc == 0) {
 		/*

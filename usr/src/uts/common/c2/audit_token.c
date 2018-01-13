@@ -21,6 +21,8 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -52,6 +54,7 @@
 #include <sys/socketvar.h>	/* for sonode */
 #include <sys/zone.h>
 #include <sys/tsol/label.h>
+#include <sys/cmn_err.h>
 
 /*
  * These are the control tokens
@@ -600,6 +603,36 @@ au_to_path(struct audit_path *app)
 
 		token = au_append_token(token, m);
 	}
+
+	return (token);
+}
+
+/*
+ * au_to_path_string
+ * returns:
+ *	pointer to au_membuf chain containing a path token.
+ */
+token_t *
+au_to_path_string(const char *path)
+{
+	token_t *token;			/* local au_membuf */
+	adr_t adr;			/* adr memory stream header */
+	char data_header = AUT_PATH;	/* header for this token */
+	short bytes;			/* length of string */
+
+	bytes = strlen(path) + 1;
+
+	/*
+	 * generate path token header
+	 */
+	token = au_getclr();
+	adr_start(&adr, memtod(token, char *));
+	adr_char(&adr, &data_header, 1);
+	adr_short(&adr, &bytes, 1);
+	token->len = adr_count(&adr);
+
+	/* append path string */
+	(void) au_append_buf(path, bytes, token);
 
 	return (token);
 }
@@ -1204,4 +1237,48 @@ au_to_label(bslabel_t *label)
 	m->len = adr_count(&adr);
 
 	return (m);
+}
+
+token_t *
+au_to_access_mask(uint32_t access)
+{
+	token_t *m;				/* local au_membuf */
+	adr_t adr;				/* adr memory stream header */
+	char data_header = AUT_ACCESS_MASK;	/* header for this token */
+
+	m = au_getclr();
+
+	adr_start(&adr, memtod(m, char *));
+	adr_char(&adr, &data_header, 1);
+
+	adr_uint32(&adr, &access, 1);
+
+	m->len = adr_count(&adr);
+	return (m);
+}
+
+token_t *
+au_to_wsid(ksid_t *ks)
+{
+	token_t *token;			/* local au_membuf */
+	adr_t adr;			/* adr memory stream header */
+	char data_header = AUT_WSID;	/* header for this token */
+	short bytes;			/* length of string */
+	char sidbuf[256]; /* SMB_SID_STRSZ */
+
+	sidbuf[0] = '\0';
+	(void) snprintf(sidbuf, sizeof (sidbuf), "%s-%u",
+	    ksid_getdomain(ks), ksid_getrid(ks));
+
+	token = au_getclr();
+
+	bytes = (short)strlen(sidbuf) + 1;
+	adr_start(&adr, memtod(token, char *));
+	adr_char(&adr, &data_header, 1);
+	adr_short(&adr, &bytes, 1);
+
+	token->len = (char)adr_count(&adr);
+	(void) au_append_buf(sidbuf, bytes, token);
+
+	return (token);
 }

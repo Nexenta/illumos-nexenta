@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -127,6 +127,9 @@ extern idmap_stat idmap_getwinnamebygid(gid_t, int, char **, char **);
 
 /* Given PID, get Windows name */
 extern idmap_stat idmap_getwinnamebypid(uid_t, int, int, char **, char **);
+
+/* Given SID, get Windows name */
+extern idmap_stat idmap_getwinnamebysid(char *, int, char **);
 
 /* Given Windows name, get UID */
 extern idmap_stat idmap_getuidbywinname(const char *, const char *,

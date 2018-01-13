@@ -21,6 +21,8 @@
 /*
  * Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -30,8 +32,6 @@
 
 #ifndef	_PRAUDIT_H
 #define	_PRAUDIT_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #ifdef __cplusplus
 extern "C" {
@@ -209,9 +209,11 @@ extern int	pa_pw_uid(pr_context_t *context, int status, int flag);
 extern int	pa_gr_uid(pr_context_t *context, int status, int flag);
 extern int	pa_pw_uid_gr_gid(pr_context_t *context, int status, int flag);
 extern int	pa_ace(pr_context_t *context, int status, int flag);
+extern int	pa_access_mask(pr_context_t *context, int status, int flag);
 extern int	pa_hostname(pr_context_t *context, int status, int flag);
 extern int	pa_hostname_ex(pr_context_t *context, int status, int flag);
 extern int	pa_hostname_so(pr_context_t *context, int status, int flag);
+extern int	pa_wsid(pr_context_t *context, int status, int flag);
 extern int	pa_adr_u_short(pr_context_t *context, int status, int flag);
 extern int	pa_tid32(pr_context_t *context, int status, int flag);
 extern int	pa_tid64(pr_context_t *context, int status, int flag);

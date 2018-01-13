@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright Milan Jurik 2012. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2015 Joyent, Inc.
  */
 
@@ -43,6 +43,10 @@
 #include <libintl.h>
 #include <syslog.h>
 #include <assert.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <grp.h>
+#include <netdb.h>
 #include "idmap_impl.h"
 #include "idmap_cache.h"
 
@@ -2262,6 +2266,88 @@ idmap_stat
 idmap_getwinnamebygid(gid_t gid, int flag, char **name, char **domain)
 {
 	return (idmap_getwinnamebypid(gid, 0, flag, name, domain));
+}
+
+/*
+ * Get winname given SID
+ */
+int
+idmap_getwinnamebysid(char *sid, int flag, char **name)
+{
+	uid_t pid;
+	idmap_get_handle_t *get_hdl = NULL;
+	idmap_rid_t rid;
+	idmap_stat stat;
+	char *ridp = NULL;
+	char *end;
+	int is_user = 0;
+	int rc;
+
+	if ((ridp = strrchr(sid, '-')) == NULL)
+		return (IDMAP_ERR_SID);
+
+	*ridp = '\0';
+
+	errno = 0;
+	rid = strtoul(ridp + 1, &end, 10);
+
+	if (errno != 0 || *end != '\0')
+		return (IDMAP_ERR_SID);
+
+	rc = idmap_get_create(&get_hdl);
+	if (rc != IDMAP_SUCCESS)
+		return (rc);
+
+	rc = idmap_get_pidbysid(get_hdl, sid, rid, flag, &pid, &is_user, &stat);
+	*ridp = '-';
+
+	if (rc == IDMAP_SUCCESS)
+		rc = idmap_get_mappings(get_hdl);
+
+	if (rc == IDMAP_SUCCESS && stat != IDMAP_SUCCESS)
+		rc = stat;
+
+	idmap_get_destroy(get_hdl);
+	get_hdl = NULL;
+
+	if (rc == IDMAP_SUCCESS) {
+		rc = idmap_getwinnamebypid(pid, is_user, flag, name, NULL);
+
+		if (rc == IDMAP_ERR_NORESULT && !IDMAP_ID_IS_EPHEMERAL(pid)) {
+			/*
+			 * Unlike LSA, idmap doesn't map a winname for local
+			 * accounts. Recreate one.
+			 */
+			char buf[1024];
+			char hostname[MAXHOSTNAMELEN];
+			struct group gr;
+			struct passwd pwd;
+			char *unixname = NULL;
+
+			if (is_user) {
+				if (getpwuid_r(pid, &pwd, buf,
+				    sizeof (buf)) != NULL)
+					unixname = pwd.pw_name;
+			} else {
+				if (getgrgid_r(pid, &gr, buf,
+				    sizeof (buf)) != NULL)
+					unixname = gr.gr_name;
+			}
+
+			if (unixname == NULL)
+				return (rc);
+
+			hostname[0] = '\0';
+			if (gethostname(hostname, sizeof (hostname)) == 0)
+				hostname[MAXHOSTNAMELEN - 1] = '\0';
+
+			if (asprintf(name, "%s%s%s", unixname,
+			    (hostname[0] != '\0') ? "@" : "", hostname) >= 0)
+				rc = IDMAP_SUCCESS;
+		}
+	}
+
+	return (rc);
 }
 
 idmap_stat

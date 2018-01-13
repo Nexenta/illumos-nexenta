@@ -22,7 +22,7 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 MODULE = smbsrv.so
@@ -45,6 +45,7 @@ ROOTKMOD = $(ROOT)/usr/kernel/kmdb$(MACHMODDIR)
 include ../../../Makefile.module
 
 C99MODE=	$(C99_ENABLE)
+CPPFLAGS += -I$(SRC)/uts/common
 
 $(ROOTKMOD):
 	$(INS.dir)

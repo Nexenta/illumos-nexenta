@@ -543,6 +543,7 @@ void smb_node_reset_delete_on_close(smb_node_t *);
 void smb_node_delete_on_close(smb_node_t *);
 boolean_t smb_node_file_is_readonly(smb_node_t *);
 int smb_node_getpath(smb_node_t *, vnode_t *, char *, uint32_t);
+void smb_node_getpath_nofail(smb_node_t *, vnode_t *, char *, uint32_t);
 int smb_node_getmntpath(smb_node_t *, char *, uint32_t);
 int smb_node_getshrpath(smb_node_t *, smb_tree_t *, char *, uint32_t);
 
@@ -732,7 +733,7 @@ void smb_user_netinfo_init(smb_user_t *, smb_netuserinfo_t *);
 void smb_user_netinfo_fini(smb_netuserinfo_t *);
 int smb_user_netinfo_encode(smb_user_t *, uint8_t *, size_t, uint32_t *);
 smb_token_t *smb_get_token(smb_session_t *, smb_logon_t *);
-cred_t *smb_cred_create(smb_token_t *);
+cred_t *smb_cred_create(smb_token_t *, smb_session_t *);
 cred_t *smb_kcred_create(void);
 void smb_user_setcred(smb_user_t *, cred_t *, uint32_t);
 boolean_t smb_is_same_user(cred_t *, cred_t *);
@@ -943,6 +944,16 @@ void smb_threshold_wake_all(smb_cmd_threshold_t *);
 smb_hash_t *smb_hash_create(size_t, size_t, uint32_t);
 void smb_hash_destroy(smb_hash_t *);
 uint_t smb_hash_uint64(smb_hash_t *, uint64_t);
+
+/* SMB auditing helper functions */
+boolean_t smb_audit_init(smb_request_t *);
+void smb_audit_fini(smb_request_t *, uint32_t, smb_node_t *, boolean_t);
+boolean_t smb_audit_rename_init(smb_request_t *);
+void smb_audit_rename_fini(smb_request_t *, char *, smb_node_t *, char *,
+    boolean_t, boolean_t);
+void smb_audit_save(void);
+void smb_audit_load(void);
+vnode_t *smb_audit_rootvp(smb_request_t *);
 
 #ifdef	__cplusplus
 }

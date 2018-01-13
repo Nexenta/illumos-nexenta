@@ -21,6 +21,8 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -807,11 +809,21 @@ register audit_pcb_t *pcb;
 			return (0);
 	}
 
+	/* let PAD_FAILURE satisfy success/failure selection */
+	if ((flags & M_SORF) != 0 && (checkflags & M_SORF) == 0 &&
+	    (((global_class & mask.am_success) != 0 &&
+	    (id_modifier & PAD_FAILURE) == 0) ||
+	    ((global_class & mask.am_failure) != 0 &&
+	    (id_modifier & PAD_FAILURE) != 0))) {
+		checkflags |= M_SORF;
+	}
+
+
 	/*
-	 * So, we haven't seen all that we need to see.  Reject record.
+	 * If we haven't seen all that we need to see, reject the record.
 	 */
 
-	return (-1);
+	return ((checkflags == flags) ? 0 : -1);
 }
 
 

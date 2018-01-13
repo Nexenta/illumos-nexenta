@@ -22,13 +22,14 @@
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 LIBRARY =	libfksmbsrv.a
 VERS =		.1
 
 OBJS_LOCAL = \
+		fksmb_audit.o \
 		fksmb_cred.o \
 		fksmb_encrypt_pkcs.o \
 		fksmb_fem.o \

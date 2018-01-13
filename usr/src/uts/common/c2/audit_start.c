@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -463,4 +464,31 @@ auditme(au_kcontext_t *kctx, struct t_audit_data *tad, au_state_t estate)
 	}
 
 	return (flag);
+}
+
+/*
+ * determine if we've preselected this event (non-syscall).
+ */
+
+int
+auditev(au_event_t event, cred_t *cr)
+{
+	au_mask_t amask;
+	const auditinfo_addr_t *ainfo;
+	au_state_t estate;
+	au_kcontext_t *kctx = GET_KCTX_PZ;
+
+	ASSERT3U(event, <=, MAX_KEVENTS);
+
+	estate = kctx->auk_ets[event];
+	ainfo = crgetauinfo(cr);
+	if (ainfo == NULL)
+		return (0);
+	amask = ainfo->ai_mask;
+
+	if ((amask.as_success & estate) != 0 ||
+	    (amask.as_failure & estate) != 0)
+		return (AU_OK);
+
+	return (0);
 }

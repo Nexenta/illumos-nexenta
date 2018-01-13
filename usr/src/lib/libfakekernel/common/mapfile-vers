@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -86,6 +86,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	gethrestime;
 	gethrestime_sec;
 	gethrtime_unscaled;
+	global_audit_data;
 
 	highbit;
 	hrt2ts;

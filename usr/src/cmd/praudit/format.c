@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -49,6 +51,7 @@
 #include <sys/mkdev.h>
 #include <sys/types.h>
 #include <aclutils.h>
+#include <smbsrv/libsmb.h>
 
 #include "praudit.h"
 #include "toktable.h"
@@ -3114,7 +3117,7 @@ strappend(char **str, char *what, size_t *alloc)
 }
 
 static int
-pa_ace_access_mask(pr_context_t *context, ace_t *ace, int status, int flag)
+pa_ace_access_mask(pr_context_t *context, uint32_t mask, int status, int flag)
 {
 	int	returnstat, i;
 	uval_t	uval;
@@ -3126,7 +3129,7 @@ pa_ace_access_mask(pr_context_t *context, ace_t *ace, int status, int flag)
 
 	/*
 	 * TRANSLATION_NOTE
-	 * ace->a_access_mask refers to access mask of ZFS/NFSv4 ACL entry.
+	 * mask refers to access mask of ZFS/NFSv4 ACL entry.
 	 */
 	if ((returnstat = open_tag(context, TAG_ACEMASK)) != 0)
 		return (returnstat);
@@ -3135,33 +3138,33 @@ pa_ace_access_mask(pr_context_t *context, ace_t *ace, int status, int flag)
 		for (i = 0; i < 14; i++)
 			permstr[i] = '-';
 
-		if (ace->a_access_mask & ACE_READ_DATA)
+		if (mask & ACE_READ_DATA)
 			permstr[0] = 'r';
-		if (ace->a_access_mask & ACE_WRITE_DATA)
+		if (mask & ACE_WRITE_DATA)
 			permstr[1] = 'w';
-		if (ace->a_access_mask & ACE_EXECUTE)
+		if (mask & ACE_EXECUTE)
 			permstr[2] = 'x';
-		if (ace->a_access_mask & ACE_APPEND_DATA)
+		if (mask & ACE_APPEND_DATA)
 			permstr[3] = 'p';
-		if (ace->a_access_mask & ACE_DELETE)
+		if (mask & ACE_DELETE)
 			permstr[4] = 'd';
-		if (ace->a_access_mask & ACE_DELETE_CHILD)
+		if (mask & ACE_DELETE_CHILD)
 			permstr[5] = 'D';
-		if (ace->a_access_mask & ACE_READ_ATTRIBUTES)
+		if (mask & ACE_READ_ATTRIBUTES)
 			permstr[6] = 'a';
-		if (ace->a_access_mask & ACE_WRITE_ATTRIBUTES)
+		if (mask & ACE_WRITE_ATTRIBUTES)
 			permstr[7] = 'A';
-		if (ace->a_access_mask & ACE_READ_NAMED_ATTRS)
+		if (mask & ACE_READ_NAMED_ATTRS)
 			permstr[8] = 'R';
-		if (ace->a_access_mask & ACE_WRITE_NAMED_ATTRS)
+		if (mask & ACE_WRITE_NAMED_ATTRS)
 			permstr[9] = 'W';
-		if (ace->a_access_mask & ACE_READ_ACL)
+		if (mask & ACE_READ_ACL)
 			permstr[10] = 'c';
-		if (ace->a_access_mask & ACE_WRITE_ACL)
+		if (mask & ACE_WRITE_ACL)
 			permstr[11] = 'C';
-		if (ace->a_access_mask & ACE_WRITE_OWNER)
+		if (mask & ACE_WRITE_OWNER)
 			permstr[12] = 'o';
-		if (ace->a_access_mask & ACE_SYNCHRONIZE)
+		if (mask & ACE_SYNCHRONIZE)
 			permstr[13] = 's';
 		permstr[14] = '\0';
 		uval.uvaltype = PRA_STRING;
@@ -3174,59 +3177,59 @@ pa_ace_access_mask(pr_context_t *context, ace_t *ace, int status, int flag)
 		 * or directory. ace mask value are the same
 		 * nonetheless, see sys/acl.h
 		 */
-		if (ace->a_access_mask & ACE_LIST_DIRECTORY) {
+		if (mask & ACE_LIST_DIRECTORY) {
 			returnstat = strappend(&permstr, gettext(READ_DIR_TXT),
 			    &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_ADD_FILE) {
+		if (mask & ACE_ADD_FILE) {
 			returnstat = strappend(&permstr, gettext(ADD_FILE_TXT),
 			    &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_ADD_SUBDIRECTORY) {
+		if (mask & ACE_ADD_SUBDIRECTORY) {
 			returnstat = strappend(&permstr, gettext(ADD_DIR_TXT),
 			    &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_READ_NAMED_ATTRS) {
+		if (mask & ACE_READ_NAMED_ATTRS) {
 			returnstat = strappend(&permstr,
 			    gettext(READ_XATTR_TXT), &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_WRITE_NAMED_ATTRS) {
+		if (mask & ACE_WRITE_NAMED_ATTRS) {
 			returnstat = strappend(&permstr,
 			    gettext(WRITE_XATTR_TXT), &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_EXECUTE) {
+		if (mask & ACE_EXECUTE) {
 			returnstat = strappend(&permstr,
 			    gettext(EXECUTE_TXT), &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_DELETE_CHILD) {
+		if (mask & ACE_DELETE_CHILD) {
 			returnstat = strappend(&permstr,
 			    gettext(DELETE_CHILD_TXT), &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_READ_ATTRIBUTES) {
+		if (mask & ACE_READ_ATTRIBUTES) {
 			returnstat = strappend(&permstr,
 			    gettext(READ_ATTRIBUTES_TXT), &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_WRITE_ATTRIBUTES) {
+		if (mask & ACE_WRITE_ATTRIBUTES) {
 			returnstat = strappend(&permstr,
 			    gettext(WRITE_ATTRIBUTES_TXT), &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_DELETE) {
+		if (mask & ACE_DELETE) {
 			returnstat = strappend(&permstr, gettext(DELETE_TXT),
 			    &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_READ_ACL) {
+		if (mask & ACE_READ_ACL) {
 			returnstat = strappend(&permstr, gettext(READ_ACL_TXT),
 			    &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_WRITE_ACL) {
+		if (mask & ACE_WRITE_ACL) {
 			returnstat = strappend(&permstr, gettext(WRITE_ACL_TXT),
 			    &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_WRITE_OWNER) {
+		if (mask & ACE_WRITE_OWNER) {
 			returnstat = strappend(&permstr,
 			    gettext(WRITE_OWNER_TXT), &permstr_alloc);
 		}
-		if (ace->a_access_mask & ACE_SYNCHRONIZE) {
+		if (mask & ACE_SYNCHRONIZE) {
 			returnstat = strappend(&permstr,
 			    gettext(SYNCHRONIZE_TXT), &permstr_alloc);
 		}
@@ -3237,8 +3240,8 @@ pa_ace_access_mask(pr_context_t *context, ace_t *ace, int status, int flag)
 	}
 	if ((permstr == NULL) || (returnstat != 0) ||
 	    (context->format & PRF_RAWM)) {
-		uval.uvaltype = PRA_UINT32;
-		uval.uint32_val = ace->a_access_mask;
+		uval.uvaltype = PRA_HEX32;
+		uval.int32_val = mask;
 	}
 	returnstat = pa_print(context, &uval, flag);
 
@@ -3314,8 +3317,66 @@ pa_ace(pr_context_t *context, int status, int flag)
 	/* pa_ace_who can returns 1 if uid/gid is not found */
 	if ((returnstat = pa_ace_who(context, &ace, returnstat, 0)) < 0)
 		return (returnstat);
-	if ((returnstat = pa_ace_access_mask(context, &ace,
+	if ((returnstat = pa_ace_access_mask(context, ace.a_access_mask,
 	    returnstat, 0)) != 0)
 		return (returnstat);
 	return (pa_ace_type(context, &ace, returnstat, flag));
+}
+
+int
+pa_access_mask(pr_context_t *context, int status, int flag)
+{
+	int returnstat;
+	uint32_t mask;
+
+	if (status < 0)
+		return (status);
+
+	returnstat = pr_adr_u_int32(context, &mask, 1);
+	return (pa_ace_access_mask(context, mask, returnstat, flag));
+}
+
+int
+pa_wsid(pr_context_t *context, int status, int flag)
+{
+	int returnstat;
+	short length;
+	char *sid;
+	uval_t uval;
+	char *name = NULL;
+
+	if (status < 0)
+		return (status);
+	if ((returnstat = open_tag(context, TAG_WSID)) != 0)
+		return (returnstat);
+
+	if ((returnstat = pr_adr_short(context, &length, 1)) != 0)
+		return (returnstat);
+	if ((sid = (char *)malloc(length + 1)) == NULL)
+		return (-1);
+	if ((returnstat = pr_adr_char(context, sid, length)) != 0) {
+		free(sid);
+		return (returnstat);
+	}
+
+	uval.uvaltype = PRA_STRING;
+	uval.string_val = sid;
+	if ((context->format & PRF_RAWM) == 0) {
+		int rc;
+		int flag = IDMAP_REQ_FLG_USE_CACHE;
+		rc = idmap_getwinnamebysid(sid, flag, &name);
+		if (rc == IDMAP_SUCCESS)
+			uval.string_val = name;
+		else
+			(void) fprintf(stderr,
+			    gettext("praudit: failed to map sid to name "
+			    "rc=%d\n"), rc);
+	}
+	returnstat = pa_print(context, &uval, flag);
+	free(sid);
+	if (name != NULL)
+		free(name);
+	if (returnstat == 0)
+		returnstat = close_tag(context, TAG_WSID);
+	return (returnstat);
 }

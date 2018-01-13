@@ -555,6 +555,7 @@ smb_vop_access(vnode_t *vp, int mode, int flags, vnode_t *dir_vp, cred_t *cr)
 	    flags != V_ACE_MASK || dir_vp == NULL)
 		return (error);
 
+	smb_audit_save();
 	if ((mode & ACE_DELETE) != 0) {
 		error = VOP_ACCESS(dir_vp, ACE_DELETE_CHILD, flags,
 		    cr, NULL);
@@ -573,6 +574,7 @@ smb_vop_access(vnode_t *vp, int mode, int flags, vnode_t *dir_vp, cred_t *cr)
 	if (mode != 0)
 		error = VOP_ACCESS(vp, mode, flags, cr, NULL);
 
+	smb_audit_load();
 	return (error);
 }
 

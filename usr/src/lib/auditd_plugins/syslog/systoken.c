@@ -21,7 +21,9 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
  * Copyright 2012 Milan Jurik. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -1521,6 +1523,30 @@ int
 useofpriv_token(parse_context_t *ctx)
 {
 	ctx->adr.adr_now += sizeof (char); /* success / fail */
+	skip_bytes(ctx);
+
+	return (0);
+}
+
+/*
+ * Format of access_mask token:
+ *	access_mask		adr_u_int32
+ */
+int
+access_mask_token(parse_context_t *ctx)
+{
+	ctx->adr.adr_now += sizeof (uint32_t);
+
+	return (0);
+}
+
+/*
+ * Format of wsid token:
+ *	wsid		adr_string
+ */
+int
+wsid_token(parse_context_t *ctx)
+{
 	skip_bytes(ctx);
 
 	return (0);

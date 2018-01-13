@@ -280,6 +280,7 @@ smb_common_open(smb_request_t *sr)
 	boolean_t	fnode_shrlk = B_FALSE;
 	boolean_t	did_open = B_FALSE;
 	char		*sname = NULL;
+	boolean_t	do_audit = B_FALSE;
 
 	/* Get out now if we've been cancelled. */
 	mutex_enter(&sr->sr_mutex);
@@ -614,16 +615,22 @@ smb_common_open(smb_request_t *sr)
 			}
 		}
 
+		do_audit = smb_audit_init(sr);
 		status = smb_fsop_access(sr, sr->user_cr, fnode,
 		    op->desired_access);
-
-		if (status != NT_STATUS_SUCCESS)
-			goto errout;
 
 		if (max_requested) {
 			smb_fsop_eaccess(sr, sr->user_cr, fnode, &max_allowed);
 			op->desired_access |= max_allowed;
 		}
+
+		if (do_audit) {
+			smb_audit_fini(sr, op->desired_access, fnode,
+			    status == NT_STATUS_SUCCESS);
+		}
+
+		if (status != NT_STATUS_SUCCESS)
+			goto errout;
 
 		/*
 		 * File owner should always get read control + read attr.
@@ -986,6 +993,7 @@ create:
 				new_attr.sa_mask |= SMB_AT_SIZE;
 			}
 
+			/* auditing handled by fsop layer */
 			rc = smb_fsop_create(sr, sr->user_cr, dnode,
 			    op->fqi.fq_last_comp, &new_attr, &op->fqi.fq_fnode);
 		} else {
@@ -994,6 +1002,7 @@ create:
 			new_attr.sa_vattr.va_type = VDIR;
 			new_attr.sa_vattr.va_mode = 0777;
 
+			/* auditing handled by fsop layer */
 			rc = smb_fsop_mkdir(sr, sr->user_cr, dnode,
 			    op->fqi.fq_last_comp, &new_attr, &op->fqi.fq_fnode);
 		}

@@ -20,6 +20,7 @@
 #
 #
 # Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 #
 
@@ -84,6 +85,7 @@ SYMBOL_VERSION SUNWprivate {
 	idmap_getuidbywinname;
 	idmap_getwinnamebygid;
 	idmap_getwinnamebypid;
+	idmap_getwinnamebysid;
 	idmap_getwinnamebyuid;
 	idmap_how_clear;
 	idmap_info_free;

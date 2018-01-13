@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_AUDITRD_H
@@ -62,6 +64,7 @@ int	subj_id;		/* subject identifier  */
 char	ipc_type;		/* 'o' object type - tell what type of IPC */
 scf_pattern_t fmri;		/* 'o' fmri value */
 uid_t	obj_user;		/* 'o' user value */
+char	*wsid;			/* 'o' wsid value */
 
 /*
  * File selection options
@@ -84,7 +87,6 @@ int	new_mode;		/* 'N' new object selection mode */
  * Global error reporting
  */
 char	*error_str;		/* current error message */
-char	errbuf[256];		/* for creating error messages with sprintf */
 char	*ar = "auditreduce:";
 static int	root_pid;	/* remember original process's pid */
 

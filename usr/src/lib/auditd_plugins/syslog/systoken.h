@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_SYSTOKEN_H
@@ -160,6 +162,8 @@ extern void	process64_ex_token(adr_t *, parse_context_t *);
 extern void	ip_addr_ex_token(adr_t *, parse_context_t *);
 extern void	socket_ex_token(adr_t *, parse_context_t *);
 extern void	tid_token(adr_t *, parse_context_t *);
+extern void	access_mask_token(parse_context_t *)
+extern void	wsid_token(parse_context_t *)
 #endif
 
 #ifdef __cplusplus

@@ -21,6 +21,8 @@
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -69,7 +71,8 @@ static obj_ent_t obj_tbl[] = {
 			{ "shmgroup", OBJ_SHMGROUP  },
 			{ "shmowner", OBJ_SHMOWNER  },
 			{ "sock", OBJ_SOCK },
-			{ "user", OBJ_USER } };
+			{ "user", OBJ_USER },
+			{ "wsid", OBJ_WSID } };
 
 extern int	derive_date(char *, struct tm *);
 extern int	parse_time(char *, int);
@@ -96,6 +99,7 @@ static int	proc_type(char *);
 static int	proc_user(char *, uid_t *);
 static int	proc_zonename(char *);
 static int	proc_fmri(char *);
+static int	proc_wsid(char *);
 
 /*
  * .func	process_options - process command line options.
@@ -124,6 +128,7 @@ process_options(int argc, char **argv)
 
 	error_str = gettext("general error");
 
+	wsid = NULL;
 	zonename = NULL;
 	/*
 	 * Big switch to process the flags.
@@ -410,6 +415,8 @@ proc_object(char *optarg)
 		return (proc_fmri(obj_val));
 	case OBJ_USER:
 		return (proc_user(obj_val, &obj_user));
+	case OBJ_WSID:
+		return (proc_wsid(obj_val));
 	case OBJ_LP: /* lp objects have not yet been defined */
 	default: /* impossible */
 		(void) sprintf(errbuf, gettext("invalid object type (%s)"),
@@ -1290,5 +1297,26 @@ proc_fmri(char *optstr)
 	if (fmri.sp_arg == NULL)
 		return (-1);
 
+	return (0);
+}
+
+/*
+ * proc_wsid - pick up Windows SID.
+ *
+ * ret 0:	non-empty string
+ * ret -1:	empty string or string is too long.
+ */
+static int
+proc_wsid(char *optstr)
+{
+	size_t	length = strlen(optstr);
+	if ((length < 1) || (length > 256) ||
+	    strncmp(optstr, "S-1-", 4) != 0) { /* SMB_SID_STRSZ */
+		(void) snprintf(errbuf, ERRBUF_SZ,
+		    gettext("bad Windows SID: %s"), optstr);
+		error_str = errbuf;
+		return (-1);
+	}
+	wsid = strdup(optstr);
 	return (0);
 }

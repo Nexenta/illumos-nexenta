@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -44,10 +44,10 @@
  * use an opaque cred_t object, and all activity happens in the
  * context of the user who runs the program.
  */
+/* ARGSUSED */
 cred_t *
-smb_cred_create(smb_token_t *token)
+smb_cred_create(smb_token_t *token, smb_session_t *s)
 {
-	_NOTE(ARGUNUSED(token))
 	cred_t *cr;
 	cr = CRED();
 	return (cr);

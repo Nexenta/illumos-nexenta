@@ -1204,6 +1204,7 @@ SMBSRV_SHARED_OBJS += \
 SMBSRV_OBJS +=	$(SMBSRV_SHARED_OBJS)			\
 		smb_acl.o				\
 		smb_alloc.o				\
+		smb_audit.o				\
 		smb_authenticate.o			\
 		smb_close.o				\
 		smb_cmn_oplock.o			\

@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -276,6 +276,14 @@ smb_token_xdr(XDR *xdrs, smb_token_t *objp)
 	if (!smb_buf32_xdr(xdrs, &objp->tkn_ssnkey))
 		return (FALSE);
 	if (!smb_posix_grps_helper_xdr(xdrs, (char **)&objp->tkn_posix_grps))
+		return (FALSE);
+	if (!xdr_u_int(xdrs, &objp->tkn_auid))
+		return (FALSE);
+	if (!xdr_u_int(xdrs, &objp->tkn_amask.am_success))
+		return (FALSE);
+	if (!xdr_u_int(xdrs, &objp->tkn_amask.am_failure))
+		return (FALSE);
+	if (!xdr_u_int(xdrs, &objp->tkn_asid))
 		return (FALSE);
 	return (TRUE);
 }

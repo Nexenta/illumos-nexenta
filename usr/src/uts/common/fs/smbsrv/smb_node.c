@@ -1161,6 +1161,141 @@ smb_node_getpath(smb_node_t *node, vnode_t *rootvp, char *buf, uint32_t buflen)
 }
 
 /*
+ * smb_node_getpath_nofail
+ *
+ * Same as smb_node_getpath, but try to reconstruct on failure,
+ * and truncate from the beginning if we can't.
+ */
+void
+smb_node_getpath_nofail(smb_node_t *node, vnode_t *rootvp, char *buf,
+    uint32_t buflen)
+{
+	int rc, len, addlen;
+	vnode_t *vp;
+	smb_node_t *unode, *dnode;
+	cred_t *kcr = zone_kcred();
+	boolean_t is_dir, is_stream;
+
+	is_stream = (SMB_IS_STREAM(node) != NULL);
+	unode = (is_stream) ? node->n_unode : node;
+	is_dir = smb_node_is_dir(unode);
+	dnode = (is_dir) ? unode : unode->n_dnode;
+
+	/* find path to directory node */
+	vp = dnode->vp;
+	VN_HOLD(vp);
+	if (rootvp) {
+		VN_HOLD(rootvp);
+		rc = vnodetopath(rootvp, vp, buf, buflen, kcr);
+		VN_RELE(rootvp);
+	} else {
+		rc = vnodetopath(NULL, vp, buf, buflen, kcr);
+	}
+	VN_RELE(vp);
+
+	/* On failure, reconstruct the path from the node_t's */
+	if (rc != 0) {
+		smb_node_t *nodep = unode;
+		char *p = buf + buflen;
+
+		/* append named stream name if necessary */
+		if (is_stream) {
+			len = strlen(node->od_name) + 1;
+			ASSERT3U(buflen, >=, len);
+			p -= len;
+			(void) strcpy(p, node->od_name);
+		}
+
+		len = strlen(nodep->od_name) + 1;
+		p -= len;
+		while (nodep->n_dnode != NULL && nodep->vp != rootvp &&
+		    p >= buf) {
+			(void) strcpy(p, nodep->od_name);
+			p[len - 1] = '/';
+			nodep = nodep->n_dnode;
+			len = strlen(nodep->od_name) + 1;
+			p -= len;
+		}
+		if (nodep->n_dnode != NULL && nodep->vp != rootvp) {
+			/* something went horribly wrong... */
+#ifdef DEBUG
+			cmn_err(CE_WARN,
+			    "smb_node_getpath_nofail: buffer too small: "
+			    "size %d", buflen);
+#else
+			cmn_err(CE_WARN,
+			    "smb_node_getpath_nofail: couldn't get full path");
+#endif
+			p = buf;
+			*p = '*';
+		} else {
+			p += len - 1;
+			if (p >= buf)
+				*p = '/';
+		}
+
+		buf[buflen - 1] = '\0';
+		(void) memmove(buf, p, strlen(p) + 1);
+		cmn_err(CE_NOTE,
+		    "smb_node_getpath_nofail: vnodetopath failed, rc=%d", rc);
+		return;
+	}
+
+	len = strlen(buf) + 1;
+
+	/* append filename if necessary */
+	if (!is_dir) {
+		if (buf[len - 2] != '/' && strlcat(buf, "/", buflen) >= buflen)
+			goto trunc;
+		if (strlcat(buf, unode->od_name, buflen) >= buflen)
+			goto trunc;
+	}
+
+	/* append named stream name if necessary */
+	if (!is_stream || strlcat(buf, node->od_name, buflen) < buflen)
+		return;
+
+trunc:
+	buf[len - 1] = '\0';
+	addlen = 0;
+	/* append filename if necessary */
+	if (!is_dir) {
+		if (buf[len - 2] != '/')
+			addlen++;
+		addlen += strlen(unode->od_name);
+	}
+
+	/* append named stream name if necessary */
+	if (is_stream)
+		addlen += strlen(node->od_name);
+
+	if ((buflen - len) < addlen) {
+#ifdef DEBUG
+		cmn_err(CE_WARN,
+		    "smb_node_getpath_nofail: vnodetopath succeeded, "
+		    "but buffer too small for filename");
+#else
+		cmn_err(CE_WARN,
+		    "smb_node_getpath_nofail: couldn't get full path");
+#endif
+		addlen = addlen - (buflen - len);
+		(void) memmove(buf, buf + addlen, len - addlen);
+		buf[0] = '*';
+	}
+
+	/* append filename if necessary */
+	if (!is_dir) {
+		if (buf[len - 2] != '/')
+			(void) strlcat(buf, "/", buflen);
+		(void) strlcat(buf, unode->od_name, buflen);
+	}
+
+	/* append named stream name if necessary */
+	if (is_stream)
+		(void) strlcat(buf, node->od_name, buflen);
+}
+
+/*
  * smb_node_alloc
  */
 static smb_node_t *

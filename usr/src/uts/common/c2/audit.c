@@ -21,6 +21,7 @@
 
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -61,6 +62,7 @@
 #include <sys/devpolicy.h>
 #include <sys/crypto/ioctladmin.h>
 #include <sys/cred_impl.h>
+#include <sys/sid.h>
 #include <inet/kssl/kssl.h>
 #include <net/pfpolicy.h>
 
@@ -704,6 +706,51 @@ audit_strputmsg(struct vnode *vp, struct strbuf *mctl, struct strbuf *mdata,
 
 	stp->sd_t_audit_data = (caddr_t)curthread;
 	mutex_exit(&stp->sd_lock);
+}
+
+/*
+ * ROUTINE:	AUDIT_SACL
+ * PURPOSE:	audit ACL-based file accesses
+ * CALLBY:	SMB, NFS
+ * NOTE:
+ *
+ * IMPORTANT NOTE: Since we generate an audit record here, we may sleep
+ *	on the audit queue if it becomes full.
+ * TODO:
+ * QUESTION:
+ */
+void
+audit_sacl(char *path, cred_t *cr, uint32_t desired, boolean_t success,
+    t_audit_sacl_t *tas)
+{
+	token_t *ad = NULL;
+	au_kcontext_t	*kctx = GET_KCTX_PZ;
+	const auditinfo_addr_t *ainfo;
+	ksid_t *ks;
+
+	/* if auditing not enabled, then don't generate an audit record */
+	if (((kctx->auk_auditstate) &
+	    ~(AUC_AUDITING | AUC_INIT_AUDIT | AUC_NOSPACE)) != 0)
+		return;
+
+	if ((success && (tas->tas_smask & desired) == 0) ||
+	    (!success && (tas->tas_fmask & desired) == 0))
+		return;
+
+	ainfo = crgetauinfo(cr);
+	if (ainfo == NULL)
+		return;
+
+	au_write((caddr_t *)&(ad), au_to_path_string(path));
+	au_write((caddr_t *)&(ad), au_to_access_mask(desired));
+
+	/* Include the SID if it has one, in case the id is ephemeral */
+	if ((ks = crgetsid(cr, KSID_USER)) != NULL) {
+		au_write((caddr_t *)&(ad), au_to_wsid(ks));
+	}
+	AUDIT_SETSUBJ((caddr_t *)&(ad), cr, ainfo, kctx);
+	au_close(kctx, (caddr_t *)&(ad), AU_OK, AUE_SACL,
+	    success ? 0 : PAD_FAILURE, NULL);
 }
 
 /*

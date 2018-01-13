@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -56,13 +56,14 @@ static ksidlist_t *smb_cred_set_sidlist(smb_ids_t *token_grps);
  * That cred is setup later, in smb_user_setcred().
  */
 cred_t *
-smb_cred_create(smb_token_t *token)
+smb_cred_create(smb_token_t *token, smb_session_t *s)
 {
 	ksid_t			ksid;
 	ksidlist_t		*ksidlist = NULL;
 	smb_posix_grps_t	*posix_grps;
 	cred_t			*cr;
 	gid_t			gid;
+	auditinfo_addr_t	*au;
 
 	ASSERT(token);
 	ASSERT(token->tkn_posix_grps);
@@ -125,7 +126,22 @@ smb_cred_create(smb_token_t *token)
 		(void) crsetpriv(cr, PRIV_FILE_DAC_SEARCH, NULL);
 	}
 
+	au = crgetauinfo_modifiable(cr);
+	if (au != NULL) {
+		au->ai_auid = token->tkn_auid;
+		au->ai_mask = token->tkn_amask;
+		au->ai_asid = token->tkn_asid;
+		au->ai_termid.at_port = s->s_local_port;
 
+		if (s->ipaddr.a_family == AF_INET) {
+			au->ai_termid.at_addr[0] = s->ipaddr.a_ipv4;
+			au->ai_termid.at_type = AU_IPv4;
+		} else {
+			bcopy(&s->ipaddr.a_ip, au->ai_termid.at_addr,
+			    sizeof (in6_addr_t));
+			au->ai_termid.at_type = AU_IPv6;
+		}
+	}
 	return (cr);
 }
 

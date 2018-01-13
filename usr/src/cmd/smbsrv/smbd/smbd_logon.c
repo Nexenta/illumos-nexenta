@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/types.h>
@@ -216,7 +216,9 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 		smb_autohome_add(token);
 		smbd_audit_link(entry);
 		token->tkn_audit_sid = entry->sa_audit_sid;
-
+		adt_get_auid(ah, &token->tkn_auid);
+		adt_get_mask(ah, &token->tkn_amask);
+		adt_get_asid(ah, &token->tkn_asid);
 		user_info->lg_status = NT_STATUS_SUCCESS;
 	}
 

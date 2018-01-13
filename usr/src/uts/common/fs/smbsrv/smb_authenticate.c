@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -458,7 +458,7 @@ smb_auth_get_token(smb_request_t *sr)
 	/*
 	 * Setup the logon object.
 	 */
-	cr = smb_cred_create(token);
+	cr = smb_cred_create(token, sr->session);
 	if (cr == NULL)
 		goto errout;
 	privileges = smb_priv_xlate(token);

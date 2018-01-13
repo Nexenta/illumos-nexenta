@@ -22,6 +22,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -80,6 +82,8 @@ static int	write_trailer(void);
 static int	max_sproc;	/* maximum number of subprocesses per process */
 static int	total_procs;	/* number of processes in the process tree */
 static int	total_layers;	/* number of layers in the process tree */
+
+char	errbuf[ERRBUF_SZ];	/* for creating error messages with sprintf */
 
 /*
  * .func main - main.

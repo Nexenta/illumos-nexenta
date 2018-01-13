@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _BSM_AUDIT_KERNEL_H
@@ -30,6 +31,7 @@
  * This file contains the basic auditing control structure definitions.
  */
 
+#include <c2/audit.h>
 #include <c2/audit_kevents.h>
 #include <sys/priv_impl.h>
 #include <sys/taskq.h>
@@ -185,6 +187,29 @@ extern kmem_cache_t *au_pad_cache;
 #define	TAD_TRUE_CREATE 0x00001000	/* true create, file not found */
 
 /*
+ * These types implement the interface between a consumer and FS for handling
+ * SACL-based File Access Auditing. A consumer zeroes out the appropriate
+ * t_audit_sacl_t in T2A(curthread), then sets tad_sacl_ctrl to one of
+ * sacl_audit_ctrl_t. The FS, when auditing of SACLs is enabled, checks to see
+ * if tad_sacl_ctrl is not NONE. If so, it collects information from the
+ * object's SACL (such as NFSv4 Audit and Alarm type ACEs), and stores
+ * representative Success and Failure masks in the t_audit_sacl_t structure.
+ * The consumer then compares the requested access to the appropriate mask in
+ * order to determine whether an audit record should be generated.
+ */
+typedef struct t_audit_sacl {
+	uint32_t tas_smask;
+	uint32_t tas_fmask;
+} t_audit_sacl_t;
+
+typedef enum sacl_audit_ctrl {
+	SACL_AUDIT_NONE = 0,
+	SACL_AUDIT_ON,
+	SACL_AUDIT_ALL,
+	SACL_AUDIT_NO_SRC
+} sacl_audit_ctrl_t;
+
+/*
  * The structure t_audit_data hangs off of the thread structure. It contains
  * all of the audit information necessary to manage the audit record generation
  * for each thread.
@@ -208,6 +233,11 @@ struct t_audit_data {
 	au_defer_info_t	*tad_defer_tail;	/* tail of defer queue */
 	priv_set_t tad_sprivs;	/* saved (success) used privs */
 	priv_set_t tad_fprivs;	/* saved (failed) used privs */
+	sacl_audit_ctrl_t tad_sacl_ctrl;
+	sacl_audit_ctrl_t tad_sacl_backup;
+	t_audit_sacl_t tad_sacl_mask;
+	t_audit_sacl_t tad_sacl_mask_src;
+	t_audit_sacl_t tad_sacl_mask_dest;
 };
 typedef struct t_audit_data t_audit_data_t;
 
