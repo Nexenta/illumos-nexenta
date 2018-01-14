@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2015 by Delphix. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Toomas Soome <tsoome@me.com>
  * Copyright 2017 Joyent, Inc.
@@ -2723,12 +2723,20 @@ vdev_offline(spa_t *spa, uint64_t guid, uint64_t flags)
 void
 vdev_clear(spa_t *spa, vdev_t *vd)
 {
+	int c;
 	vdev_t *rvd = spa->spa_root_vdev;
 
 	ASSERT(spa_config_held(spa, SCL_STATE_ALL, RW_WRITER) == SCL_STATE_ALL);
 
-	if (vd == NULL)
+	if (vd == NULL) {
 		vd = rvd;
+
+		/* Go through spare and l2cache vdevs */
+		for (c = 0; c < spa->spa_spares.sav_count; c++)
+			vdev_clear(spa, spa->spa_spares.sav_vdevs[c]);
+		for (c = 0; c < spa->spa_l2cache.sav_count; c++)
+			vdev_clear(spa, spa->spa_l2cache.sav_vdevs[c]);
+	}
 
 	vd->vdev_stat.vs_read_errors = 0;
 	vd->vdev_stat.vs_write_errors = 0;
@@ -2747,7 +2755,7 @@ vdev_clear(spa_t *spa, vdev_t *vd)
 	 */
 	vd->vdev_remove_wanted = B_FALSE;
 
-	for (int c = 0; c < vd->vdev_children; c++)
+	for (c = 0; c < vd->vdev_children; c++)
 		vdev_clear(spa, vd->vdev_child[c]);
 
 	/*
