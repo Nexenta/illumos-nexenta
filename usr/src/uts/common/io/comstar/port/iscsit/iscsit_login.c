@@ -733,7 +733,37 @@ login_sm_new_state(iscsit_conn_t *ict, login_event_ctx_t *ctx,
 	lsm->icl_login_state = new_state;
 	mutex_exit(&lsm->icl_mutex);
 
-	switch (lsm->icl_login_state) {
+	/*
+	 * Tale of caution here. The use of new_state instead of using
+	 * lsm->icl_login_state is deliberate (which had been used originally).
+	 * Since the icl_mutex is dropped under the right circumstances
+	 * the login state changes between setting the state and examining
+	 * the state to proceed. No big surprise since the lock was being
+	 * used in the first place to prevent just that type of change.
+	 *
+	 * There has been a case where network errors occurred while a client
+	 * was attempting to reinstate the connection causing multiple
+	 * login packets to arrive into the state machine. Those multiple
+	 * packets which were processed incorrectly caused the reference
+	 * count on the connection to be one higher than it should be and
+	 * from then on the connection can't close correctly causing a hang.
+	 *
+	 * Upon examination of the core it was found that the connection
+	 * audit data had calls looking like:
+	 *    login_sm_event_dispatch
+	 *    login_sm_processing
+	 *    login_sm_new_state
+	 * That call sequence means the new state was/is ILS_LOGIN_ERROR
+	 * yet the audit trail continues with a call to
+	 *    login_sm_send_next_response
+	 * which could only occur if icl_login_state had changed. Had the
+	 * design of COMSTAR taken this into account the code would
+	 * originally have held the icl_mutex across the processing of the
+	 * state processing. Lock order and calls which sleep prevent that
+	 * from being possible. The next best solution is to use the local
+	 * variable which holds the state.
+	 */
+	switch (new_state) {
 	case ILS_LOGIN_WAITING:
 		/* Do nothing, waiting for more login PDU's */
 		break;
