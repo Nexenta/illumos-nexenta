@@ -278,6 +278,12 @@ vdev_raidz_map_free(raidz_map_t *rm)
 	size_t size;
 
 	for (c = 0; c < rm->rm_firstdatacol; c++) {
+		/*
+		 * TRIM doesn't allocate data blocks,
+		 * so 'rc_abd' is NULL in this case.
+		 * See vdev_raidz_trim() and vdev_raidz_map_alloc()
+		 * for more details.
+		 */
 		if (rm->rm_col[c].rc_abd != NULL)
 			abd_free(rm->rm_col[c].rc_abd);
 
@@ -288,7 +294,14 @@ vdev_raidz_map_free(raidz_map_t *rm)
 
 	size = 0;
 	for (c = rm->rm_firstdatacol; c < rm->rm_cols; c++) {
-		abd_put(rm->rm_col[c].rc_abd);
+		/*
+		 * TRIM doesn't allocate data blocks,
+		 * so 'rc_abd' is NULL in this case
+		 * See vdev_raidz_trim() and vdev_raidz_map_alloc()
+		 * for more details.
+		 */
+		if (rm->rm_col[c].rc_abd != NULL)
+			abd_put(rm->rm_col[c].rc_abd);
 		size += rm->rm_col[c].rc_size;
 	}
 
