@@ -34,6 +34,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -105,7 +107,7 @@ void
 smb_sm_done(void)
 {
 	/*
-	 * XXX Q4BP why are we not iterating on smb_vclist here?
+	 * Why are we not iterating on smb_vclist here?
 	 * Because the caller has just called smb_sm_idle() to
 	 * make sure we have no VCs before calling this.
 	 */
@@ -181,6 +183,16 @@ smb_co_rele(struct smb_connobj *co)
 	int old_flags;
 
 	SMB_CO_LOCK(co);
+
+	/*
+	 * When VC usecount goes from 2 to 1, signal the iod_idle CV.
+	 * It's unfortunate to have object type-specific logic here,
+	 * but it's hard to do this anywhere else.
+	 */
+	if (co->co_level == SMBL_VC && co->co_usecount == 2) {
+		smb_vc_t *vcp = CPTOVC(co);
+		cv_signal(&vcp->iod_idle);
+	}
 	if (co->co_usecount > 1) {
 		co->co_usecount--;
 		SMB_CO_UNLOCK(co);
@@ -365,10 +377,12 @@ smb_vc_free(struct smb_connobj *cp)
 
 	if (vcp->vc_mackey != NULL)
 		kmem_free(vcp->vc_mackey, vcp->vc_mackeylen);
+	if (vcp->vc_ssnkey != NULL)
+		kmem_free(vcp->vc_ssnkey, vcp->vc_ssnkeylen);
 
+	cv_destroy(&vcp->iod_muxwait);
 	cv_destroy(&vcp->iod_idle);
 	rw_destroy(&vcp->iod_rqlock);
-	sema_destroy(&vcp->vc_sendlock);
 	cv_destroy(&vcp->vc_statechg);
 	smb_co_done(VCTOCP(vcp));
 	kmem_free(vcp, sizeof (*vcp));
@@ -392,14 +406,15 @@ smb_vc_create(smbioc_ossn_t *ossn, smb_cred_t *scred, smb_vc_t **vcpp)
 	vcp->vc_co.co_gone = smb_vc_gone;
 
 	cv_init(&vcp->vc_statechg, objtype, CV_DRIVER, NULL);
-	sema_init(&vcp->vc_sendlock, 1, objtype, SEMA_DRIVER, NULL);
 	rw_init(&vcp->iod_rqlock, objtype, RW_DRIVER, NULL);
 	cv_init(&vcp->iod_idle, objtype, CV_DRIVER, NULL);
+	cv_init(&vcp->iod_muxwait, objtype, CV_DRIVER, NULL);
 
 	/* Expanded TAILQ_HEAD_INITIALIZER */
 	vcp->iod_rqlist.tqh_last = &vcp->iod_rqlist.tqh_first;
 
-	vcp->vc_state = SMBIOD_ST_IDLE;
+	/* A brand new VC should connect. */
+	vcp->vc_state = SMBIOD_ST_RECONNECT;
 
 	/*
 	 * These identify the connection.

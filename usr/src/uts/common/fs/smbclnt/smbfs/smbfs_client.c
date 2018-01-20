@@ -820,9 +820,8 @@ static void smbfs_cb_nop(smb_share_t *ss)
 
 smb_fscb_t smbfs_cb = {
 	.fscb_disconn	= smbfs_dead,
-	.fscb_connect	= smbfs_cb_nop,
-	.fscb_down	= smbfs_cb_nop,
-	.fscb_up	= smbfs_cb_nop };
+	.fscb_connect	= smbfs_cb_nop
+};
 
 #endif /* NEED_SMBFS_CALLBACKS */
 
