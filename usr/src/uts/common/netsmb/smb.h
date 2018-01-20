@@ -40,6 +40,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _NETSMB_SMB_H_
@@ -86,7 +87,13 @@ enum smb_dialects {
 #define	SMB_SIGLEN		4
 #define	SMB_HDRCMD(p)		(*((uchar_t *)(p) + SMB_SIGLEN))
 #define	SMB_HDRMID(p)		(*(ushort_t *)((uchar_t *)(p) + 30))
+#define	SMB_HDR_OFF_MID		30
 #define	SMB_HDRLEN		32
+
+#define	SMB_HDR_V1	0xFF
+#define	SMB_HDR_V2	0xFE
+#define	SMB_HDR_V3E	0xFD	/* SMB3 encrypted */
+
 /*
  * bits in the smb_flags field
  */

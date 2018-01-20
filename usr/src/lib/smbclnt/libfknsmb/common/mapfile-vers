@@ -82,9 +82,10 @@ SYMBOL_VERSION SUNWprivate {
 
 	smb_credinit;
 	smb_credrele;
+	smb_debugmsg		{ FLAGS = NODIRECT };
 	smb_dev2share;
 	smb_dos2unixtime;
-	smb_errmsg;
+	smb_errmsg		{ FLAGS = NODIRECT };
 	smb_nt_alloc;
 	smb_nt_done;
 	smb_nt_request;

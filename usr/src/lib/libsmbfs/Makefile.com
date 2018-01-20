@@ -23,7 +23,7 @@
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -55,21 +55,15 @@ OBJ_LIB=\
 	nb.o \
 	nb_name.o \
 	nb_net.o \
-	nb_ssn.o \
 	nbns_rq.o \
-	negprot.o \
 	newvc.o \
 	nls.o \
 	ntlm.o \
 	ntlmssp.o \
 	print.o \
-	rap.o \
 	rcfile.o \
-	rq.o \
-	signing.o \
 	spnego.o \
 	spnegoparse.o \
-	ssnsetup.o \
 	ssp.o \
 	subr.o \
 	ui-sun.o \

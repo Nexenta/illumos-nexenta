@@ -23,8 +23,11 @@
 # Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2011, 2014 by Delphix. All rights reserved.
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2016 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Joyent, Inc.
+# Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
+# Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -1527,7 +1530,7 @@ KLMOPS_OBJS +=	klmops.o
 TLIMOD_OBJS +=	tlimod.o	t_kalloc.o	t_kbind.o	t_kclose.o \
 		t_kconnect.o	t_kfree.o	t_kgtstate.o	t_kopen.o \
 		t_krcvudat.o	t_ksndudat.o	t_kspoll.o	t_kunbind.o \
-		t_kutil.o
+		t_kutil.o	t_koptmgmt.o
 
 RLMOD_OBJS += rlmod.o
 

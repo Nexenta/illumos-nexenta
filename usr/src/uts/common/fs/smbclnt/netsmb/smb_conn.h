@@ -33,9 +33,10 @@
  */
 
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB_CONN_H
@@ -61,14 +62,11 @@ typedef struct smb_cred {
 
 /*
  * Bits in vc_flags (a.k.a. vc_co.co_flags)
- * Many of these were duplicates of SMBVOPT_ flags
- * and we now keep those too instead of merging
- * them into vc_flags.
+ * Note: SMBO_GONE is also in vc_flags
  */
-
-#define	SMBV_WIN95		0x0010	/* used to apply bugfixes for this OS */
-#define	SMBV_NT4		0x0020	/* used when NT4 issues invalid resp */
 #define	SMBV_UNICODE		0x0040	/* conn configured to use Unicode */
+#define	SMBV_EXT_SEC		0x0080	/* conn to use extended security */
+#define	SMBV_WILL_SIGN		0x0100	/* negotiated signing */
 
 /*
  * Note: the common "obj" level uses this GONE flag by
@@ -146,6 +144,41 @@ typedef struct smb_connobj smb_connobj_t;
 #define	SMBL_SHARE	2
 
 /*
+ * SMB1 Negotiated protocol parameters
+ */
+struct smb_sopt {
+	int16_t		sv_proto;	/* protocol dialect */
+	uchar_t		sv_sm;		/* security mode */
+	int16_t		sv_tz;		/* offset in min relative to UTC */
+	uint16_t	sv_maxmux;	/* max number of outstanding rq's */
+	uint16_t 	sv_maxvcs;	/* max number of VCs */
+	uint16_t	sv_rawmode;
+	uint32_t	sv_maxtx;	/* maximum transmit buf size */
+	uint32_t	sv_maxraw;	/* maximum raw-buffer size */
+	uint32_t	sv_skey;	/* session key */
+	uint32_t	sv_caps;	/* capabilites SMB_CAP_ */
+};
+typedef struct smb_sopt smb_sopt_t;
+
+/*
+ * SMB1 I/O Deamon state
+ */
+struct smb_iods {
+	uint8_t 	is_hflags;	/* SMB header flags */
+	uint16_t	is_hflags2;	/* SMB header flags2 */
+	uint16_t	is_smbuid;	/* SMB header UID */
+	uint16_t	is_next_mid;	/* SMB header MID */
+	uint32_t	is_txmax;	/* max tx/rx packet size */
+	uint32_t	is_rwmax;	/* max read/write data size */
+	uint32_t	is_rxmax;	/* max readx data size */
+	uint32_t	is_wxmax;	/* max writex data size */
+	/* Signing state */
+	uint32_t	is_next_seq;	/* my next sequence number */
+
+};
+typedef struct smb_iods smb_iods_t;
+
+/*
  * Virtual Circuit to a server (really connection + session).
  * Yes, calling this a "Virtual Circuit" is confusining,
  * because it has nothing to do with the SMB notion of a
@@ -160,20 +193,26 @@ typedef struct smb_vc {
 	uid_t			vc_owner;	/* Unix owner */
 	int			vc_genid;	/* "generation" ID */
 
-	int			vc_mackeylen;	/* length of MAC key */
-	uint8_t			*vc_mackey;	/* MAC key */
+	int			vc_mackeylen;	/* MAC key length */
+	int			vc_ssnkeylen;	/* session key length */
+	uint8_t			*vc_mackey;	/* MAC key buffer */
+	uint8_t			*vc_ssnkey;	/* session key buffer */
 
-	ksema_t			vc_sendlock;
 	struct smb_tran_desc	*vc_tdesc;	/* transport ops. vector */
 	void			*vc_tdata;	/* transport control block */
 
 	kcondvar_t		iod_idle; 	/* IOD thread idle CV */
 	krwlock_t		iod_rqlock;	/* iod_rqlist */
-	struct smb_rqhead	iod_rqlist;	/* list of outstanding reqs */
+	struct smb_rqhead	iod_rqlist;	/* list of active reqs */
 	struct _kthread 	*iod_thr;	/* the IOD (reader) thread */
 	int			iod_flags;	/* see SMBIOD_* below */
-	int			iod_newrq;	/* send needed (iod_rqlock) */
-	int			iod_muxfull;	/* maxmux limit reached */
+	uint_t			iod_muxcnt;	/* num. active requests */
+	uint_t			iod_muxwant;	/* waiting to be active */
+	kcondvar_t		iod_muxwait;
+	boolean_t		iod_noresp;	/* Logged "not responding" */
+
+	smb_iods_t		vc_iods;
+	smb_sopt_t		vc_sopt;
 
 	/* This is copied in/out when IOD enters/returns */
 	smbioc_ssn_work_t	vc_work;
@@ -187,31 +226,33 @@ typedef struct smb_vc {
 
 /* defines for members in vc_ssn */
 #define	vc_owner	vc_ssn.ssn_owner
+#define	vc_vopt 	vc_ssn.ssn_vopt
 #define	vc_srvname	vc_ssn.ssn_srvname
 #define	vc_srvaddr	vc_ssn.ssn_id.id_srvaddr
 #define	vc_domain	vc_ssn.ssn_id.id_domain
 #define	vc_username	vc_ssn.ssn_id.id_user
-#define	vc_vopt 	vc_ssn.ssn_vopt
 
 /* defines for members in vc_work */
-#define	vc_sopt		vc_work.wk_sopt
-#define	vc_maxmux	vc_work.wk_sopt.sv_maxmux
-#define	vc_tran_fd	vc_work.wk_iods.is_tran_fd
-#define	vc_hflags	vc_work.wk_iods.is_hflags
-#define	vc_hflags2	vc_work.wk_iods.is_hflags2
-#define	vc_smbuid	vc_work.wk_iods.is_smbuid
-#define	vc_next_mid	vc_work.wk_iods.is_next_mid
-#define	vc_txmax	vc_work.wk_iods.is_txmax
-#define	vc_rwmax	vc_work.wk_iods.is_rwmax
-#define	vc_rxmax	vc_work.wk_iods.is_rxmax
-#define	vc_wxmax	vc_work.wk_iods.is_wxmax
-#define	vc_ssn_key	vc_work.wk_iods.is_ssn_key
-#define	vc_next_seq	vc_work.wk_iods.is_next_seq
-#define	vc_u_mackey	vc_work.wk_iods.is_u_mackey
-#define	vc_u_maclen	vc_work.wk_iods.is_u_maclen
+
+/* defines for members in vc_sopt ? */
+#define	vc_maxmux	vc_sopt.sv_maxmux
+
+/* defines for members in vc_iods */
+#define	vc_hflags	vc_iods.is_hflags
+#define	vc_hflags2	vc_iods.is_hflags2
+#define	vc_smbuid	vc_iods.is_smbuid
+#define	vc_next_mid	vc_iods.is_next_mid
+#define	vc_txmax	vc_iods.is_txmax
+#define	vc_rwmax	vc_iods.is_rwmax
+#define	vc_rxmax	vc_iods.is_rxmax
+#define	vc_wxmax	vc_iods.is_wxmax
+#define	vc_next_seq	vc_iods.is_next_seq
 
 #define	SMB_VC_LOCK(vcp)	mutex_enter(&(vcp)->vc_lock)
 #define	SMB_VC_UNLOCK(vcp)	mutex_exit(&(vcp)->vc_lock)
+
+#define	CPTOVC(cp)	((struct smb_vc *)((void *)(cp)))
+#define	VCTOCP(vcp)	(&(vcp)->vc_co)
 
 #define	SMB_UNICODE_STRINGS(vcp)	((vcp)->vc_hflags2 & SMB_FLAGS2_UNICODE)
 
@@ -245,27 +286,21 @@ typedef struct smb_share {
 #define	SMB_SS_LOCK(ssp)	mutex_enter(&(ssp)->ss_lock)
 #define	SMB_SS_UNLOCK(ssp)	mutex_exit(&(ssp)->ss_lock)
 
-#define	CPTOVC(cp)	((struct smb_vc *)((void *)(cp)))
-#define	VCTOCP(vcp)	(&(vcp)->vc_co)
-
 #define	CPTOSS(cp)	((struct smb_share *)((void *)(cp)))
-#define	SSTOVC(ssp)	CPTOVC(((ssp)->ss_co.co_parent))
 #define	SSTOCP(ssp)	(&(ssp)->ss_co)
+#define	SSTOVC(ssp)	CPTOVC(((ssp)->ss_co.co_parent))
 
 /*
  * Call-back operations vector, so the netsmb module
  * can notify smbfs about events affecting mounts.
  * Installed in netsmb after smbfs loads.
+ * Note: smbfs only uses the fscb_discon hook.
  */
 typedef struct smb_fscb {
 	/* Called when the VC has disconnected. */
 	void (*fscb_disconn)(smb_share_t *);
 	/* Called when the VC has reconnected. */
 	void (*fscb_connect)(smb_share_t *);
-	/* Called when the server becomes unresponsive. */
-	void (*fscb_down)(smb_share_t *);
-	/* Called when the server is responding again. */
-	void (*fscb_up)(smb_share_t *);
 } smb_fscb_t;
 /* Install the above vector, or pass NULL to clear it. */
 void smb_fscb_set(smb_fscb_t *);
@@ -282,9 +317,9 @@ typedef struct smb_dev {
 	int		sd_vcgenid;	/* Generation of share or VC */
 	int		sd_poll;	/* Future use */
 	int		sd_flags;	/* State of connection */
-#define	NSMBFL_OPEN		0x0001
-#define	NSMBFL_IOD		0x0002
-#define	NSMBFL_IOCTL		0x0004
+#define	NSMBFL_OPEN		0x0001	/* Device minor is open */
+#define	NSMBFL_IOD		0x0004	/* Open by IOD */
+#define	NSMBFL_IOCTL		0x0010	/* Serialize ioctl calls */
 	int		sd_smbfid;	/* library read/write */
 	zoneid_t	zoneid;		/* Zone id */
 } smb_dev_t;
@@ -300,6 +335,8 @@ int  smb_dev2share(int fd, struct smb_share **sspp);
 /*
  * smb_usr.c
  */
+int smb_usr_ioctl(smb_dev_t *, int, intptr_t, int, cred_t *);
+
 int smb_usr_get_flags2(smb_dev_t *sdp, intptr_t arg, int flags);
 int smb_usr_get_ssnkey(smb_dev_t *sdp, intptr_t arg, int flags);
 int smb_usr_dup_dev(smb_dev_t *sdp, intptr_t arg, int flags);
@@ -319,7 +356,10 @@ int smb_usr_get_tree(smb_dev_t *, int, intptr_t, int, cred_t *);
 int smb_usr_drop_tree(smb_dev_t *sdp, int cmd);
 
 int smb_usr_iod_work(smb_dev_t *sdp, intptr_t arg, int flags, cred_t *cr);
-int smb_usr_iod_ioctl(smb_dev_t *sdp, int cmd, intptr_t arg, int flags);
+int smb_usr_iod_ioctl(smb_dev_t *sdp, int cmd, intptr_t arg, int flags,
+    cred_t *cr);
+
+int smb_pkey_ioctl(int, intptr_t, int, cred_t *);
 
 
 /*
@@ -327,18 +367,22 @@ int smb_usr_iod_ioctl(smb_dev_t *sdp, int cmd, intptr_t arg, int flags);
  */
 int  smb_iod_create(smb_vc_t *vcp);
 int  smb_iod_destroy(smb_vc_t *vcp);
-int  smb_iod_connect(smb_vc_t *vcp);
 void smb_iod_disconnect(smb_vc_t *vcp);
 int  smb_iod_addrq(struct smb_rq *rqp);
 int  smb_iod_multirq(struct smb_rq *rqp);
 int  smb_iod_waitrq(struct smb_rq *rqp);
+int  smb_iod_waitrq_int(struct smb_rq *rqp);
 void smb_iod_removerq(struct smb_rq *rqp);
+int  smb_iod_sendrecv(struct smb_rq *, int);
 void smb_iod_shutdown_share(smb_share_t *ssp);
 
 void smb_iod_sendall(smb_vc_t *);
-int smb_iod_recvall(smb_vc_t *);
+int smb_iod_recvall(smb_vc_t *, boolean_t);
 
-int smb_iod_vc_work(smb_vc_t *, cred_t *);
+int nsmb_iod_connect(smb_vc_t *vcp, cred_t *cr);
+int nsmb_iod_negotiate(smb_vc_t *vcp, cred_t *cr);
+int nsmb_iod_ssnsetup(smb_vc_t *vcp, cred_t *cr);
+int smb_iod_vc_work(smb_vc_t *, int, cred_t *);
 int smb_iod_vc_idle(smb_vc_t *);
 int smb_iod_vc_rcfail(smb_vc_t *);
 int smb_iod_reconnect(smb_vc_t *);

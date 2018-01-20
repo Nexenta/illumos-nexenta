@@ -34,6 +34,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/param.h>
@@ -69,6 +70,7 @@
 
 
 static int  smb_rq_reply(struct smb_rq *rqp);
+static int  smb_rq_parsehdr(struct smb_rq *rqp);
 static int  smb_rq_enqueue(struct smb_rq *rqp);
 static int  smb_rq_getenv(struct smb_connobj *layer,
 		struct smb_vc **vcpp, struct smb_share **sspp);
@@ -106,6 +108,7 @@ smb_rq_alloc(struct smb_connobj *layer, uchar_t cmd, struct smb_cred *scred,
 	struct smb_rq *rqp;
 	int error;
 
+	// XXX kmem cache?
 	rqp = (struct smb_rq *)kmem_alloc(sizeof (struct smb_rq), KM_SLEEP);
 	if (rqp == NULL)
 		return (ENOMEM);
@@ -147,7 +150,6 @@ smb_rq_init(struct smb_rq *rqp, struct smb_connobj *co, uchar_t cmd,
 
 	rqp->sr_rexmit = SMBMAXRESTARTS;
 	rqp->sr_cred = scred;	/* Note: ref hold done by caller. */
-	rqp->sr_pid = (uint16_t)ddi_get_pid();
 	error = smb_rq_new(rqp, cmd);
 
 	return (error);
@@ -163,7 +165,6 @@ smb_rq_new(struct smb_rq *rqp, uchar_t cmd)
 	ASSERT(rqp != NULL);
 
 	rqp->sr_sendcnt = 0;
-	rqp->sr_cmd = cmd;
 
 	mb_done(mbp);
 	md_done(&rqp->sr_rp);
@@ -172,8 +173,10 @@ smb_rq_new(struct smb_rq *rqp, uchar_t cmd)
 		return (error);
 
 	/*
-	 * Is this the right place to save the flags?
+	 * SMB1 request initialization
 	 */
+	rqp->sr_cmd = cmd;
+	rqp->sr_pid = (uint16_t)ddi_get_pid();
 	rqp->sr_rqflags  = vcp->vc_hflags;
 	rqp->sr_rqflags2 = vcp->vc_hflags2;
 
@@ -190,7 +193,7 @@ smb_rq_new(struct smb_rq *rqp, uchar_t cmd)
 /*
  * Given a request with it's body already composed,
  * rewind to the start and fill in the SMB header.
- * This is called after the request is enqueued,
+ * This is called when the request is enqueued,
  * so we have the final MID, seq num. etc.
  */
 void
@@ -331,6 +334,68 @@ ok_out:
 }
 
 /*
+ * Used by the IOD thread during connection setup,
+ * and for smb_echo after network timeouts.  Note that
+ * unlike smb_rq_simple, callers must check sr_error.
+ */
+int
+smb_rq_internal(struct smb_rq *rqp, int timeout)
+{
+	struct smb_vc *vcp = rqp->sr_vc;
+	int error;
+
+	rqp->sr_flags &= ~SMBR_RESTART;
+	rqp->sr_timo = timeout;	/* in seconds */
+	rqp->sr_state = SMBRQ_NOTSENT;
+
+	/*
+	 * In-line smb_rq_enqueue(rqp) here, as we don't want it
+	 * trying to reconnect etc. for an internal request.
+	 */
+	rqp->sr_rquid = vcp->vc_smbuid;
+	rqp->sr_rqtid = SMB_TID_UNKNOWN;
+	rqp->sr_flags |= SMBR_INTERNAL;
+	error = smb_iod_addrq(rqp);
+	if (error != 0)
+		return (error);
+
+	/*
+	 * In-line a variant of smb_rq_reply(rqp) here as we may
+	 * need to do custom parsing for SMB1-to-SMB2 negotiate.
+	 */
+	if (rqp->sr_timo == SMBNOREPLYWAIT) {
+		smb_iod_removerq(rqp);
+		return (0);
+	}
+
+	error = smb_iod_waitrq_int(rqp);
+	if (error)
+		return (error);
+
+	/*
+	 * If the request was signed, validate the
+	 * signature on the response.
+	 */
+	if (rqp->sr_rqflags2 & SMB_FLAGS2_SECURITY_SIGNATURE) {
+		error = smb_rq_verify(rqp);
+		if (error)
+			return (error);
+	}
+
+	/*
+	 * Parse the SMB header.
+	 */
+	error = smb_rq_parsehdr(rqp);
+
+	/*
+	 * Skip the error translation smb_rq_reply does.
+	 * Callers of this expect "raw" NT status.
+	 */
+
+	return (error);
+}
+
+/*
  * Mark location of the word count, which is filled in later by
  * smb_rw_wend().  Also initialize the counter that it uses
  * to figure out what value to fill in.
@@ -397,15 +462,6 @@ smb_rq_bend(struct smb_rq *rqp)
 	rqp->sr_bcount[1] = (bcnt >> 8);
 }
 
-int
-smb_rq_intr(struct smb_rq *rqp)
-{
-	if (rqp->sr_flags & SMBR_INTR)
-		return (EINTR);
-
-	return (0);
-}
-
 static int
 smb_rq_getenv(struct smb_connobj *co,
 	struct smb_vc **vcpp, struct smb_share **sspp)
@@ -457,14 +513,12 @@ out:
 }
 
 /*
- * Wait for reply on the request
+ * Wait for a reply to this request, then parse it.
  */
 static int
 smb_rq_reply(struct smb_rq *rqp)
 {
-	struct mdchain *mdp = &rqp->sr_rp;
-	u_int8_t tb;
-	int error, rperror = 0;
+	int error;
 
 	if (rqp->sr_timo == SMBNOREPLYWAIT) {
 		smb_iod_removerq(rqp);
@@ -488,14 +542,23 @@ smb_rq_reply(struct smb_rq *rqp)
 	/*
 	 * Parse the SMB header
 	 */
-	error = md_get_uint32le(mdp, NULL);
-	if (error)
+	error = smb_rq_parsehdr(rqp);
+	if (error != 0)
 		return (error);
-	error = md_get_uint8(mdp, &tb);
-	error = md_get_uint32le(mdp, &rqp->sr_error);
-	error = md_get_uint8(mdp, &rqp->sr_rpflags);
-	error = md_get_uint16le(mdp, &rqp->sr_rpflags2);
-	if (rqp->sr_rpflags2 & SMB_FLAGS2_ERR_STATUS) {
+
+	if (rqp->sr_error != 0) {
+		if (rqp->sr_rpflags2 & SMB_FLAGS2_ERR_STATUS) {
+			error = smb_maperr32(rqp->sr_error);
+		} else {
+			uint8_t errClass = rqp->sr_error & 0xff;
+			uint16_t errCode = rqp->sr_error >> 16;
+			/* Convert to NT status */
+			rqp->sr_error = smb_doserr2status(errClass, errCode);
+			error = smb_maperror(errClass, errCode);
+		}
+	}
+
+	if (error != 0) {
 		/*
 		 * Do a special check for STATUS_BUFFER_OVERFLOW;
 		 * it's not an error.
@@ -506,34 +569,58 @@ smb_rq_reply(struct smb_rq *rqp)
 			 * they can look at rqp->sr_error if they
 			 * need to know whether we got a
 			 * STATUS_BUFFER_OVERFLOW.
-			 * XXX - should we do that for all errors
-			 * where (error & 0xC0000000) is 0x80000000,
-			 * i.e. all warnings?
 			 */
-			rperror = 0;
-		} else
-			rperror = smb_maperr32(rqp->sr_error);
+			rqp->sr_flags |= SMBR_MOREDATA;
+			error = 0;
+		}
 	} else {
-		rqp->sr_errclass = rqp->sr_error & 0xff;
-		rqp->sr_serror = rqp->sr_error >> 16;
-		rperror = smb_maperror(rqp->sr_errclass, rqp->sr_serror);
-	}
-	if (rperror == EMOREDATA) {
-		rperror = E2BIG;
-		rqp->sr_flags |= SMBR_MOREDATA;
-	} else
 		rqp->sr_flags &= ~SMBR_MOREDATA;
+	}
 
-	error = md_get_uint32le(mdp, NULL);
-	error = md_get_uint32le(mdp, NULL);
-	error = md_get_uint32le(mdp, NULL);
+	return (error);
+}
 
-	error = md_get_uint16le(mdp, &rqp->sr_rptid);
-	error = md_get_uint16le(mdp, &rqp->sr_rppid);
-	error = md_get_uint16le(mdp, &rqp->sr_rpuid);
+/*
+ * Parse the SMB header
+ */
+static int
+smb_rq_parsehdr(struct smb_rq *rqp)
+{
+	struct mdchain mdp_save;
+	struct mdchain *mdp = &rqp->sr_rp;
+	u_int8_t tb, sig[4];
+	int error;
+
+	/*
+	 * Parse the signature.  The reader already checked that
+	 * the signature is valid.  Could just skip it here.
+	 */
+	mdp_save = *mdp;
+	error = md_get_mem(mdp, sig, 4, MB_MSYSTEM);
+	if (error)
+		return (error);
+	if (sig[0] != SMB_HDR_V1) {
+		return (EBADRPC);
+	}
+
+	/* Check cmd */
+	error = md_get_uint8(mdp, &tb);
+	if (tb != rqp->sr_cmd)
+		return (EBADRPC);
+
+	md_get_uint32le(mdp, &rqp->sr_error);
+	md_get_uint8(mdp, &rqp->sr_rpflags);
+	md_get_uint16le(mdp, &rqp->sr_rpflags2);
+
+	/* Skip: pid-high(2), MAC sig(8), reserved(2) */
+	md_get_mem(mdp, NULL, 12, MB_MSYSTEM);
+
+	md_get_uint16le(mdp, &rqp->sr_rptid);
+	md_get_uint16le(mdp, &rqp->sr_rppid);
+	md_get_uint16le(mdp, &rqp->sr_rpuid);
 	error = md_get_uint16le(mdp, &rqp->sr_rpmid);
 
-	return ((error) ? error : rperror);
+	return (error);
 }
 
 

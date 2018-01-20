@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -909,6 +909,17 @@ fakekernel_putlog(char *msg, size_t len, int flags)
 		return;
 	(void) fwrite(msg, 1, len, stdout);
 	(void) fflush(stdout);
+}
+
+/*
+ * Print nsmb debug messages via driver smb_debugmsg()
+ */
+void
+smb_debugmsg(const char *func, char *msg)
+{
+	if (smb_debug < 2)
+		return;
+	printf("[kmod] %s: %s\n", func, msg);
 }
 
 /*

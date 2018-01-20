@@ -22,8 +22,8 @@
 /*
  * Copyright (c) 1988, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2017, Joyent, Inc.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*	Copyright (c) 1983, 1984, 1985, 1986, 1987, 1988, 1989 AT&T	*/
@@ -145,9 +145,9 @@ top:
 		else
 			excl = NONEXCL;
 
-		if (error =
+		if ((error =
 		    vn_create(pnamep, seg, &vattr, excl, mode, &vp, crwhy,
-		    (filemode & ~(FTRUNC|FEXCL)), umask))
+		    (filemode & ~(FTRUNC|FEXCL)), umask)) != 0)
 			return (error);
 	} else {
 		/*
@@ -257,6 +257,7 @@ out:
 			    NULL);
 			open_done = 0;
 		}
+		VN_RELE(vp);
 	} else
 		*vpp = vp;
 	return (error);

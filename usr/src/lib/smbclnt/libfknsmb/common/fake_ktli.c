@@ -36,7 +36,7 @@
  * contributors.
  */
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -208,6 +208,21 @@ t_kbind(TIUSER *tiptr, struct t_bind *req, struct t_bind *ret)
 	if (t_bind(vp->v_fd, req, ret) < 0) {
 		rc = t_errno;
 		cmn_err(CE_NOTE, "t_kbind: t_bind terr=%d", rc);
+		return (tlitosyserr(rc));
+	}
+	return (0);
+}
+
+int
+t_kunbind(TIUSER *tiptr)
+{
+	file_t		*fp = tiptr->fp;
+	vnode_t		*vp = fp->f_vnode;
+	int		rc;
+
+	if (t_unbind(vp->v_fd) < 0) {
+		rc = t_errno;
+		cmn_err(CE_NOTE, "t_kunbind: t_unbind terr=%d", rc);
 		return (tlitosyserr(rc));
 	}
 	return (0);
