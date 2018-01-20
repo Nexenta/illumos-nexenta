@@ -142,7 +142,7 @@ smb2_lock(smb_request_t *sr)
 		status = smb2__lock(sr);
 	}
 
-	if (sr->fid_ofile->dh_nvlist != NULL) {
+	if (sr->fid_ofile->dh_persist) {
 		smb2_dh_update_locks(sr, sr->fid_ofile);
 	}
 

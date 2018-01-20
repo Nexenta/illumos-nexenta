@@ -473,7 +473,7 @@ smb_ofile_close(smb_ofile_t *of, int32_t mtime_sec)
 		break;
 
 	case SMB_FTYPE_DISK:
-		if (of->dh_nvfile != NULL)
+		if (of->dh_persist)
 			smb2_dh_close_persistent(of);
 		if (of->f_persistid != 0)
 			smb_ofile_del_persistid(of);

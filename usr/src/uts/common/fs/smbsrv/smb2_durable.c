@@ -895,12 +895,12 @@ smb2_dh_close_persistent(smb_ofile_t *of)
 	 * Unlink the persistent handle nvlist file.
 	 * First get the CA handle dir, then unlink
 	 */
-	mutex_enter(&of->f_mutex);
+	mutex_enter(&of->dh_nvlock);
 	strnode = of->dh_nvfile;
 	of->dh_nvfile = NULL;
 	nvl = of->dh_nvlist;
 	of->dh_nvlist = NULL;
-	mutex_exit(&of->f_mutex);
+	mutex_exit(&of->dh_nvlock);
 
 	if (nvl != NULL)
 		nvlist_free(nvl);
@@ -953,6 +953,8 @@ smb2_dh_make_persistent(smb_request_t *sr, smb_ofile_t *of)
 	if (rc != 0)
 		return (rc);
 
+	mutex_enter(&of->dh_nvlock);
+
 	/* fnode is held. rele in smb2_dh_close_persistent */
 	of->dh_nvfile = fnode;
 	(void) nvlist_alloc(&of->dh_nvlist, NV_UNIQUE_NAME, KM_SLEEP);
@@ -967,7 +969,6 @@ smb2_dh_make_persistent(smb_request_t *sr, smb_ofile_t *of)
 	/*
 	 * Fill in the fixed parts of the nvlist
 	 */
-	mutex_enter(&of->dh_nvlock);
 	(void) nvlist_add_uint32(of->dh_nvlist,
 	    "info_version", smb2_ca_info_version);
 	(void) nvlist_add_string(of->dh_nvlist,
@@ -1030,13 +1031,11 @@ smb2_dh_update_nvfile(smb_request_t *sr)
 	if (of == NULL || of->dh_persist == B_FALSE)
 		return;
 
-	if (of->dh_nvlist == NULL ||
-	    of->dh_nvfile == NULL) {
-		ASSERT(0);
+	mutex_enter(&of->dh_nvlock);
+	if (of->dh_nvlist == NULL || of->dh_nvfile == NULL) {
+		mutex_exit(&of->dh_nvlock);
 		return;
 	}
-
-	mutex_enter(&of->dh_nvlock);
 
 	rc = nvlist_size(of->dh_nvlist, &buflen, NV_ENCODE_XDR);
 	if (rc != 0)
@@ -1531,15 +1530,22 @@ smb2_dh_cleanup(void *arg)
 {
 	smb_ofile_t *of = (smb_ofile_t *)arg;
 	smb_node_t *strnode;
+	struct nvlist *nvl;
 
 	/*
 	 * Intentionally skip smb2_dh_close_persistent by
 	 * clearing dh_nvfile before smb_ofile_close().
 	 */
-	mutex_enter(&of->f_mutex);
+	mutex_enter(&of->dh_nvlock);
 	strnode = of->dh_nvfile;
 	of->dh_nvfile = NULL;
-	mutex_exit(&of->f_mutex);
+	nvl = of->dh_nvlist;
+	of->dh_nvlist = NULL;
+	mutex_exit(&of->dh_nvlock);
+
+	if (nvl != NULL)
+		nvlist_free(nvl);
+
 	if (strnode != NULL)
 		smb_node_release(strnode);
 

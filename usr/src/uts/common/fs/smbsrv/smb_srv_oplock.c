@@ -450,7 +450,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 			lease->ls_state = NewLevel & CACHE_RWH;
 		ofile->f_oplock.og_state = NewLevel;
 
-		if (ofile->dh_nvfile != NULL) {
+		if (ofile->dh_persist) {
 			smb2_dh_update_oplock(sr, ofile);
 		}
 	}
@@ -593,7 +593,7 @@ smb_oplock_send_brk(smb_request_t *sr)
 		lease->ls_state = NewLevel & CACHE_RWH;
 	}
 
-	if (ofile->dh_nvfile != NULL) {
+	if (ofile->dh_persist) {
 		smb2_dh_update_oplock(sr, ofile);
 	}
 }

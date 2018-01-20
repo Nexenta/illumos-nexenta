@@ -1585,7 +1585,7 @@ smb_node_setattr(smb_request_t *sr, smb_node_t *node,
 		 * (sr != NULL) and it's a persistent handle, save
 		 * the "sticky times" in the handle.
 		 */
-		if (sr != NULL && of->dh_nvlist != NULL) {
+		if (sr != NULL && of->dh_persist) {
 			smb2_dh_update_times(sr, of, attr);
 		}
 	}
