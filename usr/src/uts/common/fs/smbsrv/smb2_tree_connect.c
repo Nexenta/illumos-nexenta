@@ -115,7 +115,9 @@ smb2_tree_connect(smb_request_t *sr)
 	else
 		ShareFlags = 0;
 
-	Capabilities = SMB2_SHARE_CAP_DFS;
+	Capabilities = 0;
+	if ((tree->t_flags & SMB_TREE_DFSROOT) != 0)
+		Capabilities |= SMB2_SHARE_CAP_DFS;
 	if ((tree->t_flags & SMB_TREE_CA) != 0)
 		Capabilities |= SMB2_SHARE_CAP_CA;
 
