@@ -195,6 +195,7 @@ extern "C" {
 #define	SMB_SHRF_TRANS		0x10000000
 #define	SMB_SHRF_PERM		0x20000000
 #define	SMB_SHRF_AUTOHOME	0x40000000
+#define	SMB_SHRF_REMOVED	0x80000000	/* unshared */
 
 #define	SMB_SHARE_PRINT		"print$"
 #define	SMB_SHARE_PRINT_LEN	6

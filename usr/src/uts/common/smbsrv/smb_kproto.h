@@ -686,7 +686,7 @@ void smb_ofile_get_quota_resume(smb_ofile_t *, char *, int);
 void smb_ofile_del_persistid(smb_ofile_t *);
 void smb_ofile_set_persistid_dh(smb_ofile_t *);
 void smb_ofile_set_persistid_ph(smb_ofile_t *);
-int smb_ofile_insert_persistid(smb_ofile_t *);
+int smb_ofile_insert_persistid(smb_ofile_t *, uint64_t);
 
 #define	SMB_OFILE_GET_SESSION(of)	((of)->f_session)
 #define	SMB_OFILE_GET_TREE(of)		((of)->f_tree)

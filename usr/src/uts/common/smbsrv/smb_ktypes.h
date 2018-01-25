@@ -1395,6 +1395,11 @@ typedef struct smb_ofile {
 	smb_opipe_t		*f_pipe;
 
 	kcondvar_t		f_cv;
+	/*
+	 * Note: f_persistid == 0 means this ofile has no persistid
+	 * (same interpretation at the protocol level).  IFF non-zero,
+	 * this ofile is linked in the sv_persistid_ht hash table.
+	 */
 	uint64_t		f_persistid;
 	uint32_t		f_uniqid;
 	uint32_t		f_refcnt;

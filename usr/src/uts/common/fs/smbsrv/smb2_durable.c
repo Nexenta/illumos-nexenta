@@ -326,6 +326,12 @@ smb2_dh_import_share(void *arg)
 
 	eof = B_FALSE;
 	do {
+		/*
+		 * If the kshare gets unshared before we finish,
+		 * bail out so we don't hold things up.
+		 */
+		if (shr->shr_flags & SMB_SHRF_REMOVED)
+			break;
 
 		/*
 		 * Read a stream name and info
@@ -607,8 +613,7 @@ smb2_dh_import_handle(smb_request_t *sr, smb_node_t *str_node,
 	 * Use the persist ID we previously assigned.
 	 * Like smb_ofile_set_persistid_ph()
 	 */
-	of->f_persistid = persist_id;
-	rc = smb_ofile_insert_persistid(of);
+	rc = smb_ofile_insert_persistid(of, persist_id);
 	if (rc != 0) {
 		cmn_err(CE_NOTE, "CA import (%s/%s) "
 		    "insert_persistid rc=%d",

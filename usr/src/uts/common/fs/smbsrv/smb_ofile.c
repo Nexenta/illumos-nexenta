@@ -465,6 +465,9 @@ smb_ofile_close(smb_ofile_t *of, int32_t mtime_sec)
 		return;
 	}
 
+	/*
+	 * Only one thread here (the one that that set f_state closing)
+	 */
 	switch (of->f_ftype) {
 	case SMB_FTYPE_BYTE_PIPE:
 	case SMB_FTYPE_MESG_PIPE:
@@ -967,6 +970,9 @@ smb_ofile_lookup_by_persistid(smb_request_t *sr, uint64_t persistid)
 	smb_ofile_t *of;
 	uint_t idx;
 
+	if (persistid == 0)
+		return (NULL);
+
 	hash = sr->sr_server->sv_persistid_ht;
 	idx = smb_hash_uint64(hash, persistid);
 	bucket = &hash->buckets[idx];
@@ -1031,13 +1037,14 @@ smb_ofile_set_persistid_dh(smb_ofile_t *of)
 	/* make sure it's even */
 	persistid &= ~((uint64_t)1);
 
-	of->f_persistid = persistid;
-
 	idx = smb_hash_uint64(hash, persistid);
 	bucket = &hash->buckets[idx];
 	ll = &bucket->b_list;
 	smb_llist_enter(ll, RW_WRITER);
-	smb_llist_insert_tail(ll, of);
+	if (of->f_persistid == 0) {
+		of->f_persistid = persistid;
+		smb_llist_insert_tail(ll, of);
+	}
 	smb_llist_exit(ll);
 }
 
@@ -1057,12 +1064,10 @@ top:
 	/* make sure it's odd */
 	persistid |= (uint64_t)1;
 
-
 	/*
 	 * Try inserting with this persistent ID.
 	 */
-	of->f_persistid = persistid;
-	rc = smb_ofile_insert_persistid(of);
+	rc = smb_ofile_insert_persistid(of, persistid);
 	if (rc == EEXIST)
 		goto top;
 	if (rc != 0) {
@@ -1075,10 +1080,9 @@ top:
  * If the persistent ID is in use, error.
  */
 int
-smb_ofile_insert_persistid(smb_ofile_t *new_of)
+smb_ofile_insert_persistid(smb_ofile_t *new_of, uint64_t persistid)
 {
 	smb_hash_t *hash = new_of->f_server->sv_persistid_ht;
-	uint64_t persistid = new_of->f_persistid;
 	smb_bucket_t *bucket;
 	smb_llist_t *ll;
 	smb_ofile_t *of;
@@ -1105,7 +1109,10 @@ smb_ofile_insert_persistid(smb_ofile_t *new_of)
 	}
 
 	/* Not found, so OK to insert. */
-	smb_llist_insert_tail(ll, new_of);
+	if (new_of->f_persistid == 0) {
+		new_of->f_persistid = persistid;
+		smb_llist_insert_tail(ll, new_of);
+	}
 	smb_llist_exit(ll);
 
 	return (0);
@@ -1123,7 +1130,10 @@ smb_ofile_del_persistid(smb_ofile_t *of)
 	bucket = &hash->buckets[idx];
 	ll = &bucket->b_list;
 	smb_llist_enter(ll, RW_WRITER);
-	smb_llist_remove(ll, of);
+	if (of->f_persistid != 0) {
+		smb_llist_remove(ll, of);
+		of->f_persistid = 0;
+	}
 	smb_llist_exit(ll);
 }
 
@@ -1452,6 +1462,9 @@ void
 smb_ofile_free(smb_ofile_t *of)
 {
 	smb_tree_t	*tree = of->f_tree;
+
+	/* Make sure it's not in the persistid hash. */
+	ASSERT(of->f_persistid == 0);
 
 	if (tree != NULL) {
 		if (of->f_fid != 0)

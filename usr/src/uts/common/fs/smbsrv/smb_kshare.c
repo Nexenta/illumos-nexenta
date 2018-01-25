@@ -725,7 +725,9 @@ smb_kshare_export(smb_server_t *sv, smb_kshare_t *shr)
 		rc = smb2_dh_new_ca_share(sv, shr);
 		if (rc != 0) {
 			/* Just make it a non-CA share. */
+			mutex_enter(&shr->shr_mutex);
 			shr->shr_flags &= ~SMB_SHRF_CA;
+			mutex_exit(&shr->shr_mutex);
 			rc = 0;
 		}
 	}
@@ -943,6 +945,11 @@ smb_kshare_unexport(smb_server_t *sv, const char *shrname)
 	}
 
 	smb_avl_remove(share_avl, shr);
+
+	mutex_enter(&shr->shr_mutex);
+	shr->shr_flags |= SMB_SHRF_REMOVED;
+	mutex_exit(&shr->shr_mutex);
+
 	smb_avl_release(share_avl, shr);
 
 	return (0);
