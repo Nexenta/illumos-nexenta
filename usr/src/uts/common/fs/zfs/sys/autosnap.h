@@ -89,6 +89,7 @@ struct zfs_autosnap {
 	kthread_t *destroyer;
 	boolean_t need_stop;
 	boolean_t initialized;
+	boolean_t register_busy;
 };
 
 /*

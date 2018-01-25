@@ -249,12 +249,7 @@ autosnap_get_owned_snapshots(void *opaque)
 		data[0] = snap->txg;
 		data[1] = snap->recursive;
 
-		if (nvlist_add_uint64_array(dup, snap->name, data, 2) != 0) {
-			nvlist_free(dup);
-			mutex_exit(&autosnap->autosnap_lock);
-			return (NULL);
-		}
-
+		fnvlist_add_uint64_array(dup, snap->name, data, 2);
 		snap->orphaned = B_FALSE;
 	}
 
@@ -488,6 +483,10 @@ autosnap_register_handler_impl(spa_t *spa,
 
 
 	mutex_enter(&autosnap->autosnap_lock);
+	while (autosnap->register_busy) {
+		(void) cv_wait(&autosnap->autosnap_cv,
+		    &autosnap->autosnap_lock);
+	}
 
 	zone = autosnap_find_zone(autosnap, name, B_FALSE);
 	rzone = autosnap_find_zone(autosnap, name, B_TRUE);
@@ -525,9 +524,25 @@ autosnap_register_handler_impl(spa_t *spa,
 
 		zone->flags = flags;
 		zone->autosnap = autosnap;
-		list_insert_tail(&autosnap->autosnap_zones, zone);
+
+		/*
+		 * This is a new zone and we need to collect orphaned
+		 * snapshots for it. It is safe to drop autosnap_lock,
+		 * because the zone is not on the list of available
+		 * zones.
+		 * Disallow registering a handler until the process
+		 * is finished.
+		 */
+		autosnap->register_busy = B_TRUE;
+		mutex_exit(&autosnap->autosnap_lock);
 
 		autosnap_collect_orphaned_snapshots(spa, zone);
+
+		mutex_enter(&autosnap->autosnap_lock);
+		cv_broadcast(&autosnap->autosnap_cv);
+		autosnap->register_busy = B_FALSE;
+
+		list_insert_tail(&autosnap->autosnap_zones, zone);
 	} else {
 		if ((list_head(&zone->listeners) != NULL) &&
 		    ((flags & AUTOSNAP_CREATOR) ^
@@ -591,13 +606,19 @@ autosnap_register_handler(const char *name, uint64_t flags,
 	}
 
 	spa = spa_lookup(name);
-	if (spa != NULL) {
-		hdl = autosnap_register_handler_impl(spa,
-		    name, flags, confirm_cb, nc_cb, err_cb, cb_arg);
-	}
+	if (spa != NULL)
+		spa_open_ref(spa, FTAG);
 
 	if (!namespace_alteration)
 		mutex_exit(&spa_namespace_lock);
+
+	if (spa == NULL)
+		return (NULL);
+
+	hdl = autosnap_register_handler_impl(spa,
+	    name, flags, confirm_cb, nc_cb, err_cb, cb_arg);
+
+	spa_close(spa, FTAG);
 
 	return (hdl);
 }
@@ -618,12 +639,15 @@ autosnap_unregister_handler(void *opaque)
 	}
 
 	spa = spa_lookup(zone->dataset);
+	if (spa != NULL)
+		spa_open_ref(spa, FTAG);
+
+	if (!namespace_alteration)
+		mutex_exit(&spa_namespace_lock);
 
 	/* if zone is absent, then just destroy handler */
-	if (spa == NULL) {
-		zone = NULL;
+	if (spa == NULL)
 		goto free_hdl;
-	}
 
 	autosnap = spa_get_autosnap(spa);
 
@@ -631,8 +655,6 @@ autosnap_unregister_handler(void *opaque)
 
 	autosnap_release_snapshots_by_txg_no_lock_impl(hdl,
 	    AUTOSNAP_FIRST_SNAP, AUTOSNAP_LAST_SNAP, B_FALSE);
-
-free_hdl:
 
 	/*
 	 * Remove the client from zone. If it is a last client
@@ -685,13 +707,14 @@ free_hdl:
 		}
 	}
 
+free_hdl:
 	kmem_free(hdl, sizeof (autosnap_handler_t));
 
 out:
-	if (spa != NULL)
+	if (spa != NULL) {
+		spa_close(spa, FTAG);
 		mutex_exit(&autosnap->autosnap_lock);
-	if (!namespace_alteration)
-		mutex_exit(&spa_namespace_lock);
+	}
 }
 
 int
