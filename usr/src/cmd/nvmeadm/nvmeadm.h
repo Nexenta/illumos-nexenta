@@ -76,6 +76,9 @@ extern void *nvme_get_logpage(int, uint8_t, size_t *);
 extern boolean_t nvme_get_feature(int, uint8_t, uint32_t, uint64_t *, size_t *,
     void **);
 extern int nvme_intr_cnt(int);
+extern boolean_t nvme_format_nvm(int, uint8_t, uint8_t);
+extern boolean_t nvme_detach(int);
+extern boolean_t nvme_attach(int);
 
 #ifdef __cplusplus
 }

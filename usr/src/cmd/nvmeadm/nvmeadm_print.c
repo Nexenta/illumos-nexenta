@@ -46,19 +46,29 @@ static const char *generic_status_codes[] = {
 	"Command ID Conflict",
 	"Data Transfer Error",
 	"Commands Aborted due to Power Loss Notification",
-	"Internal Device Error",
+	"Internal Error",
 	"Command Abort Requested",
 	"Command Aborted due to SQ Deletion",
 	"Command Aborted due to Failed Fused Command",
 	"Command Aborted due to Missing Fused Command",
 	"Invalid Namespace or Format",
-	"Command Sequence Error"
+	"Command Sequence Error",
+	/* NVMe 1.1 */
+	"Invalid SGL Segment Descriptor",
+	"Invalid Number of SGL Descriptors",
+	"Data SGL Length Invalid",
+	"Metadata SGL Length Invalid",
+	"SGL Descriptor Type Invalid",
+	/* NVMe 1.2 */
+	"Invalid Use of Controller Memory Buffer",
+	"PRP Offset Invalid",
+	"Atomic Write Unit Exceeded"
 };
 
 static const char *specific_status_codes[] = {
 	"Completion Queue Invalid",
 	"Invalid Queue Identifier",
-	"Maximum Queue Size Exceeded",
+	"Invalid Queue Size",
 	"Abort Command Limit Exceeded",
 	"Reserved",
 	"Asynchronous Event Request Limit Exceeded",
@@ -67,14 +77,36 @@ static const char *specific_status_codes[] = {
 	"Invalid Interrupt Vector",
 	"Invalid Log Page",
 	"Invalid Format",
-	"Firmware Application Requires Conventional Reset",
-	"Invalid Queue Deletion"
+	"Firmware Activation Requires Conventional Reset",
+	"Invalid Queue Deletion",
+	/* NVMe 1.1 */
+	"Feature Identifier Not Saveable",
+	"Feature Not Changeable",
+	"Feature Not Namespace Specific",
+	"Firmware Activation Requires NVM Subsystem Reset",
+	/* NVMe 1.2 */
+	"Firmware Activation Requires Reset",
+	"Firmware Activation Requires Maximum Time Violation",
+	"Firmware Activation Prohibited",
+	"Overlapping Range",
+	"Namespace Insufficient Capacity",
+	"Namespace Identifier Unavailable",
+	"Reserved",
+	"Namespace Already Attached",
+	"Namespace Is Private",
+	"Namespace Not Attached",
+	"Thin Provisioning Not Supported",
+	"Controller List Invalid"
 };
 
 static const char *generic_nvm_status_codes[] = {
 	"LBA Out Of Range",
 	"Capacity Exceeded",
-	"Namespace Not Ready"
+	"Namespace Not Ready",
+	/* NVMe 1.1 */
+	"Reservation Conflict",
+	/* NVMe 1.2 */
+	"Format In Progress",
 };
 
 static const char *specific_nvm_status_codes[] = {
@@ -90,14 +122,15 @@ static const char *media_nvm_status_codes[] = {
 	"End-to-End Application Tag Check Error",
 	"End-to-End Reference Tag Check Error",
 	"Compare Failure",
-	"Access Denied"
+	"Access Denied",
+	/* NVMe 1.2 */
+	"Deallocated or Unwritten Logical Block"
 };
 
 static const char *status_code_types[] = {
 	"Generic Command Status",
 	"Command Specific Status",
 	"Media Errors",
-	"Reserved",
 	"Reserved",
 	"Reserved",
 	"Reserved",
@@ -117,13 +150,16 @@ static const char *lba_range_types[] = {
  * nvme_print
  *
  * This function prints a string indented by the specified number of spaces,
- * optionally followed by the specified index if it is > 0. If a format string
+ * optionally followed by the specified index if it is >= 0. If a format string
  * is specified, a single colon and the required number of spaces for alignment
  * are printed before the format string and any remaining arguments are passed
  * vprintf.
+ *
+ * NVME_PRINT_ALIGN was chosen so that all values will be lined up nicely even
+ * for the longest name at its default indentation.
  */
 
-#define	NVME_PRINT_ALIGN	41
+#define	NVME_PRINT_ALIGN	43
 
 void
 nvme_print(int indent, char *name, int index, const char *fmt, ...)
@@ -131,7 +167,7 @@ nvme_print(int indent, char *name, int index, const char *fmt, ...)
 	int align = NVME_PRINT_ALIGN - (indent + strlen(name) + 1);
 	va_list ap;
 
-	if (index > 0)
+	if (index >= 0)
 		align -= snprintf(NULL, 0, " %d", index);
 
 	if (align < 0)
@@ -141,7 +177,7 @@ nvme_print(int indent, char *name, int index, const char *fmt, ...)
 
 	(void) printf("%*s%s", indent, "", name);
 
-	if (index > 0)
+	if (index >= 0)
 		(void) printf(" %d", index);
 
 	if (fmt != NULL) {
@@ -190,7 +226,7 @@ nvme_print_double(int indent, char *name, double value, int places, char *unit)
 	if (unit == NULL)
 		unit = "";
 
-	nvme_print(indent, name, 0, "%.*g%s", places, value, unit);
+	nvme_print(indent, name, -1, "%.*g%s", places, value, unit);
 }
 
 /*
@@ -212,7 +248,7 @@ nvme_print_uint64(int indent, char *name, uint64_t value, const char *fmt,
 	if (asprintf(&tmp_fmt, "%s%%s", fmt) < 0)
 		err(-1, "nvme_print_uint64()");
 
-	nvme_print(indent, name, 0, tmp_fmt, value, unit);
+	nvme_print(indent, name, -1, tmp_fmt, value, unit);
 
 	free(tmp_fmt);
 }
@@ -294,7 +330,7 @@ nvme_print_uint128(int indent, char *name, nvme_uint128_t value, char *unit,
 		 * The converted number is 0. Just print the calculated
 		 * remainder and return.
 		 */
-		nvme_print(indent, name, 0, "%"PRId64"%s", rem, unit);
+		nvme_print(indent, name, -1, "%"PRId64"%s", rem, unit);
 		return;
 	} else {
 		if (o[i] > 0xf)
@@ -313,7 +349,7 @@ nvme_print_uint128(int indent, char *name, nvme_uint128_t value, char *unit,
 	 * truncate the results according to the requested decimal scaling. For
 	 * positive decimal scaling we print the remainder padded with 0.
 	 */
-	nvme_print(indent, name, 0, "%.*s%0.*"PRId64"%s",
+	nvme_print(indent, name, -1, "%.*s%0.*"PRId64"%s",
 	    strlen(p) + scale_tens, p,
 	    scale_tens > 0 ? scale_tens : 0, rem,
 	    unit);
@@ -330,7 +366,7 @@ nvme_print_bit(int indent, char *name, int value, char *s_true, char *s_false)
 	if (s_false == NULL)
 		s_false = "unsupported";
 
-	nvme_print(indent, name, 0, "%s", value ? s_true : s_false);
+	nvme_print(indent, name, -1, "%s", value ? s_true : s_false);
 }
 
 /*
@@ -340,7 +376,7 @@ nvme_print_bit(int indent, char *name, int value, char *s_true, char *s_false)
 void
 nvme_print_ctrl_summary(nvme_identify_ctrl_t *idctl, nvme_version_t *version)
 {
-	(void) printf("%.*s, serial: %.*s, FW rev: %.*s, NVMe v%d.%d\n",
+	(void) printf("model: %.*s, serial: %.*s, FW rev: %.*s, NVMe v%d.%d\n",
 	    nvme_strlen(idctl->id_model, sizeof (idctl->id_model)),
 	    idctl->id_model,
 	    nvme_strlen(idctl->id_serial, sizeof (idctl->id_serial)),
@@ -375,145 +411,146 @@ nvme_print_nsid_summary(nvme_identify_nsid_t *idns)
  * command.
  */
 void
-nvme_print_identify_ctrl(nvme_identify_ctrl_t *idctl, nvme_capabilities_t *cap,
-    nvme_version_t *version)
+nvme_print_identify_ctrl(nvme_identify_ctrl_t *idctl,
+    nvme_capabilities_t *cap, nvme_version_t *version)
 {
 	int i;
 
-	nvme_print(0, "Controller Capabilities and Features", 0, NULL);
-	nvme_print_str(2, "Model", 0,
+	nvme_print(0, "Identify Controller", -1, NULL);
+	nvme_print(2, "Controller Capabilities and Features", -1, NULL);
+	nvme_print_str(4, "Model", -1,
 	    idctl->id_model, sizeof (idctl->id_model));
-	nvme_print_str(2, "Serial", 0,
+	nvme_print_str(4, "Serial", -1,
 	    idctl->id_serial, sizeof (idctl->id_serial));
-	nvme_print_str(2, "Firmware Revision", 0,
+	nvme_print_str(4, "Firmware Revision", -1,
 	    idctl->id_fwrev, sizeof (idctl->id_fwrev));
 	if (verbose) {
-		nvme_print_uint64(2, "PCI vendor ID",
+		nvme_print_uint64(4, "PCI vendor ID",
 		    idctl->id_vid, "0x%0.4"PRIx64, NULL);
-		nvme_print_uint64(2, "subsystem vendor ID",
+		nvme_print_uint64(4, "subsystem vendor ID",
 		    idctl->id_ssvid, "0x%0.4"PRIx64, NULL);
-		nvme_print_uint64(2, "Recommended Arbitration Burst",
+		nvme_print_uint64(4, "Recommended Arbitration Burst",
 		    idctl->id_rab, NULL, NULL);
-		nvme_print(2, "Vendor IEEE OUI", 0, "%0.2X-%0.2X-%0.2X",
+		nvme_print(4, "Vendor IEEE OUI", -1, "%0.2X-%0.2X-%0.2X",
 		    idctl->id_oui[0], idctl->id_oui[1], idctl->id_oui[2]);
 	}
-	nvme_print(2, "Multi-Interface Capabilities", 0, NULL);
-	nvme_print_bit(4, "Multiple PCI Express ports",
+	nvme_print(4, "Multi-Interface Capabilities", -1, NULL);
+	nvme_print_bit(6, "Multiple PCI Express ports",
 	    idctl->id_mic.m_multi_pci, NULL, NULL);
 
 	if (NVME_VERSION_ATLEAST(version, 1, 1)) {
-		nvme_print_bit(4, "Multiple Controllers",
+		nvme_print_bit(6, "Multiple Controllers",
 		    idctl->id_mic.m_multi_ctrl, NULL, NULL);
-		nvme_print_bit(4, "Is SR-IOV virtual function",
-		    idctl->id_mic.m_multi_ctrl, "yes", "no");
+		nvme_print_bit(6, "Is SR-IOV virtual function",
+		    idctl->id_mic.m_sr_iov, "yes", "no");
 	}
 	if (idctl->id_mdts > 0)
-		nvme_print_uint64(2, "Maximum Data Transfer Size",
+		nvme_print_uint64(4, "Maximum Data Transfer Size",
 		    (1 << idctl->id_mdts) * cap->mpsmin / 1024, NULL, "kB");
 	else
-		nvme_print_str(2, "Maximum Data Transfer Size", 0,
+		nvme_print_str(4, "Maximum Data Transfer Size", -1,
 		    "unlimited", 0);
 
 	if (NVME_VERSION_ATLEAST(version, 1, 1)) {
-		nvme_print_uint64(2, "Unique Controller Identifier",
+		nvme_print_uint64(4, "Unique Controller Identifier",
 		    idctl->id_cntlid, "0x%0.4"PRIx64, NULL);
 	}
 
-	nvme_print(0, "Admin Command Set Attributes", 0, NULL);
-	nvme_print(2, "Optional Admin Command Support", 0, NULL);
-	nvme_print_bit(4, "Security Send & Receive",
+	nvme_print(2, "Admin Command Set Attributes", -1, NULL);
+	nvme_print(4, "Optional Admin Command Support", -1, NULL);
+	nvme_print_bit(6, "Security Send & Receive",
 	    idctl->id_oacs.oa_security, NULL, NULL);
-	nvme_print_bit(4, "Format NVM",
+	nvme_print_bit(6, "Format NVM",
 	    idctl->id_oacs.oa_format, NULL, NULL);
-	nvme_print_bit(4, "Firmware Activate & Download",
+	nvme_print_bit(6, "Firmware Activate & Download",
 	    idctl->id_oacs.oa_firmware, NULL, NULL);
 	if (verbose) {
-		nvme_print_uint64(2, "Abort Command Limit",
+		nvme_print_uint64(4, "Abort Command Limit",
 		    (uint16_t)idctl->id_acl + 1, NULL, NULL);
-		nvme_print_uint64(2, "Asynchronous Event Request Limit",
+		nvme_print_uint64(4, "Asynchronous Event Request Limit",
 		    (uint16_t)idctl->id_aerl + 1, NULL, NULL);
 	}
-	nvme_print(2, "Firmware Updates", 0, NULL);
-	nvme_print_bit(4, "Firmware Slot 1",
+	nvme_print(4, "Firmware Updates", -1, NULL);
+	nvme_print_bit(6, "Firmware Slot 1",
 	    idctl->id_frmw.fw_readonly, "read-only", "writable");
-	nvme_print_uint64(4, "No. of Firmware Slots",
+	nvme_print_uint64(6, "No. of Firmware Slots",
 	    idctl->id_frmw.fw_nslot, NULL, NULL);
-	nvme_print(2, "Log Page Attributes", 0, NULL);
-	nvme_print_bit(4, "per Namespace SMART/Health info",
+	nvme_print(2, "Log Page Attributes", -1, NULL);
+	nvme_print_bit(6, "per Namespace SMART/Health info",
 	    idctl->id_lpa.lp_smart, NULL, NULL);
-	nvme_print_uint64(2, "Error Log Page Entries",
+	nvme_print_uint64(4, "Error Log Page Entries",
 	    (uint16_t)idctl->id_elpe + 1, NULL, NULL);
-	nvme_print_uint64(2, "Number of Power States",
+	nvme_print_uint64(4, "Number of Power States",
 	    (uint16_t)idctl->id_npss + 1, NULL, NULL);
 	if (verbose) {
-		nvme_print_bit(2, "Admin Vendor-specific Command Format",
+		nvme_print_bit(4, "Admin Vendor-specific Command Format",
 		    idctl->id_avscc.av_spec, "standard", "vendor-specific");
 	}
 
 	if (NVME_VERSION_ATLEAST(version, 1, 1)) {
-		nvme_print_bit(2, "Autonomous Power State Transitions",
+		nvme_print_bit(4, "Autonomous Power State Transitions",
 		    idctl->id_apsta.ap_sup, NULL, NULL);
 	}
 
-	nvme_print(0, "NVM Command Set Attributes", 0, NULL);
+	nvme_print(2, "NVM Command Set Attributes", -1, NULL);
 	if (verbose) {
-		nvme_print(2, "Submission Queue Entry Size", 0,
+		nvme_print(4, "Submission Queue Entry Size", -1,
 		    "min %d, max %d",
 		    1 << idctl->id_sqes.qes_min, 1 << idctl->id_sqes.qes_max);
-		nvme_print(2, "Completion Queue Entry Size", 0,
+		nvme_print(4, "Completion Queue Entry Size", -1,
 		    "min %d, max %d",
 		    1 << idctl->id_cqes.qes_min, 1 << idctl->id_cqes.qes_max);
 	}
-	nvme_print_uint64(2, "Number of Namespaces",
+	nvme_print_uint64(4, "Number of Namespaces",
 	    idctl->id_nn, NULL, NULL);
-	nvme_print(2, "Optional NVM Command Support", 0, NULL);
-	nvme_print_bit(4, "Compare",
+	nvme_print(4, "Optional NVM Command Support", -1, NULL);
+	nvme_print_bit(6, "Compare",
 	    idctl->id_oncs.on_compare, NULL, NULL);
-	nvme_print_bit(4, "Write Uncorrectable",
+	nvme_print_bit(6, "Write Uncorrectable",
 	    idctl->id_oncs.on_wr_unc, NULL, NULL);
-	nvme_print_bit(4, "Dataset Management",
+	nvme_print_bit(6, "Dataset Management",
 	    idctl->id_oncs.on_dset_mgmt, NULL, NULL);
 
 	if (NVME_VERSION_ATLEAST(version, 1, 1)) {
-		nvme_print_bit(4, "Write Zeros",
+		nvme_print_bit(6, "Write Zeros",
 		    idctl->id_oncs.on_wr_zero, NULL, NULL);
-		nvme_print_bit(4, "Save/Select in Get/Set Features",
+		nvme_print_bit(6, "Save/Select in Get/Set Features",
 		    idctl->id_oncs.on_save, NULL, NULL);
-		nvme_print_bit(4, "Reservations",
+		nvme_print_bit(6, "Reservations",
 		    idctl->id_oncs.on_reserve, NULL, NULL);
 	}
 
-	nvme_print(2, "Fused Operation Support", 0, NULL);
-	nvme_print_bit(4, "Compare and Write",
+	nvme_print(4, "Fused Operation Support", -1, NULL);
+	nvme_print_bit(6, "Compare and Write",
 	    idctl->id_fuses.f_cmp_wr, NULL, NULL);
-	nvme_print(2, "Format NVM Attributes", 0, NULL);
-	nvme_print_bit(4, "per Namespace Format",
-	    ~idctl->id_fna.fn_format, NULL, NULL);
-	nvme_print_bit(4, "per Namespace Secure Erase",
-	    ~idctl->id_fna.fn_sec_erase, NULL, NULL);
-	nvme_print_bit(4, "Cryptographic Erase",
+	nvme_print(4, "Format NVM Attributes", -1, NULL);
+	nvme_print_bit(6, "per Namespace Format",
+	    idctl->id_fna.fn_format == 0, NULL, NULL);
+	nvme_print_bit(6, "per Namespace Secure Erase",
+	    idctl->id_fna.fn_sec_erase == 0, NULL, NULL);
+	nvme_print_bit(6, "Cryptographic Erase",
 	    idctl->id_fna.fn_crypt_erase, NULL, NULL);
-	nvme_print_bit(2, "Volatile Write Cache",
+	nvme_print_bit(4, "Volatile Write Cache",
 	    idctl->id_vwc.vwc_present, "present", "not present");
-	nvme_print_uint64(2, "Atomic Write Unit Normal",
+	nvme_print_uint64(4, "Atomic Write Unit Normal",
 	    (uint32_t)idctl->id_awun + 1, NULL,
 	    idctl->id_awun == 0 ? " block" : " blocks");
-	nvme_print_uint64(2, "Atomic Write Unit Power Fail",
+	nvme_print_uint64(4, "Atomic Write Unit Power Fail",
 	    (uint32_t)idctl->id_awupf + 1, NULL,
 	    idctl->id_awupf == 0 ? " block" : " blocks");
 
 	if (verbose != 0)
-		nvme_print_bit(2, "NVM Vendor-specific Command Format",
+		nvme_print_bit(4, "NVM Vendor-specific Command Format",
 		    idctl->id_nvscc.nv_spec, "standard", "vendor-specific");
 
 	if (NVME_VERSION_ATLEAST(version, 1, 1)) {
-		nvme_print_uint64(2, "Atomic Compare & Write Size",
+		nvme_print_uint64(4, "Atomic Compare & Write Size",
 		    (uint32_t)idctl->id_acwu + 1, NULL,
 		    idctl->id_acwu == 0 ? " block" : " blocks");
-		nvme_print(2, "SGL Support", 0, NULL);
-		nvme_print_bit(4, "SGLs in NVM commands",
+		nvme_print(4, "SGL Support", -1, NULL);
+		nvme_print_bit(6, "SGLs in NVM commands",
 		    idctl->id_sgls.sgl_sup, NULL, NULL);
-		nvme_print_bit(4, "SGL Bit Bucket Descriptor",
+		nvme_print_bit(6, "SGL Bit Bucket Descriptor",
 		    idctl->id_sgls.sgl_bucket, NULL, NULL);
 	}
 
@@ -535,21 +572,21 @@ nvme_print_identify_ctrl(nvme_identify_ctrl_t *idctl, nvme_capabilities_t *cap,
 			unit = "mW";
 		}
 
-		nvme_print(2, "Power State Descriptor", i + 1, NULL);
-		nvme_print_double(4, "Maximum Power", power, places, unit);
-		nvme_print_bit(4, "Non-Operational State",
+		nvme_print(4, "Power State Descriptor", i, NULL);
+		nvme_print_double(6, "Maximum Power", power, places, unit);
+		nvme_print_bit(6, "Non-Operational State",
 		    idctl->id_psd[i].psd_nops, "yes", "no");
-		nvme_print_uint64(4, "Entry Latency",
+		nvme_print_uint64(6, "Entry Latency",
 		    idctl->id_psd[i].psd_enlat, NULL, "us");
-		nvme_print_uint64(4, "Exit Latency",
+		nvme_print_uint64(6, "Exit Latency",
 		    idctl->id_psd[i].psd_exlat, NULL, "us");
-		nvme_print_uint64(4, "Relative Read Throughput (0 = best)",
+		nvme_print_uint64(6, "Relative Read Throughput (0 = best)",
 		    idctl->id_psd[i].psd_rrt, NULL, NULL);
-		nvme_print_uint64(4, "Relative Read Latency (0 = best)",
+		nvme_print_uint64(6, "Relative Read Latency (0 = best)",
 		    idctl->id_psd[i].psd_rrl, NULL, NULL);
-		nvme_print_uint64(4, "Relative Write Throughput (0 = best)",
+		nvme_print_uint64(6, "Relative Write Throughput (0 = best)",
 		    idctl->id_psd[i].psd_rwt, NULL, NULL);
-		nvme_print_uint64(4, "Relative Write Latency (0 = best)",
+		nvme_print_uint64(6, "Relative Write Latency (0 = best)",
 		    idctl->id_psd[i].psd_rwl, NULL, NULL);
 	}
 }
@@ -566,71 +603,72 @@ nvme_print_identify_nsid(nvme_identify_nsid_t *idns, nvme_version_t *version)
 	int bsize = 1 << idns->id_lbaf[idns->id_flbas.lba_format].lbaf_lbads;
 	int i;
 
-	nvme_print(0, "Namespace Capabilities and Features", 0, NULL);
-	nvme_print_uint64(2, "Namespace Size",
+	nvme_print(0, "Identify Namespace", -1, NULL);
+	nvme_print(2, "Namespace Capabilities and Features", -1, NULL);
+	nvme_print_uint64(4, "Namespace Size",
 	    idns->id_nsize * bsize / 1024 / 1024, NULL, "MB");
-	nvme_print_uint64(2, "Namespace Capacity",
+	nvme_print_uint64(4, "Namespace Capacity",
 	    idns->id_ncap * bsize / 1024 / 1024, NULL, "MB");
-	nvme_print_uint64(2, "Namespace Utilization",
+	nvme_print_uint64(4, "Namespace Utilization",
 	    idns->id_nuse * bsize / 1024 / 1024, NULL, "MB");
-	nvme_print(2, "Namespace Features", 0, NULL);
-	nvme_print_bit(4, "Thin Provisioning",
+	nvme_print(4, "Namespace Features", -1, NULL);
+	nvme_print_bit(6, "Thin Provisioning",
 	    idns->id_nsfeat.f_thin, NULL, NULL);
-	nvme_print_uint64(2, "Number of LBA Formats",
+	nvme_print_uint64(4, "Number of LBA Formats",
 	    (uint16_t)idns->id_nlbaf + 1, NULL, NULL);
-	nvme_print(2, "Formatted LBA Size", 0, NULL);
-	nvme_print_uint64(4, "LBA Format",
-	    (uint16_t)idns->id_flbas.lba_format + 1, NULL, NULL);
-	nvme_print_bit(4, "Extended Data LBA",
+	nvme_print(4, "Formatted LBA Size", -1, NULL);
+	nvme_print_uint64(6, "LBA Format",
+	    (uint16_t)idns->id_flbas.lba_format, NULL, NULL);
+	nvme_print_bit(6, "Extended Data LBA",
 	    idns->id_flbas.lba_extlba, "yes", "no");
-	nvme_print(2, "Metadata Capabilities", 0, NULL);
-	nvme_print_bit(4, "Extended Data LBA",
+	nvme_print(4, "Metadata Capabilities", -1, NULL);
+	nvme_print_bit(6, "Extended Data LBA",
 	    idns->id_mc.mc_extlba, NULL, NULL);
-	nvme_print_bit(4, "Separate Metadata",
+	nvme_print_bit(6, "Separate Metadata",
 	    idns->id_mc.mc_separate, NULL, NULL);
-	nvme_print(2, "End-to-End Data Protection Capabilities", 0, NULL);
-	nvme_print_bit(4, "Protection Information Type 1",
+	nvme_print(4, "End-to-End Data Protection Capabilities", -1, NULL);
+	nvme_print_bit(6, "Protection Information Type 1",
 	    idns->id_dpc.dp_type1, NULL, NULL);
-	nvme_print_bit(4, "Protection Information Type 2",
+	nvme_print_bit(6, "Protection Information Type 2",
 	    idns->id_dpc.dp_type2, NULL, NULL);
-	nvme_print_bit(4, "Protection Information Type 3",
+	nvme_print_bit(6, "Protection Information Type 3",
 	    idns->id_dpc.dp_type3, NULL, NULL);
-	nvme_print_bit(4, "Protection Information first",
+	nvme_print_bit(6, "Protection Information first",
 	    idns->id_dpc.dp_first, NULL, NULL);
-	nvme_print_bit(4, "Protection Information last",
+	nvme_print_bit(6, "Protection Information last",
 	    idns->id_dpc.dp_last, NULL, NULL);
-	nvme_print(2, "End-to-End Data Protection Settings", 0, NULL);
+	nvme_print(4, "End-to-End Data Protection Settings", -1, NULL);
 	if (idns->id_dps.dp_pinfo == 0)
-		nvme_print_str(4, "Protection Information", 0,
+		nvme_print_str(6, "Protection Information", -1,
 		    "disabled", 0);
 	else
-		nvme_print_uint64(4, "Protection Information Type",
+		nvme_print_uint64(6, "Protection Information Type",
 		    idns->id_dps.dp_pinfo, NULL, NULL);
-	nvme_print_bit(4, "Protection Information in Metadata",
+	nvme_print_bit(6, "Protection Information in Metadata",
 	    idns->id_dps.dp_first, "first 8 bytes", "last 8 bytes");
 
 	if (NVME_VERSION_ATLEAST(version, 1, 1)) {
-		nvme_print(2, "Namespace Multi-Path I/O and Namespace Sharing "
-		    "Capabilities", 0, NULL);
-		nvme_print_bit(4, "Namespace is shared",
+		nvme_print(4, "Namespace Multi-Path I/O and Namespace Sharing "
+		    "Capabilities", -1, NULL);
+		nvme_print_bit(6, "Namespace is shared",
 		    idns->id_nmic.nm_shared, "yes", "no");
-		nvme_print(2, "Reservation Capabilities", 0, NULL);
-		nvme_print_bit(4, "Persist Through Power Loss",
+		nvme_print(2, "Reservation Capabilities", -1, NULL);
+		nvme_print_bit(6, "Persist Through Power Loss",
 		    idns->id_rescap.rc_persist, NULL, NULL);
-		nvme_print_bit(4, "Write Exclusive",
+		nvme_print_bit(6, "Write Exclusive",
 		    idns->id_rescap.rc_wr_excl, NULL, NULL);
-		nvme_print_bit(4, "Exclusive Access",
+		nvme_print_bit(6, "Exclusive Access",
 		    idns->id_rescap.rc_excl, NULL, NULL);
-		nvme_print_bit(4, "Write Exclusive - Registrants Only",
+		nvme_print_bit(6, "Write Exclusive - Registrants Only",
 		    idns->id_rescap.rc_wr_excl_r, NULL, NULL);
-		nvme_print_bit(4, "Exclusive Access - Registrants Only",
+		nvme_print_bit(6, "Exclusive Access - Registrants Only",
 		    idns->id_rescap.rc_excl_r, NULL, NULL);
-		nvme_print_bit(4, "Write Exclusive - All Registrants",
+		nvme_print_bit(6, "Write Exclusive - All Registrants",
 		    idns->id_rescap.rc_wr_excl_a, NULL, NULL);
-		nvme_print_bit(4, "Exclusive Access - All Registrants",
+		nvme_print_bit(6, "Exclusive Access - All Registrants",
 		    idns->id_rescap.rc_excl_a, NULL, NULL);
 
-		nvme_print(2, "IEEE Extended Unique Identifier", 0,
+		nvme_print(4, "IEEE Extended Unique Identifier", -1,
 		    "%0.2X%0.2X%0.2X%0.2X%0.2X%0.2X%0.2X%0.2X",
 		    idns->id_eui64[0], idns->id_eui64[1],
 		    idns->id_eui64[2], idns->id_eui64[3],
@@ -639,15 +677,15 @@ nvme_print_identify_nsid(nvme_identify_nsid_t *idns, nvme_version_t *version)
 	}
 
 	for (i = 0; i <= idns->id_nlbaf; i++) {
-		if (verbose == 0 && i != idns->id_flbas.lba_format)
+		if (verbose == 0 && idns->id_lbaf[i].lbaf_ms != 0)
 			continue;
 
-		nvme_print(2, "LBA Format", i + 1, NULL);
-		nvme_print_uint64(4, "Metadata Size",
+		nvme_print(4, "LBA Format", i, NULL);
+		nvme_print_uint64(6, "Metadata Size",
 		    idns->id_lbaf[i].lbaf_ms, NULL, " bytes");
-		nvme_print_uint64(4, "LBA Data Size",
+		nvme_print_uint64(6, "LBA Data Size",
 		    1 << idns->id_lbaf[i].lbaf_lbads, NULL, " bytes");
-		nvme_print_str(4, "Relative Performance", 0,
+		nvme_print_str(6, "Relative Performance", -1,
 		    lbaf_relative_performance[idns->id_lbaf[i].lbaf_rp], 0);
 	}
 }
@@ -663,7 +701,7 @@ nvme_print_error_log(int nlog, nvme_error_log_entry_t *elog)
 {
 	int i;
 
-	nvme_print(0, "Error Log", 0, NULL);
+	nvme_print(0, "Error Log", -1, NULL);
 	for (i = 0; i != nlog; i++)
 		if (elog[i].el_count == 0)
 			break;
@@ -671,7 +709,7 @@ nvme_print_error_log(int nlog, nvme_error_log_entry_t *elog)
 
 	for (i = 0; i != nlog; i++) {
 		int sc = elog[i].el_sf.sf_sc;
-		const char *sc_str = "Reserved";
+		const char *sc_str = "";
 
 		if (elog[i].el_count == 0 && verbose == 0)
 			break;
@@ -690,26 +728,33 @@ nvme_print_error_log(int nlog, nvme_error_log_entry_t *elog)
 			else if (sc >= 0x80 &&
 			    sc - 0x80 < ARRAYSIZE(specific_nvm_status_codes))
 				sc_str = specific_nvm_status_codes[sc - 0x80];
-				break;
+			break;
 		case 2: /* Media Errors */
 			if (sc >= 0x80 &&
 			    sc - 0x80 < ARRAYSIZE(media_nvm_status_codes))
 				sc_str = media_nvm_status_codes[sc - 0x80];
+			break;
+		case 7: /* Vendor Specific */
+			sc_str = "Unknown Vendor Specific";
+			break;
+		default:
+			sc_str = "Reserved";
+			break;
 		}
 
-		nvme_print(2, "Entry", i + 1, NULL);
+		nvme_print(2, "Entry", i, NULL);
 		nvme_print_uint64(4, "Error Count",
 		    elog[i].el_count, NULL, NULL);
 		nvme_print_uint64(4, "Submission Queue ID",
 		    elog[i].el_sqid, NULL, NULL);
 		nvme_print_uint64(4, "Command ID",
 		    elog[i].el_cid, NULL, NULL);
-		nvme_print(4, "Status Field", 0, NULL);
+		nvme_print(4, "Status Field", -1, NULL);
 		nvme_print_uint64(6, "Phase Tag",
 		    elog[i].el_sf.sf_p, NULL, NULL);
-		nvme_print(6, "Status Code", 0, "0x%0.2x (%s)",
+		nvme_print(6, "Status Code", -1, "0x%0.2x (%s)",
 		    sc, sc_str);
-		nvme_print(6, "Status Code Type", 0, "0x%x (%s)",
+		nvme_print(6, "Status Code Type", -1, "0x%x (%s)",
 		    elog[i].el_sf.sf_sct,
 		    status_code_types[elog[i].el_sf.sf_sct]);
 		nvme_print_bit(6, "More",
@@ -722,7 +767,7 @@ nvme_print_error_log(int nlog, nvme_error_log_entry_t *elog)
 		    elog[i].el_bit, NULL, NULL);
 		nvme_print_uint64(4, "Logical Block Address",
 		    elog[i].el_lba, NULL, NULL);
-		nvme_print(4, "Namespace ID", 0, "%d",
+		nvme_print(4, "Namespace ID", -1, "%d",
 		    elog[i].el_nsid == 0xffffffff ?
 		    0 : elog[i].el_nsid);
 		nvme_print_uint64(4,
@@ -740,8 +785,8 @@ nvme_print_error_log(int nlog, nvme_error_log_entry_t *elog)
 void
 nvme_print_health_log(nvme_health_log_t *hlog, nvme_identify_ctrl_t *idctl)
 {
-	nvme_print(0, "SMART/Health Information", 0, NULL);
-	nvme_print(2, "Critical Warnings", 0, NULL);
+	nvme_print(0, "SMART/Health Information", -1, NULL);
+	nvme_print(2, "Critical Warnings", -1, NULL);
 	nvme_print_bit(4, "Available Space",
 	    hlog->hl_crit_warn.cw_avail, "low", "OK");
 	nvme_print_bit(4, "Temperature",
@@ -806,7 +851,7 @@ nvme_print_fwslot_log(nvme_fwslot_log_t *fwlog)
 {
 	int i;
 
-	nvme_print(0, "Firmware Slot Information", 0, NULL);
+	nvme_print(0, "Firmware Slot Information", -1, NULL);
 	nvme_print_uint64(2, "Active Firmware Slot", fwlog->fw_afi, NULL, NULL);
 
 	for (i = 0; i != ARRAYSIZE(fwlog->fw_frs); i++) {
@@ -833,16 +878,16 @@ nvme_print_feat_arbitration(uint64_t res, void *b, size_t s,
 
 	arb.r = (uint32_t)res;
 	if (arb.b.arb_ab != 7)
-		nvme_print_uint64(2, "Arbitration Burst",
+		nvme_print_uint64(4, "Arbitration Burst",
 		    1 << arb.b.arb_ab, NULL, NULL);
 	else
-		nvme_print_str(2, "Arbitration Burst", 0,
+		nvme_print_str(4, "Arbitration Burst", 0,
 		    "no limit", 0);
-	nvme_print_uint64(2, "Low Priority Weight",
+	nvme_print_uint64(4, "Low Priority Weight",
 	    (uint16_t)arb.b.arb_lpw + 1, NULL, NULL);
-	nvme_print_uint64(2, "Medium Priority Weight",
+	nvme_print_uint64(4, "Medium Priority Weight",
 	    (uint16_t)arb.b.arb_mpw + 1, NULL, NULL);
-	nvme_print_uint64(2, "High Priority Weight",
+	nvme_print_uint64(4, "High Priority Weight",
 	    (uint16_t)arb.b.arb_hpw + 1, NULL, NULL);
 }
 
@@ -856,7 +901,7 @@ nvme_print_feat_power_mgmt(uint64_t res, void *b, size_t s,
 	nvme_power_mgmt_t pm;
 
 	pm.r = (uint32_t)res;
-	nvme_print_uint64(2, "Power State", (uint8_t)pm.b.pm_ps + 1,
+	nvme_print_uint64(4, "Power State", (uint8_t)pm.b.pm_ps,
 	    NULL, NULL);
 }
 
@@ -881,30 +926,30 @@ nvme_print_feat_lba_range(uint64_t res, void *buf, size_t bufsize,
 	if (n_lr > lrt.b.lr_num + 1)
 		n_lr = lrt.b.lr_num + 1;
 
-	nvme_print_uint64(2, "Number of LBA Ranges",
+	nvme_print_uint64(4, "Number of LBA Ranges",
 	    (uint8_t)lrt.b.lr_num + 1, NULL, NULL);
 
 	for (i = 0; i != n_lr; i++) {
 		if (verbose == 0 && lr[i].lr_nlb == 0)
 			continue;
 
-		nvme_print(2, "LBA Range", i + 1, NULL);
+		nvme_print(4, "LBA Range", i, NULL);
 		if (lr[i].lr_type < ARRAYSIZE(lba_range_types))
-			nvme_print_str(4, "Type", 0,
+			nvme_print_str(6, "Type", -1,
 			    lba_range_types[lr[i].lr_type], 0);
 		else
-			nvme_print_uint64(4, "Type",
+			nvme_print_uint64(6, "Type",
 			    lr[i].lr_type, NULL, NULL);
-		nvme_print(4, "Attributes", 0, NULL);
-		nvme_print_bit(6, "Writable",
+		nvme_print(6, "Attributes", -1, NULL);
+		nvme_print_bit(8, "Writable",
 		    lr[i].lr_attr.lr_write, "yes", "no");
-		nvme_print_bit(6, "Hidden",
+		nvme_print_bit(8, "Hidden",
 		    lr[i].lr_attr.lr_hidden, "yes", "no");
-		nvme_print_uint64(4, "Starting LBA",
+		nvme_print_uint64(6, "Starting LBA",
 		    lr[i].lr_slba, NULL, NULL);
-		nvme_print_uint64(4, "Number of Logical Blocks",
+		nvme_print_uint64(6, "Number of Logical Blocks",
 		    lr[i].lr_nlb, NULL, NULL);
-		nvme_print(4, "Unique Identifier", 0,
+		nvme_print(6, "Unique Identifier", -1,
 		    "%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x"
 		    "%.2x%.2x%.2x%.2x%.2x%.2x%.2x%.2x",
 		    lr[i].lr_guid[0], lr[i].lr_guid[1],
@@ -928,7 +973,7 @@ nvme_print_feat_temperature(uint64_t res, void *b, size_t s,
 	nvme_temp_threshold_t tt;
 
 	tt.r = (uint32_t)res;
-	nvme_print_uint64(2, "Temperature Threshold", tt.b.tt_tmpth - 273,
+	nvme_print_uint64(4, "Temperature Threshold", tt.b.tt_tmpth - 273,
 	    NULL, "C");
 }
 
@@ -943,10 +988,10 @@ nvme_print_feat_error(uint64_t res, void *b, size_t s,
 
 	er.r = (uint32_t)res;
 	if (er.b.er_tler > 0)
-		nvme_print_uint64(2, "Time Limited Error Recovery",
+		nvme_print_uint64(4, "Time Limited Error Recovery",
 		    (uint32_t)er.b.er_tler * 100, NULL, "ms");
 	else
-		nvme_print_str(2, "Time Limited Error Recovery", 0,
+		nvme_print_str(4, "Time Limited Error Recovery", -1,
 		    "no time limit", 0);
 }
 
@@ -960,7 +1005,7 @@ nvme_print_feat_write_cache(uint64_t res, void *b, size_t s,
 	nvme_write_cache_t wc;
 
 	wc.r = (uint32_t)res;
-	nvme_print_bit(2, "Volatile Write Cache",
+	nvme_print_bit(4, "Volatile Write Cache",
 	    wc.b.wc_wce, "enabled", "disabled");
 }
 
@@ -974,9 +1019,9 @@ nvme_print_feat_nqueues(uint64_t res, void *b, size_t s,
 	nvme_nqueues_t nq;
 
 	nq.r = (uint32_t)res;
-	nvme_print_uint64(2, "Number of Submission Queues",
+	nvme_print_uint64(4, "Number of Submission Queues",
 	    nq.b.nq_nsq + 1, NULL, NULL);
-	nvme_print_uint64(2, "Number of Completion Queues",
+	nvme_print_uint64(4, "Number of Completion Queues",
 	    nq.b.nq_ncq + 1, NULL, NULL);
 }
 
@@ -990,9 +1035,9 @@ nvme_print_feat_intr_coal(uint64_t res, void *b, size_t s,
 	nvme_intr_coal_t ic;
 
 	ic.r = (uint32_t)res;
-	nvme_print_uint64(2, "Aggregation Threshold",
+	nvme_print_uint64(4, "Aggregation Threshold",
 	    ic.b.ic_thr + 1, NULL, NULL);
-	nvme_print_uint64(2, "Aggregation Time",
+	nvme_print_uint64(4, "Aggregation Time",
 	    (uint16_t)ic.b.ic_time * 100, NULL, "us");
 }
 void
@@ -1009,7 +1054,7 @@ nvme_print_feat_intr_vect(uint64_t res, void *b, size_t s,
 	if (asprintf(&tmp, "Vector %d Coalescing Disable", iv.b.iv_iv) < 0)
 		err(-1, "nvme_print_feat_common()");
 
-	nvme_print_bit(2, tmp, iv.b.iv_cd, "yes", "no");
+	nvme_print_bit(4, tmp, iv.b.iv_cd, "yes", "no");
 }
 
 void
@@ -1022,7 +1067,7 @@ nvme_print_feat_write_atom(uint64_t res, void *b, size_t s,
 	nvme_write_atomicity_t wa;
 
 	wa.r = (uint32_t)res;
-	nvme_print_bit(2, "Disable Normal", wa.b.wa_dn, "yes", "no");
+	nvme_print_bit(4, "Disable Normal", wa.b.wa_dn, "yes", "no");
 }
 
 void
@@ -1034,16 +1079,16 @@ nvme_print_feat_async_event(uint64_t res, void *b, size_t s,
 	nvme_async_event_conf_t aec;
 
 	aec.r = (uint32_t)res;
-	nvme_print_bit(2, "Available Space below threshold",
+	nvme_print_bit(4, "Available Space below threshold",
 	    aec.b.aec_avail, "enabled", "disabled");
-	nvme_print_bit(2, "Temperature above threshold",
+	nvme_print_bit(4, "Temperature above threshold",
 	    aec.b.aec_temp, "enabled", "disabled");
-	nvme_print_bit(2, "Device Reliability compromised",
+	nvme_print_bit(4, "Device Reliability compromised",
 	    aec.b.aec_reliab, "enabled", "disabled");
-	nvme_print_bit(2, "Media read-only",
+	nvme_print_bit(4, "Media read-only",
 	    aec.b.aec_readonly, "enabled", "disabled");
 	if (idctl->id_vwc.vwc_present != 0)
-		nvme_print_bit(2, "Volatile Memory Backup failed",
+		nvme_print_bit(4, "Volatile Memory Backup failed",
 		    aec.b.aec_volatile, "enabled", "disabled");
 }
 
@@ -1064,16 +1109,16 @@ nvme_print_feat_auto_pst(uint64_t res, void *buf, size_t bufsize,
 	apst.r = res;
 	aps = buf;
 
-	nvme_print_bit(2, "Autonomous Power State Transition",
+	nvme_print_bit(4, "Autonomous Power State Transition",
 	    apst.b.apst_apste, "enabled", "disabled");
 	for (i = 0; i != cnt; i++) {
 		if (aps[i].apst_itps == 0 && aps[i].apst_itpt == 0)
 			break;
 
-		nvme_print(2, "Power State", i + 1, NULL);
-		nvme_print_uint64(4, "Idle Transition Power State",
-		    (uint16_t)aps[i].apst_itps + 1, NULL, NULL);
-		nvme_print_uint64(4, "Idle Time Prior to Transition",
+		nvme_print(4, "Power State", i, NULL);
+		nvme_print_uint64(6, "Idle Transition Power State",
+		    (uint16_t)aps[i].apst_itps, NULL, NULL);
+		nvme_print_uint64(6, "Idle Time Prior to Transition",
 		    aps[i].apst_itpt, NULL, "ms");
 	}
 }
@@ -1088,6 +1133,6 @@ nvme_print_feat_progress(uint64_t res, void *b, size_t s,
 	nvme_software_progress_marker_t spm;
 
 	spm.r = (uint32_t)res;
-	nvme_print_uint64(2, "Pre-Boot Software Load Count",
+	nvme_print_uint64(4, "Pre-Boot Software Load Count",
 	    spm.b.spm_pbslc, NULL, NULL);
 }

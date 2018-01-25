@@ -21,10 +21,9 @@
 #include <err.h>
 #include <libdevinfo.h>
 #include <sys/nvme.h>
+#include <assert.h>
 
 #include "nvmeadm.h"
-
-static boolean_t nvme_ioctl(int, int, size_t *, void **, uint64_t, uint64_t *);
 
 
 static boolean_t
@@ -40,14 +39,11 @@ nvme_ioctl(int fd, int ioc, size_t *bufsize, void **buf, uint64_t arg,
 		*res = ~0ULL;
 
 	if (bufsize != NULL && *bufsize != 0) {
-		if (buf == NULL)
-			return (B_FALSE);
+		assert(buf != NULL);
 
-		if ((*buf = calloc(*bufsize, 1)) == NULL) {
+		if ((nioc.n_buf = (uintptr_t)calloc(*bufsize, 1)) == NULL)
 			err(-1, "nvme_ioctl()");
-			return (B_FALSE);
-		}
-		nioc.n_buf = (uintptr_t)*buf;
+
 		nioc.n_len = *bufsize;
 	}
 
@@ -56,7 +52,9 @@ nvme_ioctl(int fd, int ioc, size_t *bufsize, void **buf, uint64_t arg,
 	if (ioctl(fd, ioc, &nioc) != 0) {
 		if (debug)
 			warn("nvme_ioctl()");
-		free(*buf);
+		if (nioc.n_buf != 0)
+			free((void *)nioc.n_buf);
+
 		return (B_FALSE);
 	}
 
@@ -65,6 +63,9 @@ nvme_ioctl(int fd, int ioc, size_t *bufsize, void **buf, uint64_t arg,
 
 	if (bufsize != NULL)
 		*bufsize = nioc.n_len;
+
+	if (buf != NULL)
+		*buf = (void *)nioc.n_buf;
 
 	return (B_TRUE);
 }
@@ -136,10 +137,33 @@ nvme_get_feature(int fd, uint8_t feature, uint32_t arg, uint64_t *res,
 int
 nvme_intr_cnt(int fd)
 {
-	uint64_t res;
+	uint64_t res = 0;
 
-	(void) nvme_ioctl(fd, NVME_IOC_INTR_CNT, 0, NULL, 0, &res);
+	(void) nvme_ioctl(fd, NVME_IOC_INTR_CNT, NULL, NULL, 0, &res);
 	return ((int)res);
+}
+
+boolean_t
+nvme_format_nvm(int fd, uint8_t lbaf, uint8_t ses)
+{
+	nvme_format_nvm_t frmt = { 0 };
+
+	frmt.b.fm_lbaf = lbaf & 0xf;
+	frmt.b.fm_ses = ses & 0x7;
+
+	return (nvme_ioctl(fd, NVME_IOC_FORMAT, NULL, NULL, frmt.r, NULL));
+}
+
+boolean_t
+nvme_detach(int fd)
+{
+	return (nvme_ioctl(fd, NVME_IOC_DETACH, NULL, NULL, 0, NULL));
+}
+
+boolean_t
+nvme_attach(int fd)
+{
+	return (nvme_ioctl(fd, NVME_IOC_ATTACH, NULL, NULL, 0, NULL));
 }
 
 int

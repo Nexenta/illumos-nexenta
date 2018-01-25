@@ -28,8 +28,6 @@
  * Declarations used for communication between nvmeadm(1M) and nvme(7D)
  */
 
-#pragma pack(1)
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -46,6 +44,13 @@ extern "C" {
 #define	NVME_IOC_GET_FEATURES		(NVME_IOC | 5)
 #define	NVME_IOC_INTR_CNT		(NVME_IOC | 6)
 #define	NVME_IOC_VERSION		(NVME_IOC | 7)
+#define	NVME_IOC_FORMAT			(NVME_IOC | 8)
+#define	NVME_IOC_DETACH			(NVME_IOC | 9)
+#define	NVME_IOC_ATTACH			(NVME_IOC | 10)
+#define	NVME_IOC_MAX			NVME_IOC_ATTACH
+
+#define	IS_NVME_IOC(x)			((x) > NVME_IOC && (x) <= NVME_IOC_MAX)
+#define	NVME_IOC_CMD(x)			((x) & 0xff)
 
 typedef struct {
 	size_t		n_len;
@@ -84,6 +89,9 @@ typedef struct {
 #define	NVME_VERSION_HIGHER(v, maj, min) \
 	(((v)->v_major) > (maj) || \
 	((v)->v_major == (maj) && (v)->v_minor > (min)))
+
+
+#pragma pack(1)
 
 /*
  * NVMe Identify data structures
@@ -361,6 +369,30 @@ typedef struct {
 	uint8_t fw_rsvd3[512 - 64];
 } nvme_fwslot_log_t;
 
+
+/*
+ * NVMe Format NVM
+ */
+#define	NVME_FRMT_SES_NONE	0
+#define	NVME_FRMT_SES_USER	1
+#define	NVME_FRMT_SES_CRYPTO	2
+#define	NVME_FRMT_MAX_SES	2
+
+#define	NVME_FRMT_MAX_LBAF	15
+
+typedef union {
+	struct {
+		uint32_t fm_lbaf:4;		/* LBA Format */
+		uint32_t fm_ms:1;		/* Metadata Settings */
+		uint32_t fm_pi:3;		/* Protection Information */
+		uint32_t fm_pil:1;		/* Prot. Information Location */
+		uint32_t fm_ses:3;		/* Secure Erase Settings */
+		uint32_t fm_resvd:20;
+	} b;
+	uint32_t r;
+} nvme_format_nvm_t;
+
+
 /*
  * NVMe Get / Set Features
  */
@@ -532,11 +564,11 @@ typedef union {
 	uint32_t r;
 } nvme_software_progress_marker_t;
 
+#pragma pack() /* pack(1) */
+
 
 #ifdef __cplusplus
 }
 #endif
-
-#pragma pack() /* pack(1) */
 
 #endif /* _SYS_NVME_H */
