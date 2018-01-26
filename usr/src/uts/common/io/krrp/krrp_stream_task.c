@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -284,9 +284,18 @@ krrp_stream_te_common_create(krrp_stream_te_t **result_te,
 
 	if (read_mode) {
 		task_engine->mode = KRRP_STEM_READ;
+		/*
+		 * This queue contains tasks, that were completely read
+		 * from ZFS and are being sent to the receiver
+		 */
 		krrp_queue_init(&task_engine->tasks_done,
 		    sizeof (krrp_stream_task_t),
 		    offsetof(krrp_stream_task_t, node));
+		/*
+		 * This queue contains tasks/threads waiting to receive
+		 * acknowledgement from the receiver that the sent blocks
+		 * have been written to the disk.
+		 */
 		krrp_queue_init(&task_engine->tasks_done2,
 		    sizeof (krrp_stream_task_t),
 		    offsetof(krrp_stream_task_t, node));
@@ -298,8 +307,26 @@ krrp_stream_te_common_create(krrp_stream_te_t **result_te,
 	return (0);
 }
 
+/*
+ * Total number of task is the sum of tasks that are:
+ *   waiting for write to ZFS on the receiver (task_engine->tasks_done2)
+ *
+ *   waiting for read from ZFS or in process of being sent to the receiver
+ *     task_engine->tasks + task_engine->tasks_done
+ */
 size_t
-krrp_stream_task_num_of_tasks(krrp_stream_te_t *task_engine)
+krrp_stream_te_total_num_tasks(krrp_stream_te_t *task_engine)
+{
+	return (krrp_queue_length(task_engine->tasks) +
+	    krrp_queue_length(task_engine->tasks_done) +
+	    krrp_queue_length(task_engine->tasks_done2));
+}
+
+/*
+ * Pending tasks are the tasks, that are waiting for read from ZFS
+ */
+size_t
+krrp_stream_te_num_pending_tasks(krrp_stream_te_t *task_engine)
 {
 	return (krrp_queue_length(task_engine->tasks));
 }
