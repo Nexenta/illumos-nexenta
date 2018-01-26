@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -37,6 +37,17 @@
 	((strlcpy(dst_str, src_str, dst_str_max_sz) < dst_str_max_sz) ? 0 : -1)
 
 /* #define	KRRP_STREAM_DEBUG 1 */
+
+/*
+ * This variable is a safeguard for the continuous replication sessions.
+ * It defines additional number of read-tasks per one session.
+ * Each read-task is an autosnapshot for such sessions.
+ * When the total number of read-tasks reach value that equal
+ * keep_snaps + krrp_add_num_read_tasks then the corresponding
+ * session will stop confirmation of create-requests from Autosnap.
+ */
+size_t krrp_add_num_read_tasks = 5;
+
 
 /* These extern functions are part of ZFS sources */
 extern int wbc_check_dataset(const char *name);
@@ -728,16 +739,15 @@ static boolean_t
 krrp_stream_read_snap_confirm_cb(const char *snap_name, boolean_t recursive,
     uint64_t txg, void *void_stream)
 {
-	krrp_stream_t *stream;
+	krrp_stream_t *stream = void_stream;
 	boolean_t result = B_FALSE;
-
-	stream = void_stream;
+	size_t krrp_max_num_read_tasks =
+	    stream->keep_snaps + krrp_add_num_read_tasks;
 
 	if (krrp_autosnap_try_hold_to_confirm(stream->autosnap)) {
-		size_t tasks;
-
-		tasks = krrp_stream_task_num_of_tasks(stream->task_engine);
-		if (tasks <= 1 || stream->wait_for_snap)
+		size_t tasks =
+		    krrp_stream_te_total_num_tasks(stream->task_engine);
+		if (tasks < krrp_max_num_read_tasks || stream->wait_for_snap)
 			result = B_TRUE;
 		else
 			result = B_FALSE;
@@ -787,16 +797,15 @@ static boolean_t
 krrp_stream_read_snap_notify_cb(const char *snap_name, boolean_t recursive,
     boolean_t autosnap, uint64_t txg, uint64_t unused, void *void_stream)
 {
-	krrp_stream_t *stream;
+	krrp_stream_t *stream = void_stream;
 	boolean_t result = B_FALSE;
-
-	stream = void_stream;
+	size_t krrp_max_num_read_tasks =
+	    stream->keep_snaps + krrp_add_num_read_tasks;
 
 	if (krrp_autosnap_try_hold_to_confirm(stream->autosnap)) {
-		size_t tasks;
-
-		tasks = krrp_stream_task_num_of_tasks(stream->task_engine);
-		if (tasks <= 1 || stream->wait_for_snap) {
+		size_t tasks =
+		    krrp_stream_te_total_num_tasks(stream->task_engine);
+		if (tasks < krrp_max_num_read_tasks || stream->wait_for_snap) {
 			uint64_t cur_snap_txg;
 			char *cur_snap_name;
 
@@ -1103,13 +1112,14 @@ krrp_stream_task_done(krrp_stream_t *stream,
 
 	switch (stream->mode) {
 	case KRRP_STRMM_READ:
-		if (krrp_stream_task_num_of_tasks(stream->task_engine) == 0) {
+		if (krrp_stream_te_num_pending_tasks(stream->task_engine) == 0) {
 			if (stream->do_ctrl_snap) {
 				krrp_autosnap_create_snapshot(stream->autosnap);
 				stream->do_ctrl_snap = B_FALSE;
 			}
-		} else
+		} else {
 			stream->do_ctrl_snap = B_TRUE;
+		}
 
 		krrp_queue_put(stream->task_engine->tasks_done, task);
 		break;

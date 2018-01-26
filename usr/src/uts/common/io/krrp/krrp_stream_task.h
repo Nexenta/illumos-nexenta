@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_STREAM_TASK_H
@@ -136,7 +136,8 @@ int krrp_stream_te_fake_write_create(krrp_stream_te_t **result_te,
 
 void krrp_stream_te_destroy(krrp_stream_te_t *task_engine);
 
-size_t krrp_stream_task_num_of_tasks(krrp_stream_te_t *);
+size_t krrp_stream_te_total_num_tasks(krrp_stream_te_t *);
+size_t krrp_stream_te_num_pending_tasks(krrp_stream_te_t *);
 
 void krrp_stream_task_engine_get_task(krrp_stream_te_t *,
     krrp_stream_task_t **);
