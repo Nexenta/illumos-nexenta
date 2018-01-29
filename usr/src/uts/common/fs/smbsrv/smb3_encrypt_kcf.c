@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -39,7 +39,7 @@ smb3_encrypt_getmech(smb_crypto_mech_t *mech)
 
 	t = crypto_mech2id(SUN_CKM_AES_CCM);
 	if (t == CRYPTO_MECH_INVALID) {
-		cmn_err(CE_WARN, "crypto_mech2id failed");
+		cmn_err(CE_NOTE, "smb: no kcf mech: %s", SUN_CKM_AES_CCM);
 		return (-1);
 	}
 	mech->cm_type = t;

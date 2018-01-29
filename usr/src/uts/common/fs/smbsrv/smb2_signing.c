@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 /*
  * These routines provide the SMB MAC signing for the SMB2 server.
@@ -475,7 +475,8 @@ smb3_do_kdf(void *outbuf, void *input, size_t input_len,
 	if ((rc = smb2_hmac_getmech(&mech)) != 0)
 		return (rc);
 
-	rc = smb2_hmac_init(&hctx, &mech, key, key_len);
+	/* Limit the SessionKey input to its maximum size (16 bytes) */
+	rc = smb2_hmac_init(&hctx, &mech, key, MIN(key_len, SMB2_KEYLEN));
 	if (rc != 0)
 		return (rc);
 

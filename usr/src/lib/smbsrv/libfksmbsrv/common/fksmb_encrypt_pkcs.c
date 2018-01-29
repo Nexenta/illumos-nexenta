@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -35,6 +35,7 @@
 int
 smb3_encrypt_getmech(smb_crypto_mech_t *mech)
 {
+	cmn_err(CE_NOTE, "fksmbsrv does not support SMB3 Encryption");
 	return (-1);
 }
 
