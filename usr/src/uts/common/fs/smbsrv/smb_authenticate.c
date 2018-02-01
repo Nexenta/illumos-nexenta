@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -727,13 +727,14 @@ smb_authsock_open(smb_request_t *sr)
 	 * This (new) user object now gets an authsocket.
 	 * Note: u_authsock cleanup in smb_user_logoff.
 	 * After we've set u_authsock, smb_threshold_exit
-	 * is done in smb_authsock_close().
+	 * is done in smb_authsock_close().  If we somehow
+	 * already have an authsock, close the new one and
+	 * error out.
 	 */
 	mutex_enter(&user->u_mutex);
 	if (user->u_authsock != NULL) {
 		mutex_exit(&user->u_mutex);
-		(void) ksocket_close(so, CRED());
-		smb_threshold_exit(&sv->sv_ssetup_ct);
+		smb_authsock_close(user, so);
 		status = NT_STATUS_INTERNAL_ERROR;
 		goto errout;
 	}
@@ -848,6 +849,7 @@ void
 smb_authsock_close(smb_user_t *user, ksocket_t so)
 {
 
+	(void) ksocket_shutdown(so, SHUT_RDWR, CRED());
 	(void) ksocket_close(so, CRED());
 	smb_threshold_exit(&user->u_server->sv_ssetup_ct);
 }
