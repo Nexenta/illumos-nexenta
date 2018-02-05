@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.
 #
 
 [DEFAULT]
@@ -24,7 +24,8 @@ post = cleanup
 outputdir = /var/tmp/test_results
 
 [/opt/zfs-tests/tests/functional/acl/cifs]
-tests = ['cifs_attr_001_pos', 'cifs_attr_002_pos', 'cifs_attr_003_pos', 'cifs_attr_004_pos']
+tests = ['cifs_attr_001_pos', 'cifs_attr_002_pos', 'cifs_attr_003_pos',
+    'cifs_attr_004_pos']
 
 [/opt/zfs-tests/tests/functional/acl/nontrivial]
 tests = ['zfs_acl_chmod_001_neg', 'zfs_acl_chmod_002_pos',
@@ -56,7 +57,8 @@ tests = ['atime_001_pos', 'atime_002_neg']
 
 [/opt/zfs-tests/tests/functional/bootfs]
 tests = ['bootfs_001_pos', 'bootfs_002_neg', 'bootfs_003_pos',
-    'bootfs_004_neg', 'bootfs_005_neg', 'bootfs_006_pos', 'bootfs_007_pos']
+    'bootfs_004_neg', 'bootfs_005_neg', 'bootfs_006_pos', 'bootfs_007_pos',
+    'bootfs_008_pos']
 pre =
 post =
 
@@ -72,12 +74,18 @@ pre =
 post =
 
 [/opt/zfs-tests/tests/functional/casenorm]
-tests = [ 'case_all_values', 'insensitive_formd_delete', 'insensitive_formd_lookup',
-    'insensitive_none_delete', 'insensitive_none_lookup',
-    'mixed_formd_delete', 'mixed_formd_lookup', 'mixed_formd_lookup_ci',
-    'mixed_none_delete', 'mixed_none_lookup', 'mixed_none_lookup_ci',
-    'norm_all_values', 'sensitive_formd_delete', 'sensitive_formd_lookup',
-    'sensitive_none_delete', 'sensitive_none_lookup']
+tests = ['case_all_values', 'norm_all_values',
+    'sensitive_none_lookup', 'sensitive_none_delete',
+    'sensitive_formd_lookup', 'sensitive_formd_delete',
+    'insensitive_none_lookup', 'insensitive_none_delete',
+    'insensitive_formd_lookup', 'insensitive_formd_delete',
+    'mixed_none_lookup', 'mixed_none_lookup_ci', 'mixed_none_delete',
+    'mixed_formd_lookup', 'mixed_formd_lookup_ci', 'mixed_formd_delete']
+
+[/opt/zfs-tests/tests/functional/checksum]
+tests = ['run_edonr_test', 'run_sha2_test', 'run_skein_test']
+pre =
+post =
 
 [/opt/zfs-tests/tests/functional/clean_mirror]
 tests = [ 'clean_mirror_001_pos', 'clean_mirror_002_pos',
@@ -128,7 +136,8 @@ tests = ['zfs_inherit_001_neg', 'zfs_inherit_002_neg', 'zfs_inherit_003_pos']
 tests = ['zfs_mount_001_pos', 'zfs_mount_002_pos', 'zfs_mount_003_pos',
     'zfs_mount_004_pos', 'zfs_mount_005_pos', 'zfs_mount_006_pos',
     'zfs_mount_007_pos', 'zfs_mount_008_pos', 'zfs_mount_009_neg',
-    'zfs_mount_010_neg', 'zfs_mount_011_neg', 'zfs_mount_all_001_pos' ]
+    'zfs_mount_010_neg', 'zfs_mount_011_neg', 'zfs_mount_012_neg',
+    'zfs_mount_all_001_pos']
 
 [/opt/zfs-tests/tests/functional/cli_root/zfs_promote]
 tests = ['zfs_promote_001_pos', 'zfs_promote_002_pos', 'zfs_promote_003_pos',
@@ -145,7 +154,7 @@ tests = ['zfs_receive_001_pos', 'zfs_receive_002_pos', 'zfs_receive_003_pos',
     'zfs_receive_010_pos', 'zfs_receive_011_pos', 'zfs_receive_012_pos',
     'zfs_receive_013_pos', 'zfs_receive_014_pos', 'zfs_receive_015_pos',
     'zfs_receive_016_pos', 'zfs_receive_017_pos', 'zfs_receive_018_pos',
-    'zfs_receive_019_pos']
+    'zfs_receive_019_pos', 'zfs_receive_020_pos']
 
 [/opt/zfs-tests/tests/functional/cli_root/zfs_rename]
 tests = ['zfs_rename_001_pos', 'zfs_rename_002_pos', 'zfs_rename_003_pos',
@@ -209,7 +218,7 @@ tests = ['zpool_001_neg', 'zpool_002_pos', 'zpool_003_pos']
 
 [/opt/zfs-tests/tests/functional/cli_root/zpool_add]
 tests = ['zpool_add_001_pos', 'zpool_add_002_pos', 'zpool_add_003_pos',
-    'zpool_add_004_pos', 'zpool_add_005_pos', 'zpool_add_006_pos', 
+    'zpool_add_004_pos', 'zpool_add_005_pos', 'zpool_add_006_pos',
     'zpool_add_007_neg', 'zpool_add_008_neg', 'zpool_add_009_neg']
 
 [/opt/zfs-tests/tests/functional/cli_root/zpool_attach]
@@ -220,15 +229,15 @@ tests = ['zpool_clear_001_pos', 'zpool_clear_002_neg', 'zpool_clear_003_neg']
 
 [/opt/zfs-tests/tests/functional/cli_root/zpool_create]
 tests = ['zpool_create_001_pos', 'zpool_create_002_pos',
-     'zpool_create_003_pos', 'zpool_create_004_pos', 'zpool_create_005_pos',
-     'zpool_create_006_pos', 'zpool_create_007_neg', 'zpool_create_008_pos',
+    'zpool_create_003_pos', 'zpool_create_004_pos', 'zpool_create_005_pos',
+    'zpool_create_006_pos', 'zpool_create_007_neg', 'zpool_create_008_pos',
     'zpool_create_009_neg', 'zpool_create_010_neg', 'zpool_create_011_neg',
-     'zpool_create_012_neg', 'zpool_create_014_neg',
-     'zpool_create_015_neg', 'zpool_create_016_pos', 'zpool_create_017_neg',
-     'zpool_create_018_pos', 'zpool_create_019_pos', 'zpool_create_020_pos',
-     'zpool_create_021_pos', 'zpool_create_022_pos', 'zpool_create_023_neg',
-     'zpool_create_features_001_pos', 'zpool_create_features_002_pos',
-     'zpool_create_features_003_pos', 'zpool_create_features_004_neg']
+    'zpool_create_012_neg', 'zpool_create_014_neg',
+    'zpool_create_015_neg', 'zpool_create_016_pos', 'zpool_create_017_neg',
+    'zpool_create_018_pos', 'zpool_create_019_pos', 'zpool_create_020_pos',
+    'zpool_create_021_pos', 'zpool_create_022_pos', 'zpool_create_023_neg',
+    'zpool_create_features_001_pos', 'zpool_create_features_002_pos',
+    'zpool_create_features_003_pos', 'zpool_create_features_004_neg']
 
 
 [/opt/zfs-tests/tests/functional/cli_root/zpool_destroy]
@@ -249,7 +258,8 @@ tests = ['zpool_export_001_pos', 'zpool_export_002_pos',
     'zpool_export_003_neg', 'zpool_export_004_pos']
 
 [/opt/zfs-tests/tests/functional/cli_root/zpool_get]
-tests = ['zpool_get_001_pos', 'zpool_get_002_pos', 'zpool_get_003_pos', 'zpool_get_004_neg']
+tests = ['zpool_get_001_pos', 'zpool_get_002_pos', 'zpool_get_003_pos',
+    'zpool_get_004_neg']
 
 [/opt/zfs-tests/tests/functional/cli_root/zpool_history]
 tests = ['zpool_history_001_neg', 'zpool_history_002_pos']
@@ -264,6 +274,11 @@ tests = ['zpool_import_001_pos', 'zpool_import_002_pos',
     'zpool_import_features_003_pos', 'zpool_import_missing_001_pos',
     'zpool_import_missing_002_pos', 'zpool_import_missing_003_pos',
     'zpool_import_rename_001_pos']
+
+[/opt/zfs-tests/tests/functional/cli_root/zpool_labelclear]
+tests = ['zpool_labelclear_active', 'zpool_labelclear_exported']
+pre =
+post =
 
 [/opt/zfs-tests/tests/functional/cli_root/zpool_offline]
 tests = ['zpool_offline_001_pos', 'zpool_offline_002_neg']
@@ -365,6 +380,9 @@ tests = ['history_001_pos', 'history_002_pos', 'history_003_pos',
     'history_004_pos', 'history_005_neg', 'history_006_neg', 'history_007_pos',
     'history_008_pos', 'history_009_pos', 'history_010_pos']
 
+[/opt/zfs-tests/tests/functional/holes]
+tests = ['holes_sanity']
+
 [/opt/zfs-tests/tests/functional/inheritance]
 tests = ['inherit_001_pos']
 pre =
@@ -435,7 +453,8 @@ tests = ['quota_001_pos', 'quota_002_pos', 'quota_003_pos', 'quota_004_pos',
     'quota_005_pos', 'quota_006_neg']
 
 [/opt/zfs-tests/tests/functional/redundancy]
-tests = ['redundancy_001_pos', 'redundancy_002_pos', 'redundancy_003_pos']
+tests = ['redundancy_001_pos', 'redundancy_002_pos', 'redundancy_003_pos',
+    'redundancy_004_neg']
 
 [/opt/zfs-tests/tests/functional/refquota]
 tests = ['refquota_001_pos', 'refquota_002_pos', 'refquota_003_pos',
@@ -460,14 +479,21 @@ tests = ['reservation_001_pos', 'reservation_002_pos', 'reservation_003_pos',
     'reservation_016_pos', 'reservation_017_pos', 'reservation_018_pos']
 
 [/opt/zfs-tests/tests/functional/rootpool]
-tests = ['rootpool_002_neg', 'rootpool_007_pos']
+tests = ['rootpool_002_neg', 'rootpool_003_neg', 'rootpool_007_pos']
 
 [/opt/zfs-tests/tests/functional/rsend]
 tests = ['rsend_001_pos', 'rsend_002_pos', 'rsend_003_pos', 'rsend_004_pos',
     'rsend_005_pos', 'rsend_006_pos', 'rsend_007_pos', 'rsend_008_pos',
     'rsend_009_pos', 'rsend_010_pos', 'rsend_011_pos', 'rsend_012_pos',
-    'rsend_013_pos', 'rsend_014_pos', 'rsend_019_pos', 'rsend_020_pos',
-    'rsend_021_pos', 'rsend_022_pos', 'rsend_024_pos']
+    'rsend_013_pos', 'rsend_014_pos',
+    'rsend_019_pos', 'rsend_020_pos',
+    'rsend_021_pos', 'rsend_022_pos', 'rsend_024_pos',
+    'send-c_verify_ratio', 'send-c_verify_contents', 'send-c_props',
+    'send-c_incremental', 'send-c_volume', 'send-c_zstreamdump',
+    'send-c_lz4_disabled', 'send-c_recv_lz4_disabled',
+    'send-c_mixed_compression', 'send-c_stream_size_estimate', 'send-cD',
+    'send-c_embedded_blocks', 'send-c_resume', 'send-cpL_varied_recsize',
+    'send-c_recv_dedup']
 
 [/opt/zfs-tests/tests/functional/scrub_mirror]
 tests = ['scrub_mirror_001_pos', 'scrub_mirror_002_pos',
@@ -486,7 +512,8 @@ tests = ['clone_001_pos', 'rollback_001_pos', 'rollback_002_pos',
     'snapshot_006_pos', 'snapshot_007_pos', 'snapshot_008_pos',
     'snapshot_009_pos', 'snapshot_010_pos', 'snapshot_011_pos',
     'snapshot_012_pos', 'snapshot_013_pos', 'snapshot_014_pos',
-    'snapshot_015_pos', 'snapshot_016_pos', 'snapshot_017_pos']
+    'snapshot_015_pos', 'snapshot_016_pos', 'snapshot_017_pos',
+    'deadlist_lock']
 
 [/opt/zfs-tests/tests/functional/snapused]
 tests = ['snapused_001_pos', 'snapused_002_pos', 'snapused_003_pos',
@@ -513,6 +540,11 @@ tests = ['groupspace_001_pos', 'groupspace_002_pos', 'userquota_001_pos',
 tests = ['utils_test_001_pos', 'utils_test_002_pos', 'utils_test_003_pos',
     'utils_test_004_pos', 'utils_test_005_pos', 'utils_test_006_pos',
     'utils_test_007_pos', 'utils_test_008_pos', 'utils_test_009_pos']
+
+[/opt/zfs-tests/tests/functional/vdev_zaps]
+tests = ['vdev_zaps_001_pos', 'vdev_zaps_002_pos', 'vdev_zaps_003_pos',
+    'vdev_zaps_004_pos', 'vdev_zaps_005_pos', 'vdev_zaps_006_pos',
+    'vdev_zaps_007_pos']
 
 [/opt/zfs-tests/tests/functional/wbc]
 tests = ['wbc_001_pos', 'wbc_002_pos', 'wbc_003_pos', 'wbc_004_pos',
@@ -545,3 +577,8 @@ tests = ['zvol_misc_001_neg', 'zvol_misc_002_pos', 'zvol_misc_003_neg',
 [/opt/zfs-tests/tests/functional/zvol/zvol_swap]
 tests = ['zvol_swap_001_pos', 'zvol_swap_002_pos', 'zvol_swap_003_pos',
     'zvol_swap_004_pos', 'zvol_swap_005_pos', 'zvol_swap_006_pos']
+
+[/opt/zfs-tests/tests/functional/libzfs]
+tests = ['many_fds']
+pre =
+post =
