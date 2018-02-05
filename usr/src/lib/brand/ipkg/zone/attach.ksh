@@ -23,6 +23,7 @@
 #
 # Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
 #
 
 . /usr/lib/brand/ipkg/common.ksh
@@ -140,6 +141,17 @@ noexecute=0
 unset inst_type
 
 typeset gz_incorporations=""
+
+contains() {
+    string="$1"
+    substring="$2"
+    if test "${string#*$substring}" != "$string"; then
+        return 1    # $substring is in $string
+    else
+        return 0    # $substring is not in $string
+    fi
+}
+
 #
 # $1 is an empty string to be populated with a list of incorporation
 # fmris.
@@ -151,7 +163,9 @@ gather_incorporations() {
 	for p in \
 	    $(LC_ALL=C $PKG search -Hl -o pkg.name \
 	    ':pkg.depend.install-hold:core-os*');do
-		incorporations="$incorporations $(get_pkg_fmri $p)"
+		if contains $(get_pkg_fmri $p) "entire"; then
+		    incorporations="$incorporations $(get_pkg_fmri $p)"
+		fi
 	done
 }
 
@@ -389,8 +403,6 @@ if [[ -f /var/pkg/pkg5.image && -d /var/pkg/publisher ]]; then
 	log "$m_cache" "$PKG_CACHEROOT"
 fi
 
-log "$m_updating"
-
 LC_ALL=C $PKG copy-publishers-from $GZ_IMAGE
 
 #
@@ -405,6 +417,7 @@ LC_ALL=C $PKG copy-publishers-from $GZ_IMAGE
 #
 if [[ -z $gz_entire_fmri && -n $ngz_entire_fmri ]]; then
 	if [[ $allow_update == 1 ]]; then
+		log "$m_updating"
 		LC_ALL=C $PKG uninstall entire || pkg_err_check "$f_update"
 	else
 		log "\n$m_need_update" "$ZONENAME"
@@ -414,8 +427,9 @@ if [[ -z $gz_entire_fmri && -n $ngz_entire_fmri ]]; then
 fi
 
 if [[ $allow_update == 0 ]]; then
-	LC_ALL=C $PKG install --accept --no-refresh -n $incorp_list
-	if [[ $? == 4 ]]; then
+	LC_ALL=C $PKG info -q $incorp_list
+	ret=$?
+	if [[ $ret == 0 ]]; then
 		log "\n$m_complete"
 		EXIT_CODE=$ZONE_SUBPROC_OK
 		exit $EXIT_CODE

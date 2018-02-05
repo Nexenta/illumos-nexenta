@@ -23,7 +23,7 @@
 #
 # Copyright (c) 2007, 2011, Oracle and/or its affiliates. All rights reserved.
 # Copyright (c) 2015, OmniTI Computer Consulting, Inc. All rights reserved.
-# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
 #
 
 #
@@ -267,6 +267,8 @@ pkglist="$pkglist
 	pkg:///SUNWcs
 	pkg:///SUNWcsd
 	pkg:///system/network
+	pkg:///service/file-system/nfs
+	pkg:///network/ipfilter
 	pkg:///system/extended-system-utilities
 	pkg:///compress/bzip2
 	pkg:///compress/gzip

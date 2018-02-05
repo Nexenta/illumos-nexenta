@@ -25,19 +25,25 @@
 #
 # Copyright (C) 2013 by Jim Klimov - implemented the previously absent
 #    cloning of zones from specified snapshot, and avoidance of sys-unconfig
+#
+# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
 
 . /usr/lib/brand/ipkg/common.ksh
 
 m_usage=$(gettext "clone {sourcezone}")
 f_nosource=$(gettext "Error: unable to determine source zone dataset.")
 f_badsource=$(gettext "Error: specified snapshot is invalid for this source zone.")
+f_baddestpool=$(gettext "Error: Can not clone, source and target pools differ.")
+
+ZFS=/usr/sbin/zfs
+ZONEADM=/usr/sbin/zoneadm
 
 # Clean up on failure
 trap_exit()
 {
 	if (( $ZONE_IS_MOUNTED != 0 )); then
 		error "$v_unmount"
-		zoneadm -z $ZONENAME unmount
+		$ZONEADM -z $ZONENAME unmount
 	fi
 
 	exit $ZONE_SUBPROC_INCOMPLETE
@@ -47,9 +53,21 @@ trap_exit()
 
 ROOT="rpool/ROOT"
 
+# Use clone or copy method to dupilcate zone datasets.
+do_copy=false
+
 # Other brand clone options are invalid for this brand.
-while getopts "R:s:Xz:" opt; do
+while getopts "m:R:s:Xz:" opt; do
 	case $opt in
+		m)      case "$OPTARG" in
+			"copy")
+				ZONEPATH=`$ZONEADM -z $2 list -p | \
+					awk -F: '{print $4}'`
+				do_copy=true
+				;;
+			*)	fail_usage "";;
+			esac
+			;;
 		R)	ZONEPATH="$OPTARG" ;;
 		s)      case "$OPTARG" in
 			*@*) # Full snapshot name was provided, or just "@snap"
@@ -86,20 +104,24 @@ get_current_gzbe
 
 if [ -z "$REQUESTED_DS" ]; then
 	# Find the active source zone dataset to clone.
-	sourcezonepath=`/usr/sbin/zoneadm -z $sourcezone list -p | awk -F: '{print $4}'`
+	sourcezonepath=`$ZONEADM -z $sourcezone list -p | awk -F: '{print $4}'`
 	if [ -z "$sourcezonepath" ]; then
 		fail_fatal "$f_nosource"
 	fi
 
 	get_zonepath_ds $sourcezonepath
 	get_active_ds $CURRENT_GZBE $ZONEPATH_DS
+
+	spdir=`/usr/bin/dirname $sourcezonepath`
+	get_zonepath_ds $spdir
+	spdir_ds=$ZONEPATH_DS
 else
 	# Sanity-check the provided dataset (should exist and be an IPS ZBE)
 	REQUESTED_DS="`echo "$REQUESTED_DS" | egrep '^.*/'"$sourcezone"'/ROOT/[^/]+$'`"
 	if [ $? != 0 -o x"$REQUESTED_DS" = x ]; then
 		fail_fatal "$f_badsource"
 	fi
-	zfs list -H -o \
+	$ZFS list -H -o \
 		org.opensolaris.libbe:parentbe,org.opensolaris.libbe:active \
 		"$REQUESTED_DS" > /dev/null || \
 			fail_fatal "$f_badsource"
@@ -108,7 +130,7 @@ fi
 
 # Another sanity-check: requested snapshot exists for default or requested ZBE
 if [ x"$SNAPNAME" != x ]; then
-	zfs list -H "$ACTIVE_DS@$SNAPNAME" > /dev/null || \
+	$ZFS list -H "$ACTIVE_DS@$SNAPNAME" > /dev/null || \
 		fail_fatal "$f_badsource"
 fi
 
@@ -129,20 +151,35 @@ zpds=$ZONEPATH_DS
 fail_zonepath_in_rootds $zpds
 
 #
+# Make sure zone is cloned within the same zpool
+#
+if [[ $do_copy != true ]]; then
+	case $zpds in
+		$spdir_ds)
+			break
+			;;
+		*)
+			fail_fatal "$f_baddestpool"
+			break
+			;;
+	esac
+fi
+
+#
 # We need to tolerate errors while creating the datasets and making the
 # mountpoint, since these could already exist from some other BE.
 #
 
-/usr/sbin/zfs create $zpds/$zpname
+$ZFS create $zpds/$zpname
 
-/usr/sbin/zfs create -o mountpoint=legacy -o zoned=on $zpds/$zpname/ROOT
+$ZFS create -o mountpoint=legacy -o zoned=on $zpds/$zpname/ROOT
 
 if [ x"$SNAPNAME" = x ]; then
 	# make snapshot
 	SNAPNAME=${ZONENAME}_snap
 	SNAPNUM=0
 	while [ $SNAPNUM -lt 100 ]; do
-		/usr/sbin/zfs snapshot $ACTIVE_DS@$SNAPNAME
+		$ZFS snapshot $ACTIVE_DS@$SNAPNAME
 		if [ $? = 0 ]; then
 			break
 		fi
@@ -158,13 +195,38 @@ if [ x"$SNAPNAME" = x ]; then
 	fi
 fi
 
+LOGFILE=$(/usr/bin/mktemp -t -p /var/tmp $ZONENAME.clone_log.XXXXXX)
+if [[ -z "$LOGFILE" ]]; then
+        fatal "$e_tmpfile"
+fi
+exec 2>>"$LOGFILE"
+
 # do clone
+#
+# If there is already an existing zone BE for this zone it's likely it belongs
+# to another global zone BE. If that is the case the name of the zone BE
+# dataset is ajusted to avoid name collisions.
+#
+# If do_copy is set (the -m copy option was used) zfs send/recv is used so
+# the zone can be cloned across pools.
+#
 BENAME=zbe
 BENUM=0
 while [ $BENUM -lt 100 ]; do
-	/usr/sbin/zfs clone $ACTIVE_DS@$SNAPNAME $zpds/$zpname/ROOT/$BENAME
-	if [ $? = 0 ]; then
-		break
+	if $do_copy; then
+		log "Copy source zoneroot to new zoneroot"
+		$ZFS send $ACTIVE_DS@$SNAPNAME | \
+		$ZFS recv $zpds/$zpname/ROOT/$BENAME
+		if [ $? = 0 ]; then
+			$ZFS destroy $ACTIVE_DS@$SNAPNAME
+			break
+		fi
+	else
+		log "Clone zone root dataset"
+		$ZFS clone $ACTIVE_DS@$SNAPNAME $zpds/$zpname/ROOT/$BENAME
+		if [ $? = 0 ]; then
+			break
+		fi
 	fi
 	BENUM=`expr $BENUM + 1`
 	BENAME="zbe-$BENUM"
@@ -174,13 +236,13 @@ if [ $BENUM -ge 100 ]; then
 	fail_fatal "$f_zfs_create"
 fi
 
-/usr/sbin/zfs set $PROP_ACTIVE=on $zpds/$zpname/ROOT/$BENAME || \
+$ZFS set $PROP_ACTIVE=on $zpds/$zpname/ROOT/$BENAME || \
 	fail_incomplete "$f_zfs_create"
 
-/usr/sbin/zfs set $PROP_PARENT=$CURRENT_GZBE $zpds/$zpname/ROOT/$BENAME || \
+$ZFS set $PROP_PARENT=$CURRENT_GZBE $zpds/$zpname/ROOT/$BENAME || \
 	fail_incomplete "$f_zfs_create"
 
-/usr/sbin/zfs set canmount=noauto $zpds/$zpname/ROOT/$BENAME || \
+$ZFS set canmount=noauto $zpds/$zpname/ROOT/$BENAME || \
 	fail_incomplete "$f_zfs_create"
 
 if [ ! -d $ZONEPATH/root ]; then
@@ -199,7 +261,7 @@ is_brand_labeled
 (( $? == 0 )) && if [ x"$NO_SYSUNCONFIG" = xyes ]; then
 	vlog "$v_mounting"
 	ZONE_IS_MOUNTED=1
-	zoneadm -z $ZONENAME mount -f || fatal "$e_badmount"
+	$ZONEADM -z $ZONENAME mount -f || fatal "$e_badmount"
 else
 	unconfigure_zone
 fi
