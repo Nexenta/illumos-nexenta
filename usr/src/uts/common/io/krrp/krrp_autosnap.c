@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -40,66 +40,48 @@ typedef struct krrp_txg_s {
 } krrp_txg_t;
 
 
-static int krrp_autosnap_common_create(krrp_autosnap_t **result_autosnap,
-    size_t keep_snaps, const char *dataset, int flags,
-    uint64_t incr_snap_txg, krrp_autosnap_restore_cb_t *restore_cb,
-    autosnap_confirm_cb confirm_cb,
-    autosnap_notify_created_cb notify_cb, autosnap_error_cb error_cb,
-    void *cb_arg, krrp_error_t *error);
-static void krrp_autosnap_activate(krrp_autosnap_t *autosnap,
-    boolean_t snap_creator, uint64_t incr_snap_txg,
-    krrp_autosnap_restore_cb_t restore_cb, void *restore_cb_arg);
+static void krrp_autosnap_common_create(krrp_autosnap_t **result_autosnap,
+    size_t keep_snaps, const char *dataset, autosnap_flags_t flags);
 static uint64_t krrp_get_txg_from_snap_nvp(nvpair_t *);
 static boolean_t krrp_autosnap_try_hold_with_check_state(
     krrp_autosnap_t *autosnap, krrp_autosnap_state_t min_state);
 
-int krrp_autosnap_rside_create(krrp_autosnap_t **result_autosnap,
-    size_t keep_snaps, const char *dataset, boolean_t recursive,
-    uint64_t incr_snap_txg, krrp_autosnap_restore_cb_t *restore_cb,
-    autosnap_confirm_cb confirm_cb,
-    autosnap_notify_created_cb notify_cb, autosnap_error_cb error_cb,
-    void *cb_arg, krrp_error_t *error)
+void
+krrp_autosnap_rside_create(krrp_autosnap_t **result_autosnap,
+    size_t keep_snaps, const char *dataset, boolean_t recursive)
 {
-	uint64_t flags;
+	autosnap_flags_t flags;
 
 	flags = AUTOSNAP_CREATOR | AUTOSNAP_DESTROYER |
 	    AUTOSNAP_OWNER | AUTOSNAP_KRRP;
 	if (recursive)
 		flags |= AUTOSNAP_RECURSIVE;
 
-	return (krrp_autosnap_common_create(result_autosnap, keep_snaps,
-	    dataset, flags, incr_snap_txg, restore_cb, confirm_cb,
-	    notify_cb, error_cb, cb_arg, error));
+	krrp_autosnap_common_create(result_autosnap, keep_snaps,
+	    dataset, flags);
 }
 
-int krrp_autosnap_wside_create(krrp_autosnap_t **result_autosnap,
-    size_t keep_snaps, const char *dataset, uint64_t incr_snap_txg,
-    autosnap_notify_created_cb notify_cb, void *cb_arg,
-    krrp_error_t *error)
+void
+krrp_autosnap_wside_create(krrp_autosnap_t **result_autosnap,
+    size_t keep_snaps, const char *dataset)
 {
-	uint64_t flags;
+	autosnap_flags_t flags;
 
 	flags = AUTOSNAP_DESTROYER | AUTOSNAP_RECURSIVE |
 	    AUTOSNAP_OWNER | AUTOSNAP_KRRP;
 
-	return (krrp_autosnap_common_create(result_autosnap, keep_snaps,
-	    dataset, flags, incr_snap_txg, NULL, NULL, notify_cb, NULL,
-	    cb_arg, error));
+	krrp_autosnap_common_create(result_autosnap, keep_snaps,
+	    dataset, flags);
 }
 
-static int
+static void
 krrp_autosnap_common_create(krrp_autosnap_t **result_autosnap,
-    size_t keep_snaps, const char *dataset, int flags,
-    uint64_t incr_snap_txg, krrp_autosnap_restore_cb_t *restore_cb,
-    autosnap_confirm_cb confirm_cb,
-    autosnap_notify_created_cb notify_cb, autosnap_error_cb error_cb,
-    void *cb_arg, krrp_error_t *error)
+    size_t keep_snaps, const char *dataset, autosnap_flags_t flags)
 {
 	krrp_autosnap_t *autosnap;
 
 	VERIFY(result_autosnap != NULL && *result_autosnap == NULL);
-	VERIFY(dataset != NULL);
-	VERIFY(notify_cb != NULL);
+	VERIFY(dataset != NULL && dataset[0] != '\0');
 
 	autosnap = kmem_zalloc(sizeof (krrp_autosnap_t), KM_SLEEP);
 
@@ -109,48 +91,39 @@ krrp_autosnap_common_create(krrp_autosnap_t **result_autosnap,
 	krrp_queue_init(&autosnap->txg_to_rele, sizeof (krrp_txg_t),
 	    offsetof(krrp_txg_t, node));
 
-	autosnap->zfs_ctx = autosnap_register_handler(dataset, flags,
-	    confirm_cb, notify_cb, error_cb, cb_arg);
-
-	if (autosnap->zfs_ctx == NULL) {
-		krrp_error_set(error, KRRP_ERRNO_AUTOSNAP, EINVAL);
-
-		krrp_queue_fini(autosnap->txg_to_rele);
-		mutex_destroy(&autosnap->mtx);
-		cv_destroy(&autosnap->cv);
-		kmem_free(autosnap, sizeof (krrp_autosnap_t));
-		return (-1);
-	}
-
 	autosnap->keep_snaps = keep_snaps;
-	autosnap->state = KRRP_AUTOSNAP_STATE_REGISTERED;
-
-	krrp_autosnap_activate(autosnap, (flags & AUTOSNAP_CREATOR),
-	    incr_snap_txg, restore_cb, cb_arg);
+	autosnap->state = KRRP_AUTOSNAP_STATE_CREATED;
+	autosnap->flags = flags;
+	autosnap->dataset = dataset;
 
 	*result_autosnap = autosnap;
-	return (0);
 }
 
 void
 krrp_autosnap_destroy(krrp_autosnap_t *autosnap)
 {
 	krrp_txg_t *txg_item;
+	void *zfs_ctx = NULL;
+
+	krrp_autosnap_deactivate(autosnap);
 
 	krrp_autosnap_lock(autosnap);
-	autosnap->state = KRRP_AUTOSNAP_STATE_REGISTERED;
+	autosnap->state = KRRP_AUTOSNAP_STATE_CREATED;
 	while (autosnap->ref_cnt > 0)
 		krrp_autosnap_cv_wait(autosnap);
 
-	autosnap->state = KRRP_AUTOSNAP_STATE_UNREGISTERED;
+	zfs_ctx = autosnap->zfs_ctx;
+	autosnap->zfs_ctx = NULL;
 	krrp_autosnap_unlock(autosnap);
 
-	autosnap_unregister_handler(autosnap->zfs_ctx);
+	if (zfs_ctx != NULL)
+		autosnap_unregister_handler(zfs_ctx);
+
 
 	/*
-	 * By setting autosnap->state to KRRP_AUTOSNAP_STATE_UNREGISTERED
-	 * no one can push to the queue therefore we can safely iterate
-	 * over all the elements in the queue and free them.
+	 * After deactivation no one can push to the queue
+	 * therefore we can safely iterate over all the elements
+	 * in the queue and free them.
 	 */
 	while ((txg_item =
 	    krrp_queue_get_no_wait(autosnap->txg_to_rele)) != NULL)
@@ -164,16 +137,30 @@ krrp_autosnap_destroy(krrp_autosnap_t *autosnap)
 	kmem_free(autosnap, sizeof (krrp_autosnap_t));
 }
 
-static void
-krrp_autosnap_activate(krrp_autosnap_t *autosnap, boolean_t snap_creator,
-    uint64_t incr_snap_txg, krrp_autosnap_restore_cb_t restore_cb,
-    void *restore_cb_arg)
+int
+krrp_autosnap_activate(krrp_autosnap_t *autosnap, uint64_t incr_snap_txg,
+    autosnap_confirm_cb confirm_cb, autosnap_notify_created_cb notify_cb,
+    autosnap_error_cb error_cb, krrp_autosnap_restore_cb_t restore_cb,
+    void *cb_arg, krrp_error_t *error)
 {
 	nvlist_t *snaps;
 	nvpair_t *target_snap_nvp = NULL, *snap_nvp;
 	uint64_t target_snap_txg = UINT64_MAX;
+	boolean_t read_side = ((autosnap->flags & AUTOSNAP_CREATOR) != 0);
 
-	ASSERT(autosnap->zfs_ctx != NULL);
+	VERIFY(notify_cb != NULL);
+
+	autosnap->zfs_ctx = autosnap_register_handler(autosnap->dataset,
+	    autosnap->flags, confirm_cb, notify_cb, error_cb, cb_arg);
+
+	if (autosnap->zfs_ctx == NULL) {
+		krrp_error_set(error, KRRP_ERRNO_AUTOSNAP, EINVAL);
+		return (-1);
+	}
+
+	krrp_autosnap_lock(autosnap);
+	autosnap->state = KRRP_AUTOSNAP_STATE_REGISTERED;
+	krrp_autosnap_unlock(autosnap);
 
 	snaps = autosnap_get_owned_snapshots(autosnap->zfs_ctx);
 
@@ -221,7 +208,7 @@ krrp_autosnap_activate(krrp_autosnap_t *autosnap, boolean_t snap_creator,
 		snap_nvp = nvlist_next_nvpair(snaps, snap_nvp);
 	}
 
-	if (snap_creator && incr_snap_txg == UINT64_MAX &&
+	if (read_side && incr_snap_txg == UINT64_MAX &&
 	    target_snap_txg != UINT64_MAX) {
 		/*
 		 * On start we always create snapshot,
@@ -233,9 +220,10 @@ krrp_autosnap_activate(krrp_autosnap_t *autosnap, boolean_t snap_creator,
 		goto out;
 	}
 
-	if (incr_snap_txg != UINT64_MAX)
+	if (incr_snap_txg != UINT64_MAX) {
 		krrp_autosnap_txg_rele(autosnap, incr_snap_txg,
 		    AUTOSNAP_NO_SNAP);
+	}
 
 	if (target_snap_txg != UINT64_MAX && restore_cb != NULL) {
 		char *snap_name;
@@ -243,7 +231,7 @@ krrp_autosnap_activate(krrp_autosnap_t *autosnap, boolean_t snap_creator,
 		snap_name = strchr(nvpair_name(target_snap_nvp), '@');
 		snap_name++;
 
-		restore_cb(restore_cb_arg, snap_name, target_snap_txg);
+		restore_cb(cb_arg, snap_name, target_snap_txg);
 	}
 
 out:
@@ -252,14 +240,20 @@ out:
 	krrp_autosnap_lock(autosnap);
 	autosnap->state = KRRP_AUTOSNAP_STATE_ACTIVE;
 	krrp_autosnap_unlock(autosnap);
+
+	return (0);
 }
 
 void
 krrp_autosnap_deactivate(krrp_autosnap_t *autosnap)
 {
 	krrp_autosnap_lock(autosnap);
-	if (autosnap->state == KRRP_AUTOSNAP_STATE_ACTIVE)
+	if (autosnap->state == KRRP_AUTOSNAP_STATE_ACTIVE) {
 		autosnap->state = KRRP_AUTOSNAP_STATE_REGISTERED;
+		while (autosnap->ref_cnt > 0)
+			krrp_autosnap_cv_wait(autosnap);
+	}
+
 	krrp_autosnap_unlock(autosnap);
 }
 
@@ -281,20 +275,6 @@ krrp_autosnap_try_hold_to_confirm(krrp_autosnap_t *autosnap)
 {
 	return (krrp_autosnap_try_hold_with_check_state(autosnap,
 	    KRRP_AUTOSNAP_STATE_ACTIVE));
-}
-
-boolean_t
-krrp_autosnap_try_hold_to_snap_rele(krrp_autosnap_t *autosnap)
-{
-	return (krrp_autosnap_try_hold_with_check_state(autosnap,
-	    KRRP_AUTOSNAP_STATE_REGISTERED));
-}
-
-boolean_t
-krrp_autosnap_try_hold_to_snap_create(krrp_autosnap_t *autosnap)
-{
-	return (krrp_autosnap_try_hold_with_check_state(autosnap,
-	    KRRP_AUTOSNAP_STATE_REGISTERED));
 }
 
 static boolean_t
@@ -327,9 +307,8 @@ krrp_autosnap_unhold(krrp_autosnap_t *autosnap)
 void
 krrp_autosnap_create_snapshot(krrp_autosnap_t *autosnap)
 {
-	ASSERT(autosnap->zfs_ctx != NULL);
-
-	if (krrp_autosnap_try_hold_to_snap_create(autosnap)) {
+	if (krrp_autosnap_try_hold_with_check_state(autosnap,
+	    KRRP_AUTOSNAP_STATE_ACTIVE)) {
 		autosnap_force_snap(autosnap->zfs_ctx, B_FALSE);
 
 		krrp_autosnap_unhold(autosnap);
@@ -342,7 +321,8 @@ krrp_autosnap_txg_rele(krrp_autosnap_t *autosnap,
 {
 	krrp_txg_t *txg_item;
 
-	if (!krrp_autosnap_try_hold_to_snap_rele(autosnap))
+	if (!krrp_autosnap_try_hold_with_check_state(autosnap,
+	    KRRP_AUTOSNAP_STATE_REGISTERED))
 		return;
 
 	txg_item = kmem_zalloc(sizeof (krrp_txg_t), KM_SLEEP);

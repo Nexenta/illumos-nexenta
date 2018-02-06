@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KRRP_AUTOSNAP_H
@@ -43,13 +43,58 @@ extern "C" {
 
 typedef void krrp_autosnap_restore_cb_t(void *, const char *, uint64_t);
 
+/*
+ *            |
+ *            | instance creation
+ *            v
+ * +-----------------------------+
+ * | KRRP_AUTOSNAP_STATE_UNKNOWN |
+ * +-----------------------------+
+ *            |
+ *            | instance initialized
+ *            v
+ * +-----------------------------+
+ * | KRRP_AUTOSNAP_STATE_CREATED |<-
+ * +-----------------------------+ |
+ *            |                    |
+ *            | register           | instance destroying
+ *            | zfs-autosnap       |
+ *            | handler            |
+ *            v                    |
+ * +--------------------------------+
+ * | KRRP_AUTOSNAP_STATE_REGISTERED |<--
+ * +--------------------------------+  |
+ *            |                        |
+ *            | start the related      | stop the related
+ *            | replication session    | replication session
+ *            v                        |
+ * +----------------------------+      |
+ * | KRRP_AUTOSNAP_STATE_ACTIVE |-------
+ * +----------------------------+
+ *
+ *
+ * KRRP_AUTOSNAP_STATE_UNKNOWN
+ *    instance structure has been allocated
+ *
+ * KRRP_AUTOSNAP_STATE_CREATED
+ *    instance structure has been initialized
+ *
+ * KRRP_AUTOSNAP_STATE_REGISTERED
+ *    instance zfs-autosnap handler and
+ *    required callbacks have been registered
+ *
+ * KRRP_AUTOSNAP_STATE_ACTIVE
+ *    instance structure is ready to use
+ */
 typedef enum {
-	KRRP_AUTOSNAP_STATE_UNREGISTERED = 0,
+	KRRP_AUTOSNAP_STATE_UNKNOWN = 0,
+	KRRP_AUTOSNAP_STATE_CREATED,
 	KRRP_AUTOSNAP_STATE_REGISTERED,
 	KRRP_AUTOSNAP_STATE_ACTIVE
 } krrp_autosnap_state_t;
 
 typedef struct krrp_autonap_s {
+	const char				*dataset;
 	kmutex_t				mtx;
 	kcondvar_t				cv;
 	krrp_autosnap_state_t	state;
@@ -57,24 +102,24 @@ typedef struct krrp_autonap_s {
 	void					*zfs_ctx;
 	krrp_queue_t			*txg_to_rele;
 	size_t					keep_snaps;
+	autosnap_flags_t		flags;
 } krrp_autosnap_t;
 
-int krrp_autosnap_rside_create(krrp_autosnap_t **result_autosnap,
-    size_t keep_snaps, const char *dataset, boolean_t recursive,
-    uint64_t incr_snap_txg, krrp_autosnap_restore_cb_t *restore_cb,
-    autosnap_confirm_cb confirm_cb,
-    autosnap_notify_created_cb notify_cb, autosnap_error_cb error_cb,
-    void *cb_arg, krrp_error_t *error);
-int krrp_autosnap_wside_create(krrp_autosnap_t **result_autosnap,
-    size_t keep_snaps, const char *dataset, uint64_t incr_snap_txg,
-    autosnap_notify_created_cb notify_cb, void *cb_arg, krrp_error_t *error);
+void krrp_autosnap_rside_create(krrp_autosnap_t **result_autosnap,
+    size_t keep_snaps, const char *dataset, boolean_t recursive);
+void krrp_autosnap_wside_create(krrp_autosnap_t **result_autosnap,
+    size_t keep_snaps, const char *dataset);
 void krrp_autosnap_destroy(krrp_autosnap_t *autosnap);
 
 boolean_t krrp_autosnap_try_hold_to_confirm(krrp_autosnap_t *autosnap);
-boolean_t krrp_autosnap_try_hold_to_snap_rele(krrp_autosnap_t *autosnap);
-boolean_t krrp_autosnap_try_hold_to_snap_create(krrp_autosnap_t *autosnap);
 void krrp_autosnap_unhold(krrp_autosnap_t *autosnap);
 
+int krrp_autosnap_activate(krrp_autosnap_t *autosnap, uint64_t incr_snap_txg,
+    autosnap_confirm_cb confirm_cb,
+    autosnap_notify_created_cb notify_cb,
+    autosnap_error_cb error_cb,
+    krrp_autosnap_restore_cb_t restore_cb, void *cb_arg,
+    krrp_error_t *error);
 void krrp_autosnap_deactivate(krrp_autosnap_t *autosnap);
 
 void krrp_autosnap_create_snapshot(krrp_autosnap_t *autosnap);
