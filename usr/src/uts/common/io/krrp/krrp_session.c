@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -347,8 +347,10 @@ krrp_sess_run(krrp_sess_t *sess, boolean_t only_once, krrp_error_t *error)
 		rc = krrp_stream_run(sess->stream_read,
 		    sess->data_write_queue,
 		    sess->data_pdu_engine, error);
-		if (rc != 0)
+		if (rc != 0) {
+			krrp_stream_stop(sess->stream_write);
 			goto out;
+		}
 	} else {
 		krrp_stream_t *stream;
 

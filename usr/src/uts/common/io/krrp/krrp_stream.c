@@ -158,6 +158,9 @@ krrp_stream_read_create(krrp_stream_t **result_stream,
 	if (rc != 0)
 		goto err;
 
+	krrp_autosnap_rside_create(&stream->autosnap,
+	    stream->keep_snaps, stream->dataset, stream->recursive);
+
 	*result_stream = stream;
 
 	return (0);
@@ -216,6 +219,9 @@ krrp_stream_write_create(krrp_stream_t **result_stream,
 	    replace_props_list, error);
 	if (rc != 0)
 		goto err;
+
+	krrp_autosnap_wside_create(&stream->autosnap,
+	    stream->keep_snaps, stream->dataset);
 
 	*result_stream = stream;
 
@@ -527,13 +533,11 @@ krrp_stream_activate_autosnap(krrp_stream_t *stream,
 	switch (stream->mode) {
 	case KRRP_STRMM_READ:
 		if (!stream->non_continuous) {
-			rc = krrp_autosnap_rside_create(&stream->autosnap,
-			    stream->keep_snaps, stream->dataset,
-			    stream->recursive, incr_snap_txg,
-			    &krrp_stream_autosnap_restore_cb,
+			rc = krrp_autosnap_activate(stream->autosnap, incr_snap_txg,
 			    &krrp_stream_read_snap_confirm_cb,
 			    &krrp_stream_read_snap_notify_cb,
 			    &krrp_stream_snap_create_error_cb,
+			    &krrp_stream_autosnap_restore_cb,
 			    stream, error);
 			if (rc != 0)
 				goto out;
@@ -573,10 +577,9 @@ krrp_stream_activate_autosnap(krrp_stream_t *stream,
 
 		break;
 	case KRRP_STRMM_WRITE:
-		rc = krrp_autosnap_wside_create(&stream->autosnap,
-		    stream->keep_snaps, stream->dataset, incr_snap_txg,
-		    &krrp_stream_write_snap_notify_cb,
-		    stream, error);
+		rc = krrp_autosnap_activate(stream->autosnap, incr_snap_txg,
+		    NULL, &krrp_stream_write_snap_notify_cb,
+		    &krrp_stream_snap_create_error_cb, NULL, stream, error);
 		if (rc != 0)
 			goto out;
 
