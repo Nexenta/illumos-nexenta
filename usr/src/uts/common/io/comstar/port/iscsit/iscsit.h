@@ -55,9 +55,6 @@
 #define	ISCSI_MAX_TSIH		0xffff
 #define	ISCSI_UNSPEC_TSIH	0
 
-/* Max targets per system */
-#define	ISCSIT_MAX_TARGETS	1024
-
 #define	ISCSIT_MAX_WINDOW	1024
 #define	ISCSIT_RXPDU_QUEUE_LEN	2048
 
