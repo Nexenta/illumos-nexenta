@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
@@ -1639,6 +1639,7 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 	zfs_handle_t *zfsp;
 	int i, ret = -1;
 	int *good;
+	sa_init_selective_arg_t sharearg;
 
 	/*
 	 * Gather all non-snap datasets within the pool.
@@ -1673,6 +1674,20 @@ zpool_enable_datasets_ex(zpool_handle_t *zhp, const char *mntopts, int flags,
 		}
 	} else {
 		ret = parallel_mount(&cb, good, mntopts, flags, n_threads);
+	}
+
+	/*
+	 * Initilialize libshare SA_INIT_SHARE_API_SELECTIVE here
+	 * to avoid unneccesary load/unload of the libshare plugins
+	 * per shared dataset downstream.
+	 */
+	sharearg.zhandle_arr = cb.cb_handles;
+	sharearg.zhandle_len = cb.cb_used;
+	ret = zfs_init_libshare_arg(hdl, SA_INIT_SHARE_API_SELECTIVE,
+	    &sharearg);
+	if (ret != 0) {
+		free(good);
+		goto out;
 	}
 
 	/*

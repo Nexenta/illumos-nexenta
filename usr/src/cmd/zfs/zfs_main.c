@@ -28,7 +28,7 @@
  * Copyright (c) 2013 Steven Hartland.  All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>.
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #include <assert.h>
@@ -6629,6 +6629,32 @@ unshare_unmount(int op, int argc, char **argv)
 				zfs_close(node->un_zhp);
 				free(node->un_mountp);
 				free(node);
+			}
+		}
+
+		/*
+		 * Initilialize libshare SA_INIT_SHARE_API_SELECTIVE here
+		 * to avoid unneccesary load/unload of the libshare plugins
+		 * per shared dataset downstream.
+		 */
+		if (op == OP_SHARE) {
+			zfs_handle_t **dslist = NULL;
+			size_t count = 0;
+			get_all_datasets(&dslist, &count, B_FALSE);
+
+			if (count > 0) {
+				sa_init_selective_arg_t sharearg;
+				sharearg.zhandle_arr = dslist;
+				sharearg.zhandle_len = count;
+				if ((ret = zfs_init_libshare_arg(
+				    zfs_get_handle(dslist[0]),
+				    SA_INIT_SHARE_API_SELECTIVE, &sharearg))
+				    != SA_OK) {
+					(void) fprintf(stderr, gettext(
+					    "Could not initialize libshare,"
+					    "%d"), ret);
+					return (1);
+				}
 			}
 		}
 
