@@ -700,7 +700,15 @@ zfs_user_in_cred(zfsvfs_t *zfsvfs, uint64_t id, cred_t *cr)
 {
 	ksid_t		*ksid = crgetsid(cr, KSID_USER);
 	ksidlist_t	*ksidlist = crgetsidlist(cr);
+	uid_t		uid;
 
+	/* Check for match with cred->cr_uid */
+	uid = zfs_fuid_map_id(zfsvfs, id, cr, ZFS_ACE_USER);
+	if (uid != IDMAP_WK_CREATOR_OWNER_UID &&
+	    uid == crgetuid(cr))
+		return (B_TRUE);
+
+	/* Check for any match in the ksidlist */
 	if (ksid && ksidlist) {
 		int 		i;
 		ksid_t		*ksid_vec;
