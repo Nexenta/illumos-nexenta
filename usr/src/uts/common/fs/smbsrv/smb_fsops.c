@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/sid.h>
@@ -1967,7 +1967,7 @@ smb_fsop_lookup(
 	if ((flags & SMB_FOLLOW_LINKS) && (vp->v_type == VLNK) &&
 	    ((attr.sa_dosattr & FILE_ATTRIBUTE_REPARSE_POINT) == 0)) {
 		rc = smb_pathname(sr, od_name, FOLLOW, root_node, dnode,
-		    &lnk_dnode, &lnk_target_node, cr);
+		    &lnk_dnode, &lnk_target_node, cr, NULL);
 
 		if (rc != 0) {
 			/*
