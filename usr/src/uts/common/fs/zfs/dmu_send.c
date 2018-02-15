@@ -1339,13 +1339,14 @@ restore_freeobjects(struct restorearg *ra, objset_t *os,
     struct drr_freeobjects *drrfo)
 {
 	uint64_t obj;
+	int next_err = 0;
 
 	if (drrfo->drr_firstobj + drrfo->drr_numobjs < drrfo->drr_firstobj)
 		return (SET_ERROR(EINVAL));
 
 	for (obj = drrfo->drr_firstobj;
-	    obj < drrfo->drr_firstobj + drrfo->drr_numobjs;
-	    (void) dmu_object_next(os, &obj, FALSE, 0)) {
+	    obj < drrfo->drr_firstobj + drrfo->drr_numobjs && next_err == 0;
+	    next_err = dmu_object_next(os, &obj, FALSE, 0)) {
 		int err;
 
 		if (dmu_object_info(os, obj, NULL) != 0)
@@ -1355,6 +1356,10 @@ restore_freeobjects(struct restorearg *ra, objset_t *os,
 		if (err != 0)
 			return (err);
 	}
+
+	if (next_err != ESRCH)
+	    return (next_err);
+
 	return (0);
 }
 
