@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_LIBSMB_H
@@ -185,7 +185,7 @@ extern int smb_smf_restart_service(void);
 extern int smb_smf_maintenance_mode(void);
 
 /* ZFS interface */
-int smb_getdataset(const char *, char *, size_t);
+int smb_getdataset(libzfs_handle_t *, const char *, char *, size_t);
 
 /* Configuration management functions  */
 extern int smb_config_get(smb_cfg_id_t, char *, int);
