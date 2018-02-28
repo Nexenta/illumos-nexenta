@@ -654,7 +654,7 @@ smb_getdataset(libzfs_handle_t *libhdl, const char *path, char *dataset,
 			    sizeof (mountpnt), NULL, NULL, 0, B_FALSE) == 0) &&
 			    (strcmp(mountpnt, path) == 0)) {
 				zfs_close(hdl);
-				strlcpy(dataset, dsname, len);
+				(void) strlcpy(dataset, dsname, len);
 				return (0);
 			}
 			zfs_close(hdl);
