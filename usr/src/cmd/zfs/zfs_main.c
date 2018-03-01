@@ -6634,7 +6634,7 @@ unshare_unmount(int op, int argc, char **argv)
 
 		/*
 		 * Initilialize libshare SA_INIT_SHARE_API_SELECTIVE here
-		 * to avoid unneccesary load/unload of the libshare plugins
+		 * to avoid unneccesary load/unload of the libshare API
 		 * per shared dataset downstream.
 		 */
 		if (op == OP_SHARE) {
