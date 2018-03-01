@@ -356,7 +356,7 @@ get_pkg_fmri() {
 # stripped of publisher name and other junk.
 #
 get_entire_incorp() {
-	get_pkg_fmri entire/minimal
+	get_pkg_fmri entire
 	return $?
 }
 

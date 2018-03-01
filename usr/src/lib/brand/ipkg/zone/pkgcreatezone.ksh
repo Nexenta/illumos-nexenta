@@ -169,10 +169,7 @@ fi
 # from the FMRI if it is present.
 # It's ok to not find entire in the current image, since this means the user
 # can install pre-release development bits for testing purposes.
-#
-# Comment out get_entire_incorp call below, would like to install only minimal set
-# of packages into NexentaStor zone
-#entire_fmri=$(get_entire_incorp)
+entire_fmri=$(get_entire_incorp)
 
 #
 # If we found an "entire" incorporation in the current image, then
