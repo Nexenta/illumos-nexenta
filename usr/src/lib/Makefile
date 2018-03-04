@@ -116,6 +116,7 @@ SUBDIRS += \
 	liblm		\
 	libmalloc	\
 	libmapmalloc	\
+	libmlrpc	\
 	libmtmalloc	\
 	libnls		\
 	libnwam		\
@@ -425,6 +426,7 @@ HDRSUBDIRS=		\
 	libkvm		\
 	libmail		\
 	libmd		\
+	libmlrpc	\
 	libmtmalloc	\
 	libndmp		\
 	libnvpair	\
@@ -598,6 +600,7 @@ libiscsit:	libc libnvpair libstmf libuuid libnsl
 libkmf:		libcryptoutil pkcs11
 libnsl:		libmd5
 libmapid:	libresolv
+libmlrpc:	libsmbfs libuuid
 librdc:		libsocket libnsl libnsctl libunistat libdscfg
 libuuid:	libdlpi
 libinetutil:	libsocket
@@ -672,6 +675,9 @@ libhotplug:	libnvpair
 cfgadm_plugins:	libhotplug
 libilb:		libsocket
 $(INTEL_BUILD)libdiskmgt:libfdisk
+smbsrv:		libxnet libpthread librt libshare libidmap pkcs11 libsqlite \
+		libcryptoutil libreparse libcmdutils libresolv2 libsmbfs \
+		libuuid libfakekernel libads libgss libldap5 krb5 libmlrpc
 
 #
 # The reason this rule checks for the existence of the

@@ -301,6 +301,7 @@ if "${flags.t}" ; then
 
 	export CTFCONVERT="${TOOLS_PROTO}/opt/onbld/bin/${MACH}/ctfconvert"
 	export CTFMERGE="${TOOLS_PROTO}/opt/onbld/bin/${MACH}/ctfmerge"
+	export NDRGEN="${TOOLS_PROTO}/opt/onbld/bin/${MACH}/ndrgen"
 
 	export CTFCVTPTBL="${TOOLS_PROTO}/opt/onbld/bin/ctfcvtptbl"
 	export CTFFINDMOD="${TOOLS_PROTO}/opt/onbld/bin/ctffindmod"

@@ -34,8 +34,8 @@
 #include <strings.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <libmlrpc/libmlrpc.h>
 #include <smbsrv/libsmb.h>
-#include <smbsrv/libmlrpc.h>
 #include <smbsrv/libmlsvc.h>
 #include <smbsrv/smb.h>
 #include <smbsrv/ndl/spoolss.ndl>

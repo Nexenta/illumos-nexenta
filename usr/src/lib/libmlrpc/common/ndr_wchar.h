@@ -26,14 +26,21 @@
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
  */
 
-/*LINTLIBRARY*/
-/*PROTOLIB1*/
+#ifndef _NDR_WCHAR_H
+#define	_NDR_WCHAR_H
 
-#include <netsmb/smbfs_api.h>
-#include <netsmb/smbfs_acl.h>
+/*
+ * Some ndr_wchar_t support stuff.
+ */
 
-#include <netsmb/smb_lib.h>
-#include <netsmb/smb_keychain.h>
-#include <netsmb/smb_rap.h>
-#include <netsmb/spnego.h>
+#define	NDR_MB_CUR_MAX		3
+#define	NDR_MB_CHAR_MAX		NDR_MB_CUR_MAX
+#define	NDR_STRING_MAX		4096
 
+size_t ndr__mbstowcs(uint16_t *, const char *, size_t);
+size_t ndr__mbstowcs_le(uint16_t *, const char *, size_t);
+
+size_t ndr__wcslen(const uint16_t *);
+size_t ndr__wcstombs(char *, const uint16_t *, size_t);
+
+#endif /* _NDR_WCHAR_H */
