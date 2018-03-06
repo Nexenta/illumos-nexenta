@@ -21,6 +21,9 @@
 
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
+ */
+
+/*
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
  * Copyright (c) 2012 DEY Storage Systems, Inc.  All rights reserved.
@@ -28,7 +31,7 @@
  * Copyright (c) 2013 Martin Matuska. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright 2017 RackTop Systems.
  */
@@ -1265,7 +1268,7 @@ badlabel:
 			 *		global zone	    non-global zone
 			 * --------------------------------------------------
 			 * zoned=on	mountpoint (no)	    mountpoint (yes)
-			 *		sharenfs (no)	    sharenfs (no)
+			 *		sharenfs (no)	    sharenfs (yes)
 			 *		sharesmb (no)	    sharesmb (no)
 			 *
 			 * zoned=off	mountpoint (yes)	N/A
@@ -1281,8 +1284,7 @@ badlabel:
 					(void) zfs_error(hdl, EZFS_ZONED,
 					    errbuf);
 					goto error;
-				} else if (prop == ZFS_PROP_SHARENFS ||
-				    prop == ZFS_PROP_SHARESMB) {
+				} else if (prop == ZFS_PROP_SHARESMB) {
 					zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
 					    "'%s' cannot be set in "
 					    "a non-global zone"), propname);
