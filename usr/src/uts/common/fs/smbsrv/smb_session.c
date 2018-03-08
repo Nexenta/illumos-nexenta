@@ -1343,7 +1343,36 @@ smb_session_logoff(smb_session_t *session)
 		user = smb_llist_next(ulist, user);
 	}
 
+	/* Needed below (Was the list empty?) */
+	user = smb_llist_head(ulist);
+
 	smb_llist_exit(ulist);
+
+	/*
+	 * It's possible for user objects to remain due to references
+	 * obtained via smb_server_lookup_ssnid(), when an SMB2
+	 * session setup is destroying a previous session.
+	 * If that has happened, wait here for that to finish.
+	 * When the last user object is deleted, smb_user_delete
+	 * signals this wait via smb_rwx_scbcast().  Otherwise,
+	 * (and more commonly) the user list is already empty,
+	 * and we can make the state transition now.  In case we
+	 * might have missed the wakeup, wait with a timeout.
+	 * The logoff work we're waiting for should be fast.
+	 */
+	if (user == NULL) {
+		/* User list is empty. */
+		smb_rwx_rwenter(&session->s_lock, RW_WRITER);
+		session->s_state = SMB_SESSION_STATE_SHUTDOWN;
+		smb_rwx_rwexit(&session->s_lock);
+	} else {
+		smb_rwx_rwenter(&session->s_lock, RW_READER);
+		while (session->s_state != SMB_SESSION_STATE_SHUTDOWN) {
+			(void) smb_rwx_cvwait(&session->s_lock,
+			    MSEC_TO_TICK(200));
+		}
+		smb_rwx_rwexit(&session->s_lock);
+	}
 
 	/*
 	 * User list should be empty now.

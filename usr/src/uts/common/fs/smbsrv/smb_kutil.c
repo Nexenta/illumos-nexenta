@@ -809,86 +809,42 @@ smb_rwx_destroy(
  * smb_rwx_rwexit
  */
 void
+smb_rwx_rwenter(smb_rwx_t *rwx, krw_t mode)
+{
+	rw_enter(&rwx->rwx_lock, mode);
+}
+
+/*
+ * smb_rwx_rwexit
+ */
+void
 smb_rwx_rwexit(
     smb_rwx_t	*rwx)
 {
-	if (rw_write_held(&rwx->rwx_lock)) {
-		ASSERT(rw_owner(&rwx->rwx_lock) == curthread);
-		mutex_enter(&rwx->rwx_mutex);
-		if (rwx->rwx_waiting) {
-			rwx->rwx_waiting = B_FALSE;
-			cv_broadcast(&rwx->rwx_cv);
-		}
-		mutex_exit(&rwx->rwx_mutex);
-	}
 	rw_exit(&rwx->rwx_lock);
 }
 
-/*
- * smb_rwx_rwupgrade
- */
-krw_t
-smb_rwx_rwupgrade(
-    smb_rwx_t	*rwx)
-{
-	if (rw_write_held(&rwx->rwx_lock)) {
-		ASSERT(rw_owner(&rwx->rwx_lock) == curthread);
-		return (RW_WRITER);
-	}
-	if (!rw_tryupgrade(&rwx->rwx_lock)) {
-		rw_exit(&rwx->rwx_lock);
-		rw_enter(&rwx->rwx_lock, RW_WRITER);
-	}
-	return (RW_READER);
-}
 
 /*
- * smb_rwx_rwrestore
- */
-void
-smb_rwx_rwdowngrade(
-    smb_rwx_t	*rwx,
-    krw_t	mode)
-{
-	ASSERT(rw_write_held(&rwx->rwx_lock));
-	ASSERT(rw_owner(&rwx->rwx_lock) == curthread);
-
-	if (mode == RW_WRITER) {
-		return;
-	}
-	ASSERT(mode == RW_READER);
-	mutex_enter(&rwx->rwx_mutex);
-	if (rwx->rwx_waiting) {
-		rwx->rwx_waiting = B_FALSE;
-		cv_broadcast(&rwx->rwx_cv);
-	}
-	mutex_exit(&rwx->rwx_mutex);
-	rw_downgrade(&rwx->rwx_lock);
-}
-
-/*
- * smb_rwx_wait
+ * smb_rwx_cvwait
  *
- * This function assumes the smb_rwx lock was enter in RW_READER or RW_WRITER
+ * Wait on rwx->rw_cv, dropping the rw lock and retake after wakeup.
+ * Assumes the smb_rwx lock was entered in RW_READER or RW_WRITER
  * mode. It will:
  *
  *	1) release the lock and save its current mode.
- *	2) wait until the condition variable is signaled. This can happen for
- *	   2 reasons: When a writer releases the lock or when the time out (if
- *	   provided) expires.
+ *	2) wait until the condition variable is signaled.
  *	3) re-acquire the lock in the mode saved in (1).
+ *
+ * Lock order: rwlock, mutex
  */
 int
-smb_rwx_rwwait(
+smb_rwx_cvwait(
     smb_rwx_t	*rwx,
     clock_t	timeout)
 {
 	krw_t	mode;
 	int	rc = 1;
-
-	mutex_enter(&rwx->rwx_mutex);
-	rwx->rwx_waiting = B_TRUE;
-	mutex_exit(&rwx->rwx_mutex);
 
 	if (rw_write_held(&rwx->rwx_lock)) {
 		ASSERT(rw_owner(&rwx->rwx_lock) == curthread);
@@ -897,21 +853,39 @@ smb_rwx_rwwait(
 		ASSERT(rw_read_held(&rwx->rwx_lock));
 		mode = RW_READER;
 	}
-	rw_exit(&rwx->rwx_lock);
 
 	mutex_enter(&rwx->rwx_mutex);
-	if (rwx->rwx_waiting) {
-		if (timeout == -1) {
-			cv_wait(&rwx->rwx_cv, &rwx->rwx_mutex);
-		} else {
-			rc = cv_reltimedwait(&rwx->rwx_cv, &rwx->rwx_mutex,
-			    timeout, TR_CLOCK_TICK);
-		}
+	rw_exit(&rwx->rwx_lock);
+
+	rwx->rwx_waiting = B_TRUE;
+	if (timeout == -1) {
+		cv_wait(&rwx->rwx_cv, &rwx->rwx_mutex);
+	} else {
+		rc = cv_reltimedwait(&rwx->rwx_cv, &rwx->rwx_mutex,
+		    timeout, TR_CLOCK_TICK);
 	}
 	mutex_exit(&rwx->rwx_mutex);
 
 	rw_enter(&rwx->rwx_lock, mode);
 	return (rc);
+}
+
+/*
+ * smb_rwx_cvbcast
+ *
+ * Wake up threads waiting on rx_cv
+ * The rw lock may or may not be held.
+ * The mutex MUST NOT be held.
+ */
+void
+smb_rwx_cvbcast(smb_rwx_t *rwx)
+{
+	mutex_enter(&rwx->rwx_mutex);
+	if (rwx->rwx_waiting) {
+		rwx->rwx_waiting = B_FALSE;
+		cv_broadcast(&rwx->rwx_cv);
+	}
+	mutex_exit(&rwx->rwx_mutex);
 }
 
 /* smb_idmap_... moved to smb_idmap.c */

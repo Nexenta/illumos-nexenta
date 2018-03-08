@@ -561,6 +561,7 @@ smb_user_delete(void *arg)
 {
 	smb_session_t	*session;
 	smb_user_t	*user = (smb_user_t *)arg;
+	uint32_t	ucount;
 
 	SMB_USER_VALID(user);
 	ASSERT(user->u_refcnt == 0);
@@ -573,7 +574,15 @@ smb_user_delete(void *arg)
 	smb_llist_enter(&session->s_user_list, RW_WRITER);
 	smb_llist_remove(&session->s_user_list, user);
 	smb_idpool_free(&session->s_uid_pool, user->u_uid);
+	ucount = smb_llist_get_count(&session->s_user_list);
 	smb_llist_exit(&session->s_user_list);
+
+	if (ucount == 0) {
+		smb_rwx_rwenter(&session->s_lock, RW_WRITER);
+		session->s_state = SMB_SESSION_STATE_SHUTDOWN;
+		smb_rwx_cvbcast(&session->s_lock);
+		smb_rwx_rwexit(&session->s_lock);
+	}
 
 	mutex_enter(&user->u_mutex);
 	mutex_exit(&user->u_mutex);

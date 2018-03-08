@@ -835,13 +835,10 @@ void    smb_slist_obj_move(smb_slist_t *dst, smb_slist_t *src, void *obj);
 
 void    smb_rwx_init(smb_rwx_t *rwx);
 void    smb_rwx_destroy(smb_rwx_t *rwx);
-#define	smb_rwx_rwenter(rwx, mode)	rw_enter(&(rwx)->rwx_lock, mode)
+void	smb_rwx_rwenter(smb_rwx_t *rwx, krw_t);
 void    smb_rwx_rwexit(smb_rwx_t *rwx);
-int	smb_rwx_rwwait(smb_rwx_t *rwx, clock_t timeout);
-#define	smb_rwx_xenter(rwx)		mutex_enter(&(rwx)->rwx_mutex)
-#define	smb_rwx_xexit(rwx)		mutex_exit(&(rwx)->rwx_mutex)
-krw_t   smb_rwx_rwupgrade(smb_rwx_t *rwx);
-void    smb_rwx_rwdowngrade(smb_rwx_t *rwx, krw_t mode);
+int	smb_rwx_cvwait(smb_rwx_t *rwx, clock_t timeout);
+void    smb_rwx_cvbcast(smb_rwx_t *rwx);
 
 void	smb_thread_init(smb_thread_t *, char *, smb_thread_ep_t,
 		void *, pri_t);

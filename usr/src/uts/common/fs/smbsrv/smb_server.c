@@ -1732,7 +1732,7 @@ smb_server_receiver(void *arg)
 	/* We stay in here until socket disconnect. */
 	smb_session_receiver(session);
 
-	session->s_state = SMB_SESSION_STATE_SHUTDOWN;
+	ASSERT(session->s_state == SMB_SESSION_STATE_SHUTDOWN);
 	smb_server_destroy_session(session);
 }
 
@@ -1977,31 +1977,51 @@ smb_server_lookup_ssnid(smb_server_t *sv, uint64_t ssnid)
 {
 	smb_llist_t *sl;
 	smb_session_t *sess;
-	smb_user_t *user;
+	smb_user_t *user = NULL;
 
 	sl = &sv->sv_session_list;
 	smb_llist_enter(sl, RW_READER);
-	sess = smb_llist_head(sl);
 
-	while (sess != NULL) {
+	for (sess = smb_llist_head(sl);
+	     sess != NULL;
+	     sess = smb_llist_next(sl, sess)) {
+
 		SMB_SESSION_VALID(sess);
 
-		if (sess->dialect < SMB_VERS_2_BASE) {
-			sess = smb_llist_next(sl, sess);
+		if (sess->dialect < SMB_VERS_2_BASE)
 			continue;
-		}
+
+		/*
+		 * Only look in sessions that are still active.
+		 * Avoid doing an smb_rwx_rwenter sess->s_lock
+		 * on every session here, but re-check below
+		 * with s_lock held.
+		 */
+		if (sess->s_state != SMB_SESSION_STATE_NEGOTIATED)
+			continue;
 
 		user = smb_session_lookup_ssnid(sess, ssnid);
 		if (user != NULL) {
-			smb_llist_exit(sl);
-			return (user);
+			break;
 		}
-
-		sess = smb_llist_next(sl, sess);
 	}
 
 	smb_llist_exit(sl);
-	return (NULL);
+
+	/* The sess check is warning avoidance. */
+	if (user != NULL && sess != NULL) {
+		/*
+		 * Re-check the state with s_lock held.
+		 */
+		smb_rwx_rwenter(&sess->s_lock, RW_READER);
+		if (sess->s_state != SMB_SESSION_STATE_NEGOTIATED) {
+			smb_user_release(user);
+			user = NULL;
+		}
+		smb_rwx_rwexit(&sess->s_lock);
+	}
+
+	return (user);
 }
 
 /* See also: libsmb smb_kmod_setcfg */
