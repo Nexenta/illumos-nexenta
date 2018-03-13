@@ -22,6 +22,11 @@
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  */
+
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #include <alloca.h>
 
 #include "libfmnotify.h"
@@ -258,18 +263,27 @@ bool_done:
 char *
 nd_get_event_fmri(nd_hdl_t *nhdl, fmev_t ev)
 {
-	nvlist_t *ev_nvl, *attr_nvl;
+	nvlist_t *ev_nvl, *sub_nvl;
+	nvlist_t **fault_nvl;
+	uint_t nnvl;
 	char *svcname;
 
 	if ((ev_nvl = fmev_attr_list(ev)) == NULL) {
 		nd_error(nhdl, "Failed to lookup event attr nvlist");
 		return (NULL);
 	}
-	if (nvlist_lookup_nvlist(ev_nvl, "attr", &attr_nvl) ||
-	    nvlist_lookup_string(attr_nvl, "svc-string", &svcname)) {
-		nd_error(nhdl, "Malformed event 0x%p", (void *)ev_nvl);
-		return (NULL);
+
+	/* This could be ireport or fault, check both */
+	if (nvlist_lookup_nvlist(ev_nvl, "attr", &sub_nvl) != 0) {
+		if (nvlist_lookup_nvlist_array(ev_nvl, "fault-list",
+		    &fault_nvl, &nnvl) != 0 || nnvl != 1)
+			return (NULL);
+		else
+			sub_nvl = fault_nvl[0];
 	}
+
+	if (nvlist_lookup_string(sub_nvl, "svc-string", &svcname) != 0)
+		return (NULL);
 
 	return (strdup((const char *)svcname));
 }
@@ -511,9 +525,9 @@ int
 nd_get_event_info(nd_hdl_t *nhdl, const char *class, fmev_t ev,
     nd_ev_info_t **ev_info)
 {
-	nvlist_t *ev_nvl, *attr_nvl;
+	nvlist_t *attr_nvl;
 	nd_ev_info_t *evi;
-	char *code, *uuid, *fmri, *from_state, *to_state, *reason;
+	char *code, *uuid, *from_state, *to_state, *reason;
 
 	if ((evi = calloc(1, sizeof (nd_ev_info_t))) == NULL) {
 		nd_error(nhdl, "Failed to allocate memory");
@@ -525,21 +539,34 @@ nd_get_event_info(nd_hdl_t *nhdl, const char *class, fmev_t ev,
 	 * we hold the event.
 	 */
 	fmev_hold(ev);
+
 	evi->ei_ev = ev;
-	ev_nvl = fmev_attr_list(ev);
+	evi->ei_class = fmev_class(ev);
+	evi->ei_payload = fmev_attr_list(ev);
+
+	if (nvlist_lookup_string(evi->ei_payload, FM_SUSPECT_UUID,
+	    &uuid) == 0) {
+		evi->ei_uuid = strdup(uuid);
+	} else {
+		nd_error(nhdl, "Malformed event");
+		nd_dump_nvlist(nhdl, evi->ei_payload);
+		nd_free_event_info(evi);
+		return (-1);
+	}
 
 	/*
-	 * Lookup the MSGID, event description and severity and KA URL
+	 * Lookup the MSGID, type, severity, description, and KA URL.
 	 *
 	 * For FMA list.* events we just pull it out of the the event nvlist.
 	 * For all other events we call a utility function that computes the
 	 * diagcode using the dict name and class.
 	 */
 	evi->ei_diagcode = calloc(32, sizeof (char));
-	if ((nvlist_lookup_string(ev_nvl, FM_SUSPECT_DIAG_CODE, &code) == 0 &&
-	    strcpy(evi->ei_diagcode, code)) ||
-	    nd_get_diagcode(nhdl, "SMF", class, evi->ei_diagcode, 32)
-	    == 0) {
+	if ((nvlist_lookup_string(evi->ei_payload, FM_SUSPECT_DIAG_CODE,
+	    &code) == 0 && strcpy(evi->ei_diagcode, code) != NULL) ||
+	    nd_get_diagcode(nhdl, "SMF", class, evi->ei_diagcode, 32) == 0) {
+		evi->ei_type = fmd_msg_getitem_id(nhdl->nh_msghdl,
+		    NULL, evi->ei_diagcode, FMD_MSG_ITEM_TYPE);
 		evi->ei_severity = fmd_msg_getitem_id(nhdl->nh_msghdl,
 		    NULL, evi->ei_diagcode, FMD_MSG_ITEM_SEVERITY);
 		evi->ei_descr = fmd_msg_getitem_id(nhdl->nh_msghdl,
@@ -549,41 +576,32 @@ nd_get_event_info(nd_hdl_t *nhdl, const char *class, fmev_t ev,
 	} else
 		(void) strcpy(evi->ei_diagcode, ND_UNKNOWN);
 
-	if (!evi->ei_severity)
+	if (evi->ei_type == NULL)
+		evi->ei_type = strdup(ND_UNKNOWN);
+	if (evi->ei_severity == NULL)
 		evi->ei_severity = strdup(ND_UNKNOWN);
-	if (!evi->ei_descr)
+	if (evi->ei_descr == NULL)
 		evi->ei_descr = strdup(ND_UNKNOWN);
-	if (!evi->ei_url)
+	if (evi->ei_url == NULL)
 		evi->ei_url = strdup(ND_UNKNOWN);
 
-	evi->ei_payload = ev_nvl;
-	evi->ei_class = fmev_class(ev);
-	if (nvlist_lookup_string(ev_nvl, FM_SUSPECT_UUID, &uuid) == 0)
-		evi->ei_uuid = strdup(uuid);
-	else {
-		nd_error(nhdl, "Malformed event");
-		nd_dump_nvlist(nhdl, evi->ei_payload);
-		nd_free_event_info(evi);
-		return (-1);
-	}
+	if ((evi->ei_fmri = nd_get_event_fmri(nhdl, ev)) == NULL)
+		evi->ei_fmri = strdup(ND_UNKNOWN);
 
 	if (strncmp(class, "ireport.os.smf", 14) == 0) {
-		if ((fmri = nd_get_event_fmri(nhdl, ev)) == NULL) {
-			nd_error(nhdl, "Failed to get fmri from event payload");
-			nd_free_event_info(evi);
-			return (-1);
-		}
-		if (nvlist_lookup_nvlist(evi->ei_payload, "attr", &attr_nvl) ||
-		    nvlist_lookup_string(attr_nvl, "from-state", &from_state) ||
-		    nvlist_lookup_string(attr_nvl, "to-state", &to_state) ||
-		    nvlist_lookup_string(attr_nvl, "reason-long", &reason)) {
+		if (nvlist_lookup_nvlist(evi->ei_payload, "attr",
+		    &attr_nvl) != 0 ||
+		    nvlist_lookup_string(attr_nvl, "from-state",
+		    &from_state) != 0 ||
+		    nvlist_lookup_string(attr_nvl, "to-state",
+		    &to_state) != 0 ||
+		    nvlist_lookup_string(attr_nvl, "reason-long",
+		    &reason) != 0) {
 			nd_error(nhdl, "Malformed event");
 			nd_dump_nvlist(nhdl, evi->ei_payload);
 			nd_free_event_info(evi);
-			free(fmri);
 			return (-1);
 		}
-		evi->ei_fmri = fmri;
 		evi->ei_to_state = strdup(to_state);
 		evi->ei_from_state = strdup(from_state);
 		evi->ei_reason = strdup(reason);

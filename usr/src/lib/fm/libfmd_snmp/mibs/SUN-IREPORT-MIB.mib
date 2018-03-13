@@ -21,6 +21,7 @@
 
 --
 -- Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+-- Copyright 2018 Nexenta Systems, Inc.
 --
 
 SUN-IREPORT-MIB DEFINITIONS ::= BEGIN
@@ -28,42 +29,27 @@ SUN-IREPORT-MIB DEFINITIONS ::= BEGIN
 IMPORTS
 	products
 		FROM SUN-MIB
-	Gauge32, Unsigned32, OBJECT-TYPE, NOTIFICATION-TYPE, MODULE-IDENTITY
+	OBJECT-TYPE, NOTIFICATION-TYPE, MODULE-IDENTITY
 		FROM SNMPv2-SMI
 	TEXTUAL-CONVENTION, DateAndTime, DisplayString
 		FROM SNMPv2-TC
 	OBJECT-GROUP, NOTIFICATION-GROUP
-		FROM SNMPv2-CONF
-	URLString
-		FROM NETWORK-SERVICES-MIB;
+		FROM SNMPv2-CONF;
 
 sunIreportMIB MODULE-IDENTITY
-	LAST-UPDATED	"201007220000Z" -- July 22, 2010
-	ORGANIZATION	"Oracle Corporation"
-	CONTACT-INFO	"Oracle Corporation
-			 500 Oracle Parkway
-			 Redwood Shores, CA 94065
-
-			 1.650.506.7000 or
-			 1.800.392.2999
-
-			 http://www.oracle.com
-			 or contact your local support representative"
+	LAST-UPDATED	"201803120000Z"
+	ORGANIZATION	"Nexenta Systems, Inc."
+	CONTACT-INFO	"https://www.nexenta.com"
 	DESCRIPTION
 		"Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
+		Copyright 2018 Nexenta Systems, Inc.
 
-		MIB providing access to Oracle Solaris Fault Management
-		Informational Report Notifications"
-		
-	REVISION	"201007220000Z" -- July 22, 2010
-	DESCRIPTION	"Version: 1.0"
+		MIB providing access to Fault Management Informational Report Notifications."
+	REVISION	"201803120000Z"
+	DESCRIPTION	"Version: 1.1"
 	::= { ireport 1 }
 
-SunIreportSmfFmriString ::= TEXTUAL-CONVENTION
-	STATUS		current
-	DESCRIPTION
-		"Represents the FMRI of an SMF service"
-	SYNTAX		OCTET STRING (SIZE (0..1023))
+ireport OBJECT IDENTIFIER ::= { products 197 }
 
 SunIreportSmfState ::= TEXTUAL-CONVENTION
 	STATUS		current
@@ -78,26 +64,7 @@ SunIreportSmfState ::= TEXTUAL-CONVENTION
 		uninitialized(5)
 	}
 
-ireport OBJECT IDENTIFIER ::= { products 197 }
-
-sunIreportNotification       OBJECT-TYPE
-    SYNTAX      SunIreportNotificationEntry
-    MAX-ACCESS  accessible-for-notify
-    STATUS      current
-    DESCRIPTION
-		"Solaris informational event notification"
-	::= { sunIreportMIB 1 }
-
-SunIreportNotificationEntry ::= SEQUENCE {
- 	sunIreportHostname		DisplayString,
-	sunIreportMsgid			DisplayString,
-	sunIreportDescription		DisplayString,
-	sunIreportTime			DateAndTime,
-	sunIreportSmfFMRI		SunIreportSmfFmriString,
-	sunIreportSmfFromState		SunIreportSmfState,
-	sunIreportSmfToState		SunIreportSmfState,
-	sunIreportSmfTransitionReason	DisplayString
-}
+sunIreportNotification OBJECT IDENTIFIER ::= { sunIreportMIB 1 }
 
 sunIreportHostname OBJECT-TYPE
 	SYNTAX		DisplayString
@@ -115,13 +82,21 @@ sunIreportMsgid OBJECT-TYPE
 		"Message ID of Knowledge Article associated with this event"
 	::= { sunIreportNotification 2 }
 
+sunIreportSeverity OBJECT-TYPE
+	SYNTAX		DisplayString
+	MAX-ACCESS	accessible-for-notify
+	STATUS		current
+	DESCRIPTION
+		"Severity of the event"
+	::= { sunIreportNotification 3 }
+
 sunIreportDescription OBJECT-TYPE
 	SYNTAX		DisplayString
 	MAX-ACCESS	accessible-for-notify
 	STATUS		current
 	DESCRIPTION
 		"Description of the event"
-	::= { sunIreportNotification 3 }
+	::= { sunIreportNotification 4 }
 
 sunIreportTime OBJECT-TYPE
 	SYNTAX		DateAndTime
@@ -129,15 +104,15 @@ sunIreportTime OBJECT-TYPE
 	STATUS		current
 	DESCRIPTION
 		"Timestamp of the event"
-	::= { sunIreportNotification 4 }
+	::= { sunIreportNotification 5 }
 
 sunIreportSmfFMRI OBJECT-TYPE
-	SYNTAX		SunIreportSmfFmriString
+	SYNTAX		DisplayString
 	MAX-ACCESS	accessible-for-notify
 	STATUS		current
 	DESCRIPTION
 		"FMRI of the SMF service asssociated with this event"
-	::= { sunIreportNotification 5 }
+	::= { sunIreportNotification 6 }
 
 sunIreportSmfFromState OBJECT-TYPE
 	SYNTAX		SunIreportSmfState
@@ -145,7 +120,7 @@ sunIreportSmfFromState OBJECT-TYPE
 	STATUS		current
 	DESCRIPTION
 		"Previous state of the service that transitioned"
-	::= { sunIreportNotification 6 }
+	::= { sunIreportNotification 7 }
 
 sunIreportSmfToState OBJECT-TYPE
 	SYNTAX		SunIreportSmfState
@@ -153,7 +128,7 @@ sunIreportSmfToState OBJECT-TYPE
 	STATUS		current
 	DESCRIPTION
 		"Final state of the service that transitioned"
-	::= { sunIreportNotification 7 }
+	::= { sunIreportNotification 8 }
 
 sunIreportSmfTransitionReason OBJECT-TYPE
 	SYNTAX		DisplayString
@@ -161,8 +136,7 @@ sunIreportSmfTransitionReason OBJECT-TYPE
 	STATUS		current
 	DESCRIPTION
 		"Reason for the state transition"
-	::= { sunIreportNotification 8 }
-
+	::= { sunIreportNotification 9 }
 
 --
 -- RFC 3584 requires that the next-to-last sub-ID be zero to allow for
@@ -175,6 +149,7 @@ sunIreportTrap NOTIFICATION-TYPE
 	OBJECTS	{
 		sunIreportHostname,
 		sunIreportMsgid,
+		sunIreportSeverity,
 		sunIreportDescription,
 		sunIreportTime,
 		sunIreportSmfFMRI,
@@ -184,8 +159,7 @@ sunIreportTrap NOTIFICATION-TYPE
 	}
 	STATUS	current
 	DESCRIPTION
-		"Trap notification that a Solaris informational report has
-		occurred.
+		"Trap notification that a informational report has occurred.
 		
 		The last four entries in the trap will only be set for SMF
 		service state transition (STN) events.  The following values for
@@ -201,4 +175,3 @@ sunIreportTrap NOTIFICATION-TYPE
 	::= { sunIreportTraps 1 }
 
 END
-
