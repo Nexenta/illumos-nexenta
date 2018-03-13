@@ -22,6 +22,11 @@
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
  */
+
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #ifndef _LIBFMNOTIFY_H
 #define	_LIBFMNOTIFY_H
 
@@ -66,18 +71,18 @@ const char FMNOTIFY_MSG_DOMAIN[] = "FMNOTIFY";
 typedef struct nd_ev_info {
 	fmev_t ei_ev;
 	const char *ei_class;
-	char *ei_descr;
-	char *ei_severity;
-	char *ei_diagcode;
-	char *ei_url;
 	char *ei_uuid;
+	char *ei_diagcode;
+	char *ei_type;
+	char *ei_severity;
+	char *ei_url;
+	char *ei_descr;
 	char *ei_fmri;
 	char *ei_from_state;
 	char *ei_to_state;
 	char *ei_reason;
 	nvlist_t *ei_payload;
 } nd_ev_info_t;
-
 
 void nd_cleanup(nd_hdl_t *);
 void nd_dump_nvlist(nd_hdl_t *, nvlist_t *);

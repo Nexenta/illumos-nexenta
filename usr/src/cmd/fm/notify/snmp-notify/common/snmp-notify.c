@@ -21,27 +21,34 @@
 
 /*
  * Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
+ */
+
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #include <sys/fm/protocol.h>
+
 #include <fm/fmd_snmp.h>
 #include <fm/fmd_msg.h>
 #include <fm/libfmevent.h>
+
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
+
+#include <alloca.h>
 #include <errno.h>
+#include <limits.h>
 #include <locale.h>
 #include <netdb.h>
-#include <signal.h>
-#include <strings.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <limits.h>
-#include <alloca.h>
 #include <priv_utils.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <unistd.h>
 #include <zone.h>
+
 #include "libfmnotify.h"
 
 /*
@@ -52,16 +59,28 @@
 #define	SVCNAME		"system/fm/snmp-notify"
 
 typedef struct ireport_trap {
+	long long tstamp;
 	char *host;
 	char *msgid;
+	char *severity;
 	char *desc;
-	long long tstamp;
 	char *fmri;
 	uint32_t from_state;
 	uint32_t to_state;
 	char *reason;
 	boolean_t is_stn_event;
 } ireport_trap_t;
+
+typedef struct fmproblem_trap {
+	char *uuid;
+	char *host;
+	char *code;
+	char *type;
+	char *severity;
+	char *url;
+	char *descr;
+	char *fmri;
+} fmproblem_trap_t;
 
 static nd_hdl_t *nhdl;
 static const char optstr[] = "dfR:";
@@ -166,6 +185,8 @@ send_ireport_trap(ireport_trap_t *t)
 	    { SUNIREPORTHOSTNAME_OID };
 	static const oid sunIreportMsgid_oid[] =
 	    { SUNIREPORTMSGID_OID };
+	static const oid sunIreportSeverity_oid[] =
+	    { SUNIREPORTSEVERITY_OID };
 	static const oid sunIreportDescription_oid[] =
 	    { SUNIREPORTDESCRIPTION_OID };
 	static const oid sunIreportTime_oid[] =
@@ -182,8 +203,9 @@ send_ireport_trap(ireport_trap_t *t)
 	const size_t
 	    sunIreport_base_len = OID_LENGTH(sunIreportHostname_oid);
 
+	size_t oid_len = sunIreport_base_len * sizeof (oid);
 	size_t var_len = sunIreport_base_len + 1;
-	oid var_name[MAX_OID_LEN];
+	oid var_name[MAX_OID_LEN] = { 0 };
 
 	netsnmp_variable_list *notification_vars = NULL;
 
@@ -205,53 +227,48 @@ send_ireport_trap(ireport_trap_t *t)
 		return;
 	}
 
-	(void) memcpy(var_name, sunIreportHostname_oid, sunIreport_base_len *
-	    sizeof (oid));
+	(void) memcpy(var_name, sunIreportHostname_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name,
-	    sunIreport_base_len + 1, ASN_OCTET_STR, (uchar_t *)t->host,
-	    strlen(t->host));
+	    var_len, ASN_OCTET_STR, (uchar_t *)t->host, strlen(t->host));
 
-	(void) memcpy(var_name, sunIreportMsgid_oid,
-	    sunIreport_base_len * sizeof (oid));
+	(void) memcpy(var_name, sunIreportMsgid_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name,
-	    sunIreport_base_len + 1, ASN_OCTET_STR, (uchar_t *)t->msgid,
-	    strlen(t->msgid));
+	    var_len, ASN_OCTET_STR, (uchar_t *)t->msgid, strlen(t->msgid));
 
-	(void) memcpy(var_name, sunIreportDescription_oid,
-	    sunIreport_base_len * sizeof (oid));
+	(void) memcpy(var_name, sunIreportSeverity_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name,
-	    sunIreport_base_len + 1, ASN_OCTET_STR, (uchar_t *)t->desc,
-	    strlen(t->desc));
+	    var_len, ASN_OCTET_STR, (uchar_t *)t->severity,
+	    strlen(t->severity));
 
-	(void) memcpy(var_name, sunIreportTime_oid, sunIreport_base_len *
-	    sizeof (oid));
+	(void) memcpy(var_name, sunIreportDescription_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name,
-	    sunIreport_base_len + 1, ASN_OCTET_STR, dt, dt_len);
+	    var_len, ASN_OCTET_STR, (uchar_t *)t->desc, strlen(t->desc));
+
+	(void) memcpy(var_name, sunIreportTime_oid, oid_len);
+	(void) snmp_varlist_add_variable(&notification_vars, var_name,
+	    var_len, ASN_OCTET_STR, dt, dt_len);
 
 	if (t->is_stn_event) {
-		(void) memcpy(var_name, sunIreportSmfFmri_oid,
-		    sunIreport_base_len * sizeof (oid));
+		(void) memcpy(var_name, sunIreportSmfFmri_oid, oid_len);
 		(void) snmp_varlist_add_variable(&notification_vars, var_name,
-		    sunIreport_base_len + 1, ASN_OCTET_STR, (uchar_t *)t->fmri,
+		    var_len, ASN_OCTET_STR, (uchar_t *)t->fmri,
 		    strlen(t->fmri));
 
-		(void) memcpy(var_name, sunIreportSmfFromState_oid,
-		    sunIreport_base_len * sizeof (oid));
+		(void) memcpy(var_name, sunIreportSmfFromState_oid, oid_len);
 		(void) snmp_varlist_add_variable(&notification_vars, var_name,
-		    sunIreport_base_len + 1, ASN_INTEGER,
-		    (uchar_t *)&t->from_state, sizeof (uint32_t));
+		    var_len, ASN_INTEGER, (uchar_t *)&t->from_state,
+		    sizeof (uint32_t));
 
-		(void) memcpy(var_name, sunIreportSmfToState_oid,
-		    sunIreport_base_len * sizeof (oid));
+		(void) memcpy(var_name, sunIreportSmfToState_oid, oid_len);
 		(void) snmp_varlist_add_variable(&notification_vars, var_name,
-		    sunIreport_base_len + 1, ASN_INTEGER,
-		    (uchar_t *)&t->to_state, sizeof (uint32_t));
+		    var_len, ASN_INTEGER, (uchar_t *)&t->to_state,
+		    sizeof (uint32_t));
 
 		(void) memcpy(var_name, sunIreportSmfTransitionReason_oid,
-		    sunIreport_base_len * sizeof (oid));
+		    oid_len);
 		(void) snmp_varlist_add_variable(&notification_vars, var_name,
-		    sunIreport_base_len + 1, ASN_OCTET_STR,
-		    (uchar_t *)t->reason, strlen(t->reason));
+		    var_len, ASN_OCTET_STR, (uchar_t *)t->reason,
+		    strlen(t->reason));
 	}
 
 	/*
@@ -266,55 +283,41 @@ send_ireport_trap(ireport_trap_t *t)
 	nd_debug(nhdl, "Sent SNMP trap for %s", t->msgid);
 
 	snmp_free_varbind(notification_vars);
-
 }
 
-/*ARGSUSED*/
 static void
-send_fm_trap(const char *uuid, const char *code, const char *url,
-    const char *descr)
+send_fm_trap(fmproblem_trap_t *t)
 {
 	static const oid sunFmProblemTrap_oid[] = { SUNFMPROBLEMTRAP_OID };
 	const size_t sunFmProblemTrap_len = OID_LENGTH(sunFmProblemTrap_oid);
 
 	static const oid sunFmProblemUUID_oid[] =
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_UUID };
+	static const oid sunFmProblemHostname_oid[] =
+	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_HOSTNAME };
 	static const oid sunFmProblemCode_oid[] =
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_CODE };
+	static const oid sunFmProblemType_oid[] =
+	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_TYPE };
+	static const oid sunFmProblemSeverity_oid[] =
+	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_SEVERITY };
 	static const oid sunFmProblemURL_oid[] =
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_URL };
 	static const oid sunFmProblemDescr_oid[] =
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_DESCR };
+	static const oid sunFmProblemFMRI_oid[] =
+	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_FMRI };
 
 	const size_t sunFmProblem_base_len = OID_LENGTH(sunFmProblemUUID_oid);
 
-	size_t uuid_len = strlen(uuid);
-	size_t var_len = sunFmProblem_base_len + 1 + uuid_len;
-	oid var_name[MAX_OID_LEN];
+	size_t oid_len = sunFmProblem_base_len * sizeof (oid);
+	size_t var_len = sunFmProblem_base_len + 1;
+	oid var_name[MAX_OID_LEN] = { 0 };
 
 	netsnmp_variable_list *notification_vars = NULL;
 
-	/*
-	 * The format of our trap varbinds' oids is as follows:
-	 *
-	 * +-----------------------+---+--------+----------+------+
-	 * | SUNFMPROBLEMTABLE_OID | 1 | column | uuid_len | uuid |
-	 * +-----------------------+---+--------+----------+------+
-	 *					 \---- index ----/
-	 *
-	 * A common mistake here is to send the trap with varbinds that
-	 * do not contain the index.  All the indices are the same, and
-	 * all the oids are the same length, so the only thing we need to
-	 * do for each varbind is set the table and column parts of the
-	 * variable name.
-	 */
-
 	if (var_len > MAX_OID_LEN)
 		return;
-
-	var_name[sunFmProblem_base_len] = (oid)uuid_len;
-	for (int i = 0; i < uuid_len; i++)
-		var_name[i + sunFmProblem_base_len + 1] = (oid)uuid[i];
 
 	/*
 	 * Ordinarily, we would need to add the OID of the trap itself
@@ -324,22 +327,40 @@ send_fm_trap(const char *uuid, const char *code, const char *url,
 	 * the objects we're sending.
 	 */
 
-	(void) memcpy(var_name, sunFmProblemUUID_oid,
-	    sunFmProblem_base_len * sizeof (oid));
+	(void) memcpy(var_name, sunFmProblemUUID_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
-	    ASN_OCTET_STR, (uchar_t *)uuid, strlen(uuid));
-	(void) memcpy(var_name, sunFmProblemCode_oid,
-	    sunFmProblem_base_len * sizeof (oid));
+	    ASN_OCTET_STR, (uchar_t *)t->uuid, strlen(t->uuid));
+
+	(void) memcpy(var_name, sunFmProblemHostname_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
-	    ASN_OCTET_STR, (uchar_t *)code, strlen(code));
-	(void) memcpy(var_name, sunFmProblemURL_oid,
-	    sunFmProblem_base_len * sizeof (oid));
+	    ASN_OCTET_STR, (uchar_t *)t->host, strlen(t->host));
+
+	(void) memcpy(var_name, sunFmProblemCode_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
-	    ASN_OCTET_STR, (uchar_t *)url, strlen(url));
-	(void) memcpy(var_name, sunFmProblemDescr_oid,
-	    sunFmProblem_base_len * sizeof (oid));
+	    ASN_OCTET_STR, (uchar_t *)t->code, strlen(t->code));
+
+	(void) memcpy(var_name, sunFmProblemType_oid, oid_len);
 	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
-	    ASN_OCTET_STR, (uchar_t *)descr, strlen(descr));
+	    ASN_OCTET_STR, (uchar_t *)t->type, strlen(t->type));
+
+	(void) memcpy(var_name, sunFmProblemSeverity_oid, oid_len);
+	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
+	    ASN_OCTET_STR, (uchar_t *)t->severity, strlen(t->severity));
+
+	(void) memcpy(var_name, sunFmProblemURL_oid, oid_len);
+	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
+	    ASN_OCTET_STR, (uchar_t *)t->url, strlen(t->url));
+
+	(void) memcpy(var_name, sunFmProblemDescr_oid, oid_len);
+	(void) snmp_varlist_add_variable(&notification_vars, var_name, var_len,
+	    ASN_OCTET_STR, (uchar_t *)t->descr, strlen(t->descr));
+
+	if (strcmp(t->fmri, ND_UNKNOWN) != 0) {
+		(void) memcpy(var_name, sunFmProblemFMRI_oid, oid_len);
+		(void) snmp_varlist_add_variable(&notification_vars, var_name,
+		    var_len, ASN_OCTET_STR, (uchar_t *)t->fmri,
+		    strlen(t->fmri));
+	}
 
 	/*
 	 * This function is capable of sending both v1 and v2/v3 traps.
@@ -350,7 +371,7 @@ send_fm_trap(const char *uuid, const char *code, const char *url,
 	    sunFmProblemTrap_oid[sunFmProblemTrap_len - 1],
 	    (oid *)sunFmProblemTrap_oid, sunFmProblemTrap_len - 2,
 	    notification_vars);
-	nd_debug(nhdl, "Sent SNMP trap for %s", code);
+	nd_debug(nhdl, "Sent SNMP trap for %s", t->code);
 
 	snmp_free_varbind(notification_vars);
 }
@@ -363,7 +384,7 @@ send_fm_trap(const char *uuid, const char *code, const char *url,
  * uninitialized(5)
  *
  * This function converts a string representation of an SMF service state
- * to it's corresponding enum val.
+ * to its corresponding enum val.
  */
 static int
 state_to_val(char *statestr, uint32_t *stateval)
@@ -418,6 +439,7 @@ ireport_cb(fmev_t ev, const char *class, nvlist_t *nvl, void *arg)
 
 	swtrap.host = hostname;
 	swtrap.msgid = ev_info->ei_diagcode;
+	swtrap.severity = ev_info->ei_severity;
 	swtrap.desc = ev_info->ei_descr;
 	swtrap.tstamp = (time_t)fmev_time_sec(ev);
 
@@ -444,10 +466,10 @@ irpt_done:
 static void
 list_cb(fmev_t ev, const char *class, nvlist_t *nvl, void *arg)
 {
-	char *uuid;
 	uint8_t version;
 	nd_ev_info_t *ev_info = NULL;
 	nvlist_t **pref_nvl = NULL;
+	fmproblem_trap_t fmtrap;
 	uint_t npref;
 	int ret;
 	boolean_t domsg;
@@ -483,21 +505,22 @@ list_cb(fmev_t ev, const char *class, nvlist_t *nvl, void *arg)
 		goto listcb_done;
 	}
 
-	if (nvlist_lookup_uint8(ev_info->ei_payload, FM_VERSION, &version)
-	    != 0 || version > FM_SUSPECT_VERSION) {
+	if (nvlist_lookup_uint8(ev_info->ei_payload, FM_VERSION,
+	    &version) != 0 || version > FM_SUSPECT_VERSION) {
 		nd_error(nhdl, "invalid event version: %u", version);
 		goto listcb_done;
 	}
 
-	(void) nvlist_lookup_string(ev_info->ei_payload, FM_SUSPECT_UUID,
-	    &uuid);
+	fmtrap.uuid = ev_info->ei_uuid;
+	fmtrap.host = hostname;
+	fmtrap.code = ev_info->ei_diagcode;
+	fmtrap.type = ev_info->ei_type;
+	fmtrap.severity = ev_info->ei_severity;
+	fmtrap.url = ev_info->ei_url;
+	fmtrap.descr = ev_info->ei_descr;
+	fmtrap.fmri = ev_info->ei_fmri;
 
-	if (strcmp(ev_info->ei_url, ND_UNKNOWN) != 0) {
-		send_fm_trap(uuid, ev_info->ei_diagcode, ev_info->ei_url,
-		    ev_info->ei_descr);
-	} else {
-		nd_error(nhdl, "failed to format url for %s", uuid);
-	}
+	send_fm_trap(&fmtrap);
 listcb_done:
 	nd_free_nvlarray(pref_nvl, npref);
 	if (ev_info)
