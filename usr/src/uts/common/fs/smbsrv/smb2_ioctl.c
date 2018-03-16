@@ -22,7 +22,7 @@
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <smbsrv/smb2_kproto.h>
-#include <smbsrv/winioctl.h>
+#include <smb/winioctl.h>
 
 smb_sdrc_t
 smb2_ioctl(smb_request_t *sr)

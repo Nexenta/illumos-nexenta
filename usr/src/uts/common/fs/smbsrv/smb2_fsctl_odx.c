@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -22,7 +22,7 @@
 
 #include <smbsrv/smb2_kproto.h>
 #include <smbsrv/smb_fsops.h>
-#include <smbsrv/winioctl.h>
+#include <smb/winioctl.h>
 
 /*
  * Summary of how offload data transfer works:
