@@ -51,6 +51,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <uuid/uuid.h>
 
 #include <netsmb/smb.h>
 #include <netsmb/smb_lib.h>
@@ -58,6 +59,8 @@
 #include <netsmb/netbios.h>
 #include <netsmb/nb_lib.h>
 #include <netsmb/smb_dev.h>
+
+#include <cflib.h>
 
 #include "charsets.h"
 #include "private.h"
@@ -126,6 +129,7 @@ smb_iod_connect(smb_ctx_t *ctx)
 {
 	smbioc_ossn_t *ossn = &ctx->ct_ssn;
 	smbioc_ssn_work_t *work = &ctx->ct_work;
+	char *uuid_str;
 	int err;
 	struct mbdata blob;
 	char *nego_buf = NULL;
@@ -154,6 +158,20 @@ smb_iod_connect(smb_ctx_t *ctx)
 			return (err);
 		}
 	}
+
+	/*
+	 * Get local machine uuid.
+	 */
+	uuid_str = cf_get_client_uuid();
+	if (uuid_str == NULL) {
+		err = EINVAL;
+		smb_error(dgettext(TEXT_DOMAIN,
+		    "can't get local UUID"), err);
+			return (err);
+	}
+	(void) uuid_parse(uuid_str, ctx->ct_work.wk_cl_guid);
+	free(uuid_str);
+	uuid_str = NULL;
 
 	/*
 	 * We're called with each IP address

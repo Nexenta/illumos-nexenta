@@ -20,7 +20,7 @@
 #
 #
 # Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 include ../../../Makefile.master
@@ -36,7 +36,6 @@ HDRS=	alloc.h			\
 	netbios.h		\
 	netrauth.h		\
 	nmpipes.h		\
-	ntaccess.h		\
 	ntifs.h			\
 	ntlocale.h		\
 	smb_sid.h		\
@@ -60,7 +59,6 @@ HDRS=	alloc.h			\
 	smb2_kproto.h		\
 	string.h		\
 	svrapi.h		\
-	winioctl.h		\
 	winsvc.h
 
 NDLHDRS= dssetup.ndl		\

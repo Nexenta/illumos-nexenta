@@ -36,6 +36,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
+ * Portions Copyright (C) 2001 - 2013 Apple Inc. All rights reserved.
  * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
@@ -69,21 +70,24 @@
 #include <netsmb/smb_osdep.h>
 
 #include <netsmb/smb.h>
+#include <netsmb/smb2.h>
 #include <netsmb/smb_conn.h>
 #include <netsmb/smb_rq.h>
+#include <netsmb/smb2_rq.h>
 #include <netsmb/smb_subr.h>
 #include <netsmb/smb_tran.h>
 #include <netsmb/smb_trantcp.h>
 
 /*
- * SMB messages are up to 64K.
- * Let's leave room for two.
+ * SMB messages are up to 64K.  Let's leave room for two.
+ * If we negotiate up to SMB2, increase these. XXX todo
  */
 static int smb_tcpsndbuf = 0x20000;
 static int smb_tcprcvbuf = 0x20000;
 static int smb_connect_timeout = 10; /* seconds */
 
-static int smb_iod_process(smb_vc_t *, mblk_t *);
+static int smb1_iod_process(smb_vc_t *, mblk_t *);
+static int smb2_iod_process(smb_vc_t *, mblk_t *);
 static int smb_iod_send_echo(smb_vc_t *, cred_t *cr);
 static int smb_iod_logoff(struct smb_vc *vcp, cred_t *cr);
 
@@ -194,13 +198,15 @@ smb_iod_disconnect(struct smb_vc *vcp)
 /*
  * Send one request.
  *
+ * SMB1 only
+ *
  * Called by _addrq (for internal requests)
  * and _sendall (via _addrq, _multirq, _waitrq)
  * Errors are reported via the smb_rq, using:
  *   smb_iod_rqprocessed(rqp, ...)
  */
 static void
-smb_iod_sendrq(struct smb_rq *rqp)
+smb1_iod_sendrq(struct smb_rq *rqp)
 {
 	struct smb_vc *vcp = rqp->sr_vc;
 	mblk_t *m;
@@ -208,6 +214,7 @@ smb_iod_sendrq(struct smb_rq *rqp)
 
 	ASSERT(vcp);
 	ASSERT(RW_WRITE_HELD(&vcp->iod_rqlock));
+	ASSERT((vcp->vc_flags & SMBV_SMB2) == 0);
 
 	/*
 	 * Internal requests are allowed in any state;
@@ -246,6 +253,115 @@ smb_iod_sendrq(struct smb_rq *rqp)
 
 	error = SMB_TRAN_SEND(vcp, m);
 	m = 0; /* consumed by SEND */
+
+	rqp->sr_lerror = error;
+	if (error == 0) {
+		SMBRQ_LOCK(rqp);
+		rqp->sr_flags |= SMBR_SENT;
+		rqp->sr_state = SMBRQ_SENT;
+		SMBRQ_UNLOCK(rqp);
+		return;
+	}
+	/*
+	 * Transport send returned an error.
+	 * Was it a fatal one?
+	 */
+	if (SMB_TRAN_FATAL(vcp, error)) {
+		/*
+		 * No further attempts should be made
+		 */
+	fatal:
+		SMBSDEBUG("TRAN_SEND returned fatal error %d\n", error);
+		smb_iod_rqprocessed(rqp, error, SMBR_RESTART);
+		return;
+	}
+}
+
+/*
+ * Send one request.
+ *
+ * SMB2 only
+ *
+ * Called by _addrq (for internal requests)
+ * and _sendall (via _addrq, _multirq, _waitrq)
+ * Errors are reported via the smb_rq, using:
+ *   smb_iod_rqprocessed(rqp, ...)
+ */
+static void
+smb2_iod_sendrq(struct smb_rq *rqp)
+{
+	struct smb_rq *c_rqp;	/* compound */
+	struct smb_vc *vcp = rqp->sr_vc;
+	mblk_t *top_m;
+	mblk_t *cur_m;
+	int error;
+
+	ASSERT(vcp);
+	ASSERT(RW_WRITE_HELD(&vcp->iod_rqlock));
+	ASSERT((vcp->vc_flags & SMBV_SMB2) != 0);
+
+	/*
+	 * Internal requests are allowed in any state;
+	 * otherwise should be active.
+	 */
+	if ((rqp->sr_flags & SMBR_INTERNAL) == 0 &&
+	    vcp->vc_state != SMBIOD_ST_VCACTIVE) {
+		SMBIODEBUG("bad vc_state=%d\n", vcp->vc_state);
+		smb_iod_rqprocessed(rqp, ENOTCONN, SMBR_RESTART);
+		return;
+	}
+
+	/*
+	 * Overwrite the SMB header with the assigned MID and
+	 * (if we're signing) sign it.  If there are compounded
+	 * requests after the top one, do those too.
+	 */
+	smb2_rq_fillhdr(rqp);
+	if (rqp->sr2_rqflags & SMB2_FLAGS_SIGNED) {
+		smb2_rq_sign(rqp);
+	}
+	c_rqp = rqp->sr2_compound_next;
+	while (c_rqp != NULL) {
+		smb2_rq_fillhdr(c_rqp);
+		if (c_rqp->sr2_rqflags & SMB2_FLAGS_SIGNED) {
+			smb2_rq_sign(c_rqp);
+		}
+		c_rqp = c_rqp->sr2_compound_next;
+	}
+
+	/*
+	 * The transport send consumes the message and we'd
+	 * prefer to keep a copy, so dupmsg() before sending.
+	 * We also need this to build the compound message
+	 * that we'll actually send.  The message offset at
+	 * the start of each compounded message should be
+	 * eight-byte aligned.  The caller preparing the
+	 * compounded request has to take care of that
+	 * before we get here and sign messages etc.
+	 */
+	top_m = dupmsg(rqp->sr_rq.mb_top);
+	if (top_m == NULL) {
+		error = ENOBUFS;
+		goto fatal;
+	}
+	c_rqp = rqp->sr2_compound_next;
+	while (c_rqp != NULL) {
+		size_t len = msgdsize(top_m);
+		ASSERT((len & 7) == 0);
+		cur_m = dupmsg(c_rqp->sr_rq.mb_top);
+		if (cur_m == NULL) {
+			freemsg(top_m);
+			error = ENOBUFS;
+			goto fatal;
+		}
+		linkb(top_m, cur_m);
+	}
+
+	DTRACE_PROBE2(iod_sendrq,
+	    (smb_rq_t *), rqp, (mblk_t *), top_m);
+
+	error = SMB_TRAN_SEND(vcp, top_m);
+	top_m = 0; /* consumed by SEND */
 
 	rqp->sr_lerror = error;
 	if (error == 0) {
@@ -470,7 +586,11 @@ smb_iod_recvall(struct smb_vc *vcp, boolean_t poll)
 			    vcp->vc_srvname);
 		}
 
-		error = smb_iod_process(vcp, m);
+		if ((vcp->vc_flags & SMBV_SMB2) != 0) {
+			error = smb2_iod_process(vcp, m);
+		} else {
+			error = smb1_iod_process(vcp, m);
+		}
 
 		/*
 		 * Reconnect calls this in a loop with poll=TRUE
@@ -494,7 +614,7 @@ smb_iod_recvall(struct smb_vc *vcp, boolean_t poll)
  * To be safe, error if we read garbage.
  */
 static int
-smb_iod_process(smb_vc_t *vcp, mblk_t *m)
+smb1_iod_process(smb_vc_t *vcp, mblk_t *m)
 {
 	struct mdchain md;
 	struct smb_rq *rqp;
@@ -511,6 +631,11 @@ smb_iod_process(smb_vc_t *vcp, mblk_t *m)
 
 	/*
 	 * Check the SMB header version and get the MID.
+	 *
+	 * The header version should be SMB1 except when we're
+	 * doing SMB1-to-SMB2 negotiation, in which case we may
+	 * see an SMB2 header with message ID=0 (only allowed in
+	 * vc_state == SMBIOD_ST_CONNECTED -- negotiationg).
 	 */
 	err = md_get_mem(&md, sig, 4, MB_MSYSTEM);
 	if (err)
@@ -528,6 +653,17 @@ smb_iod_process(smb_vc_t *vcp, mblk_t *m)
 		if (err)
 			return (err);
 		break;
+	case SMB_HDR_V2:	/* SMB2+ */
+		if (vcp->vc_state == SMBIOD_ST_CONNECTED) {
+			/*
+			 * No need to look, can only be
+			 * MID=0, cmd=negotiate
+			 */
+			cmd = SMB_COM_NEGOTIATE;
+			mid = 0;
+			break;
+		}
+		/* FALLTHROUGH */
 	bad_hdr:
 	default:
 		SMBIODEBUG("Bad SMB hdr\n");
@@ -580,6 +716,157 @@ smb_iod_process(smb_vc_t *vcp, mblk_t *m)
 }
 
 /*
+ * Have what should be an SMB2 reply.  Check and parse the header,
+ * then use the message ID to find the request this belongs to and
+ * post it on that request.
+ *
+ * We also want to apply any credit grant in this reply now,
+ * rather than waiting for the owner to wake up.
+ */
+static int
+smb2_iod_process(smb_vc_t *vcp, mblk_t *m)
+{
+	struct mdchain md;
+	struct smb_rq *rqp;
+	uint8_t sig[4];
+	mblk_t *next_m = NULL;
+	uint64_t message_id, async_id;
+	uint32_t flags, next_cmd_off, status;
+	uint16_t command, credits_granted;
+	int err;
+
+top:
+	/*
+	 * Note: Intentionally do NOT md_done(&md)
+	 * because that would free the message and
+	 * we just want to peek here.
+	 */
+	md_initm(&md, m);
+
+	/*
+	 * Check the SMB header.  Must be SMB2
+	 * (and later, could be SMB3 encrypted)
+	 */
+	err = md_get_mem(&md, sig, 4, MB_MSYSTEM);
+	if (err)
+		return (err);
+	if (sig[1] != 'S' || sig[2] != 'M' || sig[3] != 'B') {
+		goto bad_hdr;
+	}
+	switch (sig[0]) {
+	case SMB_HDR_V2:
+		break;
+	case SMB_HDR_V3E:
+		/*
+		 * Todo: If encryption enabled, decrypt the message
+		 * and restart processing on the cleartext.
+		 */
+		/* FALLTHROUGH */
+	bad_hdr:
+	default:
+		SMBIODEBUG("Bad SMB2 hdr\n");
+		m_freem(m);
+		return (EPROTO);
+	}
+
+	/*
+	 * Parse the rest of the SMB2 header,
+	 * skipping what we don't need.
+	 */
+	md_get_uint32le(&md, NULL);	/* length, credit_charge */
+	md_get_uint32le(&md, &status);
+	md_get_uint16le(&md, &command);
+	md_get_uint16le(&md, &credits_granted);
+	md_get_uint32le(&md, &flags);
+	md_get_uint32le(&md, &next_cmd_off);
+	md_get_uint64le(&md, &message_id);
+	if (flags & SMB2_FLAGS_ASYNC_COMMAND) {
+		md_get_uint64le(&md, &async_id);
+	} else {
+		/* PID, TID (not needed) */
+		async_id = 0;
+	}
+
+	/*
+	 * If this is a compound reply, split it.
+	 * Next must be 8-byte aligned.
+	 */
+	if (next_cmd_off != 0) {
+		if ((next_cmd_off & 7) != 0)
+			SMBIODEBUG("Misaligned next cmd\n");
+		else
+			next_m = m_split(m, next_cmd_off, 1);
+	}
+
+	/*
+	 * Apply the credit grant
+	 */
+	rw_enter(&vcp->iod_rqlock, RW_WRITER);
+	vcp->vc2_limit_message_id += credits_granted;
+
+	/*
+	 * Find the reqeuest and post the reply
+	 */
+	rw_downgrade(&vcp->iod_rqlock);
+	TAILQ_FOREACH(rqp, &vcp->iod_rqlist, sr_link) {
+
+		if (rqp->sr2_messageid != message_id)
+			continue;
+
+		DTRACE_PROBE2(iod_post_reply,
+		    (smb_rq_t *), rqp, (mblk_t *), m);
+		m_dumpm(m);
+
+		/*
+		 * If this is an interim response, just save the
+		 * async ID but don't wakup the request.
+		 * Don't need SMBRQ_LOCK for this.
+		 */
+		if (status == NT_STATUS_PENDING && async_id != 0) {
+			rqp->sr2_rspasyncid = async_id;
+			m_freem(m);
+			break;
+		}
+
+		SMBRQ_LOCK(rqp);
+		if (rqp->sr_rp.md_top == NULL) {
+			md_initm(&rqp->sr_rp, m);
+		} else {
+			SMBRQ_UNLOCK(rqp);
+			rqp = NULL;
+			break;
+		}
+		smb_iod_rqprocessed_LH(rqp, 0, 0);
+		SMBRQ_UNLOCK(rqp);
+		break;
+	}
+	rw_exit(&vcp->iod_rqlock);
+
+	if (rqp == NULL) {
+		if (command != SMB2_ECHO) {
+			SMBSDEBUG("drop resp: MID %lld\n",
+			    (long long)message_id);
+		}
+		m_freem(m);
+		/*
+		 * Keep going.  It's possible this reply came
+		 * after the request timed out and went away.
+		 */
+	}
+
+	/*
+	 * If we split a compound reply, continue with the
+	 * next part of the compound.
+	 */
+	if (next_m != NULL) {
+		m = next_m;
+		goto top;
+	}
+
+	return (0);
+}
+
+/*
  * The IOD receiver thread has requests pending and
  * has not received anything in a while.  Try to
  * send an SMB echo request.  It's tricky to do a
@@ -599,13 +886,17 @@ smb_iod_send_echo(smb_vc_t *vcp, cred_t *cr)
 	ASSERT(vcp->iod_thr == curthread);
 
 	smb_credinit(&scred, cr);
-	err = smb_smb_echo(vcp, &scred, tmo);
+	if ((vcp->vc_flags & SMBV_SMB2) != 0) {
+		err = smb2_smb_echo(vcp, &scred, tmo);
+	} else {
+		err = smb_smb_echo(vcp, &scred, tmo);
+	}
 	smb_credrele(&scred);
 	return (err);
 }
 
 /*
- * Helper for smb_iod_addrq, smb2_iod_addrq
+ * Helper for smb1_iod_addrq, smb2_iod_addrq
  * Returns zero if interrupted, else 1.
  */
 static int
@@ -630,9 +921,14 @@ smb_iod_muxwait(smb_vc_t *vcp, boolean_t sig_ok)
 /*
  * Place request in the queue, and send it.
  * Called with no locks held.
+ *
+ * Called for SMB1 only
+ *
+ * The logic for how we limit active requests differs between
+ * SMB1 and SMB2.  With SMB1 it's a simple counter ioc_muxcnt.
  */
 int
-smb_iod_addrq(struct smb_rq *rqp)
+smb1_iod_addrq(struct smb_rq *rqp)
 {
 	struct smb_vc *vcp = rqp->sr_vc;
 	uint16_t need;
@@ -640,6 +936,7 @@ smb_iod_addrq(struct smb_rq *rqp)
 	    (rqp->sr_flags & SMBR_NOINTR_SEND) == 0;
 
 	ASSERT(rqp->sr_cred);
+	ASSERT((vcp->vc_flags & SMBV_SMB2) == 0);
 
 	rqp->sr_owner = curthread;
 
@@ -680,6 +977,9 @@ recheck:
 
 	/*
 	 * Add this request to the active list and send it.
+	 * For SMB2 we may have a sequence of compounded
+	 * requests, in which case we must add them all.
+	 * They're sent as a compound in smb2_iod_sendrq.
 	 */
 	rqp->sr_mid = vcp->vc_next_mid++;
 	/* If signing, set the signing sequence numbers. */
@@ -690,7 +990,120 @@ recheck:
 	}
 	vcp->iod_muxcnt++;
 	TAILQ_INSERT_TAIL(&vcp->iod_rqlist, rqp, sr_link);
-	smb_iod_sendrq(rqp);
+	smb1_iod_sendrq(rqp);
+
+	rw_exit(&vcp->iod_rqlock);
+	return (0);
+}
+
+/*
+ * Place request in the queue, and send it.
+ * Called with no locks held.
+ *
+ * Called for SMB2 only.
+ *
+ * With SMB2 we have a range of valid message IDs, and we may
+ * only send requests when we can assign a message ID within
+ * the valid range.  We may need to wait here for some active
+ * request to finish (and update vc2_limit_message_id) before
+ * we can get message IDs for our new request(s).  Another
+ * difference is that the request sequence we're waiting to
+ * add here may require multipe message IDs, either due to
+ * either compounding or multi-credit requests.  Therefore
+ * we need to wait for the availibility of how ever many
+ * message IDs are required by our request sequence.
+ */
+int
+smb2_iod_addrq(struct smb_rq *rqp)
+{
+	struct smb_vc *vcp = rqp->sr_vc;
+	struct smb_rq *c_rqp;	/* compound req */
+	uint16_t charge;
+	boolean_t sig_ok =
+	    (rqp->sr_flags & SMBR_NOINTR_SEND) == 0;
+
+	ASSERT(rqp->sr_cred != NULL);
+	ASSERT((vcp->vc_flags & SMBV_SMB2) != 0);
+
+	/*
+	 * Figure out the credit charges
+	 * No multi-credit messages yet.
+	 */
+	rqp->sr2_totalcreditcharge = rqp->sr2_creditcharge;
+	c_rqp = rqp->sr2_compound_next;
+	while (c_rqp != NULL) {
+		rqp->sr2_totalcreditcharge += c_rqp->sr2_creditcharge;
+		c_rqp = c_rqp->sr2_compound_next;
+	}
+
+	/*
+	 * Internal request must not be compounded
+	 * and should use exactly one credit.
+	 */
+	if (rqp->sr_flags & SMBR_INTERNAL) {
+		if (rqp->sr2_compound_next != NULL) {
+			ASSERT(0);
+			return (EINVAL);
+		}
+	}
+
+	rqp->sr_owner = curthread;
+
+	rw_enter(&vcp->iod_rqlock, RW_WRITER);
+
+recheck:
+	/*
+	 * Internal requests can be added in any state,
+	 * but normal requests only in state active.
+	 */
+	if ((rqp->sr_flags & SMBR_INTERNAL) == 0 &&
+	    vcp->vc_state != SMBIOD_ST_VCACTIVE) {
+		SMBIODEBUG("bad vc_state=%d\n", vcp->vc_state);
+		rw_exit(&vcp->iod_rqlock);
+		return (ENOTCONN);
+	}
+
+	/*
+	 * If we're at the limit of active requests, block until
+	 * enough requests complete so we can make ours active.
+	 * Wakeup in smb_iod_removerq().
+	 *
+	 * Normal callers leave one slot free, so internal
+	 * callers can have the last slot if needed.
+	 */
+	charge = rqp->sr2_totalcreditcharge;
+	if ((rqp->sr_flags & SMBR_INTERNAL) == 0)
+		charge++;
+	if ((vcp->vc2_next_message_id + charge) >
+	    vcp->vc2_limit_message_id) {
+		rw_exit(&vcp->iod_rqlock);
+		if (rqp->sr_flags & SMBR_INTERNAL)
+			return (EBUSY);
+		if (smb_iod_muxwait(vcp, sig_ok) == 0)
+			return (EINTR);
+		rw_enter(&vcp->iod_rqlock, RW_WRITER);
+		goto recheck;
+	}
+
+	/*
+	 * Add this request to the active list and send it.
+	 * For SMB2 we may have a sequence of compounded
+	 * requests, in which case we must add them all.
+	 * They're sent as a compound in smb2_iod_sendrq.
+	 */
+
+	rqp->sr2_messageid = vcp->vc2_next_message_id;
+	vcp->vc2_next_message_id += rqp->sr2_creditcharge;
+	TAILQ_INSERT_TAIL(&vcp->iod_rqlist, rqp, sr_link);
+
+	c_rqp = rqp->sr2_compound_next;
+	while (c_rqp != NULL) {
+		c_rqp->sr2_messageid = vcp->vc2_next_message_id;
+		vcp->vc2_next_message_id += c_rqp->sr2_creditcharge;
+		TAILQ_INSERT_TAIL(&vcp->iod_rqlist, c_rqp, sr_link);
+		c_rqp = c_rqp->sr2_compound_next;
+	}
+	smb2_iod_sendrq(rqp);
 
 	rw_exit(&vcp->iod_rqlock);
 	return (0);
@@ -699,14 +1112,20 @@ recheck:
 /*
  * Mark an SMBR_MULTIPACKET request as
  * needing another send.  Similar to the
- * "normal" part of smb_iod_addrq.
+ * "normal" part of smb1_iod_addrq.
+ * Only used by SMB1
  */
 int
-smb_iod_multirq(struct smb_rq *rqp)
+smb1_iod_multirq(struct smb_rq *rqp)
 {
 	struct smb_vc *vcp = rqp->sr_vc;
 
 	ASSERT(rqp->sr_flags & SMBR_MULTIPACKET);
+
+	if (vcp->vc_flags & SMBV_SMB2) {
+		ASSERT("!SMB2?");
+		return (EINVAL);
+	}
 
 	if (rqp->sr_flags & SMBR_INTERNAL)
 		return (EINVAL);
@@ -720,7 +1139,7 @@ smb_iod_multirq(struct smb_rq *rqp)
 
 	/* Already on iod_rqlist, just reset state. */
 	rqp->sr_state = SMBRQ_NOTSENT;
-	smb_iod_sendrq(rqp);
+	smb1_iod_sendrq(rqp);
 
 	rw_exit(&vcp->iod_rqlock);
 
@@ -730,10 +1149,21 @@ smb_iod_multirq(struct smb_rq *rqp)
 /*
  * Remove a request from the active list, and
  * wake up requests waiting to go active.
+ *
+ * Shared by SMB1 + SMB2
+ *
+ * The logic for how we limit active requests differs between
+ * SMB1 and SMB2.  With SMB1 it's a simple counter ioc_muxcnt.
+ * With SMB2 we have a range of valid message IDs, and when we
+ * retire the oldest request we need to keep track of what is
+ * now the oldest message ID.  In both cases, after we take a
+ * request out of the list here, we should be able to wake up
+ * a request waiting to get in the active list.
  */
 void
 smb_iod_removerq(struct smb_rq *rqp)
 {
+	struct smb_rq *rqp2;
 	struct smb_vc *vcp = rqp->sr_vc;
 	boolean_t was_head = B_FALSE;
 
@@ -751,9 +1181,17 @@ smb_iod_removerq(struct smb_rq *rqp)
 	if (TAILQ_FIRST(&vcp->iod_rqlist) == rqp)
 		was_head = B_TRUE;
 	TAILQ_REMOVE(&vcp->iod_rqlist, rqp, sr_link);
-
-	ASSERT(vcp->iod_muxcnt > 0);
-	vcp->iod_muxcnt--;
+	if (vcp->vc_flags & SMBV_SMB2) {
+		rqp2 = TAILQ_FIRST(&vcp->iod_rqlist);
+		if (was_head && rqp2 != NULL) {
+			/* Do we still need this? */
+			vcp->vc2_oldest_message_id =
+			    rqp2->sr2_messageid;
+		}
+	} else {
+		ASSERT(vcp->iod_muxcnt > 0);
+		vcp->iod_muxcnt--;
+	}
 
 	rw_exit(&vcp->iod_rqlock);
 
@@ -1010,6 +1448,20 @@ nsmb_iod_connect(struct smb_vc *vcp, cred_t *cr)
 
 /*
  * Handle ioctl SMBIOC_IOD_NEGOTIATE
+ * Do the whole SMB1/SMB2 negotiate
+ *
+ * This is where we send our first request to the server.
+ * If this is the first time we're talking to this server,
+ * (meaning not a reconnect) then we don't know whether
+ * the server supports SMB2, so we need to use the weird
+ * SMB1-to-SMB2 negotiation. That's where we send an SMB1
+ * negotiate including dialect "SMB 2.???" and if the
+ * server supports SMB2 we get an SMB2 reply -- Yes, an
+ * SMB2 reply to an SMB1 request.  A strange protocol...
+ *
+ * If on the other hand we already know the server supports
+ * SMB2 (because this is a reconnect) or if the client side
+ * has disabled SMB1 entirely, we'll skip the SMB1 part.
  */
 int
 nsmb_iod_negotiate(struct smb_vc *vcp, cred_t *cr)
@@ -1028,10 +1480,18 @@ nsmb_iod_negotiate(struct smb_vc *vcp, cred_t *cr)
 		goto out;
 	}
 
+	if (vcp->vc_maxver == 0 || vcp->vc_minver > vcp->vc_maxver) {
+		err = EINVAL;
+		goto out;
+	}
+
 	/*
 	 * (Re)init negotiated values
 	 */
 	bzero(sv, sizeof (*sv));
+	vcp->vc2_next_message_id = 0;
+	vcp->vc2_limit_message_id = 1;
+	vcp->vc2_session_id = 0;
 	vcp->vc_next_seq = 0;
 
 	/*
@@ -1051,8 +1511,52 @@ nsmb_iod_negotiate(struct smb_vc *vcp, cred_t *cr)
 	}
 	SMB_VC_UNLOCK(vcp);
 
-	// XXX if SMB1 else ...
-	err = smb_smb_negotiate(vcp, &scred);
+	/*
+	 * If this is not an SMB2 reconect (SMBV_SMB2 not set),
+	 * and if SMB1 is enabled, do SMB1 neogotiate.  Then
+	 * if either SMB1-to-SMB2 negotiate tells us we should
+	 * switch to SMB2, or the local configuration has
+	 * disabled SMB1, set the SMBV_SMB2 flag.
+	 *
+	 * Note that vc_maxver is handled in smb_smb_negotiate
+	 * so we never get sv_proto == SMB_DIALECT_SMB2_FF when
+	 * the local configuration disables SMB2, and therefore
+	 * we won't set the SMBV_SMB2 flag.
+	 */
+	if ((vcp->vc_flags & SMBV_SMB2) == 0) {
+		if (vcp->vc_minver < SMB2_DIALECT_BASE) {
+			/*
+			 * SMB1 is enabled
+			 */
+			err = smb_smb_negotiate(vcp, &scred);
+			if (err != 0)
+				goto out;
+		}
+		/*
+		 * If SMB1-to-SMB2 negotiate told us we should
+		 * switch to SMB2, or if the local configuration
+		 * disables SMB1, set the SMB2 flag.
+		 */
+		if (sv->sv_proto == SMB_DIALECT_SMB2_FF ||
+		    vcp->vc_minver >= SMB2_DIALECT_BASE) {
+			/*
+			 * Switch this VC to SMB2.
+			 */
+			SMB_VC_LOCK(vcp);
+			vcp->vc_flags |= SMBV_SMB2;
+			SMB_VC_UNLOCK(vcp);
+		}
+	}
+
+	/*
+	 * If this is an SMB2 reconnect (SMBV_SMB2 was set before this
+	 * function was called), or SMB1-to-SMB2 negotiate indicated
+	 * we should switch to SMB2, or we have SMB1 disabled (both
+	 * cases set SMBV_SMB2 above), then do SMB2 negotiate.
+	 */
+	if ((vcp->vc_flags & SMBV_SMB2) != 0) {
+		err = smb2_smb_negotiate(vcp, &scred);
+	}
 
 out:
 	if (err == 0) {
@@ -1092,8 +1596,10 @@ nsmb_iod_ssnsetup(struct smb_vc *vcp, cred_t *cr)
 	}
 
 	smb_credinit(&scred, cr);
-	// XXX if SMB1 else ...
-	err = smb_smb_ssnsetup(vcp, &scred);
+	if (vcp->vc_flags & SMBV_SMB2)
+		err = smb2_smb_ssnsetup(vcp, &scred);
+	else
+		err = smb_smb_ssnsetup(vcp, &scred);
 	smb_credrele(&scred);
 
 	SMB_VC_LOCK(vcp);
@@ -1122,7 +1628,10 @@ smb_iod_logoff(struct smb_vc *vcp, cred_t *cr)
 	ASSERT(vcp->iod_thr == curthread);
 
 	smb_credinit(&scred, cr);
-	err = smb_smb_logoff(vcp, &scred);
+	if (vcp->vc_flags & SMBV_SMB2)
+		err = smb2_smb_logoff(vcp, &scred);
+	else
+		err = smb_smb_logoff(vcp, &scred);
 	smb_credrele(&scred);
 
 	return (err);
@@ -1191,15 +1700,12 @@ smb_iod_vc_work(struct smb_vc *vcp, int flags, cred_t *cr)
 	 */
 	ASSERT(vcp->vc_mackey == NULL);
 	if (vcp->vc_ssnkey != NULL) {
-		/*
-		 * SMB1 just uses the whole session key.
-		 */
-		vcp->vc_mackeylen = vcp->vc_ssnkeylen;
-		vcp->vc_mackey = kmem_zalloc(vcp->vc_mackeylen, KM_SLEEP);
-		bcopy(vcp->vc_ssnkey, vcp->vc_mackey, vcp->vc_mackeylen);
-
-		/* The initial sequence number is two. */
-		vcp->vc_next_seq = 2;
+		if (vcp->vc_flags & SMBV_SMB2)
+			err = smb2_sign_init(vcp);
+		else
+			err = smb_sign_init(vcp);
+		if (err != 0)
+			return (err);
 	}
 
 	/*

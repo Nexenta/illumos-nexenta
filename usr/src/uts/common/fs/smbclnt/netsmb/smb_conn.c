@@ -63,6 +63,7 @@
 #include <netsmb/smb_osdep.h>
 
 #include <netsmb/smb.h>
+#include <netsmb/smb2.h>
 #include <netsmb/smb_conn.h>
 #include <netsmb/smb_subr.h>
 #include <netsmb/smb_tran.h>
@@ -81,6 +82,9 @@ static void smb_vc_gone(struct smb_connobj *cp);
 
 static void smb_share_free(struct smb_connobj *cp);
 static void smb_share_gone(struct smb_connobj *cp);
+
+static void smb_fh_free(struct smb_connobj *cp);
+static void smb_fh_gone(struct smb_connobj *cp);
 
 int
 smb_sm_init(void)
@@ -627,10 +631,14 @@ smb_share_gone(struct smb_connobj *cp)
 {
 	struct smb_cred scred;
 	struct smb_share *ssp = CPTOSS(cp);
+	smb_vc_t *vcp = SSTOVC(ssp);
 
 	smb_credinit(&scred, NULL);
 	smb_iod_shutdown_share(ssp);
-	(void) smb_smb_treedisconnect(ssp, &scred);
+	if (vcp->vc_flags & SMBV_SMB2)
+		(void) smb2_smb_treedisconnect(ssp, &scred);
+	else
+		(void) smb_smb_treedisconnect(ssp, &scred);
 	smb_credrele(&scred);
 }
 
@@ -670,6 +678,7 @@ smb_share_create(smbioc_tcon_t *tcon, struct smb_vc *vcp,
 
 	cv_init(&ssp->ss_conn_done, objtype, CV_DRIVER, NULL);
 	ssp->ss_tid = SMB_TID_UNKNOWN;
+	ssp->ss2_tree_id = SMB2_TID_UNKNOWN;
 
 	bcopy(&tcon->tc_sh, &ssp->ss_ioc,
 	    sizeof (smbioc_oshare_t));
@@ -785,6 +794,7 @@ smb_share_invalidate(struct smb_share *ssp)
 int
 smb_share_tcon(smb_share_t *ssp, smb_cred_t *scred)
 {
+	smb_vc_t *vcp = SSTOVC(ssp);
 	clock_t tmo;
 	int error;
 
@@ -828,7 +838,10 @@ smb_share_tcon(smb_share_t *ssp, smb_cred_t *scred)
 	 * and ss_flags |= SMBS_CONNECTED;
 	 */
 	SMB_SS_UNLOCK(ssp);
-	error = smb_smb_treeconnect(ssp, scred);
+	if (vcp->vc_flags & SMBV_SMB2)
+		error = smb2_smb_treeconnect(ssp, scred);
+	else
+		error = smb_smb_treeconnect(ssp, scred);
 	SMB_SS_LOCK(ssp);
 
 	ssp->ss_flags &= ~SMBS_RECONNECTING;
@@ -842,6 +855,114 @@ out:
 
 	return (error);
 }
+
+/*
+ * File handle level functions
+ */
+
+void
+smb_fh_hold(struct smb_fh *fhp)
+{
+	smb_co_hold(FHTOCP(fhp));
+}
+
+void
+smb_fh_rele(struct smb_fh *fhp)
+{
+	smb_co_rele(FHTOCP(fhp));
+}
+
+void
+smb_fh_close(struct smb_fh *fhp)
+{
+	smb_co_kill(FHTOCP(fhp));
+}
+
+/*
+ * Normally called via smb_fh_rele()
+ * after co_usecount drops to zero.
+ * Also called via: smb_fh_kill()
+ */
+static void
+smb_fh_gone(struct smb_connobj *cp)
+{
+	struct smb_cred scred;
+	struct smb_fh *fhp = CPTOFH(cp);
+	smb_share_t *ssp = FHTOSS(fhp);
+	int err;
+
+	if ((fhp->fh_flags & SMBFH_VALID) == 0)
+		return;
+
+	/*
+	 * We have no durable handles (yet) so if there has been a
+	 * reconnect, don't bother to close this handle.
+	 */
+	if (fhp->fh_vcgenid != ssp->ss_vcgenid)
+		return;
+
+	smb_credinit(&scred, NULL);
+	err = smb_smb_close(ssp, fhp, &scred);
+	smb_credrele(&scred);
+	if (err) {
+		SMBSDEBUG("close err=%d\n", err);
+	}
+}
+
+/*
+ * Normally called via smb_fh_rele()
+ * after co_usecount drops to zero.
+ */
+static void
+smb_fh_free(struct smb_connobj *cp)
+{
+	struct smb_fh *fhp = CPTOFH(cp);
+
+	smb_co_done(FHTOCP(fhp));
+	kmem_free(fhp, sizeof (*fhp));
+}
+
+/*
+ * Allocate fh structure and attach it to the given share.
+ * Share expected to be locked on entry.
+ */
+/*ARGSUSED*/
+int
+smb_fh_create(smb_share_t *ssp, struct smb_fh **fhpp)
+{
+	static char objtype[] = "smb_fh";
+	struct smb_fh *fhp;
+
+	fhp = kmem_zalloc(sizeof (struct smb_fh), KM_SLEEP);
+	smb_co_init(FHTOCP(fhp), SMBL_FH, objtype);
+	fhp->fh_co.co_free = smb_fh_free;
+	fhp->fh_co.co_gone = smb_fh_gone;
+
+	SMB_SS_LOCK(ssp);
+	if ((ssp->ss_flags & SMBS_GONE) != 0) {
+		SMB_SS_UNLOCK(ssp);
+		smb_fh_free(FHTOCP(fhp));
+		return (ENOTCONN);
+	}
+
+	smb_co_addchild(SSTOCP(ssp), FHTOCP(fhp));
+	*fhpp = fhp;
+	SMB_SS_UNLOCK(ssp);
+
+	return (0);
+}
+
+void
+smb_fh_opened(struct smb_fh *fhp)
+{
+	smb_share_t *ssp = FHTOSS(fhp);
+
+	SMB_FH_LOCK(fhp);
+	fhp->fh_vcgenid = ssp->ss_vcgenid;
+	fhp->fh_flags |= SMBFH_VALID;
+	SMB_FH_UNLOCK(fhp);
+}
+
 
 /*
  * Solaris zones support
