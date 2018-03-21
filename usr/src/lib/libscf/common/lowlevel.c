@@ -37,7 +37,6 @@
 #include "scf_type.h"
 
 #include <assert.h>
-#include <alloca.h>
 #include <door.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -4081,8 +4080,12 @@ scf_transaction_commit(scf_transaction_t *tran)
 	}
 
 	request_size = REP_PROTOCOL_TRANSACTION_COMMIT_SIZE(total);
-	request = alloca(request_size);
-	(void) memset(request, '\0', request_size);
+	request = calloc(1, request_size);
+	if (request == NULL) {
+		(void) pthread_mutex_unlock(&h->rh_lock);
+		return (scf_set_error(SCF_ERROR_NO_MEMORY));
+	}
+
 	request->rpr_request = REP_PROTOCOL_PROPERTYGRP_TX_COMMIT;
 	request->rpr_entityid = tran->tran_pg.rd_d.rd_entity;
 	request->rpr_size = request_size;
@@ -4096,7 +4099,8 @@ scf_transaction_commit(scf_transaction_t *tran)
 		size = commit_process(cur, (void *)cmd);
 		if (size == BAD_SIZE) {
 			(void) pthread_mutex_unlock(&h->rh_lock);
-			return (scf_set_error(SCF_ERROR_INTERNAL));
+			r = (scf_set_error(SCF_ERROR_INTERNAL));
+			goto out;
 		}
 		cmd += size;
 		new_total += size;
@@ -4114,12 +4118,17 @@ scf_transaction_commit(scf_transaction_t *tran)
 	if (response.rpr_response != REP_PROTOCOL_SUCCESS &&
 	    response.rpr_response != REP_PROTOCOL_FAIL_NOT_LATEST) {
 		(void) pthread_mutex_unlock(&h->rh_lock);
-		return (scf_set_error(proto_error(response.rpr_response)));
+		r = (scf_set_error(proto_error(response.rpr_response)));
+		goto out;
 	}
 
 	tran->tran_state = TRAN_STATE_COMMITTED;
 	(void) pthread_mutex_unlock(&h->rh_lock);
-	return (response.rpr_response == REP_PROTOCOL_SUCCESS);
+	r = (response.rpr_response == REP_PROTOCOL_SUCCESS);
+
+out:
+	free(request);
+	return (r);
 }
 
 static void
