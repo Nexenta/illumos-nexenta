@@ -98,6 +98,7 @@ struct objset {
 	zfs_redundant_metadata_type_t os_redundant_metadata;
 	spa_specialclass_t os_special_class;
 	uint64_t os_zpl_meta_to_special;
+	uint64_t os_zfetch_range;
 
 	/* no lock needed: */
 	struct dmu_tx *os_synctx; /* XXX sketchy */

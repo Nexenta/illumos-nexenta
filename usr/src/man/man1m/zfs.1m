@@ -1561,6 +1561,22 @@ default value is \fBon\fR.
 .sp
 .ne 2
 .na
+\fB\fBzfetchrange\fR=\fIblocks\fR\fR
+.ad
+.sp .6
+.RS 4n
+Sets the allowable block gap between two consecutive reads for them to
+be considered sequential to each other. The default value is \fI0\fR.
+This means, a sequential read is only detected if there is a zero-block
+gap between it and a previous read. Setting the \fBzfetchrange\fR
+property to a positive value allows for sequential read detection even if
+there is up to a gap of up to \fIblocks\fR number of blocks between two
+consecutive reads (in either direction).
+.RE
+
+.sp
+.ne 2
+.na
 \fB\fBzoned\fR=\fBon\fR | \fBoff\fR\fR
 .ad
 .sp .6
@@ -3409,6 +3425,7 @@ volsize          property
 vscan            property
 xattr            property
 zoned            property
+zfetchrange      property
 .fi
 .in -2
 .sp

@@ -34,6 +34,9 @@
 #include <sys/dmu.h>
 #include <sys/dbuf.h>
 #include <sys/kstat.h>
+#include <sys/sdt.h>
+
+#define	ZFETCH_RANGE_MAX	1024
 
 /*
  * I'm against tune-ables, but these should probably exist as tweakable globals
@@ -96,6 +99,40 @@ static zfetch_stats_t zfetch_stats = {
 #define	ZFETCHSTAT_BUMP(stat)		ZFETCHSTAT_INCR(stat, 1);
 
 kstat_t		*zfetch_ksp;
+
+/*
+ * Checks whether `offset' sits in a range starting at `start' and is of
+ * length `len'. It is legal to pass a negative length, the function
+ * adjusts its checks as appropriate to prevent an incorrect check. It is
+ * however NOT legal to pass a negative start.
+ *
+ * --------+
+ *         | offset
+ *         V
+ *=======|########|=====
+ *      /|        |
+ * start |        |
+ *       +--len-->|
+ */
+static inline boolean_t
+offset_in_range(uint64_t offset, int64_t start, int64_t len)
+{
+	/* left is the lower address, right is the higher address */
+	int64_t left = start, right = start + len;
+
+	ASSERT3S(start, >=, 0);
+	/* flip left and right if we got a negative range */
+	if (left > right) {
+		int64_t tmp = right;
+		left = right;
+		right = tmp;
+	}
+	/* prevent integer underflow */
+	if (left < 0)
+		left = 0;
+
+	return (offset >= (uint64_t) left && offset <= (uint64_t)right);
+}
 
 /*
  * Given a zfetch structure and a zstream structure, determine whether the
@@ -337,6 +374,20 @@ dmu_zfetch_find(zfetch_t *zf, zstream_t *zh, int prefetched)
 	int64_t		diff;
 	int		reset = !prefetched;
 	int		rc = 0;
+	/*
+	 * "Fuzzy" sequential read detection. This is designed to allow
+	 * readers that tend to read things slightly out-of-order to still
+	 * be detected as in-sequence reads. For example NTFS over COMSTAR
+	 * does this. A sequential read is, broadly speaking, sequential,
+	 * but an individual read operation level looks more like a spray
+	 * pattern around a slowly forward-moving point. In those cases,
+	 * we want to let the user hint us that it's ok for a read to fall
+	 * within "range" number of blocks from the previous read location
+	 * and we should still try to treat it as sequential access.
+	 */
+	int64_t	range = zf->zf_dnode->dn_objset->os_zfetch_range;
+
+	range = MIN(range, ZFETCH_RANGE_MAX);
 
 	if (zh == NULL)
 		return (0);
@@ -362,6 +413,10 @@ top:
 			continue;
 		}
 
+#ifdef	_KERNEL
+		DTRACE_PROBE1(zstream_listing, zstream_t *, zs);
+#endif
+
 		/*
 		 * We hit this case when we are in a strided prefetch stream:
 		 * we will read "len" blocks before "striding".
@@ -383,13 +438,15 @@ top:
 		 * len by one each time we hit here, so we will enter this
 		 * case on every read.
 		 */
-		if (zh->zst_offset == zs->zst_offset + zs->zst_len) {
+		if (offset_in_range(zh->zst_offset,
+		    zs->zst_offset + zs->zst_len, range)) {
 
 			reset = !prefetched && zs->zst_len > 1;
 
 			mutex_enter(&zs->zst_lock);
 
-			if (zh->zst_offset != zs->zst_offset + zs->zst_len) {
+			if (!offset_in_range(zh->zst_offset,
+			    zs->zst_offset + zs->zst_len, range)) {
 				mutex_exit(&zs->zst_lock);
 				goto top;
 			}
@@ -407,14 +464,16 @@ top:
 		/*
 		 * Same as above, but reading backwards through the file.
 		 */
-		} else if (zh->zst_offset == zs->zst_offset - zh->zst_len) {
+		} else if (offset_in_range(zh->zst_offset,
+		    zs->zst_offset - zh->zst_len, -range)) {
 			/* backwards sequential access */
 
 			reset = !prefetched && zs->zst_len > 1;
 
 			mutex_enter(&zs->zst_lock);
 
-			if (zh->zst_offset != zs->zst_offset - zh->zst_len) {
+			if (!offset_in_range(zh->zst_offset,
+			    zs->zst_offset - zh->zst_len, -range)) {
 				mutex_exit(&zs->zst_lock);
 				goto top;
 			}
@@ -475,6 +534,10 @@ top:
 			break;
 		}
 	}
+
+#ifdef	_KERNEL
+	DTRACE_PROBE2(stream_find_result, zstream_t *, zs, boolean_t, reset);
+#endif
 
 	if (zs) {
 		if (reset) {

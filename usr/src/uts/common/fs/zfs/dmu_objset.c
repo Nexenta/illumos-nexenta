@@ -264,6 +264,13 @@ redundant_metadata_changed_cb(void *arg, uint64_t newval)
 }
 
 static void
+zfetch_range_changed_cb(void *arg, uint64_t newval)
+{
+	objset_t *os = arg;
+	os->os_zfetch_range = newval;
+}
+
+static void
 logbias_changed_cb(void *arg, uint64_t newval)
 {
 	objset_t *os = arg;
@@ -410,6 +417,11 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 				    ZFS_PROP_REDUNDANT_METADATA),
 				    redundant_metadata_changed_cb, os);
 			}
+			if (err == 0) {
+				err = dsl_prop_register(ds,
+				    zfs_prop_to_name(ZFS_PROP_ZFETCH_RANGE),
+				    zfetch_range_changed_cb, os);
+			}
 		}
 		if (err != 0) {
 			VERIFY(arc_buf_remove_ref(os->os_phys_buf,
@@ -430,6 +442,7 @@ dmu_objset_open_impl(spa_t *spa, dsl_dataset_t *ds, blkptr_t *bp,
 		os->os_secondary_cache = ZFS_CACHE_ALL;
 		spa_set_specialclass(os->os_spa, os, SPA_SPECIALCLASS_META);
 		os->os_zpl_meta_to_special = 0;
+		os->os_zfetch_range = 0;
 	}
 
 	if (ds == NULL || !dsl_dataset_is_snapshot(ds))
@@ -673,6 +686,9 @@ dmu_objset_evict(objset_t *os)
 			VERIFY0(dsl_prop_unregister(ds,
 			    zfs_prop_to_name(ZFS_PROP_REDUNDANT_METADATA),
 			    redundant_metadata_changed_cb, os));
+			VERIFY0(dsl_prop_unregister(ds,
+			    zfs_prop_to_name(ZFS_PROP_ZFETCH_RANGE),
+			    zfetch_range_changed_cb, os));
 		}
 		VERIFY0(dsl_prop_unregister(ds,
 		    zfs_prop_to_name(ZFS_PROP_PRIMARYCACHE),
