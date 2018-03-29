@@ -262,7 +262,7 @@ $(USR_DESKTOP_LIB_DIR):		$(USR_DESKTOP_DIR)
 #
 #	Full kernel lint target.
 #
-LINT_TARGET	= globallint
+LINT_TARGET	= # globallint
 
 globallint:
 	@pwd

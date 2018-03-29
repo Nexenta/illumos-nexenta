@@ -149,7 +149,7 @@ LGREP.intel =	grep -v 'intel/io/acpica'
 #
 #	Full kernel lint target.
 #
-LINT_TARGET	= globallint
+LINT_TARGET	= # globallint
 
 # workaround for multiply defined errors
 globallint := LINTFLAGS += -erroff=E_NAME_MULTIPLY_DEF2
