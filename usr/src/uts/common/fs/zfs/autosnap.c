@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/spa.h>
@@ -1226,7 +1226,7 @@ autosnap_collect_destroy_snapshots_cb(dsl_pool_t *dp,
 
 /* Collect snapshots for destroy */
 static int
-dsl_pool_collect_ds_for_autodestroy(spa_t *spa, const char *root_ds,
+autosnap_collect_for_destroy_impl(spa_t *spa, const char *root_ds,
     const char *snap_name, boolean_t recursive, nvlist_t *nv_auto)
 {
 	dsl_pool_t *dp = spa_get_dsl(spa);
@@ -1262,66 +1262,119 @@ out:
 	return (err);
 }
 
-void
-autosnap_destroyer_thread(void *void_spa)
+static int
+autosnap_collect_for_destroy(spa_t *spa, list_t *autosnaps,
+    nvlist_t **result)
 {
-	spa_t *spa = void_spa;
-	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
+	char ds[ZFS_MAX_DATASET_NAME_LEN];
+	char *snap;
+	int err = 0;
+	nvlist_t *nvl;
+	autosnap_snapshot_t *snapshot;
 
-	mutex_enter(&autosnap->autosnap_lock);
-	while (!autosnap->need_stop) {
-		nvlist_t *nvl, *errlist;
-		autosnap_snapshot_t *snapshot;
-		char ds[ZFS_MAX_DATASET_NAME_LEN];
-		char *snap;
-		int err;
+	ASSERT(!list_is_empty(autosnaps));
 
-		snapshot = list_head(&autosnap->autosnap_destroy_queue);
-		if (snapshot == NULL) {
-			cv_wait(&autosnap->autosnap_cv,
-			    &autosnap->autosnap_lock);
-			continue;
-		}
-
+	nvl = fnvlist_alloc();
+	snapshot = list_head(autosnaps);
+	while (snapshot != NULL) {
 		(void) strlcpy(ds, snapshot->name, sizeof (ds));
 		snap = strchr(ds, '@');
 		VERIFY(snap != NULL);
 		*snap++ = '\0';
 
-		mutex_exit(&autosnap->autosnap_lock);
-
-		nvl = fnvlist_alloc();
-		err = dsl_pool_collect_ds_for_autodestroy(spa, ds, snap,
+		err = autosnap_collect_for_destroy_impl(spa, ds, snap,
 		    snapshot->recursive, nvl);
+		if (err != 0)
+			break;
 
-		mutex_enter(&autosnap->autosnap_lock);
-		if (err != 0) {
-			fnvlist_free(nvl);
+		snapshot = list_next(autosnaps, snapshot);
+	}
+
+	if (err != 0)
+		fnvlist_free(nvl);
+	else
+		*result = nvl;
+
+	return (err);
+}
+
+void
+autosnap_destroyer_thread(void *void_spa)
+{
+	spa_t *spa = void_spa;
+	zfs_autosnap_t *autosnap = spa_get_autosnap(spa);
+	list_t error_destroy, tmp_list;
+	boolean_t process_error_queue = B_TRUE;
+
+	list_create(&error_destroy, sizeof (autosnap_snapshot_t),
+	    offsetof(autosnap_snapshot_t, dnode));
+	list_create(&tmp_list, sizeof (autosnap_snapshot_t),
+	    offsetof(autosnap_snapshot_t, dnode));
+
+	mutex_enter(&autosnap->autosnap_lock);
+	while (!autosnap->need_stop) {
+		nvlist_t *nvl = NULL, *errlist;
+		int err;
+
+		if (!list_is_empty(&error_destroy) &&
+		    (process_error_queue ||
+		    list_is_empty(&autosnap->autosnap_destroy_queue))) {
+			/*
+			 * error_destroy list contains items that could not
+			 * be destroyed in batch mode, we will try to
+			 * destroy them one by one.
+			 */
+			mutex_exit(&autosnap->autosnap_lock);
+			list_insert_head(&tmp_list,
+			    list_remove_tail(&error_destroy));
+			process_error_queue = B_FALSE;
+		} else if (!list_is_empty(&autosnap->autosnap_destroy_queue)) {
+			/*
+			 * Items from the list will be tried to
+			 * remove in batch mode
+			 */
+			list_move_tail(&tmp_list,
+			    &autosnap->autosnap_destroy_queue);
+			mutex_exit(&autosnap->autosnap_lock);
+			process_error_queue = B_TRUE;
+		} else {
+			cv_wait(&autosnap->autosnap_cv,
+			    &autosnap->autosnap_lock);
 			continue;
 		}
 
-		/*
-		 * remove it from the queue for now.
-		 * will add it back to the tail of the queue
-		 * if destroy fails
-		 */
-		list_remove(&autosnap->autosnap_destroy_queue, snapshot);
-		mutex_exit(&autosnap->autosnap_lock);
+		err = autosnap_collect_for_destroy(spa, &tmp_list, &nvl);
+		if (err != 0) {
+			list_move_tail(&error_destroy, &tmp_list);
+			mutex_enter(&autosnap->autosnap_lock);
+			continue;
+		}
 
 		errlist = fnvlist_alloc();
 		err = dsl_destroy_snapshots_nvl(nvl, B_TRUE, errlist);
 		fnvlist_free(errlist);
 		fnvlist_free(nvl);
 
-		if (err == 0)
-			kmem_free(snapshot, sizeof (autosnap_snapshot_t));
+		if (err == 0) {
+			autosnap_snapshot_t *snapshot;
+
+			while ((snapshot = list_remove_head(&tmp_list)) != NULL)
+				kmem_free(snapshot, sizeof (autosnap_snapshot_t));
+		} else {
+			list_move_tail(&error_destroy, &tmp_list);
+		}
 
 		mutex_enter(&autosnap->autosnap_lock);
+	}
 
-		if (err != 0) {
-			list_insert_tail(&autosnap->autosnap_destroy_queue,
-			    snapshot);
-		}
+	if (!list_is_empty(&error_destroy)) {
+		list_move_tail(&autosnap->autosnap_destroy_queue,
+		    &error_destroy);
+	}
+
+	if (!list_is_empty(&tmp_list)) {
+		list_move_tail(&autosnap->autosnap_destroy_queue,
+		    &tmp_list);
 	}
 
 	autosnap->destroyer = NULL;
