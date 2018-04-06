@@ -31,7 +31,9 @@
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/atomic.h>
+#include <sys/debug.h>
 #include <sys/time.h>
+#include <sys/stddef.h>
 #include <smbsrv/smb_kproto.h>
 
 

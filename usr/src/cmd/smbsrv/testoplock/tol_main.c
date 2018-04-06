@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -23,13 +23,15 @@
  */
 
 #include <sys/types.h>
+#include <sys/debug.h>
+#include <sys/stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
 
-#include <smbsrv/smb2_kproto.h>
+#include <smbsrv/smb_kproto.h>
 #include <smbsrv/smb_oplock.h>
 
 #define	OPLOCK_CACHE_RWH	(READ_CACHING | HANDLE_CACHING | WRITE_CACHING)

@@ -30,7 +30,7 @@
  * Implementation specific: ...
  */
 
-#include <smbsrv/smb2_kproto.h>
+#include <smbsrv/smb_kproto.h>
 #include <smbsrv/smb_oplock.h>
 
 /*
@@ -1681,7 +1681,7 @@ smb_oplock_ack_break(
 			 *   passed Open, the operation ends at this point.)
 			 * EndIf
 			 */
-			FoundMatchingRHOplock = TRUE;
+			FoundMatchingRHOplock = B_TRUE;
 			if (ofile->f_oplock.BreakingToRead == B_FALSE) {
 				if (level != 0 && node->n_oplock.waiters) {
 					/* The ofile stays on RHBQ */
