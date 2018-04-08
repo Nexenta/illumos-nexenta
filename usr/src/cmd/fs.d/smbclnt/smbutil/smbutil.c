@@ -71,6 +71,7 @@ static struct commands {
 	int		flags;
 } commands[] = {
 	{"crypt",	cmd_crypt,	NULL, CMDFL_NO_KMOD},
+	{"discon",	cmd_discon,	discon_usage, 0},
 	{"help",	cmd_help,	help_usage, CMDFL_NO_KMOD},
 	{"info",	cmd_info,	info_usage, 0},
 	{"login",	cmd_login,	login_usage, 0},

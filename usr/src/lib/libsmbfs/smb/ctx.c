@@ -1212,11 +1212,6 @@ smb_ctx_get_ssn(struct smb_ctx *ctx)
 	if ((ctx->ct_flags & SMBCF_RESOLVED) == 0)
 		return (EINVAL);
 
-	if (ctx->ct_dev_fd < 0) {
-		if ((err = smb_ctx_gethandle(ctx)))
-			return (err);
-	}
-
 	/*
 	 * Check whether the driver already has a VC
 	 * we can use.  If so, we're done!
