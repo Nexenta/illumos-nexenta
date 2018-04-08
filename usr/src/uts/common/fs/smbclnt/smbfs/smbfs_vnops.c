@@ -4531,6 +4531,13 @@ smbfs_delmap(vnode_t *vp, offset_t off, struct as *as, caddr_t addr,
 
 	dmapp = kmem_zalloc(sizeof (*dmapp), KM_SLEEP);
 
+	/*
+	 * Apparently a delmap callback can run after segvn_free
+	 * has dropped the last vnode reference, so take a hold
+	 * on the vnode here and release it in the callback.
+	 */
+	VN_HOLD(vp);
+
 	dmapp->vp = vp;
 	dmapp->off = off;
 	dmapp->addr = addr;
@@ -4575,6 +4582,7 @@ smbfs_delmap(vnode_t *vp, offset_t off, struct as *as, caddr_t addr,
 			smb_credrele(&scred);
 			smbfs_rw_exit(&np->r_lkserlock);
 		}
+		VN_RELE(vp);
 		kmem_free(dmapp, sizeof (*dmapp));
 	}
 
@@ -4643,6 +4651,7 @@ smbfs_delmap_callback(struct as *as, void *arg, uint_t event)
 	}
 
 	(void) as_delete_callback(as, arg);
+	VN_RELE(vp);	/* hold taken in smbfs_delmap */
 	kmem_free(dmapp, sizeof (*dmapp));
 }
 
