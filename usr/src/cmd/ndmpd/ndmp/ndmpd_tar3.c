@@ -37,7 +37,7 @@
  */
 /* Copyright (c) 2007, The Storage Networking Industry Association. */
 /* Copyright (c) 1996, 1997 PDC, Network Appliance. All Rights Reserved */
-/* Copyright 2017 Nexenta Systems, Inc. All rights reserved. */
+/* Copyright 2018 Nexenta Systems, Inc. All rights reserved. */
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -1296,7 +1296,7 @@ save_date_token_v3(ndmpd_module_params_t *params, ndmp_lbr_params_t *nlp)
 
 	nlp->nlp_tokseq++;
 	tok = ((u_longlong_t)nlp->nlp_tokseq << 32) | nlp->nlp_cdate;
-	(void) snprintf(val, sizeof (val), "%lu", tok);
+	(void) snprintf(val, sizeof (val), "%llu", tok);
 
 	if (MOD_SETENV(params, "DUMP_DATE", val) != 0) {
 		MOD_LOGV3(params, NDMP_LOG_ERROR,
