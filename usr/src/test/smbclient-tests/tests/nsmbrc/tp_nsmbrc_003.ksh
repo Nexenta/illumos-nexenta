@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -21,6 +22,7 @@
 
 #
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -36,8 +38,7 @@
 #       4. smbutil and mount can get right message
 #
 
-nsmbrc003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="nsmbrc003"
 tc_desc=" Verify password can work"
@@ -53,21 +54,22 @@ smbmount_init $TMNT
 
 server=$(server_name) || return
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 pass=$(smbutil crypt $TPASS)
 SERVER=$(echo $server | tr "[:lower:]" "[:upper:]")
-echo "[$SERVER:$TUSER]" > ~root/.nsmbrc
-echo "addr=$server" >> ~root/.nsmbrc
-echo "password=$pass" >> ~root/.nsmbrc
-chmod 600 ~root/.nsmbrc
+echo "[$SERVER:$TUSER]" > ~/.nsmbrc
+echo "addr=$server" >> ~/.nsmbrc
+echo "password=$pass" >> ~/.nsmbrc
+cti_execute_cmd "chmod 600 ~/.nsmbrc"
 
-smbutil logoutall
+smbutil logout -a
 
-# get rid of our connection
-kill_smbiod
-sleep 2
+# get rid of our connections
+cti_execute_cmd "smbutil discon //$TUSER@$server"
+cti_execute_cmd "smbutil discon //$TUSER1@$server"
+sleep 1
 
-cti_report "expect failure next"
+cti_report "expect failure with $TUSER1"
 cmd="smbutil view -N //$TUSER1@$server"
 cti_execute -i '' PASS $cmd
 if [[ $? == 0 ]]; then
@@ -75,6 +77,16 @@ if [[ $? == 0 ]]; then
 	return
 else
 	cti_report "PASS: $SERVER:$TUSER does't work for $TUSER1"
+fi
+
+cti_report "expect success with $TUSER"
+cmd="truss -f -o smbutil.to smbutil view -N //$TUSER@$server"
+cti_execute -i '' PASS $cmd
+if [[ $? == 0 ]]; then
+	cti_pass "PASS: $SERVER:$TUSER works for $TUSER"
+else
+	cti_fail "FAIL: $SERVER:$TUSER does't work for $TUSER"
+	return
 fi
 
 cmd="mount -F smbfs //$TUSER@$server/public $TMNT"
@@ -92,8 +104,7 @@ if [[ $? != 0 ]]; then
 	return
 fi
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

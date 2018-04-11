@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #       3. tar can get the right message
 #
 
-mkdir006() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mkdir006"
 tc_desc=" Verify can muti dir operation on the smbfs"
@@ -62,10 +62,8 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # mkdir
-cti_execute_cmd "mkdir -p testdir01/dir002"
+cti_execute_cmd "mkdir -p $TMNT/testdir01/dir002"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mkdir testdir01/dir02 failed"
 	return
@@ -74,7 +72,7 @@ else
 fi
 
 # create tar file
-cti_execute_cmd "tar cvf test.tar testdir01"
+cti_execute_cmd "(cd $TMNT; tar cvf test.tar testdir01)"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: create tar file failed"
 	return
@@ -83,9 +81,7 @@ else
 fi
 
 # delete the tar file and directory
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TMNT/*"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

@@ -18,7 +18,7 @@ include		../../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/smbfs/mvtest
 
-TESTS=		tc_mvtest	\
+TESTS=	\
 		tp_mvtest_001	\
 		tp_mvtest_002	\
 		tp_mvtest_003	\

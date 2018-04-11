@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #        2. ls -ld /mnt get owner xxx
 #
 
-smbmount013() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount013"
 tc_desc="uid=xxx worked well"
@@ -48,24 +48,19 @@ fi
 
 server=$(server_name) || return
 
+# SKIP for now (mount -uid needs privs)
+no_tested || return
+
 testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-# This tests a feature not exposed with ACLs.
-smbmount_enable_noacl
-if [[ $? != 0 ]]; then
-	smbmount_clean $TMNT
-	cti_unsupported "UNSUPPORTED (requires noacl)"
-	return
-fi
-
 # XXX: Should get this user from config
 tc_uid="smmsp"
 
-cmd="mount -F smbfs -o noacl,uid=$tc_uid \
+cmd="mount -F smbfs -o noprompt,noacl,uid=$tc_uid \
  //$TUSER:$TPASS@$server/public $TMNT"
-cti_execute -i '' FAIL $cmd
+cti_execute -i '' FAIL sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
 	return
@@ -75,34 +70,28 @@ usr=$(ls -ld $TMNT|awk '{ print $3}')
 
 if [[ $usr != "$tc_uid" ]]; then
 	cti_fail "FAIL: ls -ld, expected $tc_uid, got $usr"
-	cti_execute_cmd "cd -"
 	smbmount_clean $TMNT
 	return
 fi
 
-cti_execute_cmd "cd $TMNT"
-
-cti_execute_cmd "touch a"
+cti_execute_cmd "touch $TMNT/a"
 usr=$(ls -l a|awk '{ print $3}')
 if [[ $usr != "$tc_uid" ]]; then
 	cti_fail "FAIL: touch a, expected $tc_uid usr, got $usr"
-	cti_execute_cmd "cd -"
 	smbmount_clean $TMNT
 	return
 fi
 
-cti_execute_cmd "rm -rf b"
-cti_execute_cmd "mkdir b"
+cti_execute_cmd "rm -rf $TMNT/b"
+cti_execute_cmd "mkdir $TMNT/b"
 usr=$(ls -ld b|awk '{ print $3}')
 if [[ $usr != "$tc_uid" ]]; then
 	cti_fail "FAIL: mkdir b, expected $tc_uid usr, got $usr"
-	cti_execute_cmd "cd -"
 	smbmount_clean $TMNT
 	return
 fi
 
-cti_execute_cmd "rm -rf *"
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm -rf $TMNT/*"
 
 cmd="umount $TMNT"
 cti_execute_cmd $cmd
@@ -114,4 +103,3 @@ fi
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

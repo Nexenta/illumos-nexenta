@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mv and diff can get the right message
 #
 
-mvtest003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mvtest003"
 tc_desc=" Verify can mv dirs between server on the smbfs"
@@ -61,10 +61,8 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # mkdir on server
-cti_execute_cmd "mkdir test_dir"
+cti_execute_cmd "mkdir $TMNT/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mkdir test_dir failed"
 	return
@@ -72,7 +70,7 @@ else
 	cti_report "PASS: mkdir test_dir succeeded"
 fi
 
-cti_execute_cmd "mv test_dir test_dir_mv"
+cti_execute_cmd "(cd $TMNT; mv test_dir test_dir_mv)"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv test_dir test_dir_mv failed"
 	return
@@ -81,9 +79,7 @@ else
 fi
 
 
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TMNT/*"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #	2. mount can get the failed message
 #
 
-smbmount003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount003"
 tc_desc=" Verify smbmount can't mount private share with wrong passwd"
@@ -52,20 +52,20 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-# get rid of our connection
-kill_smbiod
-sleep 2
+# get rid of our connection first
+cti_execute_cmd "smbutil discon //$AUSER@$server"
+sleep 1
 
 cti_report "expect failure next"
-cmd="mount -F smbfs -o noprompt //$AUSER:$BPASS@$server/$AUSER $TMNT"
+cmd="mount -F smbfs -o noprompt //$AUSER:badpass@$server/a_share $TMNT"
 cti_execute -i '' PASS $cmd
 if [[ $? == 0 ]]; then
-	cti_fail "FAIL: smbmount can mount the share $AUSER with wrong passwd"
+	cti_execute_cmd "echo '::nsmb_vc' |sudo -n mdb -k"
+	cti_fail "FAIL: smbmount can mount the share a_share with wrong passwd"
 	return
 else
-	cti_report "PASS: smbmount can't mount the share $AUSER with wrong passwd"
+	cti_report "PASS: smbmount can't mount the share a_share with wrong passwd"
 fi
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

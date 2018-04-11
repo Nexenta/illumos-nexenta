@@ -35,39 +35,8 @@
 #	no return
 #
 print_test_case() {
-	typeset tc_id="$1"
-	typeset ptc_short_info
-	ptc_info="Test case $*"
-
 	cti_report "======================================================="
-
-	if [ `echo $ptc_info | /usr/bin/wc -c` -gt 60 ]
-	then
-		#
-		# Split the line
-		#
-		ptc_ltrcnt=0
-		for ptc_word in $ptc_info
-		do
-			ptc_wordsz=`echo $ptc_word | /usr/bin/wc -c`
-			ptc_ltrcnt=`/usr/bin/expr $ptc_ltrcnt + $ptc_wordsz + 1`
-			if [ $ptc_ltrcnt -gt 60 ]
-			then
-				cti_report "$ptc_short_info"
-				ptc_short_info=" $ptc_word"
-				ptc_ltrcnt=`/usr/bin/expr $ptc_wordsz`
-			else
-				ptc_short_info="$ptc_short_info $ptc_word"
-			fi
-		done
-		if [ $ptc_ltrcnt -gt 0 ]
-		then
-			cti_report "$ptc_short_info"
-		fi
-	else
-		cti_report "$ptc_info"
-	fi
-
+	cti_report "Test case $*"
 	cti_report "======================================================="
 }
 
@@ -98,11 +67,7 @@ do_nothing() {
 #       1 - the test case will not run
 #
 no_tested() {
-	if [[ -n $SRV ]]; then
-		cti_report UNTESTED
-		return 1
-	fi
-	return 0
+	cti_result NOTINUSE
 }
 
 #
@@ -118,7 +83,8 @@ no_tested() {
 #
 server_name() {
 	if [[ -z $SRV ]]; then
-		tet_result UNRESOLVED
+		cti_report "SRV not set"
+		cti_result UNRESOLVED
 		return 1
 	fi
 	server=$SRV
@@ -137,7 +103,8 @@ server_name() {
 #	no return
 #
 file_size() {
-	file=$1
-	size=$(ls -l $file |awk '{print $5}')
-	echo $size
+	typeset file=$1
+	typeset -a arr
+	set -A arr x$(ls -l $file 2>/dev/null || echo 0 0 0 0 0);
+	echo "${arr[4]}"
 }

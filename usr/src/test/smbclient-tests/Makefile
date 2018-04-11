@@ -19,7 +19,7 @@ SUBDIRS=	cmd	\
 		config	\
 		doc	\
 		include	\
-		tests	\
-		tet
+		runfiles \
+		tests
 
 include		$(SRC)/test/Makefile.com

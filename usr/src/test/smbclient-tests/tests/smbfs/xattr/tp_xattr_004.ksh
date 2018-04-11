@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -37,8 +38,7 @@
 #	4. Do the same in reverse.
 #
 
-function xattr_004 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_004
 tc_desc="Verify from local tmpfs with xattrs copied to mount point retain xattr info\
@@ -98,7 +98,7 @@ cti_execute_cmd "cp -@ $TMNT/test_file1 $TDIR/test_file2"
 cti_execute_cmd "runat $TDIR/test_file2 diff passwd /etc/passwd"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: file xattr not retain when it copy from mount point to local tmpfs"
-       	return
+	return
 else
 	cti_report "PASS: file xattr retain when it copy from mount point to local tmpfs"
 fi
@@ -107,4 +107,3 @@ cti_execute_cmd "rm -rf $TDIR/*"
 
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

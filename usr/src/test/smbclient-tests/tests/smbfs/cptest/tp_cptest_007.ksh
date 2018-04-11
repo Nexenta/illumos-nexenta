@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. cp and diff can get the right message
 #
 
-cptest007() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="cptest007"
 tc_desc=" Verify can cp muti dir/files between server and local"
@@ -44,6 +44,11 @@ print_test_case $tc_id - $tc_desc
 if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	[[ *:${STC_CIFS_CLIENT_DEBUG}:* == *:$tc_id:* ]]; then
     set -x
+fi
+
+if [[ -n "$STC_QUICK" ]] ; then
+  cti_notinuse "${tc_id}: skipped (STC_QUICK)"
+  return
 fi
 
 tdir=/kernel/misc
@@ -64,10 +69,9 @@ fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
 cti_execute_cmd "rm -rf $TDIR/*"
-cti_execute_cmd "cd $TMNT"
 
 # create mutil file/dirs on the server
-cti_execute_cmd "cp -rf $tdir test_dir"
+cti_execute_cmd "cp -rf $tdir $TMNT/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp $tdir to test_dir failed"
 	return
@@ -76,7 +80,7 @@ else
 fi
 
 # cp to local
-cti_execute_cmd "cp -rf  test_dir $TDIR/test_dir"
+cti_execute_cmd "cp -rf  $TMNT/test_dir $TDIR/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp to the local dir:$TDIR/test_dir failed"
 	return
@@ -85,7 +89,7 @@ else
 fi
 
 # diff the server to local
-cti_execute_cmd "diff -r test_dir $TDIR/test_dir"
+cti_execute_cmd "diff -r $TMNT/test_dir $TDIR/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail " $TDIR/test_dir is different with server's copy"
 	return
@@ -94,7 +98,7 @@ else
 fi
 
 # cp muti dir/files from the local to server
-cti_execute_cmd "cp -rf $TDIR/test_dir test_dir_cp"
+cti_execute_cmd "cp -rf $TDIR/test_dir $TMNT/test_dir_cp"
 if [[ $? != 0 ]]; then
 	cti_fail "cp $TDIR/test_dir to test_dir_cp failed"
 	return
@@ -103,7 +107,7 @@ else
 fi
 
 # diff the server and local
-cti_execute_cmd "diff -r $TDIR/test_dir test_dir_cp"
+cti_execute_cmd "diff -r $TDIR/test_dir $TMNT/test_dir_cp"
 if [[ $? != 0 ]]; then
 	cti_fail " $TDIR/test_dir is different with server's copy" \
 	    "test_dir_cp"
@@ -113,10 +117,8 @@ else
 	    "test_dir_cp"
 fi
 
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TDIR/*"
 cti_execute_cmd "rm -rf $TMNT/*"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

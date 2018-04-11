@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mkdir and rmdir can get the right message
 #
 
-mkdir001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mkdir001"
 tc_desc=" Verify can create dir on smbfs"
@@ -62,10 +62,9 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
 # mkdir
-cti_execute_cmd  "mkdir testdir"
+cti_execute_cmd  "mkdir $TMNT/testdir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mkdir testdir failed"
 	return
@@ -73,7 +72,7 @@ else
 	cti_report "PASS: mkdir testdir succeeded"
 fi
 
-cti_execute_cmd "rmdir testdir"
+cti_execute_cmd "rmdir $TMNT/testdir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: rmdir testdir failed"
 	return
@@ -81,8 +80,5 @@ else
 	cti_report "PASS: rmdir testdir succeeded"
 fi
 
-cti_execute_cmd "cd -"
-
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

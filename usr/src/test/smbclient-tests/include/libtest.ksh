@@ -25,33 +25,15 @@
 #
 
 #
-# mvtest test case
+# common includes for smbclint-tests
 #
 
-. ${CTI_SUITE}/config/config
+. ${STF_SUITE}/include/default_cfg.ksh
 
-ic1="mvtest001"
-ic2="mvtest002"
-ic3="mvtest003"
-ic4="mvtest004"
-ic5="mvtest005"
-ic6="mvtest006"
-ic7="mvtest007"
+. ${STF_SUITE}/include/services_common.ksh
+. ${STF_SUITE}/include/smbutil_common.ksh
+. ${STF_SUITE}/include/utils_common.ksh
+. ${STF_SUITE}/include/smbmount_common.ksh
+. ${STF_SUITE}/include/xattr_common.ksh
 
-iclist="$ic1 $ic2 $ic3 $ic4 $ic5 $ic6 $ic7"
-test_list="$iclist"
-
-. ${CTI_SUITE}/tests/smbfs/mvtest/tp_mvtest_001
-. ${CTI_SUITE}/tests/smbfs/mvtest/tp_mvtest_002
-. ${CTI_SUITE}/tests/smbfs/mvtest/tp_mvtest_003
-. ${CTI_SUITE}/tests/smbfs/mvtest/tp_mvtest_004
-. ${CTI_SUITE}/tests/smbfs/mvtest/tp_mvtest_005
-. ${CTI_SUITE}/tests/smbfs/mvtest/tp_mvtest_006
-. ${CTI_SUITE}/tests/smbfs/mvtest/tp_mvtest_007
-
-. ${CTI_SUITE}/include/services_common.ksh
-. ${CTI_SUITE}/include/smbutil_common.ksh
-. ${CTI_SUITE}/include/utils_common.ksh
-. ${CTI_SUITE}/include/smbmount_common.ksh
-
-. ${CTI_ROOT:?}/lib/ctilib.ksh
+. ${STF_TOOLS}/contrib/include/ctiutils.shlib

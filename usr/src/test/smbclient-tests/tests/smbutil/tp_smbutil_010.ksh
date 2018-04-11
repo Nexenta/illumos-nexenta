@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -33,8 +34,7 @@
 #	1. smbutil can get mutil share information
 #
 
-smbutil010() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbutil010"
 tc_desc=" Verify smbutil  can view mutil share"
@@ -70,4 +70,3 @@ while ((i<20)); do
 done
 
 cti_pass "${tc_id}: PASS"
-}

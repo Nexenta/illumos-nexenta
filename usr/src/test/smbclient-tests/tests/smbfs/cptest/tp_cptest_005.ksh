@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. cp -r can get the right message
 #
 
-cptest005() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="cptest005"
 tc_desc="Verify can cp dir between server and client side"
@@ -61,14 +61,16 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # mkdir on the local
 cti_execute_cmd "rm -rf $TDIR/*"
 cti_execute_cmd "mkdir $TDIR/test_dir"
 
+# make sure no left over dir in the way, or the cp -r
+# will make a subdir, and fail our later rmdir
+cti_execute_cmd "rm -rf $TMNT/test_dir"
+
 # cp to server
-cti_execute_cmd "cp -r $TDIR/test_dir test_dir"
+cti_execute_cmd "cp -r $TDIR/test_dir $TMNT/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp $TDIR/test_dir to server failed"
 	return
@@ -76,7 +78,7 @@ else
 	cti_report "PASS: cp $TDIR/test_dir to server succeeded"
 fi
 
-if [[ ! -d "test_dir" ]]; then
+if [[ ! -d "$TMNT/test_dir" ]]; then
 	cti_fail "FAIL: test_dir doesn't exist on server"
 	return
 else
@@ -84,7 +86,7 @@ else
 fi
 
 # cp dir from the server to local
-cti_execute_cmd "cp -r test_dir $TDIR/test_dir_cp"
+cti_execute_cmd "cp -r $TMNT/test_dir $TDIR/test_dir_cp"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp test_dir to $TDIR/test_dir_cp failed"
 	return
@@ -99,7 +101,7 @@ else
 	cti_report "PASS: $TDIR/test_dir_cp  exists"
 fi
 
-cti_execute_cmd "rmdir test_dir"
+cti_execute_cmd "rmdir $TMNT/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: rm test_dir failed"
 	return
@@ -108,8 +110,6 @@ else
 fi
 
 cti_execute_cmd "rm -f $TDIR/*"
-cti_execute_cmd "cd -"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

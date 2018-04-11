@@ -13,11 +13,9 @@
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
-include		$(SRC)/Makefile.master
+include		$(SRC)/cmd/Makefile.cmd
 include		../../Makefile.com
 
-ROOTTESTDIR=	$(ROOTOPTPKG)/tests/configure
+PROG=		cp_mmap
 
-TESTS=		configure
-
-include		../Makefile.tests
+include		../Makefile.cmd

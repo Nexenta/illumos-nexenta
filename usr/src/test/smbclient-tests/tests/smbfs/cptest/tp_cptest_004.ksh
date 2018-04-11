@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. cp and diff can get the right message
 #
 
-cptest004() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="cptest004"
 tc_desc="Verify can cp 3g files on the smbfs"
@@ -46,9 +46,12 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	set -x
 fi
 
+# This test is largely redundant with create/tp_create_009
+# so we could probably just delete this test.
 size=3g
 if [[ -n "$STC_QUICK" ]] ; then
-  size=30m
+  cti_notinuse "${tc_id}: skipped (STC_QUICK)"
+  return
 fi
 
 server=$(server_name) || return
@@ -66,29 +69,21 @@ else
 	cti_report "smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 cti_execute_cmd "mkfile $size $TDIR/test_file"
 cti_execute FAIL "sum $TDIR/test_file"
 read sum1 cnt1 junk < cti_stdout
 
 # cp file to server
-cti_execute_cmd "cp $TDIR/test_file test_file"
+cti_execute_cmd "cp $TDIR/test_file $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp $TDIR/test_file to test_file failed"
 	return
 else
-	cti_report "PASS: cp $TDIR/test_file to test_file successfully"
+	cti_report "PASS: cp $TDIR/test_file to test_file succeeded"
 fi
 
-cti_execute FAIL "sum test_file"
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: sum $size file on smbfs failed"
-	return
-else
-	cti_report "PASS: sum $size file on smbfs succeeded"
-fi
-
+# compare (which reads the remote file)
+cti_execute FAIL "sum $TMNT/test_file"
 read sum2 cnt2 junk < cti_stdout
 if [[ $sum1 != $sum2 ]] ; then
 	cti_fail "FAIL: first sum of the files are different"
@@ -97,25 +92,7 @@ else
 	cti_report "PASS: first sums of the files are same"
 fi
 
-# cp back to local
-cti_execute_cmd "cp test_file $TDIR/test_file_cp "
-if [[ $? != 0 ]]; then
-	cti_fail "cp test_file $TDIR/test_file_cp failed"
-	return
-else
-	cti_report "cp test_file $TDIR/test_file_cp succeeded"
-fi
-
-cti_execute FAIL "sum $TDIR/test_file_cp"
-read sum3 cnt3 junk < cti_stdout
-if [[ $sum1 != $sum3 ]] ; then
-	cti_fail "the second sum of the files are different"
-	return
-else
-	cti_report "the second sum of the files are same"
-fi
-
-cti_execute_cmd "rm test_file"
+cti_execute_cmd "rm $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "rm the test_file failed"
 	return
@@ -124,15 +101,7 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TDIR/*"
-cti_execute_cmd "cd -"
 
 smbmount_clean $TMNT
 
-if [[ -n "$STC_QUICK" ]] ; then
-	cti_report "PASS, but with reduced size."
-	cti_untested $tc_id
-	return
-fi
-
 cti_pass "${tc_id}: PASS"
-}

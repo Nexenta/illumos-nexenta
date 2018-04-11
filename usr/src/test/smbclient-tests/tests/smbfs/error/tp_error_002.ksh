@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #        3. The mknod can get the right message
 #
 
-error002() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="error002"
 tc_desc=" Verify mknod error  on the smbfs"
@@ -62,9 +62,7 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
-cti_execute_cmd "mknod file p"
+cti_execute_cmd "mknod $TMNT/file p"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: mknod file succeeded on smbfs"
 	return
@@ -72,8 +70,5 @@ else
 	cti_report "PASS: mknod file failed on smbfs"
 fi
 
-cti_execute_cmd "cd -"
-
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

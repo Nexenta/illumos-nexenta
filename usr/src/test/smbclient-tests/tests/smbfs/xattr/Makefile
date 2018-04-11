@@ -18,7 +18,7 @@ include		../../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/smbfs/xattr
 
-TESTS=		tc_xattr	\
+TESTS=	\
 		tp_xattr_001	\
 		tp_xattr_002	\
 		tp_xattr_003	\

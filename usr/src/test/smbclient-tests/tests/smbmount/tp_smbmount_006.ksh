@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -27,7 +28,7 @@
 # ID: smbmount_006
 #
 # DESCRIPTION:
-#        Verify mutil user can't mount on the same share"
+#        Verify mutil user can't mount on the same mount point"
 #
 # STRATEGY:
 #	1. create user "$AUSER" and "$BUSER"
@@ -37,8 +38,7 @@
 #	5. mount failed
 #
 
-smbmount006() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount006"
 tc_desc=" Verify mutil user mount failed on the same plan"
@@ -55,7 +55,7 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-cmd="mount -F smbfs //$AUSER:$APASS@$server/public $TMNT"
+cmd="mount -F smbfs -o noprompt //$AUSER:$APASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: smbmount can't mount the public share"
@@ -67,9 +67,10 @@ fi
 smbmount_check $TMNT || return
 
 # this should fail
-cmd="mount -F smbfs //$BUSER:$BPASS@$server/public $TMNT"
-cti_execute -i '' PASS $cmd
+cmd="mount -F smbfs -o noprompt //$BUSER:$BPASS@$server/public $TMNT"
+cti_execute -i '' PASS sudo -n -u $BUSER $cmd
 if [[ $? == 0 ]]; then
+	cti_execute_cmd "echo '::nsmb_vc' |sudo -n mdb -k"
 	cti_fail "FAIL: smbmount - second mount should have failed"
 	return
 else
@@ -87,4 +88,3 @@ fi
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

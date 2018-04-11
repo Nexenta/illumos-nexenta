@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,11 +35,10 @@
 #       2. create and rm can get the right message
 #
 
-create008() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create008"
-tc_desc="Verify can create 1.5g files on the smbfs"
+tc_desc="Verify can create 150m files on the smbfs"
 print_test_case $tc_id - $tc_desc
 
 if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
@@ -46,9 +46,9 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
     set -x
 fi
 
-size=1500m
+size=150m
 if [[ -n "$STC_QUICK" ]] ; then
-  size=15m
+  size=5m
 fi
 
 server=$(server_name) || return
@@ -67,11 +67,10 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
 # create file
 cti_execute_cmd "mkfile $size $TDIR/file"
-cti_execute_cmd "mkfile $size file"
+cti_execute_cmd "mkfile $size $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to create the $size file"
 	return
@@ -79,7 +78,7 @@ else
 	cti_report "PASS: create the $size file successfully"
 fi
 
-cti_execute_cmd "diff file $TDIR/file "
+cti_execute_cmd "cmp -s $TMNT/file $TDIR/file "
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the first diff is different"
 	return
@@ -87,7 +86,7 @@ else
 	cti_report "PASS: the first diff is same"
 fi
 
-cti_execute_cmd "rm  file "
+cti_execute_cmd "rm $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to delete the file"
 	return
@@ -95,23 +94,19 @@ else
 	cti_report "PASS: delete the file successfully"
 fi
 
-if [[  -f "file" ]]; then
+if [[  -f "$TMNT/file" ]]; then
 	cti_fail "FAIL: the file should not exist, but it exists"
 	return
 else
 	cti_report "PASS: the file exists, it is right"
 fi
 
-cti_execute_cmd "rm $TDIR/file "
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm $TDIR/file"
 
 smbmount_clean $TMNT
 
 if [[ -n "$STC_QUICK" ]] ; then
-  cti_report "PASS, but with reduced size."
-  cti_untested $tc_id
+  cti_notinuse "${tc_id}: Created 5m file (reduced for STC_QUICK)"
   return
 fi
-
 cti_pass "${tc_id}: PASS"
-}

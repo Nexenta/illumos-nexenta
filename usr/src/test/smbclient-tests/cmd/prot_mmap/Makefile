@@ -13,22 +13,9 @@
 # Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
 #
 
-include		$(SRC)/Makefile.master
-include		../Makefile.com
+include		$(SRC)/cmd/Makefile.cmd
+include		../../Makefile.com
 
-TETSCEN=	tet_scen
+PROG=		prot_mmap
 
-ROOTTETSCEN=	$(TETSCEN:%=$(ROOTOPTPKG)/%)
-$(ROOTTETSCEN) := FILEMODE = 0444
-
-all:		$(TETSCEN)
-
-install:	$(ROOTOPTPKG) $(ROOTTETSCEN)
-
-clean lint clobber:
-
-$(ROOTOPTPKG):
-		$(INS.dir)
-
-$(ROOTOPTPKG)/%: %
-		$(INS.file)
+include		../Makefile.cmd

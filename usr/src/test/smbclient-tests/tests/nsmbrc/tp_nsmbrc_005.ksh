@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -21,6 +22,7 @@
 
 #
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -36,8 +38,7 @@
 #       4. smbutil and mount can get the right message
 #
 
-nsmbrc005() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="nsmbrc005"
 tc_desc=" Verify user and domain in user section can work"
@@ -50,16 +51,16 @@ fi
 
 server=$(server_name) || return
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
 pass=$(smbutil crypt $TPASS)
-echo "[default]" > ~root/.nsmbrc
-echo "password=$pass" >> ~root/.nsmbrc
-echo "user=$TUSER" >> ~root/.nsmbrc
-echo "domain=mydomain" >> ~root/.nsmbrc
-chmod 600 ~root/.nsmbrc
+echo "[default]" > ~/.nsmbrc
+echo "password=$pass" >> ~/.nsmbrc
+echo "user=$TUSER" >> ~/.nsmbrc
+echo "domain=mydomain" >> ~/.nsmbrc
+cti_execute_cmd chmod 600 ~/.nsmbrc
 
 cmd="smbutil view //$server"
 cti_execute -i '' FAIL $cmd
@@ -88,8 +89,7 @@ if [[ $? != 0 ]]; then
 	return
 fi
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

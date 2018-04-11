@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -37,8 +38,7 @@
 #       3. sharectl and mount can get right message
 #
 
-sharectl005() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="sharectl005"
 tc_desc="Test user and domain in sharctl [default] section."
@@ -113,4 +113,3 @@ smbmount_clean $TMNT
 sharectl delsect default smbfs
 
 cti_pass "${tc_id}: PASS"
-}

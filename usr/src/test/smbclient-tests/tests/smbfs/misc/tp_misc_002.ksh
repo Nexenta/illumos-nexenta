@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -39,8 +40,7 @@
 #	(All steps must be completed in less than a few seconds.)
 #
 
-misc002() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="misc002"
 tc_desc=" Verify attribute cache invalidation under renamed directory"
@@ -107,4 +107,3 @@ cti_execute_cmd "rm -rf $TMNT/*"
 
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

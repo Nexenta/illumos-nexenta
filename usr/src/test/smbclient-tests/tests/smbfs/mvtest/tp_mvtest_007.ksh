@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mv and diff can get the right message
 #
 
-mvtest007() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mvtest007"
 tc_desc=" Verify can mv muti dir/files between server and local"
@@ -46,7 +46,7 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
     set -x
 fi
 
-tdir=/kernel/sys
+srcdir=/usr/lib/locale/C
 server=$(server_name)|| return
 
 if [[ $? != 0 ]]; then
@@ -68,29 +68,27 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
-
 
 # create mutil file/dirs on the server
-cti_execute_cmd "cp -rf $tdir test_dir"
+cti_execute_cmd "cp -rf $srcdir $TMNT/test_dir"
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: cp $tdir to test_dir failed"
+	cti_fail "FAIL: cp $srcdir to test_dir failed"
 	return
 else
-	cti_report "PASS: cp $tdir to test_dir succeeded"
+	cti_report "PASS: cp $srcdir to test_dir succeeded"
 fi
 
 # create mutil file/dirs on the server
-cti_execute_cmd "cp -rf /$tdir test_dir_org"
+cti_execute_cmd "cp -rf $srcdir $TMNT/test_dir_org"
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: cp $tdir to test_dir_org failed"
+	cti_fail "FAIL: cp $srcdir to test_dir_org failed"
 	return
 else
-	cti_report "PASS: cp $tdir to test_dir_org succeeded"
+	cti_report "PASS: cp $srcdir to test_dir_org succeeded"
 fi
 
 # find .
-cti_execute FAIL "find ."
+cti_execute FAIL "(cd $TMNT; find .)"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: find failed on smbfs"
 	return
@@ -99,7 +97,7 @@ else
 fi
 
 # mv to local
-cti_execute_cmd "mv test_dir $TDIR/test_dir"
+cti_execute_cmd "mv $TMNT/test_dir $TDIR/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv test_dir $TDIR/test_dir failed"
 	return
@@ -108,7 +106,7 @@ else
 fi
 
 # diff the local and  org's
-cti_execute_cmd "diff -r test_dir_org $TDIR/test_dir"
+cti_execute_cmd "diff -r $TMNT/test_dir_org $TDIR/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff -r test_dir_org $TDIR/test_dir failed"
 	return
@@ -117,7 +115,7 @@ else
 fi
 
 # mv muti dir/files from the local to server
-cti_execute_cmd "mv $TDIR/test_dir test_dir_mv"
+cti_execute_cmd "mv $TDIR/test_dir $TMNT/test_dir_mv"
 if [[ $? != 0 ]]; then
 	# This test has errors until we do sysattrs
 	noise=' preserve extended system attribute'
@@ -132,7 +130,7 @@ else
 fi
 
 # diff the server to local
-cti_execute_cmd  "diff -r test_dir_org test_dir_mv"
+cti_execute_cmd  "diff -r $TMNT/test_dir_org $TMNT/test_dir_mv"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff -r test_dir_org test_dir_mv failed"
 	return
@@ -140,10 +138,8 @@ else
 	cti_report "PASS: diff -r test_dir_org test_dir_mv succeeded"
 fi
 
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TDIR/*"
 cti_execute_cmd "rm -rf $TMNT/*"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

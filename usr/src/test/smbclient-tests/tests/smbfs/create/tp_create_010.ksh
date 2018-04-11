@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. create, cp and rm can get the right message
 #
 
-create010() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create010"
 tc_desc="Verify can create files on the smbfs"
@@ -44,6 +44,11 @@ print_test_case $tc_id - $tc_desc
 if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	[[ *:${STC_CIFS_CLIENT_DEBUG}:* == *:$tc_id:* ]]; then
     set -x
+fi
+
+if [[ -n "$STC_QUICK" ]] ; then
+  cti_notinuse "${tc_id}: skipped (STC_QUICK)"
+  return
 fi
 
 server=$(server_name) || return
@@ -62,16 +67,15 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 cti_execute_cmd "rm -rf $TDIR/*"
 
 # create file
 mkfile 20m $TDIR/file
-cti_execute_cmd "cp $TDIR/file file &"
+cti_execute_cmd "cp $TDIR/file $TMNT/file &"
 pid1=$!
 
 sleep 3
-tail -f file >/dev/null 2>&1 &
+tail -f $TMNT/file >/dev/null 2>&1 &
 pid2=$!
 
 wait $pid1
@@ -89,8 +93,6 @@ cti_execute_cmd "kill -9 $pid2"
 sleep 5
 
 cti_execute_cmd "rm $TDIR/file"
-cti_execute_cmd "cd -"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

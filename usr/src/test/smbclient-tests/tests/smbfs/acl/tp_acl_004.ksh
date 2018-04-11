@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -38,8 +39,7 @@
 #	6. verify $TUSER1 ACE is there
 #
 
-acl004() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="acl004"
 tc_desc="Verify we can modify an ACL (add user ACE)"
@@ -60,7 +60,7 @@ smbmount_init $TMNT2
 
 #       1. run "mount -F smbfs //$TUSER@..." $TMNT
 
-cmd="mount -F smbfs //$TUSER:$TPASS@$server/public $TMNT"
+cmd="mount -F smbfs -oacl //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -79,7 +79,7 @@ fi
 
 #       2. run "mount -F smbfs //$TUSER1@..." $TMNT2
 
-cmd="mount -F smbfs //$TUSER1:$TPASS@$server/public $TMNT2"
+cmd="mount -F smbfs -oacl //$TUSER1:$TPASS@$server/public $TMNT2"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -178,4 +178,3 @@ smbmount_clean $TMNT
 smbmount_clean $TMNT2
 
 cti_pass "${tc_id}: PASS"
-}

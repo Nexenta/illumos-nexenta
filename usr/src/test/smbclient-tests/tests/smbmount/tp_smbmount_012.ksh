@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -38,8 +39,7 @@
 #        5. cd /PUBLIC get permisson deny
 #
 
-smbmount012() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount012"
 tc_desc="dirperms=xxx worked well "
@@ -56,16 +56,8 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-# This tests a feature not exposed with ACLs.
-smbmount_enable_noacl
-if [[ $? != 0 ]]; then
-	smbmount_clean $TMNT
-	cti_unsupported "UNSUPPORTED (requires noacl)"
-	return
-fi
-
-cmd="mount -F smbfs -o noacl,dirperms=540
- //$TUSER:$TPASS@$server/public $TMNT"
+cmd="mount -F smbfs -o noprompt,noacl,dirperms=540
+ //$AUSER:$APASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: smbmount can't mount the public share"
@@ -74,21 +66,14 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
-cti_execute_cmd "rm -rf a"
-cti_execute_cmd "mkdir a"
-perm=$(ls -ld a|awk '{ print $1}')
+perm=$(ls -ld $TMNT |awk '{ print $1}')
 if [[ $perm != "dr-xr-----" && $perm != "dr-xr-----+" ]]; then
 	cti_fail "FAIL: the expect result is get 540 permission, but get $perm"
-	cti_execute_cmd "cd -"
 	return
 else
 	cti_report "PASS: the expect result is right"
 fi
-cti_execute_cmd "rm -rf a"
-
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm -rf $TMNT/a"
 
 cmd="umount $TMNT"
 cti_execute_cmd $cmd
@@ -102,4 +87,3 @@ fi
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

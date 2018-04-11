@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. Try to read a non-existent xattr, check that an error is returned.
 #
 
-function xattr_002 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_002
 tc_desc="Verify trying to read a non-existent xattr should fail"
@@ -70,11 +70,10 @@ fi
 
 # create a file
 
-cti_execute_cmd "cd $TMNT"
-cti_execute_cmd "touch test_file"
+cti_execute_cmd "touch $TMNT/test_file"
 
 # should not find an xattr file
-cti_execute PASS "runat test_file cat not-here.txt"
+cti_execute_cmd "runat $TMNT/test_file cat not-here.txt"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: A read of a non-existent xattr succeeded unexpectedly"
 	return
@@ -82,8 +81,5 @@ else
 	cti_report "PASS: A read of a non-existent xattr fail as expected"
 fi
 
-cti_execute_cmd "cd -"
-
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

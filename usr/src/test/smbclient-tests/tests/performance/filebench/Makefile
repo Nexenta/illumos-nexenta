@@ -18,7 +18,7 @@ include		../../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/performance/filebench
 
-TESTS=		tc_filebench		\
+TESTS=	\
 		tp_filebench_001	\
 		tp_filebench_002	\
 		tp_filebench_003	\

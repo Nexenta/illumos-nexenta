@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mv and diff can get the right message
 #
 
-mvtest001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mvtest001"
 tc_desc=" Verify can mv files on the smbfs"
@@ -61,11 +61,9 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 cti_execute_cmd "cp /usr/bin/ls $TDIR/test_file"
 # mv file to server
-cti_execute_cmd "mv $TDIR/test_file test_file"
+cti_execute_cmd "mv $TDIR/test_file $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv $TDIR/test_file test_file failed"
 	return
@@ -73,7 +71,7 @@ else
 	cti_report "PASS: mv $TDIR/test_file test_file succeeded"
 fi
 
-cti_execute_cmd "diff /usr/bin/ls test_file"
+cti_execute_cmd "cmp -s /usr/bin/ls $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff /usr/bin/ls test_file failed"
 	return
@@ -81,7 +79,7 @@ else
 	cti_report "PASS: diff /usr/bin/ls test_file succeeded"
 fi
 
-cti_execute_cmd "mv  test_file $TDIR/test_file_mv"
+cti_execute_cmd "mv $TMNT/test_file $TDIR/test_file_mv"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv test_file ${test_file}/test_file_mv failed"
 	return
@@ -89,7 +87,8 @@ else
 	cti_report "PASS: mv test_file ${test_file}/test_file_mv succeeded"
 fi
 
-if [[ -f test_file ]]; then
+# test_file should be gone from server
+if [[ -f $TMNT/test_file ]]; then
 	cti_fail "FAIL: test_file exist"
 	return
 else
@@ -104,9 +103,7 @@ else
 	cti_report "PASS: diff /usr/bin/ls $TDIR/test_file succeeded"
 fi
 
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm $TDIR/test_file_mv"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

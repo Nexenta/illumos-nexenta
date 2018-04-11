@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -21,6 +22,7 @@
 
 #
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -35,8 +37,7 @@
 #       3. smbutil can get right messages
 #
 
-nsmbrc004() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="nsmbrc004"
 tc_desc=" Verify minauth can work on SERVER section"
@@ -49,29 +50,28 @@ fi
 
 server=$(server_name) || return
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 
 SERVER=$(echo $server | tr "[:lower:]" "[:upper:]")
-echo "[$SERVER]" > ~root/.nsmbrc
-echo "addr=$server" >> ~root/.nsmbrc
-echo "minauth=kerberos" >> ~root/.nsmbrc
+echo "[$SERVER]" > ~/.nsmbrc
+echo "addr=$server" >> ~/.nsmbrc
+echo "minauth=kerberos" >> ~/.nsmbrc
 
 # get rid of our connection
-kill_smbiod
-sleep 2
+cti_execute_cmd "smbutil discon //$TUSER@$server"
+sleep 1
 
 cti_report "expect failure next"
 cmd="smbutil view //$TUSER:$TPASS@$server"
 cti_execute -i '' PASS $cmd
 if [[ $? == 0 ]]; then
-	cti_execute_cmd "echo ::nsmb_vc|mdb -k"
+	cti_execute_cmd "echo '::nsmb_vc' |sudo -n mdb -k"
 	cti_fail "FAIL: minauth property in SERVER section doesn't work"
 	return
 else
 	cti_report "PASS: minauth property in SERVER section works"
 fi
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 
 cti_pass "${tc_id}: PASS"
-}

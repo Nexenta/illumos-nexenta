@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -36,8 +37,7 @@
 #	4. verify everyone line is there
 #
 
-acl003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="acl003"
 tc_desc="Verify we can modify an ACL (add everyone ACE)"
@@ -53,7 +53,7 @@ server=$(server_name) || return
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-cmd="mount -F smbfs //$TUSER:$TPASS@$server/public $TMNT"
+cmd="mount -F smbfs -oacl //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -108,7 +108,7 @@ tail +2 cti_stdout > acl_test
 
 # The new ACL should be different, and should contain "everyone@"
 cmd="diff acl_save acl_test"
-cti_execute PASS $cmd
+cti_execute_cmd $cmd
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: ACL should have changed"
 	smbmount_clean $TMNT
@@ -126,4 +126,3 @@ cti_execute_cmd "rm $TMNT/$tc_id"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -28,14 +29,14 @@
 #
 # DESCRIPTION:
 #        Verify can create 3G file on the smbfs
+#	 (can go beyond 31-bit offsets)
 #
 # STRATEGY:
 #       1. run "mount -F smbfs //server/public /export/mnt"
 #       2. create and rm can get the right message
 #
 
-create009() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create009"
 tc_desc="Verify can create 3g files on the smbfs"
@@ -47,10 +48,6 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 fi
 
 size=3g
-if [[ -n "$STC_QUICK" ]] ; then
-  size=30m
-fi
-
 server=$(server_name) || return
 
 testdir_init $TDIR
@@ -66,37 +63,25 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
-
-# create file
-mkfile $size $TDIR/file
-mkfile $size file
+# create file on the server
+cmd="dd if=/dev/zero of=$TMNT/file oseek=3071 bs=1024k count=1"
+cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: failed to create the $size file"
+	cti_fail "FAIL: create $TDIR/test_file to test_file failed"
 	return
 else
-	cti_report "PASS: create the $size file successfully"
+	cti_report "PASS: create $TDIR/test_file to test_file succeeded"
 fi
 
-sum1=$(sum $TDIR/file|awk '{print $1$2}')
-sum2=$(sum file|awk '{print $1$2}')
-
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: failed to sum check the smbfs $size file"
+size=$(file_size $TMNT/file)
+if [[ $size != 3221225472 ]] ; then
+	cti_fail "FAIL: file size is not 3G"
 	return
 else
-	cti_report "PASS: sum check the smbfs $size file successfully"
+	cti_report "PASS: file size if 3G"
 fi
 
-if [[ $sum1 != $sum2 ]] ; then
-	cti_fail "FAIL: the two files' checksum are different"
-	return
-else
-	cti_report "PASS: the two files are same"
-fi
-
-cti_execute_cmd "rm file "
+cti_execute_cmd "rm $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to delete the file"
 	return
@@ -104,7 +89,7 @@ else
 	cti_report "PASS: delete the file successfully"
 fi
 
-if [[  -f "file" ]]; then
+if [[  -f "$TMNT/file" ]]; then
 	cti_fail "FAIL: the file should not exist, but it exists"
 	return
 else
@@ -112,15 +97,7 @@ else
 fi
 
 cti_execute_cmd "rm  $TDIR/file "
-cti_execute_cmd "cd -"
 
 smbmount_clean $TMNT
 
-if [[ -n "$STC_QUICK" ]] ; then
-  cti_report "PASS, but with reduced size."
-  cti_untested $tc_id
-  return
-fi
-
 cti_pass "${tc_id}: PASS"
-}

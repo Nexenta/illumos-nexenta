@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. cp, diff and rm can get the right message
 #
 
-create002() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create002"
 tc_desc=" Verify can create files on the smbfs"
@@ -61,9 +61,7 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cd $TMNT
-
-cmd="cp /usr/bin/ls ls_file"
+cmd="cp /usr/bin/ls $TMNT/ls_file"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to cp the /usr/bin/ls file"
@@ -72,7 +70,7 @@ else
 	cti_report "PASS: cp the /usr/bin/ls file successfully"
 fi
 
-cmd="diff /usr/bin/ls ls_file"
+cmd="cmp -s /usr/bin/ls $TMNT/ls_file"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the /usr/bin/ls file is different with the ls_file file"
@@ -81,7 +79,7 @@ else
 	cti_report "PASS: the /usr/bin/ls file is same to the ls_file file"
 fi
 
-cmd="rm -f ls_file"
+cmd="rm -f $TMNT/ls_file"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to rm the ls_file file"
@@ -90,15 +88,12 @@ else
 	cti_report "PASS: rm the ls_file file successfully"
 fi
 
-if [[  -f "ls_file" ]]; then
+if [[  -f "$TMNT/ls_file" ]]; then
 	cti_fail "FAIL: the ls_file file shouldn't exist, but it exits"
 	return
 else
 	cti_report "PASS: the ls_file file doesn't exist, it's right"
 fi
 
-cti_execute_cmd "cd -"
-
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

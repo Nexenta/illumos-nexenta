@@ -22,6 +22,7 @@ SUBDIRS=	acl		\
 		error		\
 		misc		\
 		mkdir		\
+		mmap		\
 		mvtest		\
 		xattr
 

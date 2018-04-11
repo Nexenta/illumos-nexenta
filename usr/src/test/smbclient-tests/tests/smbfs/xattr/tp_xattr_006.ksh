@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #	3. Verify we're unable to create a hard link
 #
 
-function xattr_006 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_006
 tc_desc="Verify links between xattr and normal file namespace fail"
@@ -69,16 +69,14 @@ if [[ $? != 0 ]]; then
 	return
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # Create files set some xattrs on them.
 
-cti_execute_cmd "touch test_file"
-create_xattr test_file passwd /etc/passwd
+cti_execute_cmd "touch $TMNT/test_file"
+create_xattr $TMNT/test_file passwd /etc/passwd
 
 # Try to create a soft link from the xattr namespace to the default namespace
 
-cti_execute_cmd "runat test_file ln -s /etc/passwd foo"
+cti_execute_cmd "runat $TMNT/test_file ln -s /etc/passwd foo"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: symbolic link between xattr and normal file namespace succeeded unexpectedly"
 	return
@@ -88,7 +86,7 @@ fi
 
 # Try to create a hard link from the xattr namespace to the default namespace
 
-cti_execute_cmd "runat test_file ln /etc/passwd foo"
+cti_execute_cmd "runat $TMNT/test_file ln /etc/passwd foo"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: hard link between xattr and normal file namespace succeeded unexpectedly "
 	return
@@ -96,8 +94,5 @@ else
 	cti_report "PASS: hard link between xattr and normal file namespace failed as expected"
 fi
 
-cti_execute_cmd "cd -"
-
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

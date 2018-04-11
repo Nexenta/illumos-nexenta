@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -36,8 +37,7 @@
 #	5. Verify that xattrs should not be have
 #
 
-function xattr_009 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_009
 tc_desc="Verify can create many xattrs on a file"
@@ -70,32 +70,33 @@ if [[ $? != 0 ]]; then
 	return
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # Create a file, and set 100 xattrs on it.
 
-cti_execute_cmd "rm -f test_file"
-cti_execute_cmd "touch test_file"
+cti_execute_cmd "rm -f $TMNT/test_file"
+cti_execute_cmd "touch $TMNT/test_file"
 typeset -i i=0
 typeset -i j=100
-while  [ $i -lt $j ]; do
-  create_xattr test_file passwd$i /etc/passwd
-  i=$i+1
+while [[ $i -lt $j ]]; do
+  create_xattr $TMNT/test_file passwd$i /etc/passwd
+  i=$((i+1))
 done
+
 #create the expected output then compare them with xattrs in the test_file
 
 i=0
 cp /dev/null temp_file
-while  [ $i -lt $j ]; do
+echo SUNWattr_ro >> temp_file
+echo SUNWattr_rw >> temp_file
+while [[ $i -lt $j ]]; do
   echo passwd$i >> temp_file
-  i=$i+1
+  i=$((i+1))
 done
 cti_execute_cmd "sort temp_file > expected_file"
 
 #listing the directory passwd*
 
-cti_execute_cmd "runat test_file ls passwd* > output.$$"
-cti_execute_cmd "sort output.$$ | diff expected_file -"
+cti_execute_cmd "runat $TMNT/test_file ls > output"
+cti_execute_cmd "sort output | diff expected_file -"
 if [[ $? != 0 ]]; then
 cti_fail "FAIL: do not work as expected for xattrs"
 return
@@ -105,8 +106,8 @@ fi
 
 #delete xattrs in test_file verify these are no passwd* in test_file
 
-cti_execute_cmd "runat test_file rm -f passwd*"
-cti_execute PASS "runat test_file ls passwd*"
+cti_execute_cmd "runat $TMNT/test_file rm -f passwd*"
+cti_execute_cmd "runat $TMNT/test_file ls passwd*"
 if [[ $? == 0 ]]; then
 cti_fail "FAIL: have passwd* xattrs in test_file unexpectedly"
 return
@@ -114,8 +115,7 @@ else
 cti_report "PASS: should not have passwd* xattrs in test_file as expected"
 fi
 
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm -f temp_file expected_file output"
 
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

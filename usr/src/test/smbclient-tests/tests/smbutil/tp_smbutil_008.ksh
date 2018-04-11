@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -38,8 +39,7 @@
 #	6. smbutil can't get share information.
 #
 
-smbutil008() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbutil008"
 tc_desc="Verify smbutil can view private share"
@@ -61,13 +61,12 @@ else
 	cti_report "smbutil can view shares"
 fi
 
-parse_view_output $AUSER cti_stdout
+parse_view_output a_share cti_stdout
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: smbutil view can't get $AUSER share"
+	cti_fail "FAIL: smbutil view did not find a_share"
 	return
 else
-	cti_report "PASS: smbutil view can get $AUSER share"
+	cti_report "PASS: smbutil view found a_share"
 fi
 
 cti_pass "${tc_id}: PASS"
-}

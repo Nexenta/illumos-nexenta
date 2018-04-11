@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #       3. sharectl and smbutil can get right message
 #
 
-sharectl002() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="sharectl002"
 tc_desc=" Verify password can work"
@@ -114,4 +114,3 @@ fi
 sharectl delsect  $SERVER smbfs
 
 cti_pass "${tc_id}: PASS"
-}

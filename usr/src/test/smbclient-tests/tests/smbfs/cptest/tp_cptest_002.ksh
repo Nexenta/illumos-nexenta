@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. cp and diff can get the right message
 #
 
-cptest002() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="cptest002"
 tc_desc="Verify can cp files on the smbfs"
@@ -61,10 +61,8 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 cti_execute_cmd "cp $REFFILE $TDIR/test_file"
-cti_execute_cmd "cp $TDIR/test_file test_file"
+cti_execute_cmd "cp $TDIR/test_file $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp $TDIR/test_file to test_file failed"
 	return
@@ -72,7 +70,7 @@ else
 	cti_report "PASS: cp $TDIR/test_file to test_file succeeded"
 fi
 
-cti_execute_cmd "diff test_file $TDIR/test_file"
+cti_execute_cmd "cmp -s $TMNT/test_file $TDIR/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff test_file $TDIR/test_file failed"
 	return
@@ -80,7 +78,7 @@ else
 	cti_report "PASS: diff test_file $TDIR/test_file succeed"
 fi
 
-cti_execute_cmd "cp test_file $TDIR/test_file_cp "
+cti_execute_cmd "cp $TMNT/test_file $TDIR/test_file_cp "
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp test_file $TDIR/test_file_cp failed"
 	return
@@ -88,7 +86,7 @@ else
 	cti_report "PASS: cp test_file $TDIR/test_file_cp succeeded"
 fi
 
-cmd="diff $TDIR/test_file $TDIR/test_file_cp"
+cmd="cmp -s $TDIR/test_file $TDIR/test_file_cp"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff $TDIR/test_file $TDIR/test_file_cp failed"
@@ -98,9 +96,7 @@ else
 	    "succeeded"
 fi
 
-cti_execute_cmd "rm -rf test_file $TDIR/*"
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm -rf $TMNT/test_file $TDIR/*"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

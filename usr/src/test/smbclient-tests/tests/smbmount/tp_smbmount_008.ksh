@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -30,15 +31,14 @@
 #          Verify normal smbmount can mount public share
 #
 # STRATEGY:
-#	1. run "su  $TUSER -c  "mount -F smbfs -ofileperms=666
+#	1. run sudo -u $TUSER "mount -F smbfs -ofileperms=666"
 #	  //$TUSER:$TPASS@$server/public $TMNT""
 #	2. mount successfully
-#	3. run "su $AUSER -c "cp /usr/bin/ls ls_file""
+#	3. run sudo -u $AUSER "cp /usr/bin/ls ls_file"
 #	4. mount and cp can get right message
 #
 
-smbmount008() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount008"
 tc_desc="Verify normal smbmount can mount public share"
@@ -55,11 +55,11 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-chown $TUSER $TMNT
+sudo -n chown $TUSER $TMNT
 
-cmd="mount -F smbfs -o fileperms=666 \
+cmd="mount -F smbfs -o noprompt,fileperms=666 \
  //$TUSER:$TPASS@$server/public $TMNT"
-cti_execute -i '' FAIL su $TUSER -c "$cmd"
+cti_execute -i '' FAIL sudo -n $TUSER "$cmd"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the normal user can't mount the public share"
 	smbmount_clean $TMNT
@@ -70,32 +70,18 @@ fi
 
 smbmount_check $TMNT || return
 
-cd $TMNT
 cti_execute_cmd "rm -rf $TMNT/*"
 
-cmd="su $AUSER -c \"cp /usr/bin/ls ls_file\""
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: failed to cp the file /usr/bin/ls"
-	return
-else
-	cti_report "PASS: cp the file /usr/bin/ls successfully"
-fi
+cmd="cp /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL sudo -n -u $AUSER $cmd
 
-cmd="su $AUSER -c \"diff /usr/bin/ls ls_file\""
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: the file /usr/bin/ls is different with the file ls_file"
-	return
-else
-	cti_report "PASS: the file /usr/bin/ls is same to the file ls_file"
-fi
+cmd="diff /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL sudo -n -u $AUSER $cmd
 
-cti_execute_cmd "rm ls_file"
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm $TMNT/ls_file"
 
-cmd="su $TUSER -c \"umount $TMNT\""
-cti_execute_cmd $cmd
+cmd="umount $TMNT"
+cti_execute_cmd "sudo -n -u $TUSER $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the normal user can't umount the public share"
 	smbmount_clean $TMNT
@@ -106,4 +92,3 @@ fi
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. dd can get the right message
 #
 
-create003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create003"
 tc_desc="Verify can create files on the smbfs"
@@ -61,10 +61,8 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # create 30 byte file
-cmd="dd if=/dev/zero of=file30 bs=30 count=1"
+cmd="dd if=/dev/zero of=$TMNT/file30 bs=30 count=1"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to dd a 30b file"
@@ -73,14 +71,14 @@ else
 	cti_report "PASS: dd a 30b file successfully"
 fi
 
-if [[ ! -f "file30" ]]; then
+if [[ ! -f "$TMNT/file30" ]]; then
 	cti_fail "FAIL: the file file30 shouldn't exist, but it exits"
 	return
 else
 	cti_report "PASS: the file file30 doesn't exist, it's right"
 fi
 
-size=$(file_size file30)
+size=$(file_size $TMNT/file30)
 
 if ((size != 30)); then
 	cti_fail " file size($size) is != 30"
@@ -88,7 +86,7 @@ if ((size != 30)); then
 fi
 
 # remove file
-cmd="rm file30"
+cmd="rm $TMNT/file30"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to rm the file30 file"
@@ -97,15 +95,13 @@ else
 	cti_report "PASS: rm the file30 file successfully"
 fi
 
-if [[  -f "file30" ]]; then
+if [[  -f "$TMNT/file30" ]]; then
 	cti_fail "FAIL: the file30 file shouldn't exist, but it exits"
 	return
 else
 	cti_report "PASS: the file30 file does not exist, it's right"
 fi
 
-cti_execute_cmd "cd -"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

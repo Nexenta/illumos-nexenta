@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. truncate and rm can get the right message
 #
 
-misc001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="misc001"
 tc_desc=" Verify can truncate files on the smbfs"
@@ -62,7 +62,7 @@ else
 fi
 
 # truncate file
-cmd="$trunc_file -f 4194304 -b 8192 -c 100 -s 0 -o 10 $TMNT/test_file"
+cmd="file_trunc -f 4194304 -b 8192 -c 100 -s 0 -o 10 $TMNT/test_file"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: truncate file failed"
@@ -75,4 +75,3 @@ cti_execute_cmd "rm $TMNT/test_file"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

@@ -44,8 +44,8 @@
 #define	BSIZE	512
 
 /* Initialize Globals */
-static long 	fsize = FSIZE;
-static size_t 	bsize = BSIZE;
+static long	fsize = FSIZE;
+static size_t	bsize = BSIZE;
 static int	count = 0;
 static int	rflag = 0;
 static int	seed = 0;
@@ -167,8 +167,8 @@ static void
 do_write(int fd)
 {
 	off_t	roffset = 0;
-	char 	*buf = NULL;
-	char 	*rbuf = NULL;
+	char	*buf = NULL;
+	char	*rbuf = NULL;
 
 	buf = (char *)calloc(1, bsize);
 	rbuf = (char *)calloc(1, bsize);

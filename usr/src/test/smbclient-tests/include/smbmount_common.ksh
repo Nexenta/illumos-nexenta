@@ -38,7 +38,7 @@ smbmount_init() {
 	rm -rf $1
 	cti_execute_cmd "mkdir $1"
 	if [[ $? != 0 ]]; then
-		cti_unresolved"UNRESOLVED: mkdir $1 failed"
+		cti_unresolved "UNRESOLVED: mkdir $1 failed"
 		exit 1
 	else
 		cti_report "PASS: mkdir $1 successfully"
@@ -61,41 +61,12 @@ testdir_init() {
 	rm -rf $1
 	cti_execute_cmd "mkdir $1"
 	if [[ $? != 0 ]]; then
-		cti_unresolved	"UNRESOLVED: mkdir $1 failed"
+		cti_unresolved "UNRESOLVED: mkdir $1 failed"
 		exit 1
 	else
 		cti_report "PASS: mkdir $1 successfully"
 	fi
 	return 0
-}
-
-#
-# NAME
-#       smbmount_enable_noacl
-#
-# DESCRIPTION
-#       Enable the hidden "noacl" option for mount_smbfs,
-#	which is needed to test some code paths.
-#
-# RETURN
-#       0 - success
-#       1 - failure
-#
-smbmount_enable_noacl() {
-	typeset junk val
-
-	# is it already enabled?
-	echo 'enable_noacl_option?X' |
-	mdb /usr/lib/fs/smbfs/mount |
-	{ read junk ; read junk val ; }
-	if [[ "$val" == 1 ]] ; then
-		return 0
-	fi
-
-	# set it...
-	echo 'enable_noacl_option?W1' |
-	mdb -w /usr/lib/fs/smbfs/mount >/dev/null
-	return $?
 }
 
 #
@@ -161,7 +132,7 @@ smbmount_clean() {
 	# is it mounted?
 	smbmount_getmntopts "$1" >/dev/null 2>&1
 	if [[ $? == 0 ]]; then
-		cti_execute_cmd "umount -f $1"
+		cti_execute_cmd sudo -n "umount -f $1"
 		if [[ $? != 0 ]]; then
 			cti_report "umount -f $1 failed"
 			exit 1

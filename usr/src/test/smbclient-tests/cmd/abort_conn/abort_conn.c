@@ -55,7 +55,7 @@ tcp_abort_connections(struct sockaddr *rsa)
 	tcp_ioc_abort_conn_t conn;
 	struct strioctl ioc;
 	struct sockaddr *lsa;
-	int fd, error;
+	int fd;
 
 	(void) memset(&conn, 0, sizeof (conn));
 	lsa = (void *)&conn.ac_local;
@@ -75,11 +75,11 @@ tcp_abort_connections(struct sockaddr *rsa)
 		return;
 	}
 
-	error = ioctl(fd, I_STR, &ioc);
+	if (ioctl(fd, I_STR, &ioc) < 0)
+		if (errno != ENOENT)	/* ENOENT is not an error */
+			perror("ioctl");
+
 	(void) close(fd);
-	if (error == 0 || errno == ENOENT)	/* ENOENT is not an error */
-		return;
-	perror("ioctl");
 }
 
 static void

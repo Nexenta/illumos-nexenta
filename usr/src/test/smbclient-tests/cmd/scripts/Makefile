@@ -17,6 +17,7 @@ include		$(SRC)/Makefile.master
 include		../../Makefile.com
 
 PROGS=		passwd.exp	\
+		runone		\
 		smbclienttest	\
 		smbutil.exp
 

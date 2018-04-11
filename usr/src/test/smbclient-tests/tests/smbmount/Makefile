@@ -18,7 +18,7 @@ include		../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/smbmount
 
-TESTS=		tc_smbmount	\
+TESTS=	\
 		tp_smbmount_001	\
 		tp_smbmount_002	\
 		tp_smbmount_003	\

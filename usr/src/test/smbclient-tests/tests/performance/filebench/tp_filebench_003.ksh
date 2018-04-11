@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. filebench filemicro can get the right message
 #
 
-filebench003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="filebench_003"
 tc_desc=" Verify filebench on the smbfs"
@@ -75,7 +75,7 @@ fi
 rm -rf $TMNT/*
 
 #run fileio filebench
-cti_execute_cmd $filebenchdir/filebench ${CTI_SUITE}/config/filemicro
+cti_execute_cmd $filebenchdir/filebench ${STF_SUITE}/config/filemicro
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: filebench filemicro failed"
 	return
@@ -87,4 +87,3 @@ cti_execute_cmd rm -rf $TMNT/*
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

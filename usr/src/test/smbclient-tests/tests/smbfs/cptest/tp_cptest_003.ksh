@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -27,15 +28,14 @@
 # ID: cptest_003
 #
 # DESCRIPTION:
-#        Verify can create and cp 1500M file on the smbfs
+#        Verify can create and cp 150M file on the smbfs
 #
 # STRATEGY:
 #       1. run "mount -F smbfs //server/public /export/mnt"
 #       2. cp and diff can get the right message
 #
 
-cptest003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="cptest003"
 tc_desc=" Verify can cp files on the smbfs"
@@ -46,9 +46,10 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
     set -x
 fi
 
-size=1500m
+size=150m
 if [[ -n "$STC_QUICK" ]] ; then
-  size=15m
+  size=5m
+  # will report SKIP below
 fi
 
 server=$(server_name) || return
@@ -60,16 +61,15 @@ smbmount_init $TMNT
 cmd="mount -F smbfs //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: smbmount can't mount the public share"
+	cti_fail "smbmount can't mount the public share"
 	return
 else
-	cti_report "PASS: smbmount can mount the public share"
+	cti_report "smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 cti_execute_cmd "mkfile $size $TDIR/test_file"
-cti_execute_cmd "cp $TDIR/test_file test_file"
+
+cti_execute_cmd "cp $TDIR/test_file $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp $TDIR/test_file to test_file failed"
 	return
@@ -77,7 +77,7 @@ else
 	cti_report "PASS: cp $TDIR/test_file to test_file succeeded"
 fi
 
-cti_execute_cmd "diff test_file $TDIR/test_file"
+cti_execute_cmd "cmp -s $TDIR/test_file $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff test_file $TDIR/test_file failed"
 	return
@@ -85,41 +85,7 @@ else
 	cti_report "PASS: diff test_file $TDIR/test_file succeeded"
 fi
 
-cti_execute_cmd "cp test_file test_file_server"
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: cp test_file to test_file_server failed"
-	return
-else
-	cti_report "PASS: cp test_file to test_file_server succeeded"
-fi
-
-cti_execute_cmd "diff test_file test_file_server"
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: diff test_file test_file_server failed"
-	return
-else
-	cti_report "PASS: diff test_file test_file_server succeeded"
-fi
-
-cti_execute_cmd "cp test_file $TDIR/test_file_cp "
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: cp test_file $TDIR/test_file_cp  failed"
-	return
-else
-	cti_report "PASS: cp test_file $TDIR/test_file_cp succeeded"
-fi
-
-cmd="diff $TDIR/test_file $TDIR/test_file_cp"
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: diff $TDIR/test_file $TDIR/test_file_cp failed"
-	return
-else
-	cti_report "PASS: diff $TDIR/test_file $TDIR/test_file_cp" \
-	    "succeeded"
-fi
-
-cti_execute_cmd "rm test_file test_file_server"
+cti_execute_cmd "rm $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: rm test_file test_file_server failed"
 	return
@@ -128,15 +94,13 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TDIR/*"
-cti_execute_cmd "cd -"
 
 smbmount_clean $TMNT
 
 if [[ -n "$STC_QUICK" ]] ; then
-  cti_report "PASS, but with reduced size."
-  cti_untested $tc_id
+  # Did only 10m test, so report SKIP
+  cti_notinuse "${tc_id}: Copied 5m OK (shortened for STC_QUICK)"
   return
 fi
 
 cti_pass "${tc_id}: PASS"
-}

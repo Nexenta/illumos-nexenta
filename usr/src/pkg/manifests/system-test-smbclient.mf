@@ -24,8 +24,8 @@ dir path=opt/smbclient-tests
 dir path=opt/smbclient-tests/bin
 dir path=opt/smbclient-tests/config
 dir path=opt/smbclient-tests/include
+dir path=opt/smbclient-tests/runfiles
 dir path=opt/smbclient-tests/tests
-dir path=opt/smbclient-tests/tests/configure
 dir path=opt/smbclient-tests/tests/nsmbrc
 dir path=opt/smbclient-tests/tests/performance
 dir path=opt/smbclient-tests/tests/performance/filebench
@@ -37,38 +37,50 @@ dir path=opt/smbclient-tests/tests/smbfs/create
 dir path=opt/smbclient-tests/tests/smbfs/error
 dir path=opt/smbclient-tests/tests/smbfs/misc
 dir path=opt/smbclient-tests/tests/smbfs/mkdir
+dir path=opt/smbclient-tests/tests/smbfs/mmap
 dir path=opt/smbclient-tests/tests/smbfs/mvtest
 dir path=opt/smbclient-tests/tests/smbfs/xattr
 dir path=opt/smbclient-tests/tests/smbmount
 dir path=opt/smbclient-tests/tests/smbutil
 file path=opt/smbclient-tests/README mode=0444
 file path=opt/smbclient-tests/bin/abort_conn mode=0555
+file path=opt/smbclient-tests/bin/close_wr mode=0555
+file path=opt/smbclient-tests/bin/cp_mmap mode=0555
 file path=opt/smbclient-tests/bin/file_trunc mode=0555
+file path=opt/smbclient-tests/bin/mkfile_mmap mode=0555
+file path=opt/smbclient-tests/bin/no_close mode=0555
 file path=opt/smbclient-tests/bin/passwd.exp mode=0555
+file path=opt/smbclient-tests/bin/prot_mmap mode=0555
+file path=opt/smbclient-tests/bin/runone mode=0555
+file path=opt/smbclient-tests/bin/rw_mmap mode=0555
 file path=opt/smbclient-tests/bin/smbclienttest mode=0555
 file path=opt/smbclient-tests/bin/smbutil.exp mode=0555
-file path=opt/smbclient-tests/config/config mode=0444
 file path=opt/smbclient-tests/config/fileio.prof mode=0444
 file path=opt/smbclient-tests/config/filemacro.prof mode=0444
 file path=opt/smbclient-tests/config/filemicro.prof mode=0444
 file path=opt/smbclient-tests/config/generic.func mode=0444
 file path=opt/smbclient-tests/config/randomread.prof mode=0444
 file path=opt/smbclient-tests/config/seqread.prof mode=0444
+file path=opt/smbclient-tests/include/default_cfg.ksh mode=0444
+file path=opt/smbclient-tests/include/libtest.ksh mode=0444
 file path=opt/smbclient-tests/include/services_common.ksh mode=0444
 file path=opt/smbclient-tests/include/smbmount_common.ksh mode=0444
 file path=opt/smbclient-tests/include/smbutil_common.ksh mode=0444
 file path=opt/smbclient-tests/include/utils_common.ksh mode=0444
 file path=opt/smbclient-tests/include/xattr_common.ksh mode=0444
-file path=opt/smbclient-tests/tests/configure/configure mode=0555
-file path=opt/smbclient-tests/tests/nsmbrc/tc_nsmbrc mode=0555
+file path=opt/smbclient-tests/runfiles/default.run mode=0444
+file path=opt/smbclient-tests/runfiles/just-nsmbrc.run mode=0444
+file path=opt/smbclient-tests/runfiles/just-sharectl.run mode=0444
+file path=opt/smbclient-tests/runfiles/just-smbfs.run mode=0444
+file path=opt/smbclient-tests/runfiles/just-smbmount.run mode=0444
+file path=opt/smbclient-tests/runfiles/just-smbutil.run mode=0444
+file path=opt/smbclient-tests/runfiles/perf-regression.run mode=0444
 file path=opt/smbclient-tests/tests/nsmbrc/tp_nsmbrc_001 mode=0555
 file path=opt/smbclient-tests/tests/nsmbrc/tp_nsmbrc_002 mode=0555
 file path=opt/smbclient-tests/tests/nsmbrc/tp_nsmbrc_003 mode=0555
 file path=opt/smbclient-tests/tests/nsmbrc/tp_nsmbrc_004 mode=0555
 file path=opt/smbclient-tests/tests/nsmbrc/tp_nsmbrc_005 mode=0555
 file path=opt/smbclient-tests/tests/nsmbrc/tp_nsmbrc_006 mode=0555
-file path=opt/smbclient-tests/tests/performance/filebench/tc_filebench \
-    mode=0555
 file path=opt/smbclient-tests/tests/performance/filebench/tp_filebench_001 \
     mode=0555
 file path=opt/smbclient-tests/tests/performance/filebench/tp_filebench_002 \
@@ -79,20 +91,17 @@ file path=opt/smbclient-tests/tests/performance/filebench/tp_filebench_004 \
     mode=0555
 file path=opt/smbclient-tests/tests/performance/filebench/tp_filebench_005 \
     mode=0555
-file path=opt/smbclient-tests/tests/sharectl/tc_sharectl mode=0555
 file path=opt/smbclient-tests/tests/sharectl/tp_sharectl_001 mode=0555
 file path=opt/smbclient-tests/tests/sharectl/tp_sharectl_002 mode=0555
 file path=opt/smbclient-tests/tests/sharectl/tp_sharectl_003 mode=0555
 file path=opt/smbclient-tests/tests/sharectl/tp_sharectl_004 mode=0555
 file path=opt/smbclient-tests/tests/sharectl/tp_sharectl_005 mode=0555
 file path=opt/smbclient-tests/tests/sharectl/tp_sharectl_006 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/acl/tc_acl mode=0555
 file path=opt/smbclient-tests/tests/smbfs/acl/tp_acl_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/acl/tp_acl_002 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/acl/tp_acl_003 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/acl/tp_acl_004 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/acl/tp_acl_005 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/cptest/tc_cptest mode=0555
 file path=opt/smbclient-tests/tests/smbfs/cptest/tp_cptest_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/cptest/tp_cptest_002 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/cptest/tp_cptest_003 mode=0555
@@ -102,7 +111,6 @@ file path=opt/smbclient-tests/tests/smbfs/cptest/tp_cptest_006 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/cptest/tp_cptest_007 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/cptest/tp_cptest_008 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/cptest/tp_cptest_009 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/create/tc_create mode=0555
 file path=opt/smbclient-tests/tests/smbfs/create/tp_create_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/create/tp_create_002 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/create/tp_create_003 mode=0555
@@ -115,21 +123,27 @@ file path=opt/smbclient-tests/tests/smbfs/create/tp_create_009 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/create/tp_create_010 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/create/tp_create_011 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/create/tp_create_012 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/error/tc_error mode=0555
 file path=opt/smbclient-tests/tests/smbfs/error/tp_error_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/error/tp_error_002 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/misc/tc_misc mode=0555
 file path=opt/smbclient-tests/tests/smbfs/misc/tp_misc_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/misc/tp_misc_002 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/misc/tp_misc_003 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/mkdir/tc_mkdir mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mkdir/tp_mkdir_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mkdir/tp_mkdir_002 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mkdir/tp_mkdir_003 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mkdir/tp_mkdir_004 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mkdir/tp_mkdir_005 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mkdir/tp_mkdir_006 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/mvtest/tc_mvtest mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_001 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_002 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_003 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_004 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_005 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_006 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_007 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_008 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_009 mode=0555
+file path=opt/smbclient-tests/tests/smbfs/mmap/tp_mmap_010 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mvtest/tp_mvtest_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mvtest/tp_mvtest_002 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mvtest/tp_mvtest_003 mode=0555
@@ -137,7 +151,6 @@ file path=opt/smbclient-tests/tests/smbfs/mvtest/tp_mvtest_004 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mvtest/tp_mvtest_005 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mvtest/tp_mvtest_006 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/mvtest/tp_mvtest_007 mode=0555
-file path=opt/smbclient-tests/tests/smbfs/xattr/tc_xattr mode=0555
 file path=opt/smbclient-tests/tests/smbfs/xattr/tp_xattr_001 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/xattr/tp_xattr_002 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/xattr/tp_xattr_003 mode=0555
@@ -147,7 +160,6 @@ file path=opt/smbclient-tests/tests/smbfs/xattr/tp_xattr_006 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/xattr/tp_xattr_007 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/xattr/tp_xattr_008 mode=0555
 file path=opt/smbclient-tests/tests/smbfs/xattr/tp_xattr_009 mode=0555
-file path=opt/smbclient-tests/tests/smbmount/tc_smbmount mode=0555
 file path=opt/smbclient-tests/tests/smbmount/tp_smbmount_001 mode=0555
 file path=opt/smbclient-tests/tests/smbmount/tp_smbmount_002 mode=0555
 file path=opt/smbclient-tests/tests/smbmount/tp_smbmount_003 mode=0555
@@ -164,7 +176,6 @@ file path=opt/smbclient-tests/tests/smbmount/tp_smbmount_013 mode=0555
 file path=opt/smbclient-tests/tests/smbmount/tp_smbmount_014 mode=0555
 file path=opt/smbclient-tests/tests/smbmount/tp_smbmount_015 mode=0555
 file path=opt/smbclient-tests/tests/smbmount/tp_smbmount_016 mode=0555
-file path=opt/smbclient-tests/tests/smbutil/tc_smbutil mode=0555
 file path=opt/smbclient-tests/tests/smbutil/tp_smbutil_001 mode=0555
 file path=opt/smbclient-tests/tests/smbutil/tp_smbutil_002 mode=0555
 file path=opt/smbclient-tests/tests/smbutil/tp_smbutil_003 mode=0555
@@ -181,6 +192,6 @@ file path=opt/smbclient-tests/tests/smbutil/tp_smbutil_013 mode=0555
 file path=opt/smbclient-tests/tests/smbutil/tp_smbutil_014 mode=0555
 file path=opt/smbclient-tests/tests/smbutil/tp_smbutil_015 mode=0555
 file path=opt/smbclient-tests/tests/smbutil/tp_smbutil_016 mode=0555
-file path=opt/smbclient-tests/tet_scen mode=0444
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL
+depend fmri=shell/expect type=require

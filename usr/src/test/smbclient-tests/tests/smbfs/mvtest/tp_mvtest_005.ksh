@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mv can get the right message
 #
 
-mvtest005() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mvtest005"
 tc_desc=" Verify can mv dir between server and client"
@@ -61,8 +61,6 @@ else
 	cti_report "PASS: smbmount can't mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # mkdir on the local
 cti_execute_cmd "mkdir $TDIR/test_dir"
 if [[ $? != 0 ]]; then
@@ -74,7 +72,7 @@ fi
 
 
 # mv to server
-cti_execute_cmd "mv $TDIR/test_dir test_dir"
+cti_execute_cmd "mv $TDIR/test_dir $TMNT/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv $TDIR/test_dir to server failed"
 	return
@@ -83,7 +81,7 @@ else
 fi
 
 # mv dir from the server to local
-cti_execute_cmd "mv test_dir $TDIR/test_dir_mv"
+cti_execute_cmd "mv $TMNT/test_dir $TDIR/test_dir_mv"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv test_dir to $TDIR/test_dir_mv failed"
 	return
@@ -91,10 +89,7 @@ else
 	cti_report "PASS: mv test_dir to $TDIR/test_dir_mv succeeded"
 fi
 
-
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TDIR/*"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

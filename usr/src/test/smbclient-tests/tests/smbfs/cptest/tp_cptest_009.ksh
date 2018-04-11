@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. create, cp and diff can get the right message
 #
 
-cptest009() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="cptest009"
 tc_desc="Verify can cp files on the smbfs"
@@ -44,6 +44,11 @@ print_test_case $tc_id - $tc_desc
 if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	[[ *:${STC_CIFS_CLIENT_DEBUG}:* == *:$tc_id:* ]]; then
     set -x
+fi
+
+if [[ -n "$STC_QUICK" ]] ; then
+  cti_notinuse "${tc_id}: skipped (STC_QUICK)"
+  return
 fi
 
 server=$(server_name) || return
@@ -62,14 +67,13 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
 # cp file
 
 i=0
 while ((i<10))
 do
-	cp $REFFILE test_file_cp$i  &
+	cp $REFFILE $TMNT/test_file_cp$i  &
 	((i=i+1))
 done
 
@@ -79,7 +83,7 @@ sleep 5
 i=0
 while ((i<10))
 do
-	cti_execute_cmd "diff $REFFILE test_file_cp$i"
+	cti_execute_cmd "diff $REFFILE $TMNT/test_file_cp$i"
 	if [[ $? != 0 ]]; then
 		cti_fail "FAIL: diff test_file and test_file_cp$i failed"
 		return
@@ -87,10 +91,8 @@ do
 	((i=i+1))
 done
 
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TDIR/*"
 cti_execute_cmd "rm -rf $TMNT/*"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

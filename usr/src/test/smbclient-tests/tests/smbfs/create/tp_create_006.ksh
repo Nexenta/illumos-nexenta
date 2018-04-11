@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. echo and rm can get the right message
 #
 
-create006() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create006"
 tc_desc=" Verify can create files on the smbfs"
@@ -62,11 +62,10 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
 echo "test_test" >$TDIR/file
 # create file
-echo 'test_test' >file
+echo 'test_test' >$TMNT/file
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to create the file"
 	return
@@ -74,14 +73,14 @@ else
 	cti_report "PASS: create the file successfully"
 fi
 
-if [[ ! -f "file" ]]; then
+if [[ ! -f "$TMNT/file" ]]; then
 	cti_fail "FAIL: the file should exist, but it doestn't exist"
 	return
 else
 	cti_report "PASS: the file exists, it is right"
 fi
 
-cti_execute_cmd "diff file $TDIR/file "
+cti_execute_cmd "diff $TMNT/file $TDIR/file "
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the first diff is different"
 	return
@@ -91,7 +90,7 @@ fi
 
 echo "test_test" >> $TDIR/file
 # create file
-echo "test_test" >> file
+echo "test_test" >> $TMNT/file
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to create the file"
 	return
@@ -99,7 +98,7 @@ else
 	cti_report "PASS: create the file successfully"
 fi
 
-cti_execute_cmd "diff file $TDIR/file"
+cti_execute_cmd "diff $TMNT/file $TDIR/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the second diff is different"
 	return
@@ -108,7 +107,7 @@ else
 fi
 
 
-cti_execute_cmd "rm  file "
+cti_execute_cmd "rm $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to delete the file"
 	return
@@ -116,7 +115,7 @@ else
 	cti_report "PASS: delete the file successfully"
 fi
 
-if [[  -f "file" ]]; then
+if [[  -f "$TMNT/file" ]]; then
 	cti_fail "FAIL: the file should not exist, but it exists"
 	return
 else
@@ -124,8 +123,6 @@ else
 fi
 
 cti_execute_cmd "rm  $TDIR/file"
-cti_execute_cmd "cd -"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

@@ -16,7 +16,10 @@
 include		$(SRC)/Makefile.master
 include		../Makefile.com
 
-INCS=		services_common.ksh	\
+INCS=	\
+		default_cfg.ksh		\
+		libtest.ksh		\
+		services_common.ksh	\
 		smbmount_common.ksh	\
 		smbutil_common.ksh	\
 		utils_common.ksh	\

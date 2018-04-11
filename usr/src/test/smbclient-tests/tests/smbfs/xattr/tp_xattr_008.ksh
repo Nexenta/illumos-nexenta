@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -36,8 +37,7 @@
 #	   doesn't get copied
 #
 
-function xattr_008 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_008
 tc_desc="Verify basic applications work with xattrs: cpio cp find mv pax tar"
@@ -50,6 +50,7 @@ fi
 
 server=$(server_name) || return
 
+CDIR=$(pwd)
 testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
@@ -70,238 +71,233 @@ if [[ $? != 0 ]]; then
 	return
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # Create a file, and set an xattr on it. This file is used in several of the
 # test scenarios below.
 
-cti_execute_cmd "touch test_file"
-create_xattr test_file passwd /etc/passwd
+cti_execute_cmd "touch $TMNT/test_file"
+create_xattr $TMNT/test_file passwd /etc/passwd
 
 # For the archive applications below (tar, cpio, pax)
 # we create two archives, one with xattrs, one without
 # and try various cpio options extracting the archives
 # with and without xattr support, checking for correct behaviour
 
-cpio_xattr=$TDIR/xattr.cpio
-cpio_noxattr=$TDIR/noxattr.cpio
+cpio_xattr=$CDIR/xattr.cpio
+cpio_noxattr=$CDIR/noxattr.cpio
 
 cti_report "Checking cpio"
-cti_execute_cmd "touch cpio.$$"
-create_xattr cpio.$$ passwd /etc/passwd
+cti_execute_cmd "touch $TMNT/cpio_test"
+create_xattr $TMNT/cpio_test passwd /etc/passwd
 
-cti_execute_cmd "echo cpio.$$| cpio -oc@ -O $cpio_xattr"
-cti_execute_cmd "echo cpio.$$| cpio -oc -O $cpio_noxattr"
-cti_execute_cmd "rm -rf cpio.$$"
+cti_execute_cmd "echo cpio_test| (cd $TMNT; cpio -oc@ -O $cpio_xattr)"
+cti_execute_cmd "echo cpio_test| (cd $TMNT; cpio -oc -O $cpio_noxattr)"
+cti_execute_cmd "rm -rf $TMNT/cpio_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "cpio -iu -I $cpio_xattr"
-cti_execute PASS "runat cpio.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; cpio -iu -I $cpio_xattr)"
+cti_execute_cmd "runat $TMNT/cpio_test cat passwd"
 if [[ $? == 0 ]]
 then
-    	cti_fail "Fail: we have xattr here unexpectedly"
+	cti_fail "Fail: we have xattr here unexpectedly"
 	return
 fi
-cti_execute_cmd "rm -rf cpio.$$"
+cti_execute_cmd "rm -rf $TMNT/cpio_test"
 
 # we should have an xattr here
 
-cti_execute_cmd "cpio -iu@ -I $cpio_xattr"
-verify_xattr cpio.$$ passwd /etc/passwd
-cti_execute_cmd "rm -rf cpio.$$"
+cti_execute_cmd "(cd $TMNT; cpio -iu@ -I $cpio_xattr)"
+verify_xattr $TMNT/cpio_test passwd /etc/passwd
+cti_execute_cmd "rm -rf $TMNT/cpio_test"
 
 #do the same for the second time
 
-cti_execute_cmd "cpio -iu@ -I $cpio_xattr"
-verify_xattr cpio.$$ passwd /etc/passwd
-cti_execute_cmd "rm -rf cpio.$$"
+cti_execute_cmd "(cd $TMNT; cpio -iu@ -I $cpio_xattr)"
+verify_xattr $TMNT/cpio_test passwd /etc/passwd
+cti_execute_cmd "rm -rf $TMNT/cpio_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "cpio -iu -I $cpio_noxattr"
-cti_execute PASS "runat cpio.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; cpio -iu -I $cpio_noxattr)"
+cti_execute_cmd "runat $TMNT/cpio_test cat passwd"
 if [[ $? == 0 ]]
 then
 	cti_fail "Fail: we have xattr here unexpectedly"
 	return
 fi
-cti_execute_cmd "rm -rf cpio.$$"
+cti_execute_cmd "rm -rf $TMNT/cpio_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "cpio -iu@ -I $cpio_noxattr"
-cti_execute PASS "runat cpio.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; cpio -iu@ -I $cpio_noxattr)"
+cti_execute_cmd "runat $TMNT/cpio_test cat passwd"
 if [[ $? == 0 ]]
 then
 	cti_fail "Fail: we have xattr here unexpectedly"
 	return
 fi
 
-cti_execute_cmd "rm -rf cpio.$$"
+cti_execute_cmd "rm -rf $TMNT/cpio_test"
 cti_execute_cmd "rm -rf $cpio_xattr"
 cti_execute_cmd "rm -rf $cpio_noxattr"
 
 cti_report "Checking cp"
 # check that with the right flag, the xattr is preserved
 
-cti_execute_cmd "cp -@ test_file test_file1"
-compare_xattrs test_file test_file1 passwd
-cti_execute_cmd "rm -rf test_file1"
+cti_execute_cmd "(cd $TMNT; cp -@ test_file test_file1)"
+compare_xattrs $TMNT/test_file $TMNT/test_file1 passwd
+cti_execute_cmd "rm -rf $TMNT/test_file1"
 
 # without the right flag, there should be no xattr (ls should fail)
 
-cti_execute_cmd "cp test_file test_file1"
-cti_execute PASS "runat cpio.$$ ls passwd"
+cti_execute_cmd "(cd $TMNT; cp test_file test_file1)"
+cti_execute_cmd "runat $TMNT/cpio_test ls passwd"
 if [[ $? == 0 ]]
 then
 	cti_fail "Fail: we have xattr here unexpectedly"
 	return
 fi
-cti_execute_cmd "rm -rf test_file1"
+cti_execute_cmd "rm -rf $TMNT/test_file1"
 
 # create a file without xattrs, and check that find -xattr only finds
 # our test file that has an xattr.
 
 cti_report "Checking find"
-cti_execute_cmd "mkdir noxattrs"
-cti_execute_cmd "touch noxattrs/no-xattr"
+cti_execute_cmd "mkdir $TMNT/noxattrs"
+cti_execute_cmd "touch $TMNT/noxattrs/no-xattr"
 
-cti_execute_cmd "find . -xattr | grep test_file"
+cti_execute_cmd "find $TMNT -xattr | grep test_file"
 if [ $? -ne 0 ]
 then
 	cti_fail "find -xattr didn't find our file that had an xattr unexpectedly"
 fi
-cti_execute_cmd "find . -xattr | grep no-xattr"
+cti_execute_cmd "find $TMNT -xattr | grep no-xattr"
 if [ $? -eq 0 ]
 then
 	cti_fail "find -xattr found a file that didn't have an xattr unexpectedly"
 fi
-cti_execute_cmd "rm -rf noxattrs"
+cti_execute_cmd "rm -rf $TMNT/noxattrs"
 
 # mv doesn't have any flags to preserve/ommit xattrs - they're
 # always moved.
 
 cti_report "Checking mv"
-cti_execute_cmd "touch mvfile.$$"
-create_xattr mvfile.$$ passwd /etc/passwd
-cti_execute_cmd "mv mvfile.$$ mvfile2.$$"
-verify_xattr mvfile2.$$ passwd /etc/passwd
-cti_execute_cmd "rm mvfile.$$"
-cti_execute_cmd "rm mvfile2.$$"
+cti_execute_cmd "touch $TMNT/mvtest"
+create_xattr $TMNT/mvtest passwd /etc/passwd
+cti_execute_cmd "(cd $TMNT; mv mvtest mvtest2)"
+verify_xattr $TMNT/mvtest2 passwd /etc/passwd
+cti_execute_cmd "rm $TMNT/mvtest"
+cti_execute_cmd "rm $TMNT/mvtest2"
 
-
-pax_xattr=$TDIR/xattr.pax
-pax_noxattr=$TDIR/noxattr.pax
+pax_xattr=$CDIR/xattr.pax
+pax_noxattr=$CDIR/noxattr.pax
 
 cti_report "Checking pax"
-cti_execute_cmd "touch pax.$$"
-create_xattr pax.$$ passwd /etc/passwd
-cti_execute_cmd "pax -w -f $pax_noxattr pax.$$"
-cti_execute_cmd "pax -w@ -f $pax_xattr pax.$$"
-cti_execute_cmd "rm pax.$$"
+cti_execute_cmd "touch $TMNT/pax_test"
+create_xattr $TMNT/pax_test passwd /etc/passwd
+cti_execute_cmd "(cd $TMNT; pax -w -f $pax_noxattr pax_test)"
+cti_execute_cmd "(cd $TMNT; pax -w@ -f $pax_xattr pax_test)"
+cti_execute_cmd "rm $TMNT/pax_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "pax -r -f $pax_noxattr"
-cti_execute PASS "runat pax.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; pax -r -f $pax_noxattr)"
+cti_execute_cmd "runat $TMNT/pax_test cat passwd"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: we have xattr here unexpectedly"
 	return
 else
 	cti_report "PASS: we should have no xattr here as expected"
 fi
-cti_execute_cmd "rm pax.$$"
+cti_execute_cmd "rm $TMNT/pax_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "pax -r@ -f $pax_noxattr"
-cti_execute PASS "runat pax.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; pax -r@ -f $pax_noxattr)"
+cti_execute_cmd "runat $TMNT/pax_test cat passwd"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: we have xattr here unexpectedly"
 	return
 else
 	cti_report "PASS: we should have no xattr here as expected"
 fi
-cti_execute_cmd "rm pax.$$"
+cti_execute_cmd "rm $TMNT/pax_test"
 
 # we should have an xattr here
 
-cti_execute_cmd "pax -r@ -f $pax_xattr"
-verify_xattr pax.$$ passwd /etc/passwd
-cti_execute_cmd "rm pax.$$"
+cti_execute_cmd "(cd $TMNT; pax -r@ -f $pax_xattr)"
+verify_xattr $TMNT/pax_test passwd /etc/passwd
+cti_execute_cmd "rm $TMNT/pax_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "pax -r -f $pax_xattr"
-cti_execute PASS "runat pax.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; pax -r -f $pax_xattr)"
+cti_execute_cmd "runat $TMNT/pax_test cat passwd"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: we have xattr here unexpectedly"
 	return
 else
 	cti_report "PASS: we should have no xattr here as expected"
 fi
-cti_execute_cmd "rm pax.$$"
+cti_execute_cmd "rm $TMNT/pax_test"
 cti_execute_cmd "rm $pax_noxattr"
 cti_execute_cmd "rm $pax_xattr"
 
-tar_xattr=$TDIR/xattr.tar
-tar_noxattr=$TDIR/noxattr.tar
+tar_xattr=$CDIR/xattr.tar
+tar_noxattr=$CDIR/noxattr.tar
 
 cti_report "Checking tar"
-cti_execute_cmd "touch tar.$$"
-create_xattr tar.$$ passwd /etc/passwd
-cti_execute_cmd "tar cf $tar_noxattr tar.$$"
-cti_execute_cmd "tar c@f $tar_xattr tar.$$"
-cti_execute_cmd "rm tar.$$"
+cti_execute_cmd "touch $TMNT/tar_test"
+create_xattr $TMNT/tar_test passwd /etc/passwd
+cti_execute_cmd "(cd $TMNT; tar cf $tar_noxattr tar_test)"
+cti_execute_cmd "(cd $TMNT; tar c@f $tar_xattr tar_test)"
+cti_execute_cmd "rm $TMNT/tar_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "tar xf $tar_xattr"
-cti_execute PASS "runat tar.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; tar xf $tar_xattr)"
+cti_execute_cmd "runat $TMNT/tar_test cat passwd"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: we have xattr here unexpectedly"
 	return
 else
 	cti_report "PASS: we should have no xattr here as expected"
 fi
-cti_execute_cmd "rm tar.$$"
+cti_execute_cmd "rm $TMNT/tar_test"
 
 # we should have an xattr here
 
-cti_execute_cmd "tar x@f $tar_xattr"
-verify_xattr tar.$$ passwd /etc/passwd
-cti_execute_cmd "rm tar.$$"
+cti_execute_cmd "(cd $TMNT; tar x@f $tar_xattr)"
+verify_xattr $TMNT/tar_test passwd /etc/passwd
+cti_execute_cmd "rm $TMNT/tar_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "tar xf $tar_noxattr"
-cti_execute PASS "runat tar.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; tar xf $tar_noxattr)"
+cti_execute_cmd "runat $TMNT/tar_test cat passwd"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: we have xattr here unexpectedly"
 	return
 else
 	cti_report "PASS: we should have no xattr here as expected"
 fi
-cti_execute_cmd "rm tar.$$"
+cti_execute_cmd "rm $TMNT/tar_test"
 
 # we should have no xattr here
 
-cti_execute_cmd "tar x@f $tar_noxattr"
-cti_execute PASS "runat tar.$$ cat passwd"
+cti_execute_cmd "(cd $TMNT; tar x@f $tar_noxattr)"
+cti_execute_cmd "runat $TMNT/tar_test cat passwd"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: we have xattr here unexpectedly"
 	return
 else
 	cti_report "PASS: we should have no xattr here as expected"
 fi
-cti_execute_cmd "rm tar.$$"
+cti_execute_cmd "rm $TMNT/tar_test"
 cti_execute_cmd "rm $tar_noxattr"
 cti_execute_cmd "rm $tar_xattr"
 
-cti_execute_cmd "rm -rf *"
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm -rf $TMNT/*"
 
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

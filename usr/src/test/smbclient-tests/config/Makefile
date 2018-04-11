@@ -16,7 +16,7 @@
 include		$(SRC)/Makefile.master
 include		../Makefile.com
 
-CONFS=		config			\
+CONFS=	\
 		fileio.prof		\
 		filemacro.prof		\
 		filemicro.prof		\

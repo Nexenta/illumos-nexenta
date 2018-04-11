@@ -88,27 +88,3 @@ parse_view_output() {
 	fi
 	return 0
 }
-
-#
-# NAME
-#       kill_smbiod
-#
-# DESCRIPTION
-#       Force all our SMB client connections to close.
-#
-# RETURN
-#       0 - success
-#
-kill_smbiod() {
-	typeset me uid pid cmd
-	me=$(id -u)
-
-	ps -e -o 'uid pid comm' |
-	while read uid pid cmd
-	do
-		if [[ "$uid" == "$me" && "$cmd" == "smbiod" ]] ; then
-			kill "$pid"
-		fi
-	done
-	return 0
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. tar and rm can get the right message
 #
 
-create011() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create011"
 tc_desc="Verify can create files on the smbfs"
@@ -45,6 +45,14 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	[[ *:${STC_CIFS_CLIENT_DEBUG}:* == *:$tc_id:* ]]; then
     set -x
 fi
+
+if [[ -n "$STC_QUICK" ]] ; then
+  cti_notinuse "${tc_id}: skipped (STC_QUICK)"
+  return
+fi
+
+# reference dir for copy (ro)
+refdir=/kernel/misc
 
 server=$(server_name) || return
 
@@ -62,10 +70,9 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
-cti_execute_cmd "tar cf $TDIR/kernel.tar /kernel"
-cti_execute_cmd "tar cf kernel.tar /kernel"
+cti_execute_cmd "tar cf $TDIR/kernel.tar $refdir"
+cti_execute_cmd "tar cf $TMNT/kernel.tar $refdir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the tar cf command is failed "
 	return
@@ -73,7 +80,7 @@ else
 	cti_report "PASS: the tar cf command is successful"
 fi
 
-diff kernel.tar $TDIR/kernel.tar
+cti_execute_cmd "cmp -s $TMNT/kernel.tar $TDIR/kernel.tar"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the two tar files are different"
 	return
@@ -81,9 +88,7 @@ else
 	cti_report "PASS: the two tar files are same"
 fi
 
-cti_execute_cmd "rm -rf  kernel.tar $TDIR/kernel.tar"
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm -rf  $TMNT/kernel.tar $TDIR/kernel.tar"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

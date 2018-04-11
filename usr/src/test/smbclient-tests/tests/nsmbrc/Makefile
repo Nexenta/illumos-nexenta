@@ -18,7 +18,7 @@ include		../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/nsmbrc
 
-TESTS=		tc_nsmbrc	\
+TESTS=	\
 		tp_nsmbrc_001	\
 		tp_nsmbrc_002	\
 		tp_nsmbrc_003	\

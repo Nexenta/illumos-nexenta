@@ -1,3 +1,5 @@
+#!/bin/ksh -p
+
 #
 # CDDL HEADER START
 #
@@ -38,8 +40,7 @@
 #       3. sharectl, smbutil and mount can get right message
 #
 
-sharectl006() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="sharectl006"
 tc_desc="Test user and domain in sharectl [server] section."
@@ -119,4 +120,3 @@ smbmount_clean $TMNT
 sharectl delsect $SERVER smbfs
 
 cti_pass "${tc_id}: PASS"
-}

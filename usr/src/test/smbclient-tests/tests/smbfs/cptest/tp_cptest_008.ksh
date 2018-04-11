@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. cp and diff can get the right message
 #
 
-cptest008() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="cptest008"
 tc_desc=" Verify can cp muti dir/files between server and local"
@@ -44,6 +44,11 @@ print_test_case $tc_id - $tc_desc
 if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	[[ *:${STC_CIFS_CLIENT_DEBUG}:* == *:$tc_id:* ]]; then
     set -x
+fi
+
+if [[ -n "$STC_QUICK" ]] ; then
+  cti_notinuse "${tc_id}: skipped (STC_QUICK)"
+  return
 fi
 
 # This test is less interesting - pick something small.
@@ -64,10 +69,9 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
 # create mutil file/dirs on the server
-cti_execute_cmd  "cp -rf $tdir test_dir"
+cti_execute_cmd  "cp -rf $tdir $TMNT/test_dir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp $tdir to test_dir failed"
 	return
@@ -76,7 +80,7 @@ else
 fi
 
 # cp from to server to server
-cti_execute_cmd "cp -rf  test_dir test_dir_cp"
+cti_execute_cmd "cp -rf  $TMNT/test_dir $TMNT/test_dir_cp"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: cp to the server test_dir_cp failed"
 	return
@@ -85,7 +89,7 @@ else
 fi
 
 # diff the server to server
-cti_execute_cmd "diff -r test_dir test_dir_cp"
+cti_execute_cmd "diff -r $TMNT/test_dir $TMNT/test_dir_cp"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: test_dir is different with test_dir_cp"
 	return
@@ -93,10 +97,8 @@ else
 	cti_report "PASS: test_dir is same to test_dir_cp"
 fi
 
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TDIR/*"
 cti_execute_cmd "rm -rf $TMNT/*"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

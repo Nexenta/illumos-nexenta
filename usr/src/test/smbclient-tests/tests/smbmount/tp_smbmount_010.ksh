@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #	3. cp and diff can get right message
 #
 
-smbmount010() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount010"
 tc_desc="smbmount can work well with smbutil login"
@@ -63,7 +63,7 @@ else
 	cti_report "PASS: smbutil login set the passwd successfully"
 fi
 
-cmd="mount -F smbfs //aaa;$TUSER:$TPASS@$server/public $TMNT"
+cmd="mount -F smbfs -o noprompt //aaa;$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the normal user can't mount the public share"
@@ -79,20 +79,11 @@ if [[ $? != 0 ]]; then
 	return
 fi
 
-cd $TMNT
+cmd="cp /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL $cmd
 
-cmd="cp /usr/bin/ls ls_file"
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: failed to cp the file /usr/bin/ls"
-	smbutil logout -a
-	return
-else
-	cti_report "PASS: cp the file /usr/bin/ls successfully"
-fi
-
-cmd="diff /usr/bin/ls ls_file"
-cti_execute_cmd $cmd
+cmd="cmp -s /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the file /usr/bin/ls is different with the file ls_file"
 	smbutil logout -a
@@ -100,8 +91,6 @@ if [[ $? != 0 ]]; then
 else
 	cti_report "PASS: the file /usr/bin/ls is same to with the file ls_file"
 fi
-
-cti_execute_cmd "cd -"
 
 cmd="umount $TMNT"
 cti_execute_cmd $cmd
@@ -117,4 +106,3 @@ smbmount_clean $TMNT
 smbutil logout -a
 
 cti_pass "${tc_id}: PASS"
-}

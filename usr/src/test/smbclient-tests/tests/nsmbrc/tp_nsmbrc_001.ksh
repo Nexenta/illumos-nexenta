@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -21,6 +22,7 @@
 
 #
 # Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 #
@@ -35,10 +37,11 @@
 #	2. run "smbutil view user@server and get the failure"
 #	3. create a .nsmbrc file include server section minauth=kerberos
 #	4. run "smbutil view user@server and get the failure"
-#	
+#
 
-nsmbrc001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
+
+set -x
 
 tc_id="nsmbrc001"
 tc_desc="Verify minauth can work in default"
@@ -51,22 +54,25 @@ fi
 
 server=$(server_name) || return
 
-rm -f ~root/.nsmbrc
-echo "[default]" > ~root/.nsmbrc
-echo "minauth=kerberos" >> ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
+echo "[default]
+minauth=kerberos" > ~/.nsmbrc
+
+# kill any existing session first
+cti_execute_cmd "smbutil discon //$TUSER@$server"
+sleep 1
 
 # this should fail
-cmd="smbutil view //$TUSER:$TPASS@$server"
+cmd="smbutil view -N //$TUSER:$TPASS@$server"
 cti_execute -i '' PASS $cmd
 if [[ $? == 0 ]]; then
-	cti_execute_cmd "echo ::nsmb_vc|mdb -k"
+	cti_execute_cmd "echo '::nsmb_vc' |sudo -n mdb -k"
 	cti_fail "FAIL: can pass authentication by minauth=kerberos"
 	return
 else
 	cti_report "PASS: can't pass authentication by minauth=kerberos"
 fi
 
-rm -f ~root/.nsmbrc
+cti_execute_cmd "rm -f ~/.nsmbrc"
 
 cti_pass "${tc_id}: PASS"
-}

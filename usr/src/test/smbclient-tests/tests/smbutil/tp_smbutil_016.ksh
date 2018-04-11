@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #	3. smbutil commands can get right messages
 #
 
-smbutil016() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbutil016"
 tc_desc="Verify smbutil login can work"
@@ -48,7 +48,7 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 fi
 
 # cleanup the keychains
-smbutil logoutall
+smbutil logout -a
 cmd="$EXPECT $SMBUTILEXP ${TUSER}@mygroup \$TPASS"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
@@ -122,4 +122,3 @@ else
 fi
 
 cti_pass "${tc_id}: PASS"
-}

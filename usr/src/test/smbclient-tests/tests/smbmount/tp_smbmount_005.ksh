@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -31,14 +32,13 @@
 #
 # STRATEGY:
 #	1. create user "$AUSER" and "$BUSER"
-#	2. run "mount -F smbfs //$AUSER:$APASS@$server/$AUSER $TMNT"
+#	2. run "mount -F smbfs //$AUSER:$APASS@$server/a_share $TMNT"
 #	3. mount successfully
-#	4. run "mount -F smbfs -O //$BUSER:$BPASS@$server/$BUSER $TMNT"
+#	4. run "mount -F smbfs -O //$BUSER:$BPASS@$server/b_share $TMNT"
 #	5. mount successfully
 #
 
-smbmount005() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount005"
 tc_desc="-O work well"
@@ -55,19 +55,19 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-cmd="mount -F smbfs //$AUSER:$APASS@$server/$AUSER $TMNT"
+cmd="mount -F smbfs -o noprompt //$AUSER:$APASS@$server/a_share $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: smbmount can't mount the share $AUSER with user $AUSER"
+	cti_fail "FAIL: smbmount can't mount the share a_share with user $AUSER"
 	return
 else
-	cti_report "PASS: smbmount can mount the share $AUSER with user $AUSER"
+	cti_report "PASS: smbmount can mount the share a_share with user $AUSER"
 fi
 
 smbmount_check $TMNT || return
 
 # cp file
-cmd="cp /usr/bin/ls ls_file"
+cmd="cp /usr/bin/ls $TMNT/ls_file"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to cp the /usr/bin/ls file"
@@ -76,7 +76,7 @@ else
 	cti_report "PASS: cp the /usr/bin/ls file successfully"
 fi
 
-cmd="diff /usr/bin/ls ls_file"
+cmd="diff /usr/bin/ls $TMNT/ls_file"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the file /usr/bin/ls is different with file ls_file"
@@ -85,19 +85,22 @@ else
 	cti_report "PASS: the file /usr/bin/ls is same to the ls_file file"
 fi
 
-cmd="mount -F smbfs -O //$BUSER:$BPASS@$server/$BUSER $TMNT"
-cti_execute -i '' FAIL $cmd
+cmd="mount -F smbfs -O -o noprompt //$BUSER:$BPASS@$server/a_share $TMNT"
+cti_execute -i '' FAIL sudo -n $cmd
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: smbmount can't mount the share $AUSER on the same point twice with -O option"
+	cti_fail "FAIL: smbmount can't mount the share a_share on the same point twice with -O option"
 	return
 else
-	cti_report "PASS: smbmount can mount the share $AUSER on the same point twice with -O option"
+	cti_report "PASS: smbmount can mount the share a_share on the same point twice with -O option"
 fi
 
-smbmount_check $TMNT || return
+smbmount_check $TMNT || {
+  cti_execute_cmd sudo -n "umount $TMNT"
+  return 1
+}
 
-cmd="diff /usr/bin/ls ls_file"
-cti_execute_cmd $cmd
+cmd="diff /usr/bin/ls $TMNT/ls_file"
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the second diff file /usr/bin/ls is different with the ls_file file"
 	return
@@ -106,8 +109,8 @@ else
 fi
 
 # cp file
-cmd="cp /usr/bin/rm rm_file"
-cti_execute_cmd $cmd
+cmd="cp /usr/bin/rm $TMNT/rm_file"
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to cp the /usr/bin/rm file"
 	return
@@ -115,8 +118,8 @@ else
 	cti_report "PASS: cp the file /usr/bin/rm successfully"
 fi
 
-cmd="diff /usr/bin/rm rm_file"
-cti_execute_cmd $cmd
+cmd="diff /usr/bin/rm $TMNT/rm_file"
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the file /usr/bin/rm is different with the rm_file file"
 	return
@@ -125,7 +128,7 @@ else
 fi
 
 cmd="umount $TMNT"
-cti_execute_cmd $cmd
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the first umount $TMNT is failed "
 	return
@@ -133,16 +136,16 @@ else
 	cti_report "PASS: the first umount $TMNT is successful"
 fi
 
-cmd="diff /usr/bin/ls ls_file"
-cti_execute_cmd $cmd
+cmd="diff /usr/bin/ls $TMNT/ls_file"
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL:the third diff:file /usr/bin/ls is different with file ls_file"
 	return
 else
 	cti_report "PASS:the third diff:file /usr/bin/ls is same to file ls_file"
 fi
-cmd="diff /usr/bin/rm rm_file"
-cti_execute_cmd $cmd
+cmd="diff /usr/bin/rm $TMNT/rm_file"
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the fourth diff:file /usr/bin/rm is different with file rm_file"
 	return
@@ -151,7 +154,7 @@ else
 fi
 
 cmd="umount $TMNT"
-cti_execute_cmd $cmd
+cti_execute_cmd sudo -n $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the second umount $TMNT is failed"
 	return
@@ -161,4 +164,3 @@ fi
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

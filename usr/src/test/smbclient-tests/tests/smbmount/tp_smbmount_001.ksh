@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #	2. mount can get the right message
 #
 
-smbmount001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount001"
 tc_desc="Verify smbmount can mount public share"
@@ -52,7 +52,7 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-cmd="mount -F smbfs //$TUSER:$TPASS@$server/public $TMNT"
+cmd="mount -F smbfs -o noprompt //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: smbmount can't mount the public share"
@@ -74,4 +74,3 @@ fi
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

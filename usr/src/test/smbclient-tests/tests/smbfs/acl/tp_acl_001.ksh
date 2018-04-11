@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. try "ls -V" etc.
 #
 
-acl001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="acl001"
 tc_desc="Verify we can view ACLs with ls"
@@ -52,7 +52,7 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-cmd="mount -F smbfs //$TUSER:$TPASS@$server/public $TMNT"
+cmd="mount -F smbfs -oacl //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -116,4 +116,3 @@ cti_execute_cmd "rm $TMNT/$tc_id"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

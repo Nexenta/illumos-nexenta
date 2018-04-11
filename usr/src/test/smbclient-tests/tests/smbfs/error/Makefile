@@ -18,7 +18,7 @@ include		../../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/smbfs/error
 
-TESTS=		tc_error	\
+TESTS=	\
 		tp_error_001	\
 		tp_error_002
 

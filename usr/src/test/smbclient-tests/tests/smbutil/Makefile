@@ -18,7 +18,7 @@ include		../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/smbutil
 
-TESTS=		tc_smbutil	\
+TESTS=	\
 		tp_smbutil_001	\
 		tp_smbutil_002	\
 		tp_smbutil_003	\

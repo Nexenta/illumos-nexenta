@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mkdir and rmdir can get the right message
 #
 
-mkdir004() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mkdir004"
 tc_desc=" Verify can muti dir operation on the smbfs"
@@ -63,12 +63,11 @@ fi
 
 cpath=$(pwd)
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
 # create 40 testdir
 i=1
 while ((i<40)); do
-	cti_execute_cmd "mkdir testdir$i"
+	cti_execute_cmd "mkdir $TMNT/testdir$i"
 	if [[ $? != 0 ]]; then
 		cti_fail "FAIL: mkdir testdir$i faled"
 		return
@@ -76,7 +75,7 @@ while ((i<40)); do
 	((i=i+1))
 done
 
-cti_execute FAIL "ls -la"
+cti_execute FAIL "ls -la $TMNT"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: ls -la failed"
 	return
@@ -87,7 +86,7 @@ fi
 # del the 40 testdir
 i=1
 while ((i<40)); do
-	cti_execute_cmd "rmdir testdir$i"
+	cti_execute_cmd "rmdir $TMNT/testdir$i"
 	if [[ $? != 0 ]]; then
 		cti_fail "FAIL: rmdir testdir$i failed"
 		return
@@ -98,25 +97,19 @@ done
 # create 40 deep dir
 cdir=$(pwd)
 i=1
+d=testdir_a1
 while ((i<40)); do
-	cti_execute_cmd "mkdir testdir_a$i"
+	cti_execute_cmd "mkdir $TMNT/$d"
 	if [[ $? != 0 ]]; then
 		cti_fail "FAIL: mkdir testdir_a$i failed"
 		return
 	fi
-
-	cti_execute_cmd "cd testdir_a$i"
-	if [[ $? != 0 ]]; then
-		cti_fail "FAIL: cd testdir_a$i failed"
-		return
-	fi
 	((i=i+1))
+	d=$d/testdir_a$i
 done
-cti_execute_cmd "pwd"
-cti_execute_cmd "cd $cdir"
 
 # find on dirs
-cti_execute FAIL "find ."
+cti_execute FAIL "find $TMNT"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: find . failed"
 	return
@@ -125,9 +118,7 @@ else
 fi
 
 # clean up
-cti_execute_cmd "cd $cpath"
 cti_execute_cmd "rm -rf $TMNT/*"
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

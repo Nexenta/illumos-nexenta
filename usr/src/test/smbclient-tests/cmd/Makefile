@@ -16,7 +16,13 @@
 .PARALLEL:	$(SUBDIRS)
 
 SUBDIRS=	abort_conn	\
+		close_wr	\
+		cp_mmap		\
 		file_trunc	\
+		mkfile_mmap	\
+		no_close	\
+		prot_mmap	\
+		rw_mmap		\
 		scripts
 
 include		$(SRC)/test/Makefile.com

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -39,8 +40,7 @@
 #	7. verify $TUSER1 owns it
 #
 
-acl005() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="acl005"
 tc_desc="Verify we can take ownership (chown)"
@@ -61,7 +61,7 @@ smbmount_init $TMNT2
 
 #       1. run "mount -F smbfs //$TUSER@..." $TMNT
 
-cmd="mount -F smbfs //$TUSER:$TPASS@$server/public $TMNT"
+cmd="mount -F smbfs -oacl //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -80,7 +80,7 @@ fi
 
 #       2. run "mount -F smbfs //$TUSER1@..." $TMNT2
 
-cmd="mount -F smbfs //$TUSER1:$TPASS@$server/public $TMNT2"
+cmd="mount -F smbfs -oacl //$TUSER1:$TPASS@$server/public $TMNT2"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -144,7 +144,7 @@ fi
 
 #       6. chown UID $TMNT2/file
 
-cmd="chown ${uid} $TMNT2/$tc_id"
+cmd="sudo -n chown ${uid} $TMNT2/$tc_id"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: $cmd"
@@ -189,4 +189,3 @@ smbmount_clean $TMNT
 smbmount_clean $TMNT2
 
 cti_pass "${tc_id}: PASS"
-}

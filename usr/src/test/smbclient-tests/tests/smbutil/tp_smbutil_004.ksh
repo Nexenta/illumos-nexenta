@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #	2. get correct help message
 #
 
-smbutil004() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbutil004"
 tc_desc="Verify smbutil status can handle error arg"
@@ -46,7 +46,7 @@ if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
     set -x
 fi
 
-cti_execute PASS "smbutil status bad"
+cti_execute_cmd "smbutil status bad"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: smbutil status bad succeeded"
 	return
@@ -55,4 +55,3 @@ else
 fi
 
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mkdir and rmdir can get the right message
 #
 
-mkdir003() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mkdir003"
 tc_desc=" Verify can muti dir operation on the smbfs"
@@ -62,11 +62,9 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cpath=$(pwd)
-cti_execute_cmd "cd $TMNT"
 
 # mkdir on smbfs
-cti_execute_cmd  "mkdir testdir"
+cti_execute_cmd  "mkdir $TMNT/testdir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mkdir testdir failed"
 	return
@@ -75,7 +73,7 @@ else
 fi
 
 # list dir
-cti_execute_cmd "ls -ld testdir"
+cti_execute_cmd "ls -ld $TMNT/testdir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: ls -ld testdir failed"
 	return
@@ -84,28 +82,25 @@ else
 fi
 
 # access dir
-cti_execute_cmd "cd testdir"
+cti_execute_cmd "ls -l $TMNT/testdir"
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: cd testdir failed"
+	cti_fail "FAIL: ls -l testdir failed"
 	return
 else
-	cti_report "PASS: cd testdir succeeded"
+	cti_report "PASS: ls -l testdir succeeded"
 fi
 
-cti_execute_cmd "cd -"
-cti_execute_cmd "rm -rf testdir/*"
-
 # negative mkdir case
-cti_execute_cmd "mkdir testdir"
+cti_execute_cmd "mkdir $TMNT/testdir"
 if [[ $? == 0 ]]; then
-	cti_fail "FAIL: mkdir testdir should fail"
+	cti_fail "FAIL: 2nd mkdir testdir should fail"
 	return
 else
-	cti_report "PASS: mkdir testdir failed"
+	cti_report "PASS: 2nd mkdir testdir failed"
 fi
 
 # rmdir
-cti_execute_cmd "rmdir testdir"
+cti_execute_cmd "rmdir $TMNT/testdir"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: rmdir testdir failed"
 	return
@@ -113,8 +108,5 @@ else
 	cti_report "PASS: rmdir testdir succeeded"
 fi
 
-cti_execute_cmd "cd $cpath"
-
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #	 3. The "ln -s" can get the right message
 #
 
-error001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="error001"
 tc_desc=" Verify link error on the smbfs"
@@ -62,12 +62,10 @@ else
 	cti_report "smbmount  can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # cleanup
 cti_execute_cmd "rm -rf $TMNT/*"
 
-cti_execute_cmd "touch file"
+cti_execute_cmd "touch $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: touch file failed on smbfs"
 	return
@@ -75,7 +73,7 @@ else
 	cti_report "PASS: touch file succeeded on smbfs"
 fi
 
-cti_execute_cmd "ln file file_ln"
+cti_execute_cmd "(cd $TMNT; ln file file_ln)"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: ln file file_ln succeeded on smbfs"
 	return
@@ -83,16 +81,16 @@ else
 	cti_report "PASS: ln file file_ln failed on smbfs"
 fi
 
-cti_execute_cmd "ln -s file file_ln"
+cti_execute_cmd "(cd $TMNT; ln -s file file_ln)"
 if [[ $? == 0 ]]; then
 	cti_fail "ln -s file file_ln succeeded on smbfs"
 	return
 else
 	cti_report "ln -s file file_ln failed on smbfs"
 fi
-cti_execute_cmd "rm file"
+cti_execute_cmd "rm $TMNT/file"
 
-cti_execute_cmd "mkdir dir"
+cti_execute_cmd "mkdir $TMNT/dir"
 if [[ $? != 0 ]]; then
 	cti_fail "mkdir dir failed on smbfs"
 	return
@@ -100,7 +98,7 @@ else
 	cti_report "mkdir dir succeeded on smbfs"
 fi
 
-cti_execute_cmd "ln -s dir dir_ln"
+cti_execute_cmd "(cd $TMNT; ln -s dir dir_ln)"
 if [[ $? == 0 ]]; then
 	cti_fail "ln -s dir dir_ln succeeded on smbfs"
 	return
@@ -108,9 +106,7 @@ else
 	cti_report "ln -s dir dir_ln failed on smbfs"
 fi
 
-cti_execute_cmd "rmdir dir"
-cti_execute_cmd "cd -"
+cti_execute_cmd "rmdir $TMNT/dir"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -38,8 +39,7 @@
 #	4 mount successfully
 #
 
-smbmount015() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount015"
 tc_desc="Verify smbmount can mount 2 private shares"
@@ -52,79 +52,44 @@ fi
 
 server=$(server_name) || return
 
+# SKIP for now (mount priv issues)
+no_tested || return
+
 testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 smbmount_clean $TMNT2
 smbmount_init $TMNT2
 
-cmd="mount -F smbfs -o dirperms=777,fileperms=666
- //$AUSER:$APASS@$server/$AUSER $TMNT"
+cmd="mount -F smbfs -o noprompt,dirperms=777,fileperms=666
+ //$AUSER:$APASS@$server/a_share $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
-	cti_fail "FAIL: smbmount can't mount the share $AUSER"
+	cti_fail "FAIL: smbmount can't mount the share a_share"
 	return
 else
-	cti_report "PASS: smbmount can mount the share $AUSER"
+	cti_report "PASS: smbmount can mount the share a_share"
 fi
 
 smbmount_check $TMNT || return
 
-cd $TMNT
+cmd="cp /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL sudo -n -u $AUSER $cmd
 
-cmd="su $AUSER -c \"cp /usr/bin/ls ls_file\""
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: failed to cp the /usr/bin/ls file"
-	return
-else
-	cti_report "PASS: cp the /usr/bin/ls file successfully"
-fi
+cmd="diff /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL sudo -n -u $AUSER $cmd
 
-cmd="su $AUSER -c \"diff /usr/bin/ls ls_file\""
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: the /usr/bin/ls file is different with the ls_file file"
-	return
-else
-	cti_report "PASS: the /usr/bin/ls file is same to the ls_file file"
-fi
-
-
-cti_execute_cmd "cd -"
-
-cmd="mount -F smbfs -o dirperms=777,fileperms=666
+cmd="mount -F smbfs -o noprompt,dirperms=777,fileperms=666
  //$BUSER:$BPASS@$server/$BUSER $TMNT2"
 cti_execute -i '' FAIL $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: smbmount can't mount the share $BUSER"
-	return
-else
-	cti_report "PASS: smbmount can mount the share $BUSER"
-fi
 
 smbmount_check $TMNT || return
 
-cd $TMNT
-cmd="su $AUSER -c \"cp /usr/bin/ls ls_file\""
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: failed to cp the /usr/bin/ls file"
-	return
-else
-	cti_report "PASS: cp the /usr/bin/ls file successfully"
-fi
+cmd="cp /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL sudo -n -u $AUSER $cmd
 
-cmd="su $AUSER -c \"diff /usr/bin/ls ls_file\""
-cti_execute_cmd $cmd
-if [[ $? != 0 ]]; then
-	cti_fail "FAIL: the /usr/bin/ls file is different with the ls_file file"
-	return
-else
-	cti_report "PASS: the /usr/bin/ls file is same to the ls_file file"
-fi
-
-cti_execute_cmd "cd -"
+cmd="diff /usr/bin/ls $TMNT/ls_file"
+cti_execute FAIL sudo -n -u $AUSER $cmd
 
 cmd="umount $TMNT"
 cti_execute_cmd $cmd
@@ -147,4 +112,3 @@ smbmount_clean $TMNT
 smbmount_clean $TMNT2
 
 cti_pass "${tc_id}: PASS"
-}

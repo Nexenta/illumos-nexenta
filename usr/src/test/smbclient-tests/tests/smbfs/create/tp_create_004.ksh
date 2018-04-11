@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. dd and rm can get the right message
 #
 
-create004() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create004"
 tc_desc=" Verify can create files on the smbfs"
@@ -61,11 +61,8 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cd $TMNT
-
-
 # create 50000 byte file
-cmd="dd if=/dev/zero of=file50000 bs=500 count=100"
+cmd="dd if=/dev/zero of=$TMNT/file50000 bs=500 count=100"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to dd a 50000b file"
@@ -74,7 +71,7 @@ else
 	cti_report "PASS: dd a 50000b file successfully"
 fi
 
-size=$(file_size file50000)
+size=$(file_size $TMNT/file50000)
 if ((size != 50000)); then
 	cti_fail "FAIL: the file size($size) is != 50000"
 	return
@@ -84,7 +81,7 @@ fi
 
 
 # remove file
-cmd="rm file50000"
+cmd="rm $TMNT/file50000"
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to rm the file50000 file"
@@ -93,15 +90,12 @@ else
 	cti_report "PASS: rm the file50000 file successfully"
 fi
 
-if [[  -f "file50000" ]]; then
+if [[  -f "$TMNT/file50000" ]]; then
 	cti_fail "FAIL: the file50000 should not exist, but it exists"
 	return
 else
 	cti_report "PASS: the file50000 exists, it is right"
 fi
 
-cti_execute_cmd "cd -"
-
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

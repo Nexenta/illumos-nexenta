@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #	3. sharectl and smbutil can get right message
 #
 
-sharectl001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="sharectl001"
 tc_desc=" Verify minauth can work in default"
@@ -80,4 +80,3 @@ else
 fi
 
 cti_pass "${tc_id}: PASS"
-}

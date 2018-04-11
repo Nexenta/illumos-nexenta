@@ -18,7 +18,7 @@ include		../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/sharectl
 
-TESTS=		tc_sharectl	\
+TESTS=	\
 		tp_sharectl_001	\
 		tp_sharectl_002	\
 		tp_sharectl_003	\

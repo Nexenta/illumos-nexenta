@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #	2. smbutil can get the right message
 #
 
-smbutil006() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbutil006"
 tc_desc="Verify smbutil view can handle invald server syntax"
@@ -78,4 +78,3 @@ else
 fi
 
 cti_pass "${tc_id}: PASS"
-}

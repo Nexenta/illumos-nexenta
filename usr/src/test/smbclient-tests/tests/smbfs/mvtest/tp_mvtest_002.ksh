@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. mv and diff can get the right message
 #
 
-mvtest002() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="mvtest002"
 tc_desc=" Verify can mv large files on the smbfs"
@@ -61,12 +61,10 @@ else
 	cti_report "smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 cti_execute_cmd "cp $REFFILE $TDIR/test_file"
 cti_execute_cmd "cp $REFFILE $TDIR/test_file_org"
 # mv file to server
-cti_execute_cmd "mv $TDIR/test_file test_file"
+cti_execute_cmd "mv $TDIR/test_file $TMNT/test_file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv $TDIR/test_file to test_file failed"
 	return
@@ -74,7 +72,7 @@ else
 	cti_report "PASS: mv $TDIR/test_file to test_file succeeded"
 fi
 
-cti_execute_cmd "diff test_file $TDIR/test_file_org"
+cti_execute_cmd "cmp -s $TMNT/test_file $TDIR/test_file_org"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff test_file $TDIR/test_file_org failed"
 	return
@@ -83,7 +81,7 @@ else
 fi
 
 # mv from the server to local
-cti_execute_cmd "mv test_file $TDIR/test_file_mv"
+cti_execute_cmd "mv $TMNT/test_file $TDIR/test_file_mv"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: mv test_file $TDIR/test_file_mv failed"
 	return
@@ -91,7 +89,7 @@ else
 	cti_report "PASS: mv test_file $TDIR/test_file_mv succeeded"
 fi
 
-cti_execute_cmd "diff $TDIR/test_file_org $TDIR/test_file_mv"
+cti_execute_cmd "cmp -s $TDIR/test_file_org $TDIR/test_file_mv"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: diff $TDIR/test_file_org $TDIR/test_file_mv" \
 	    " failed"
@@ -101,9 +99,7 @@ else
 	    " $TDIR/test_file_mv succeeded"
 fi
 
-cti_execute_cmd "cd -"
 cti_execute_cmd "rm -rf $TDIR/*"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

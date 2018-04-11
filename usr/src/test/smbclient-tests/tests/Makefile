@@ -15,12 +15,12 @@
 
 .PARALLEL:	$(SUBDIRS)
 
-SUBDIRS=	configure	\
+SUBDIRS=	\
 		nsmbrc		\
 		performance	\
 		sharectl	\
 		smbfs		\
 		smbmount	\
-		smbutil	
+		smbutil
 
 include		$(SRC)/test/Makefile.com

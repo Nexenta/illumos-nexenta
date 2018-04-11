@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,12 +36,12 @@
 #	3. Verify we're unable to list the ../ directory
 #
 
-function xattr_005 {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id=xattr_005
 tc_desc="Verify special . and .. dirs work as expected for xattrs"
 print_test_case $tc_id - $tc_desc
+CDIR=$(pwd)
 
 if [[ $STC_CIFS_CLIENT_DEBUG == 1 ]] || \
 	[[ *:${STC_CIFS_CLIENT_DEBUG}:* == *:$tc_id:* ]]; then
@@ -69,70 +70,39 @@ if [[ $? != 0 ]]; then
 	return
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # create a file, and an xattr on it
 
-cti_execute_cmd "touch test_file"
-create_xattr test_file passwd /etc/passwd
+cti_execute_cmd "touch $TMNT/test_file"
+create_xattr $TMNT/test_file passwd /etc/passwd
 
-cur_ver=$(uname -r)
-if [ "$cur_ver" == "5.10" ];then
-	# listing the directory . should show one file
+# listing the directory . should show one file
 
-	OUTPUT=$(runat test_file ls .)
-	if [ "$OUTPUT" != "passwd" ]
-	then
-	        cti_fail "Listing the . directory doesn't show \"passwd\" as expected."
-	fi
-	# list the directory . long form
-
-	cti_execute_cmd "runat test_file ls -a . > $TDIR/output.$$"
-
-	# create a file that should be the same as the command above
-	create_expected_output $TDIR/expected-output.$$  .  ..   passwd
-	# compare them
-
-	cti_execute_cmd "diff $TDIR/output.$$ $TDIR/expected-output.$$"
-	if [[ $? != 0 ]]; then
-	        cti_fail "FAIL: special . dirs do not work as expected for xattrs"
-	        return
-	else
-	        cti_report "PASS: special . dirs work as expected for xattrs"
-	fi
-
-else
-	# listing the directory .
-	
-	cti_execute_cmd "runat test_file ls . > $TDIR/output.$$"
-	create_expected_output  $TDIR/expected-output.$$  \
-	passwd
-	cti_execute_cmd "diff $TDIR/output.$$ $TDIR/expected-output.$$"
-	if [[ $? != 0 ]]; then
-	        cti_fail "FAIL: special . dirs do not work as expected for xattrs"
-	        return
-	else
-	        cti_report "PASS: special . dirs work as expected for xattrs"
-	fi
-	
-	# list the directory . long form
-
-	cti_execute_cmd "runat test_file ls -a . > $TDIR/output.$$"
-	create_expected_output  $TDIR/expected-output.$$ . ..  \
-	passwd
-	cti_execute_cmd "diff $TDIR/output.$$ $TDIR/expected-output.$$"
-	if [[ $? != 0 ]]; then
-	        cti_fail "FAIL: special . dirs do not work as expected for xattrs"
-	        return
-	else
-	        cti_report "PASS: special . dirs work as expected for xattrs"
-	fi
-
+OUTPUT=$(runat $TMNT/test_file ls |grep -v SUNWattr_)
+if [ "$OUTPUT" != "passwd" ]
+then
+        cti_fail "Listing the . directory doesn't show \"passwd\" as expected."
 fi
-	
+# list the directory . long form
+
+cti_execute_cmd "runat $TMNT/test_file ls -a . |grep -v SUNWattr_"
+cp cti_stdout output
+
+# create a file that should be the same as the command above
+create_expected_output expected-output  .  ..   passwd
+# compare them
+
+cti_execute_cmd "diff output expected-output"
+if [[ $? != 0 ]]; then
+        cti_fail "FAIL: special . dirs do not work as expected for xattrs"
+	cti_reportfile output
+        return
+else
+        cti_report "PASS: special . dirs work as expected for xattrs"
+fi
+
 # list the directory .. expecting one file
 
-OUTPUT=$(runat test_file ls ..)
+OUTPUT=$(runat $TMNT/test_file ls ..)
 if [ $? != 0 ]
 then
 	cti_fail "runat test file ls .. failed with return val =$? unexpectedly"
@@ -147,7 +117,7 @@ fi
 
 # verify we can't list ../
 
-cti_execute PASS "runat test_file ls  ../"
+cti_execute_cmd "runat $TMNT/test_file ls  ../"
 if [[ $? == 0 ]]; then
 	cti_fail "FAIL: can be able to list the ../ directory unexpectedly"
 	return
@@ -155,9 +125,8 @@ else
 	cti_report "PASS: unable to list the ../ directory as expected"
 fi
 
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm output expected-output"
 cti_execute_cmd "rm -rf $TDIR/*"
 
 smbmount_clean $TMNT
 cti_pass "$tc_id: PASS"
-}

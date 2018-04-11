@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. touch and rm can get the right message
 #
 
-create001() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create001"
 tc_desc=" Verify can create files on the smbfs"
@@ -61,10 +61,8 @@ else
 	cti_report "PASS: smbmount can mount the public share"
 fi
 
-cti_execute_cmd "cd $TMNT"
-
 # touch file
-cti_execute_cmd "touch file"
+cti_execute_cmd "touch $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to touch the file"
 	return
@@ -72,14 +70,14 @@ else
 	cti_report "PASS: touch the file successfully"
 fi
 
-if [[ ! -f "file" ]]; then
+if [[ ! -f "$TMNT/file" ]]; then
 	cti_fail "FAIL: the file should exist, it doesn't exist"
 	return
 else
 	cti_report "PASS: the file exists, it's right"
 fi
 
-cmd="rm  file "
+cmd="rm $TMNT/file "
 cti_execute_cmd $cmd
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to rm the file"
@@ -88,15 +86,12 @@ else
 	cti_report "PASS: rm the file successfully"
 fi
 
-if [[  -f "file" ]]; then
+if [[  -f "$TMNT/file" ]]; then
 	cti_fail "FAIL: the file should not exist, but it exits"
 	return
 else
 	cti_report "PASS: the file doesn't exist, it's right"
 fi
 
-cti_execute_cmd "cd -"
-
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #       2. create and rm can get the right message
 #
 
-create007() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="create007"
 tc_desc="Verify can create files on the smbfs"
@@ -62,11 +62,10 @@ else
 fi
 
 cti_execute_cmd "rm -rf $TMNT/*"
-cti_execute_cmd "cd $TMNT"
 
 cti_execute_cmd "mkfile 2m $TDIR/file"
 # create file
-cti_execute_cmd "mkfile 2m file"
+cti_execute_cmd "mkfile 2m $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to create the 20m file"
 	return
@@ -74,7 +73,7 @@ else
 	cti_report "PASS: create the 20m file successfully"
 fi
 
-cti_execute_cmd "diff file $TDIR/file"
+cti_execute_cmd "cmp -s $TMNT/file $TDIR/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: the files are different"
 	return
@@ -82,7 +81,7 @@ else
 	cti_report "PASS: the files are same"
 fi
 
-cti_execute_cmd "rm  file"
+cti_execute_cmd "rm $TMNT/file"
 if [[ $? != 0 ]]; then
 	cti_fail "FAIL: failed to delete the file"
 	return
@@ -90,7 +89,7 @@ else
 	cti_report "PASS: delete the file successfully"
 fi
 
-if [[  -f "file" ]]; then
+if [[  -f "$TMNT/file" ]]; then
 	cti_fail "FAIL: the file should not exist, but it exits"
 	return
 else
@@ -98,8 +97,6 @@ else
 fi
 
 cti_execute_cmd "rm  $TDIR/file"
-cti_execute_cmd "cd -"
 
 smbmount_clean $TMNT
 cti_pass "${tc_id}: PASS"
-}

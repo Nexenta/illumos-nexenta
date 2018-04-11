@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -35,8 +36,7 @@
 #	3. smbutil can get share information
 #
 
-smbutil007() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbutil007"
 tc_desc="Verify smbutil can view public share"
@@ -55,7 +55,6 @@ if [[ $? != 0 ]]; then
 	cti_fail "smbutil can't view shares"
 	return
 else
-	
 	cti_report "smbutil can view shares"
 fi
 
@@ -68,4 +67,3 @@ else
 fi
 
 cti_pass "${tc_id}: PASS"
-}

@@ -1,3 +1,4 @@
+#!/bin/ksh -p
 #
 # CDDL HEADER START
 #
@@ -34,8 +35,7 @@
 #        2. ls -ld /mnt get gid xxx
 #
 
-smbmount016() {
-tet_result PASS
+. $STF_SUITE/include/libtest.ksh
 
 tc_id="smbmount016"
 tc_desc="gid=xxx worked well"
@@ -52,18 +52,10 @@ testdir_init $TDIR
 smbmount_clean $TMNT
 smbmount_init $TMNT
 
-# This tests a feature not exposed with ACLs.
-smbmount_enable_noacl
-if [[ $? != 0 ]]; then
-	smbmount_clean $TMNT
-	cti_unsupported "UNSUPPORTED (requires noacl)"
-	return
-fi
-
 # XXX: Should get this group from config
 tc_gid="gdm"
 
-cmd="mount -F smbfs -o noacl,gid=$tc_gid \
+cmd="mount -F smbfs -o noprompt,noacl,gid=$tc_gid \
  //$TUSER:$TPASS@$server/public $TMNT"
 cti_execute -i '' FAIL $cmd
 if [[ $? != 0 ]]; then
@@ -72,37 +64,30 @@ if [[ $? != 0 ]]; then
 fi
 
 grp=$(ls -ld $TMNT|awk '{ print $4}')
-
 if [[ $grp != "$tc_gid" ]]; then
 	cti_fail "FAIL: ls -ld, expected $tc_gid, got $grp"
-	cti_execute_cmd "cd -"
 	smbmount_clean $TMNT
 	return
 fi
 
-cti_execute_cmd "cd $TMNT"
-
-cti_execute_cmd "touch a"
-grp=$(ls -l a|awk '{ print $4}')
+cti_execute_cmd "touch $TMNT/a"
+grp=$(cd $TMNT; ls -l a|awk '{ print $4}')
 if [[ $grp != "$tc_gid" ]]; then
 	cti_fail "FAIL: touch a, expected $tc_gid usr, got $grp"
-	cti_execute_cmd "cd -"
 	smbmount_clean $TMNT
 	return
 fi
 
-cti_execute_cmd "rm -rf b"
-cti_execute_cmd "mkdir b"
-grp=$(ls -ld b|awk '{ print $4}')
+cti_execute_cmd "rm -rf $TMNT/b"
+cti_execute_cmd "mkdir $TMNT/b"
+grp=$(cd $TMNT; ls -ld b|awk '{ print $4}')
 if [[ $grp != "$tc_gid" ]]; then
 	cti_fail "FAIL: mkdir b, expected $tc_gid usr, got $grp"
-	cti_execute_cmd "cd -"
 	smbmount_clean $TMNT
 	return
 fi
 
-cti_execute_cmd "rm -rf *"
-cti_execute_cmd "cd -"
+cti_execute_cmd "rm -rf $TMNT/*"
 
 cmd="umount $TMNT"
 cti_execute_cmd $cmd
@@ -114,4 +99,3 @@ fi
 smbmount_clean $TMNT
 
 cti_pass "${tc_id}: PASS"
-}

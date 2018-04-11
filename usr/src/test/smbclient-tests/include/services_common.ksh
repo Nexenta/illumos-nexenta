@@ -31,13 +31,11 @@
 #	Enable service
 #
 # RETURN
-#	0 - enabled service	
+#	0 - enabled service
 #	1 - failed to enable service
 #
 service_enable () {
 	smf=$1
-	timeout=90
-	num=0
 
 	status=$(svcprop -p restarter/state $smf)
 	if [[ $status == "online" ]]; then
@@ -46,22 +44,6 @@ service_enable () {
 	fi
 
 	svcadm enable -rs $smf
-
-	while (( num < timeout )); do
-		status=$(svcprop -p restarter/state $smf)
-		if [[ $status == "online" ]]; then
-			cti_report "PASS: enabled service '$smf'"
-		 	return 0	
-		fi		
-		((num=num+1))
-	done
-
-	if (( num = timeout-1 )); then
-		cti_fail "FAIL: failed to enable service '$smf'"
-		exit 1		
-	fi
-
-	return 0
 }
 
 #
@@ -77,8 +59,6 @@ service_enable () {
 #
 service_disable () {
 	smf=$1
-	timeout=90
-	num=0
 
 	status=$(svcprop -p restarter/state $smf)
 	if [[ $status == "disabled" ]]; then
@@ -86,20 +66,6 @@ service_disable () {
 		return 0
 	fi
 	svcadm disable -s $smf
-	while (( num < timeout )); do
-		status=$(svcprop -p restarter/state $smf)
-		if [[ $status == "disabled" ]]; then
-			cti_report "PASS: disabled service '$smf'"
-			return 0
-		fi
-		((num=num+1))
-	done
-
-	if (( num < timeout )); then
-		cti_fail "FAIL: failed to disable service '$smf'"
-		exit 1
-	fi		
-	return 0
 }
 
 #
@@ -115,34 +81,6 @@ service_disable () {
 #
 service_restart () {
 	smf=$1
-	timeout=90
-	num=0
 
 	svcadm restart $smf
-
-	while (( num < timeout )); do
-		if [[ $status == "maintenance" ]]; then
-			cti_report "INFO: service '$smf' is in maintenance, clearing"
-			svcadm clear $smf
-		fi		
-
-		status=$(svcprop -p restarter/state $smf)
-		if [[ $status == "online" ]]; then
-			cti_report "PASS: restarted service '$smf'"
-		 	return 0	
-		fi		
-
-		((num=num+1))
-	done
-
-	if (( num = timeout-1 )); then
-		status=$(svcprop -p restarter/state $smf)
-		if [[ $status == "online" ]]; then
-			cti_report "PASS: restarted service '$smf'"
-		 	return 0	
-		fi		
-	fi
-
-	cti_fail "FAIL: failed to restart service '$smf'"
-	exit 1		
 }

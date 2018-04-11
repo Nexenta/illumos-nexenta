@@ -18,7 +18,7 @@ include		../../../Makefile.com
 
 ROOTTESTDIR=	$(ROOTOPTPKG)/tests/smbfs/acl
 
-TESTS=		tc_acl		\
+TESTS=	\
 		tp_acl_001	\
 		tp_acl_002	\
 		tp_acl_003	\
