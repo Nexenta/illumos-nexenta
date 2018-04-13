@@ -644,9 +644,9 @@ smbfs_mount(vfs_t *vfsp, vnode_t *mvp, struct mounta *uap, cred_t *cr)
 	 * Create a taskq for async work (i.e. putpage)
 	 */
 	smi->smi_taskq = taskq_create_proc("smbfs",
-		    smbfs_tq_nthread, minclsyspri,
-		    smbfs_tq_nthread, smbfs_tq_nthread * 2,
-		    zone->zone_zsched, TASKQ_PREPOPULATE);
+	    smbfs_tq_nthread, minclsyspri,
+	    smbfs_tq_nthread, smbfs_tq_nthread * 2,
+	    zone->zone_zsched, TASKQ_PREPOPULATE);
 
 	/*
 	 * NFS does other stuff here too:
