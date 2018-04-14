@@ -26,6 +26,7 @@
 # Copyright 2015 OmniTI Computer Consulting, Inc. All rights reserved.
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 # Copyright 2017 Joyent, Inc.
+# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
 #
 
 #
@@ -40,7 +41,7 @@ include Targetdirs
 
 COMMON_SUBDIRS=	data uts lib cmd ucblib ucbcmd psm man test
 sparc_SUBDIRS= stand
-i386_SUBDIRS= grub boot
+i386_SUBDIRS= grub boot etc
 
 #
 # sparc needs to build stand before psm

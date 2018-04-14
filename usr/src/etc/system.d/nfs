@@ -1,0 +1,4 @@
+set nfs:nfs3_bsize = 131072
+set nfs:nfs4_bsize = 131072
+set nfs:nfs_allow_preepoch_time = 1
+set nfssrv:nfs_portmon = 1

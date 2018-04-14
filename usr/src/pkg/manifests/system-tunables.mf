@@ -1,0 +1,31 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy of the CDDL is also available via the Internet at
+# http://www.illumos.org/license/CDDL.
+#
+
+#
+# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+#
+
+#
+# The default for payload-bearing actions in this package is to appear in the
+# global zone only.  See the include file for greater detail, as well as
+# information about overriding the defaults.
+#
+<include global_zone_only_component>
+set name=pkg.fmri value=pkg:/system/tunables@$(PKGVERS)
+set name=pkg.description value="System Tunables"
+set name=pkg.summary value="System Tunables"
+set name=info.classification value=org.opensolaris.category.2008:System/Core
+set name=variant.arch value=$(ARCH)
+dir path=etc group=sys
+dir path=etc/system.d group=sys
+file path=etc/system.d/nfs group=sys
+file path=etc/system.d/security group=sys
+file path=etc/system.d/zfs group=sys
