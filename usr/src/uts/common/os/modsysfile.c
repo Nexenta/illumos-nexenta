@@ -22,7 +22,7 @@
 /*
  * Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #include <sys/types.h>
@@ -967,7 +967,13 @@ sysparam_compare_entry(struct sysparam *sysp, struct sysparam *entry)
 	    strcmp(sysp->sys_modnam, entry->sys_modnam) != 0)
 		return (1);
 
-	return (strcmp(sysp->sys_ptr, entry->sys_ptr));
+	if (strcmp(sysp->sys_ptr, entry->sys_ptr) != 0)
+		return (1);
+
+	if (sysp->sys_info == entry->sys_info)
+		return (1);
+
+	return (0);
 }
 
 /*
