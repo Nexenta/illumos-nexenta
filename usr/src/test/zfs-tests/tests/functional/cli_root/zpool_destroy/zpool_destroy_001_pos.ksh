@@ -79,7 +79,7 @@ create_pool "$TESTPOOL2" "/dev/zvol/dsk/$TESTPOOL1/$TESTVOL"
 typeset -i i=0
 while (( i < ${#datasets[*]} )); do
 	log_must poolexists "${datasets[i]}"
-	log_must zpool destroy "${datasets[i]}"
+	log_must destroy_pool "${datasets[i]}"
 	log_mustnot poolexists "${datasets[i]}"
 	((i = i + 1))
 done

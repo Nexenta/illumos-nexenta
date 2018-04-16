@@ -49,7 +49,7 @@ for vdevtype in "" "cache" "spare"; do
 		log_must zpool add $TESTPOOL $vdevtype $disk3
 	fi
 	# Export the pool
-	log_must zpool export $TESTPOOL
+	log_must export_pool $TESTPOOL
 
 	# Check that labelclear will fail without -f
 	log_mustnot $LABELCLEAR $disk1
