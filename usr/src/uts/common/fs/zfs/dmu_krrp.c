@@ -1073,11 +1073,14 @@ zfs_collect_ds(dmu_krrp_task_t *krrp_task, spa_t *spa, list_t *ds_list)
 		    zfs_lookup_origin_node(ds_list, clone_node);
 
 		if (clone_node->origin == NULL) {
-#ifdef ZFS_DEBUG
-			panic("zfs_lookup_origin_node() fails: [%p] [%p] [%p]",
-			    (void *)clone_node, (void *)&clones, (void *)ds_list);
-#endif
-			return (SET_ERROR(ENOLINK));
+			/*
+			 * It seems the origin is outside
+			 * of replication tree and in this case doesn't
+			 * matter where this node will be in the list
+			 */
+
+			list_insert_tail(ds_list, clone_node);
+			continue;
 		}
 
 		/*
