@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  */
@@ -5986,6 +5986,14 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			resp->array_len = i + 1;
 			resp->array = new_res;
 		}
+
+		/*
+		 * The exi saved in the resop to be used for kstats update
+		 * once the opsize is calculated during XDR response encoding.
+		 * Put a hold on resop->exi so that it can't be destroyed.
+		 */
+		if (resop->exi != NULL)
+			exi_hold(resop->exi);
 	}
 
 	rw_exit(&exported_lock);
@@ -6066,6 +6074,14 @@ rfs4_compound_flagproc(COMPOUND4args *args, int *flagp)
 	*flagp = flag;
 }
 
+/*
+ * Update the kstats for the received requests.
+ * Note: writes/nwritten are used to hold count and nbytes of requests received.
+ *
+ * Per export request statistics need to be updated during the compound request
+ * processing (rfs4_compound()) as that is where it is known which exportinfo to
+ * associate the kstats with.
+ */
 void
 rfs4_compound_kstat_args(COMPOUND4args *args)
 {
@@ -6088,6 +6104,17 @@ rfs4_compound_kstat_args(COMPOUND4args *args)
 	}
 }
 
+/*
+ * Update the kstats for the sent responses.
+ * Note: reads/nread are used to hold count and nbytes of responses sent.
+ *
+ * Per export response statistics cannot be updated until here, after the
+ * response send has generated the opsize (bytes sent) in the XDR encoding.
+ * The exportinfo with which the kstats should be associated is thus saved
+ * in the response structure (by rfs4_compound()) for use here. A hold is
+ * placed on the exi to ensure it cannot be deleted before use. This hold
+ * is released, and the exi set to NULL, here.
+ */
 void
 rfs4_compound_kstat_res(COMPOUND4res *res)
 {
@@ -6124,6 +6151,8 @@ rfs4_compound_kstat_res(COMPOUND4res *res)
 					mutex_exit(exi_ksp->ks_lock);
 				}
 
+				exi_rele(&exi);
+				res->array[i].exi = NULL;
 				rw_exit(&exported_lock);
 			}
 		}
