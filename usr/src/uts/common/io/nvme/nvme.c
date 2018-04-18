@@ -1866,12 +1866,23 @@ nvme_get_features(nvme_t *nvme, uint32_t nsid, uint8_t feature, uint32_t *res,
 	case NVME_FEAT_ARBITRATION:
 	case NVME_FEAT_POWER_MGMT:
 	case NVME_FEAT_TEMPERATURE:
-	case NVME_FEAT_ERROR:
 	case NVME_FEAT_NQUEUES:
 	case NVME_FEAT_INTR_COAL:
 	case NVME_FEAT_INTR_VECT:
 	case NVME_FEAT_WRITE_ATOM:
 	case NVME_FEAT_ASYNC_EVENT:
+		break;
+
+	case NVME_FEAT_ERROR:
+		/*
+		 * Per-namespace Deallocated or Unwritten Logical Block
+		 * Error Enable (DULBE) feature was added after initial NVMe
+		 * specification, but we currently only check this feature with
+		 * NS ID of 0 (the controller itself), and some controllers get
+		 * upset, reporting the error.  For the moment, override the
+		 * panic by setting the nc_dontpanic flag.
+		 */
+		cmd->nc_dontpanic = B_TRUE;
 		break;
 
 	case NVME_FEAT_WRITE_CACHE:
