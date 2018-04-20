@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/socket.h>
@@ -84,7 +84,7 @@ static int krrp_conn_tx_ctrl_pdu_dblk(krrp_conn_t *conn, krrp_dblk_t *dblk,
     krrp_error_t *error);
 static int krrp_conn_tx_data_pdu_dblk(krrp_conn_t *conn, krrp_dblk_t **dblk,
     krrp_error_t *error);
-static void krrp_conn_dblk_to_mblk(krrp_dblk_t *dblk, mblk_t **result_mp,
+static mblk_t *krrp_conn_dblk_to_mblk(krrp_dblk_t *dblk,
     size_t wroff, size_t tail_len);
 
 static int krrp_conn_rx_header(krrp_conn_t *, krrp_hdr_t **, krrp_error_t *);
@@ -863,14 +863,18 @@ krrp_conn_tx_data_pdu_dblk(krrp_conn_t *conn, krrp_dblk_t **dblk,
 
 	dblk_cur = *dblk;
 	while (dblk_cur != NULL && dblk_cur->cur_data_sz != 0) {
-		mblk_t *mp = NULL;
+		mblk_t *mp;
 		int rc;
 
 		*dblk = dblk_cur->next;
 		dblk_cur->next = NULL;
 
-		krrp_conn_dblk_to_mblk(dblk_cur, &mp,
+		mp = krrp_conn_dblk_to_mblk(dblk_cur,
 		    conn->mblk_wroff, 0);
+		if (mp == NULL) {
+			krrp_error_set(error, KRRP_ERRNO_NOMEM, 0);
+			return (ENOMEM);
+		}
 
 		krrp_conn_throttle(&conn->throttle, dblk_cur->cur_data_sz);
 
@@ -887,18 +891,19 @@ krrp_conn_tx_data_pdu_dblk(krrp_conn_t *conn, krrp_dblk_t **dblk,
 }
 
 /* ARGSUSED */
-static void
-krrp_conn_dblk_to_mblk(krrp_dblk_t *dblk, mblk_t **result_mp,
+static mblk_t *
+krrp_conn_dblk_to_mblk(krrp_dblk_t *dblk,
     size_t wroff, size_t tail_len)
 {
 	mblk_t *mp;
 
 	mp = desballoc(dblk->head, dblk->total_sz, 0, &dblk->free_rtns);
+	if (mp != NULL) {
+		mp->b_rptr += wroff;
+		mp->b_wptr = mp->b_rptr + dblk->cur_data_sz;
+	}
 
-	mp->b_rptr += wroff;
-	mp->b_wptr = mp->b_rptr + dblk->cur_data_sz;
-
-	*result_mp = mp;
+	return (mp);
 }
 
 static void
