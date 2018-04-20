@@ -5972,6 +5972,14 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 		}
 
 		/*
+		 * The exi saved in the resop to be used for kstats update
+		 * once the opsize is calculated during XDR response encoding.
+		 * Put a hold on resop->exi so that it can't be destroyed.
+		 */
+		if (resop->exi != NULL)
+			exi_hold(resop->exi);
+
+		/*
 		 * If not at last op, and if we are to stop, then
 		 * compact the results array.
 		 */
@@ -5986,14 +5994,6 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			resp->array_len = i + 1;
 			resp->array = new_res;
 		}
-
-		/*
-		 * The exi saved in the resop to be used for kstats update
-		 * once the opsize is calculated during XDR response encoding.
-		 * Put a hold on resop->exi so that it can't be destroyed.
-		 */
-		if (resop->exi != NULL)
-			exi_hold(resop->exi);
 	}
 
 	rw_exit(&exported_lock);
