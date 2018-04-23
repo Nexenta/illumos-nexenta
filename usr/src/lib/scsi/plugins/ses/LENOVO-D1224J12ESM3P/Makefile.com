@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 MODULE =	LENOVO-D1224J12ESM3P
@@ -18,6 +18,7 @@ SRCS =		lenovo.c
 SRCDIR =	../common
 PLUGINTYPE =	vendor
 ALIASES =			\
+	Ericsson		\
 	HGST-2U24_STOR_ENCL	\
 	LENOVO-D1212J12ESM3P	\
 	LENOVO-2U24ENCJ12ESM3P	\
