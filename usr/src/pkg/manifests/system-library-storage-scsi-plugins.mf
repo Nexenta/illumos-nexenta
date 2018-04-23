@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/system/library/storage/scsi-plugins@$(PKGVERS)
@@ -61,6 +61,8 @@ license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson-KDU-137-976-1.so \
     target=Ericsson-SRU-0101.so
+link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson.so \
+    target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HGST-2U24_STOR_ENCL.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HGST.so target=HP.so
@@ -78,6 +80,8 @@ link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SUN-Storage-J4200.so \
     target=SUN-Storage-J4400.so
 link path=usr/lib/scsi/plugins/ses/vendor/Ericsson-KDU-137-976-1.so \
     target=Ericsson-SRU-0101.so
+link path=usr/lib/scsi/plugins/ses/vendor/Ericsson.so \
+    target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/HGST-2U24_STOR_ENCL.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/HGST.so target=HP.so
