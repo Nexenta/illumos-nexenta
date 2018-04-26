@@ -937,7 +937,7 @@ exp_kstats_reset(struct exp_kstats *exp_kstats, const char *path, size_t len,
 	char *old;
 	char *new;
 
-	if (exp_kstats->share_kstat == NULL)
+	if ((exp_kstats == NULL) || (exp_kstats->share_kstat == NULL))
 		return;
 
 	len = strnlen(path, len);
