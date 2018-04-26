@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -50,8 +50,7 @@ zone_key_t nfsstat_zone_key;
  */
 static kstat_named_t *
 nfsstat_zone_init_common(zoneid_t zoneid, const char *module, int vers,
-			    const char *name, const kstat_named_t *template,
-			    size_t template_size)
+    const char *name, const kstat_named_t *template, size_t template_size)
 {
 	kstat_t *ksp;
 	kstat_named_t *ks_data;
@@ -73,7 +72,7 @@ nfsstat_zone_init_common(zoneid_t zoneid, const char *module, int vers,
  */
 static void
 nfsstat_zone_fini_common(zoneid_t zoneid, const char *module, int vers,
-			    const char *name)
+    const char *name)
 {
 	kstat_delete_byname_zone(module, vers, name, zoneid);
 }
@@ -744,6 +743,21 @@ nfsstat_zone_fini_aclproc_v4(zoneid_t zoneid, struct nfs_version_stats *statsp)
 	kmem_free(statsp->aclproccnt_ptr, sizeof (aclproccnt_v4_tmpl));
 }
 
+
+/*
+ * NFS server per share kstats (exp_kstats)
+ * kstats are collected per share for NFSv3 & NFSv4 read and write operations.
+ */
+#define	NFSSRV_SHR_READ		0
+#define	NFSSRV_SHR_WRITE	1
+
+static const kstat_named_t rfsshr_tmpl[] = {
+	{ "read",	KSTAT_DATA_UINT64 },	/* NFSSRV_SHR_READ */
+	{ "write",	KSTAT_DATA_UINT64 }	/* NFSSRV_SHR_WRITE */
+};
+#define	RFSSHARE_COUNT	\
+	(sizeof (rfsshr_tmpl) / sizeof (rfsshr_tmpl[0]))
+
 /*
  * Zone initializer callback to setup the kstats.
  */
@@ -865,40 +879,15 @@ exp_kstats_init(zoneid_t zoneid, int instance, const char *path, size_t len,
 		kstat_install(exp_kstats->share_kstat);
 	}
 
-	/*
-	 * NFS_ACL version 2
-	 */
-	exp_kstats->aclprocio_v2_ptr = rfs_kstat_io_init(zoneid, "nfs_acl",
-	    instance, "share_v2", "aclprocio_v2", aclproccnt_v2_tmpl,
-	    ACLPROCCNT_V2_COUNT, &exp_kstats->procio_lock);
+	/* NFS version 3 */
+	exp_kstats->rfsshr_v3_ptr = rfs_kstat_io_init(zoneid, "nfs",
+	    instance, "share_v3", "rfsprocio_v3", rfsshr_tmpl,
+	    RFSSHARE_COUNT, &exp_kstats->procio_lock);
 
-	/*
-	 * NFS_ACL version 3
-	 */
-	exp_kstats->aclprocio_v3_ptr = rfs_kstat_io_init(zoneid, "nfs_acl",
-	    instance, "share_v3", "aclprocio_v3", aclproccnt_v3_tmpl,
-	    ACLPROCCNT_V3_COUNT, &exp_kstats->procio_lock);
-
-	/*
-	 * NFS version 2
-	 */
-	exp_kstats->rfsprocio_v2_ptr = rfs_kstat_io_init(zoneid, "nfs",
-	    instance, "share_v2", "rfsprocio_v2", rfsproccnt_v2_tmpl,
-	    RFSPROCCNT_V2_COUNT, &exp_kstats->procio_lock);
-
-	/*
-	 * NFS version 3
-	 */
-	exp_kstats->rfsprocio_v3_ptr = rfs_kstat_io_init(zoneid, "nfs",
-	    instance, "share_v3", "rfsprocio_v3", rfsproccnt_v3_tmpl,
-	    RFSPROCCNT_V3_COUNT, &exp_kstats->procio_lock);
-
-	/*
-	 * NFS version 4
-	 */
-	exp_kstats->rfsprocio_v4_ptr = rfs_kstat_io_init(zoneid, "nfs",
-	    instance, "share_v4", "rfsprocio_v4", rfsproccnt_v4_tmpl,
-	    RFSPROCCNT_V4_COUNT, &exp_kstats->procio_lock);
+	/* NFS version 4 */
+	exp_kstats->rfsshr_v4_ptr = rfs_kstat_io_init(zoneid, "nfs",
+	    instance, "share_v4", "rfsprocio_v4", rfsshr_tmpl,
+	    RFSSHARE_COUNT, &exp_kstats->procio_lock);
 
 	return (exp_kstats);
 }
@@ -909,27 +898,16 @@ exp_kstats_delete(struct exp_kstats *exp_kstats)
 	if (exp_kstats == NULL)
 		return;
 
-	/*
-	 * Generic share kstat
-	 */
+	/* Generic share kstat */
 	if (exp_kstats->share_kstat != NULL) {
 		kstat_delete(exp_kstats->share_kstat);
 		exp_kstats->share_kstat = NULL;
 		strfree(exp_kstats->share_path);
 	}
 
-	/*
-	 * NFS_ACL kstats
-	 */
-	rfs_kstat_io_delete(exp_kstats->aclprocio_v2_ptr, ACLPROCCNT_V2_COUNT);
-	rfs_kstat_io_delete(exp_kstats->aclprocio_v3_ptr, ACLPROCCNT_V3_COUNT);
+	rfs_kstat_io_delete(exp_kstats->rfsshr_v3_ptr, RFSSHARE_COUNT);
+	rfs_kstat_io_delete(exp_kstats->rfsshr_v4_ptr, RFSSHARE_COUNT);
 
-	/*
-	 * NFS kstats
-	 */
-	rfs_kstat_io_delete(exp_kstats->rfsprocio_v2_ptr, RFSPROCCNT_V2_COUNT);
-	rfs_kstat_io_delete(exp_kstats->rfsprocio_v3_ptr, RFSPROCCNT_V3_COUNT);
-	rfs_kstat_io_delete(exp_kstats->rfsprocio_v4_ptr, RFSPROCCNT_V4_COUNT);
 }
 
 void
@@ -938,26 +916,14 @@ exp_kstats_fini(struct exp_kstats *exp_kstats)
 	if (exp_kstats == NULL)
 		return;
 
-	/*
-	 * Generic share kstat
-	 */
+	/* Generic share kstat */
 	if (exp_kstats->share_kstat != NULL) {
 		kstat_delete(exp_kstats->share_kstat);
 		strfree(exp_kstats->share_path);
 	}
 
-	/*
-	 * NFS_ACL kstats
-	 */
-	rfs_kstat_io_free(exp_kstats->aclprocio_v2_ptr, ACLPROCCNT_V2_COUNT);
-	rfs_kstat_io_free(exp_kstats->aclprocio_v3_ptr, ACLPROCCNT_V3_COUNT);
-
-	/*
-	 * NFS kstats
-	 */
-	rfs_kstat_io_free(exp_kstats->rfsprocio_v2_ptr, RFSPROCCNT_V2_COUNT);
-	rfs_kstat_io_free(exp_kstats->rfsprocio_v3_ptr, RFSPROCCNT_V3_COUNT);
-	rfs_kstat_io_free(exp_kstats->rfsprocio_v4_ptr, RFSPROCCNT_V4_COUNT);
+	rfs_kstat_io_free(exp_kstats->rfsshr_v3_ptr, RFSSHARE_COUNT);
+	rfs_kstat_io_free(exp_kstats->rfsshr_v4_ptr, RFSSHARE_COUNT);
 
 	mutex_destroy(&exp_kstats->procio_lock);
 
@@ -989,4 +955,46 @@ exp_kstats_reset(struct exp_kstats *exp_kstats, const char *path, size_t len,
 	mutex_exit(exp_kstats->share_kstat->ks_lock);
 
 	strfree(old);
+}
+
+kstat_t *
+/* LINTED E_FUNC_ARG_UNUSED */
+exp_kstats_v2(struct exp_kstats *exp_kstats, uint_t op)
+{
+	/* No NFS v2 per-share kstats */
+	return (NULL);
+}
+
+kstat_t *
+exp_kstats_v3(struct exp_kstats *exp_kstats, uint_t op)
+{
+	if (exp_kstats == NULL)
+		return (NULL);
+
+	/* per share kstats for selected operations (read, write) only */
+	switch (op) {
+	case NFSPROC3_READ:
+		return (exp_kstats->rfsshr_v3_ptr[NFSSRV_SHR_READ]);
+	case NFSPROC3_WRITE:
+		return (exp_kstats->rfsshr_v3_ptr[NFSSRV_SHR_WRITE]);
+	default:
+		return (NULL);
+	}
+}
+
+kstat_t *
+exp_kstats_v4(struct exp_kstats *exp_kstats, uint_t op)
+{
+	if (exp_kstats == NULL)
+		return (NULL);
+
+	/* per share kstats for selected operations (read, write) only */
+	switch (op) {
+	case OP_READ:
+		return (exp_kstats->rfsshr_v4_ptr[NFSSRV_SHR_READ]);
+	case OP_WRITE:
+		return (exp_kstats->rfsshr_v4_ptr[NFSSRV_SHR_WRITE]);
+	default:
+		return (NULL);
+	}
 }

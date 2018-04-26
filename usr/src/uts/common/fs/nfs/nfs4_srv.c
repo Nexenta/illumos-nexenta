@@ -5973,8 +5973,8 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			if (resop->exi != NULL) {
 				exi_ksp = NULL;
 				if (resop->exi->exi_kstats != NULL) {
-					exi_ksp = resop->exi->exi_kstats->
-					    rfsprocio_v4_ptr[op];
+					exi_ksp = exp_kstats_v4(
+					    resop->exi->exi_kstats, op);
 				}
 				if (exi_ksp != NULL) {
 					mutex_enter(exi_ksp->ks_lock);
@@ -5996,8 +5996,8 @@ rfs4_compound(COMPOUND4args *args, COMPOUND4res *resp, struct exportinfo *exi,
 			    (resop->exi = cs.exi) != NULL) {
 				exi_ksp = NULL;
 				if (resop->exi->exi_kstats != NULL) {
-					exi_ksp = resop->exi->exi_kstats->
-					    rfsprocio_v4_ptr[op];
+					exi_ksp = exp_kstats_v4(
+					    resop->exi->exi_kstats, op);
 				}
 			}
 
@@ -6209,9 +6209,10 @@ rfs4_compound_kstat_res(COMPOUND4res *res)
 
 				rw_enter(&ne->exported_lock, RW_READER);
 
-				if (exi->exi_kstats != NULL)
+				if (exi->exi_kstats != NULL) {
 					/*CSTYLED*/
-					exi_ksp = exi->exi_kstats->rfsprocio_v4_ptr[op];
+					exi_ksp = exp_kstats_v4(exi->exi_kstats, op);
+				}
 				if (exi_ksp != NULL) {
 					mutex_enter(exi_ksp->ks_lock);
 					KSTAT_IO_PTR(exi_ksp)->nread +=
