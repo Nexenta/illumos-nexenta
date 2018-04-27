@@ -81,7 +81,7 @@ size_t	door_max_arg = 16 * 1024;
  * door_upcall.  Need to guard against a process returning huge amounts
  * of data and getting the kernel stuck in kmem_alloc.
  */
-size_t	door_max_upcall_reply = 1024 * 1024;
+size_t	door_max_upcall_reply = 4 * 1024 * 1024;
 
 /*
  * Maximum number of descriptors allowed to be passed in a single

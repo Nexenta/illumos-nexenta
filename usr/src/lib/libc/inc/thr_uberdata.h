@@ -211,10 +211,10 @@ typedef union {
 /* double the default stack size for 64-bit processes */
 #ifdef _LP64
 #define	MINSTACK	(8 * 1024)
-#define	DEFAULTSTACK	(2 * 1024 * 1024)
+#define	DEFAULTSTACK	(8 * 1024 * 1024)
 #else
 #define	MINSTACK	(4 * 1024)
-#define	DEFAULTSTACK	(1024 * 1024)
+#define	DEFAULTSTACK	(4 * 1024 * 1024)
 #endif
 
 #define	MUTEX_TRY	0
