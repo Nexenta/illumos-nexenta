@@ -3038,15 +3038,27 @@ sbd_status_t
 sbd_data_read(sbd_lu_t *sl, struct scsi_task *task,
     uint64_t offset, uint64_t size, uint8_t *buf)
 {
-	int ret;
+	int ret, ioflag = 0;
 	long resid;
 	hrtime_t xfer_start;
+	uint8_t op = task->task_cdb[0];
 
 	if ((offset + size) > sl->sl_lu_size) {
 		return (SBD_IO_PAST_EOF);
 	}
 
 	offset += sl->sl_data_offset;
+
+	/*
+	 * Check to see if the command is READ(10), READ(12), or READ(16).
+	 * If it is then check for bit 3 being set to indicate if Forced
+	 * Unit Access is being requested. If so, the FSYNC flag will be set
+	 * on the read.
+	 */
+	if (((op == SCMD_READ_G1) || (op == SCMD_READ_G4) ||
+	    (op == SCMD_READ_G5)) && (task->task_cdb[1] & BIT_3)) {
+		ioflag = FSYNC;
+	}
 
 	if ((offset + size) > sl->sl_data_readable_size) {
 		uint64_t store_end;
@@ -3077,7 +3089,7 @@ sbd_data_read(sbd_lu_t *sl, struct scsi_task *task,
 	}
 
 	ret = vn_rdwr(UIO_READ, sl->sl_data_vp, (caddr_t)buf, (ssize_t)size,
-	    (offset_t)offset, UIO_SYSSPACE, 0, RLIM64_INFINITY, CRED(),
+	    (offset_t)offset, UIO_SYSSPACE, ioflag, RLIM64_INFINITY, CRED(),
 	    &resid);
 	rw_exit(&sl->sl_access_state_lock);
 
@@ -3106,6 +3118,8 @@ sbd_data_write(sbd_lu_t *sl, struct scsi_task *task,
 	sbd_status_t sret = SBD_SUCCESS;
 	int ioflag;
 	hrtime_t xfer_start;
+	uint8_t op = task-> task_cdb[0];
+	boolean_t fua_bit = B_FALSE;
 
 	if ((offset + size) > sl->sl_lu_size) {
 		return (SBD_IO_PAST_EOF);
@@ -3113,8 +3127,18 @@ sbd_data_write(sbd_lu_t *sl, struct scsi_task *task,
 
 	offset += sl->sl_data_offset;
 
-	if ((sl->sl_flags & SL_WRITEBACK_CACHE_DISABLE) &&
-	    (sl->sl_flags & SL_FLUSH_ON_DISABLED_WRITECACHE)) {
+	/*
+	 * Check to see if the command is WRITE(10), WRITE(12), or WRITE(16).
+	 * If it is then check for bit 3 being set to indicate if Forced
+	 * Unit Access is being requested. If so, the FSYNC flag will be set
+	 * on the write.
+	 */
+	if (((op == SCMD_WRITE_G1) || (op == SCMD_WRITE_G4) ||
+	    (op == SCMD_WRITE_G5)) && (task->task_cdb[1] & BIT_3)) {
+		fua_bit = B_TRUE;
+	}
+	if (((sl->sl_flags & SL_WRITEBACK_CACHE_DISABLE) &&
+	    (sl->sl_flags & SL_FLUSH_ON_DISABLED_WRITECACHE)) || fua_bit) {
 		ioflag = FSYNC;
 	} else {
 		ioflag = 0;

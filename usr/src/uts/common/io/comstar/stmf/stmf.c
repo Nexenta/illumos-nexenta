@@ -193,9 +193,9 @@ volatile int	stmf_default_task_timeout = 75;
  */
 volatile int	stmf_allow_modunload = 0;
 
-volatile int stmf_max_nworkers = 256;
-volatile int stmf_min_nworkers = 4;
-volatile int stmf_worker_scale_down_delay = 20;
+volatile int stmf_max_nworkers = 1024;
+volatile int stmf_min_nworkers = 512;
+volatile int stmf_worker_scale_down_delay = 3600;
 
 /* === [ Debugging and fault injection ] === */
 #ifdef	DEBUG
@@ -4578,18 +4578,6 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		 */
 		mutex_exit(&w->worker_lock);
 		w = stmf_workers;
-		mutex_enter(&w->worker_lock);
-	}
-
-	/*
-	 * if this command is a write_same or unmap just use worker 0
-	 * to limit starvation.
-	 */
-	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
-	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
-	    task->task_cdb[0] == SCMD_UNMAP) {
-		mutex_exit(&w->worker_lock);
-		w = &stmf_workers[0];
 		mutex_enter(&w->worker_lock);
 	}
 

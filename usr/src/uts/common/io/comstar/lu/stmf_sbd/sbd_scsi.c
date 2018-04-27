@@ -94,7 +94,7 @@ uint8_t sbd_unmap_enable = 1;		/* allow unmap by default */
  * An /etc/system tunable which specifies the maximum number of LBAs supported
  * in a single UNMAP operation. Default is 0x400000 blocks or 2 GB in size.
  */
-int stmf_sbd_unmap_max_nblks  = 0x400000;
+int stmf_sbd_unmap_max_nblks  = 0x002000;
 
 /*
  * An /etc/system tunable which indicates if READ ops can run on the standby
@@ -134,6 +134,9 @@ static void sbd_do_write_same_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
 static void sbd_handle_write_same_xfer_completion(struct scsi_task *task,
     sbd_cmd_t *scmd, struct stmf_data_buf *dbuf, uint8_t dbuf_reusable);
 
+uint32_t sbd_read_maxsize = (128 * 1024);
+uint32_t sbd_readxfer_size = (32 * 1024);
+
 /*
  * IMPORTANT NOTE:
  * =================
@@ -155,7 +158,7 @@ sbd_do_read_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
 
 	/* Lets try not to hog all the buffers the port has. */
 	bufs_to_take = ((task->task_max_nbufs > 2) &&
-	    (task->task_cmd_xfer_length < (32 * 1024))) ? 2 :
+	    (task->task_cmd_xfer_length < sbd_readxfer_size)) ? 2 :
 	    task->task_max_nbufs;
 
 	len = ATOMIC32_GET(scmd->len) > dbuf->db_buf_size ?
@@ -189,8 +192,8 @@ sbd_do_read_xfer(struct scsi_task *task, sbd_cmd_t *scmd,
 	    (ATOMIC8_GET(scmd->nbufs) < bufs_to_take)) {
 		uint32_t maxsize, minsize, old_minsize;
 
-		maxsize = (ATOMIC32_GET(scmd->len) > (128*1024)) ? 128*1024 :
-		    ATOMIC32_GET(scmd->len);
+		maxsize = (ATOMIC32_GET(scmd->len) > sbd_read_maxsize) ?
+		    sbd_read_maxsize : ATOMIC32_GET(scmd->len);
 		minsize = maxsize >> 2;
 		do {
 			/*
@@ -505,8 +508,8 @@ sbd_handle_read_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 		uint32_t maxsize, minsize, old_minsize;
 		stmf_free_dbuf(task, dbuf);
 
-		maxsize = (ATOMIC32_GET(scmd->len) > (128*1024)) ?
-		    128*1024 : ATOMIC32_GET(scmd->len);
+		maxsize = (ATOMIC32_GET(scmd->len) >  sbd_read_maxsize) ?
+		    sbd_read_maxsize : ATOMIC32_GET(scmd->len);
 		minsize = maxsize >> 2;
 		do {
 			old_minsize = minsize;
@@ -865,6 +868,19 @@ sbd_handle_read(struct scsi_task *task, struct stmf_data_buf *initial_dbuf)
 	sbd_cmd_t *scmd;
 	stmf_data_buf_t *dbuf;
 	int fast_path;
+	boolean_t fua_bit = B_FALSE;
+
+
+	/*
+	 * Check to see if the command is READ(10), READ(12), or READ(16).
+	 * If it is then check for bit 3 being set to indicate if Forced
+	 * Unit Access is being requested. If so, we'll bypass the use of
+	 * DMA buffers to simplify support of this feature.
+	 */
+	if (((op == SCMD_READ_G1) || (op == SCMD_READ_G4) ||
+	    (op == SCMD_READ_G5)) && (task->task_cdb[1] & BIT_3)) {
+		fua_bit = B_TRUE;
+	}
 
 	if (op == SCMD_READ) {
 		lba = READ_SCSI21(&task->task_cdb[1], uint64_t);
@@ -930,7 +946,8 @@ sbd_handle_read(struct scsi_task *task, struct stmf_data_buf *initial_dbuf)
 	    initial_dbuf == NULL &&		/* No PP buffer passed in */
 	    sl->sl_flags & SL_CALL_ZVOL &&	/* zvol backing store */
 	    (task->task_additional_flags &
-	    TASK_AF_ACCEPT_LU_DBUF)) {		/* PP allows it */
+	    TASK_AF_ACCEPT_LU_DBUF) &&		/* PP allows it */
+	    !fua_bit) {
 		/*
 		 * Reduced copy path
 		 */
@@ -1015,7 +1032,7 @@ sbd_handle_read(struct scsi_task *task, struct stmf_data_buf *initial_dbuf)
 	if (initial_dbuf == NULL) {
 		uint32_t maxsize, minsize, old_minsize;
 
-		maxsize = (len > (128*1024)) ? 128*1024 : len;
+		maxsize = (len > sbd_read_maxsize) ? sbd_read_maxsize : len;
 		minsize = maxsize >> 2;
 		do {
 			old_minsize = minsize;
@@ -1366,6 +1383,8 @@ sbd_handle_write_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	uint64_t laddr;
 	uint32_t buflen, iolen;
 	int ndx;
+	uint_t op = task->task_cdb[0];
+	boolean_t fua_bit = B_FALSE;
 
 	if (ATOMIC8_GET(scmd->nbufs) > 0) {
 		/*
@@ -1375,6 +1394,7 @@ sbd_handle_write_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 		 */
 		atomic_add_8(&scmd->nbufs, -1);
 	}
+
 
 	if (dbuf->db_xfer_status != STMF_SUCCESS) {
 		sbd_ats_remove_by_task(task);
@@ -1395,6 +1415,17 @@ sbd_handle_write_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 		sbd_do_write_xfer(task, scmd, NULL, 0);
 	}
 
+	/*
+	 * Check to see if the command is WRITE(10), WRITE(12), or WRITE(16).
+	 * If it is then check for bit 3 being set to indicate if Forced
+	 * Unit Access is being requested. If so, we'll bypass the direct
+	 * call and handle it in sbd_data_write().
+	 */
+	if (((op == SCMD_WRITE_G1) || (op == SCMD_WRITE_G4) ||
+	    (op == SCMD_WRITE_G5)) && (task->task_cdb[1] & BIT_3)) {
+		fua_bit = B_TRUE;
+	}
+
 	laddr = scmd->addr + dbuf->db_relative_offset;
 
 	/*
@@ -1404,7 +1435,7 @@ sbd_handle_write_xfer_completion(struct scsi_task *task, sbd_cmd_t *scmd,
 	 */
 	if (sl->sl_flags & SL_CALL_ZVOL &&
 	    (task->task_additional_flags & TASK_AF_ACCEPT_LU_DBUF) &&
-	    (sbd_zcopy & (4|1))) {
+	    (sbd_zcopy & (4|1)) && !fua_bit) {
 		int commit;
 
 		commit = (ATOMIC32_GET(scmd->len) == 0 &&
@@ -1508,12 +1539,24 @@ sbd_handle_write(struct scsi_task *task, struct stmf_data_buf *initial_dbuf)
 	stmf_data_buf_t *dbuf;
 	uint64_t blkcount;
 	uint8_t	sync_wr_flag = 0;
+	boolean_t fua_bit = B_FALSE;
 
 	if (sl->sl_flags & SL_WRITE_PROTECTED) {
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_WRITE_PROTECTED);
 		return;
 	}
+	/*
+	 * Check to see if the command is WRITE(10), WRITE(12), or WRITE(16).
+	 * If it is then check for bit 3 being set to indicate if Forced
+	 * Unit Access is being requested. If so, we'll bypass the fast path
+	 * code to simplify support of this feature.
+	 */
+	if (((op == SCMD_WRITE_G1) || (op == SCMD_WRITE_G4) ||
+	    (op == SCMD_WRITE_G5)) && (task->task_cdb[1] & BIT_3)) {
+		fua_bit = B_TRUE;
+	}
+
 	if (op == SCMD_WRITE) {
 		lba = READ_SCSI21(&task->task_cdb[1], uint64_t);
 		len = (uint32_t)task->task_cdb[4];
@@ -1584,7 +1627,8 @@ sbd_handle_write(struct scsi_task *task, struct stmf_data_buf *initial_dbuf)
 	    sl->sl_flags & SL_CALL_ZVOL &&	/* zvol backing store */
 	    (task->task_additional_flags &
 	    TASK_AF_ACCEPT_LU_DBUF) &&		/* PP allows it */
-	    sbd_zcopy_write_useful(task, laddr, len, sl->sl_blksize)) {
+	    sbd_zcopy_write_useful(task, laddr, len, sl->sl_blksize) &&
+	    !fua_bit) {
 
 		/*
 		 * XXX Note that disallowing initial_dbuf will eliminate
@@ -1935,8 +1979,8 @@ sbd_handle_mode_sense(struct scsi_task *task,
 	uint32_t cmd_size, n;
 	uint8_t *cdb;
 	uint32_t ncyl;
-	uint8_t nsectors, nheads;
-	uint8_t page, ctrl, header_size, pc_valid;
+	uint8_t nsectors = 0, nheads = 0;
+	uint8_t page, ctrl, header_size;
 	uint16_t nbytes;
 	uint8_t *p;
 	uint64_t s = sl->sl_lu_size;
@@ -1947,25 +1991,21 @@ sbd_handle_mode_sense(struct scsi_task *task,
 	cdb = &task->task_cdb[0];
 	page = cdb[2] & 0x3F;
 	ctrl = (cdb[2] >> 6) & 3;
-	cmd_size = (cdb[0] == SCMD_MODE_SENSE) ? cdb[4] :
-	    READ_SCSI16(&cdb[7], uint32_t);
 
 	if (cdb[0] == SCMD_MODE_SENSE) {
+		cmd_size = cdb[4];
 		header_size = 4;
 		dev_spec_param_offset = 2;
 	} else {
+		cmd_size = READ_SCSI16(&cdb[7], uint32_t);
 		header_size = 8;
 		dev_spec_param_offset = 3;
 	}
 
 	/* Now validate the command */
-	if ((cdb[2] == 0) || (page == MODEPAGE_ALLPAGES) || (page == 0x08) ||
-	    (page == 0x0A) || (page == 0x03) || (page == 0x04)) {
-		pc_valid = 1;
-	} else {
-		pc_valid = 0;
-	}
-	if ((cmd_size < header_size) || (pc_valid == 0)) {
+	if ((cdb[2] != 0) && (page != MODEPAGE_ALLPAGES) &&
+	    (page != MODEPAGE_CACHING) && (page != MODEPAGE_CTRL_MODE) &&
+	    (page != MODEPAGE_FORMAT) && (page != MODEPAGE_GEOMETRY)) {
 		stmf_scsilib_send_status(task, STATUS_CHECK,
 		    STMF_SAA_INVALID_FIELD_IN_CDB);
 		return;
@@ -1983,7 +2023,7 @@ sbd_handle_mode_sense(struct scsi_task *task,
 	nbytes = ((uint16_t)1) << sl->sl_data_blocksize_shift;
 	sbd_calc_geometry(s, nbytes, &nsectors, &nheads, &ncyl);
 
-	if ((page == 0x03) || (page == MODEPAGE_ALLPAGES)) {
+	if ((page == MODEPAGE_FORMAT) || (page == MODEPAGE_ALLPAGES)) {
 		p[n] = 0x03;
 		p[n+1] = 0x16;
 		if (ctrl != 1) {
@@ -1994,7 +2034,7 @@ sbd_handle_mode_sense(struct scsi_task *task,
 		}
 		n += 24;
 	}
-	if ((page == 0x04) || (page == MODEPAGE_ALLPAGES)) {
+	if ((page == MODEPAGE_GEOMETRY) || (page == MODEPAGE_ALLPAGES)) {
 		p[n] = 0x04;
 		p[n + 1] = 0x16;
 		if (ctrl != 1) {
@@ -2069,11 +2109,11 @@ sbd_handle_mode_sense(struct scsi_task *task,
 		 * of bytes in the length field, so adjust the count.
 		 * Byte count minus header length field size.
 		 */
-		buf[0] = (n - 1) & 0xff;
+		buf[0] = (n - header_size) & 0xff;
 	} else {
 		/* Byte count minus header length field size. */
-		buf[1] = (n - 2) & 0xff;
-		buf[0] = ((n - 2) >> 8) & 0xff;
+		buf[1] = (n - header_size) & 0xff;
+		buf[0] = ((n - header_size) >> 8) & 0xff;
 	}
 
 	sbd_handle_short_read_transfers(task, initial_dbuf, buf,
@@ -3071,7 +3111,10 @@ sbd_handle_inquiry(struct scsi_task *task, struct stmf_data_buf *initial_dbuf)
 			p[22] = (stmf_sbd_unmap_max_nblks >> 8) & 0xff;
 			p[23] = stmf_sbd_unmap_max_nblks & 0xff;
 
-			p[24] = p[25] = p[26] = p[27] = 0xFF;
+			p[24] = 0;
+			p[25] = 0;
+			p[26] = 0;
+			p[27] = 0xFF;
 		}
 		xfer_size = page_length + 4;
 		break;
