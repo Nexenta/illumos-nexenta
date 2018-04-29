@@ -101,37 +101,37 @@ static zfetch_stats_t zfetch_stats = {
 kstat_t		*zfetch_ksp;
 
 /*
- * Checks whether `offset' sits in a range starting at `start' and is of
- * length `len'. It is legal to pass a negative length, the function
- * adjusts its checks as appropriate to prevent an incorrect check. It is
- * however NOT legal to pass a negative start.
+ * Checks whether `offset' sits in a range starting at `start',
+ * the range being of length `len'. If forward = B_FALSE, the
+ * range is constructed instead by subtracting `len' from `start'
+ * to establish the range boundaries, as follows:
  *
- * --------+
- *         | offset
- *         V
- *=======|########|=====
- *      /|        |
- * start |        |
- *       +--len-->|
+ * forward = B_TRUE		forward = B_FALSE
+ *
+ * 0-------+			0--------+
+ * |       | offset		|        | offset
+ * |       V			|        V
+ * |=====|########|====>	|======|########|====>
+ *      /|        |		       |        |\
+ * start |        |		       |        | start
+ *       +--len-->|		       |<--len--+
  */
 static inline boolean_t
-offset_in_range(uint64_t offset, int64_t start, int64_t len)
+offset_in_range(uint64_t offset, uint64_t start, uint64_t len,
+    boolean_t forward)
 {
-	/* left is the lower address, right is the higher address */
-	int64_t left = start, right = start + len;
+	/* left is the lower address, right is the higher address. */
+	uint64_t left, right;
 
-	ASSERT3S(start, >=, 0);
-	/* flip left and right if we got a negative range */
-	if (left > right) {
-		int64_t tmp = right;
-		left = right;
-		right = tmp;
+	if (forward) {
+		left = start;
+		right = start + len;
+	} else {
+		left = (start >= len ? start - len : 0);
+		right = start;
 	}
-	/* prevent integer underflow */
-	if (left < 0)
-		left = 0;
 
-	return (offset >= (uint64_t) left && offset <= (uint64_t)right);
+	return (offset >= left && offset <= right);
 }
 
 /*
@@ -385,7 +385,7 @@ dmu_zfetch_find(zfetch_t *zf, zstream_t *zh, int prefetched)
 	 * within "range" number of blocks from the previous read location
 	 * and we should still try to treat it as sequential access.
 	 */
-	int64_t	range = zf->zf_dnode->dn_objset->os_zfetch_range;
+	uint64_t	range = zf->zf_dnode->dn_objset->os_zfetch_range;
 
 	range = MIN(range, ZFETCH_RANGE_MAX);
 
@@ -439,14 +439,14 @@ top:
 		 * case on every read.
 		 */
 		if (offset_in_range(zh->zst_offset,
-		    zs->zst_offset + zs->zst_len, range)) {
+		    zs->zst_offset + zs->zst_len, range, B_TRUE)) {
 
 			reset = !prefetched && zs->zst_len > 1;
 
 			mutex_enter(&zs->zst_lock);
 
 			if (!offset_in_range(zh->zst_offset,
-			    zs->zst_offset + zs->zst_len, range)) {
+			    zs->zst_offset + zs->zst_len, range, B_TRUE)) {
 				mutex_exit(&zs->zst_lock);
 				goto top;
 			}
@@ -465,7 +465,7 @@ top:
 		 * Same as above, but reading backwards through the file.
 		 */
 		} else if (offset_in_range(zh->zst_offset,
-		    zs->zst_offset - zh->zst_len, -range)) {
+		    zs->zst_offset - zh->zst_len, range, B_FALSE)) {
 			/* backwards sequential access */
 
 			reset = !prefetched && zs->zst_len > 1;
@@ -473,7 +473,7 @@ top:
 			mutex_enter(&zs->zst_lock);
 
 			if (!offset_in_range(zh->zst_offset,
-			    zs->zst_offset - zh->zst_len, -range)) {
+			    zs->zst_offset - zh->zst_len, range, B_FALSE)) {
 				mutex_exit(&zs->zst_lock);
 				goto top;
 			}
