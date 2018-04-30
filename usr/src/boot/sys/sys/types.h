@@ -58,6 +58,11 @@ typedef	unsigned int	uint;		/* Sys V compatibility */
 #endif
 
 /*
+ * POSIX Extensions
+ */
+typedef	unsigned int	uint_t;
+
+/*
  * XXX POSIX sized integrals that should appear only in <sys/stdint.h>.
  */
 #include <sys/_stdint.h>
@@ -285,6 +290,10 @@ typedef	_Bool	bool;
 #endif /* !__bool_true_false_are_defined && !__cplusplus */
 
 #define offsetof(type, field) __offsetof(type, field)
+
+#else
+/* for illumos compatibility */
+typedef enum boolean { B_FALSE, B_TRUE } boolean_t;
 
 #endif /* !_KERNEL */
 

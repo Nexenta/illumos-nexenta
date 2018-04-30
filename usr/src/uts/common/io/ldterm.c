@@ -566,8 +566,8 @@ static struct module_info ldtermmiinfo = {
 	0x0bad,
 	"ldterm",
 	0,
-	256,
-	HIWAT,
+	_TTY_BUFSIZ,
+	_TTY_BUFSIZ,
 	LOWAT
 };
 
@@ -727,11 +727,25 @@ ldtermopen(queue_t *q, dev_t *devp, int oflag, int sflag, cred_t *crp)
 	tp->eucwioc.scrw[0] = 1;
 	tp->t_maxeuc = 1;	/* the max len in bytes of an EUC char */
 	tp->t_eucp = NULL;
-	tp->t_eucp_mp = NULL;
-	tp->t_eucwarn = 0;	/* no bad chars seen yet */
-
-	tp->t_csdata = default_cs_data;
 	tp->t_csmethods = cs_methods[LDTERM_CS_TYPE_EUC];
+	tp->t_csdata = default_cs_data;
+
+	/*
+	 * Try to switch to UTF-8 mode by allocating buffer for multibyte
+	 * chars, keep EUC if allocation fails.
+	 */
+	if ((tp->t_eucp_mp = allocb(_TTY_BUFSIZ, BPRI_HI)) != NULL) {
+		tp->t_eucp = tp->t_eucp_mp->b_rptr;
+		tp->t_state = TS_MEUC;	/* Multibyte mode. */
+		tp->t_maxeuc = 4; /* the max len in bytes of an UTF-8 char */
+		tp->t_csdata.codeset_type = LDTERM_CS_TYPE_UTF8;
+		tp->t_csdata.csinfo_num = 4;
+		/* locale_name needs string length with terminating NUL */
+		tp->t_csdata.locale_name = (char *)kmem_alloc(6, KM_SLEEP);
+		(void) strcpy(tp->t_csdata.locale_name, "UTF-8");
+		tp->t_csmethods = cs_methods[LDTERM_CS_TYPE_UTF8];
+	}
+	tp->t_eucwarn = 0;	/* no bad chars seen yet */
 
 	qprocson(q);
 
@@ -793,7 +807,7 @@ ldtermopen(queue_t *q, dev_t *devp, int oflag, int sflag, cred_t *crp)
 	strop = (struct stroptions *)bp->b_wptr;
 	strop->so_flags = SO_READOPT|SO_HIWAT|SO_LOWAT|SO_NDELON|SO_ISTTY;
 	strop->so_readopt = RMSGN;
-	strop->so_hiwat = HIWAT;
+	strop->so_hiwat = _TTY_BUFSIZ;
 	strop->so_lowat = LOWAT;
 	bp->b_wptr += sizeof (struct stroptions);
 	bp->b_datap->db_type = M_SETOPTS;
@@ -1895,7 +1909,7 @@ escaped:
 	 * Allows MAX_CANON bytes in the buffer before throwing awaying
 	 * the the overflow of characters.
 	 */
-	if ((tp->t_msglen > ((MAX_CANON + 1) - (int)tp->t_maxeuc)) &&
+	if ((tp->t_msglen > ((_TTY_BUFSIZ + 1) - (int)tp->t_maxeuc)) &&
 	    !((tp->t_state & TS_MEUC) && tp->t_eucleft)) {
 
 		/*
@@ -4383,8 +4397,8 @@ ldterm_do_ioctl(queue_t *q, mblk_t *mp)
 			}
 			if ((tp->t_maxeuc > 1) || (tp->t_state & TS_MEUC)) {
 				if (!tp->t_eucp_mp) {
-					if (!(tp->t_eucp_mp = allocb(CANBSIZ,
-					    BPRI_HI))) {
+					if ((tp->t_eucp_mp = allocb(_TTY_BUFSIZ,
+					    BPRI_HI)) == NULL) {
 						tp->t_maxeuc = 1;
 						tp->t_state &= ~TS_MEUC;
 						cmn_err(CE_WARN,
@@ -4612,7 +4626,7 @@ ldterm_do_ioctl(queue_t *q, mblk_t *mp)
 		tp->t_state &= ~TS_MEUC;
 		if (maxbytelen > 1 || maxscreenlen > 1) {
 			if (!tp->t_eucp_mp) {
-				if (!(tp->t_eucp_mp = allocb(CANBSIZ,
+				if (!(tp->t_eucp_mp = allocb(_TTY_BUFSIZ,
 				    BPRI_HI))) {
 					cmn_err(CE_WARN,
 					    "Can't allocate eucp_mp");

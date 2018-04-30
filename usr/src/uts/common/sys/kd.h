@@ -48,6 +48,11 @@ extern "C" {
 #define	KD_GRAPHICS	1
 #define	KD_RESETTEXT	2
 
+#define	KDGET_SCRNMAP	(KDIOC|11)
+#define	KDSET_SCRNMAP	(KDIOC|12)
+#define	KDGET_VFONT	(KDIOC|13)
+#define	KDSET_VFONT	(KDIOC|14)
+
 #ifdef __cplusplus
 }
 #endif

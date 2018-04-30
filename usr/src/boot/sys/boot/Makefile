@@ -17,17 +17,14 @@
 
 include $(SRC)/Makefile.master
 
-INSTDIRS = i386 # efi
-SUBDIRS = libstand ficl zfs $(INSTDIRS)
+SUBDIRS =	libstand libficl libcrypto zfs i386 efi
 
 all	:=	TARGET = all
 clean	:=	TARGET = clean
 clobber	:=	TARGET = clobber
 install	:=	TARGET = install
 
-all clean clobber: $(SUBDIRS)
-
-install: all $(INSTDIRS)
+all install clean clobber: $(SUBDIRS)
 
 $(SUBDIRS): FRC
 	@cd $@; pwd; $(MAKE) $(MFLAGS) $(TARGET)

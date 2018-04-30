@@ -26,8 +26,6 @@
 #ifndef _SYS_SHA1_H
 #define	_SYS_SHA1_H
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include <sys/types.h>		/* for uint_* */
 
 #ifdef	__cplusplus

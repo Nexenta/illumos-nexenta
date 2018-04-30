@@ -25,30 +25,25 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
 #include <stand.h>
 #include <bootstrap.h>
 #include <efi.h>
 #include <efilib.h>
-#ifdef EFI_ZFS_BOOT
 #include <libzfs.h>
-#endif
 
 struct devsw *devsw[] = {
-	&efipart_dev,
+	&efipart_fddev,
+	&efipart_cddev,
+	&efipart_hddev,
 	&efinet_dev,
-#ifdef EFI_ZFS_BOOT
 	&zfs_dev,
-#endif
 	NULL
 };
 
 struct fs_ops *file_system[] = {
 	&gzipfs_fsops,
-#ifdef EFI_ZFS_BOOT
 	&zfs_fsops,
-#endif
 	&dosfs_fsops,
 	&ufs_fsops,
 	&cd9660_fsops,
@@ -87,4 +82,15 @@ struct console *consoles[] = {
 	&spinconsole,
 #endif
 	NULL
+};
+
+#if defined(__amd64__) || defined(__i386__)
+extern struct file_format multiboot2;
+#endif
+
+struct file_format *file_formats[] = {
+#if defined(__amd64__) || defined(__i386__)
+        &multiboot2,
+#endif
+        NULL
 };

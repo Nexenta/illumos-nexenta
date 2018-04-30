@@ -264,7 +264,8 @@ cons_change(const char *string)
 
 	    if (active != 0) {
 		/* If no consoles have initialised we wouldn't see this. */
-		printf("console %s failed to initialize\n", consoles[cons]->c_name);
+		printf("console %s failed to initialize\n",
+		    consoles[cons]->c_name);
 	    }
 	}
     }

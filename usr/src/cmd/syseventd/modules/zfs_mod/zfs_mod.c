@@ -147,6 +147,8 @@ zfs_process_add(zpool_handle_t *zhp, nvlist_t *vdev, const char *newrawpath)
 	const char *adevid = NULL;	/* devid to attach */
 	const char *adevpath;		/* /dev path to attach */
 	const char *aphyspath = NULL;	/* /devices node to attach */
+	zpool_boot_label_t boot_type;
+	uint64_t boot_size;
 
 	if (nvlist_lookup_string(vdev, ZPOOL_CONFIG_PATH, &devpath) != 0)
 		return;
@@ -203,8 +205,16 @@ zfs_process_add(zpool_handle_t *zhp, nvlist_t *vdev, const char *newrawpath)
 	}
 
 	/* Write out the label */
-	if (zpool_label_disk(g_zfshdl, zhp, diskname) != 0) {
-		syseventd_print(9, "%s: failed to write the label\n", __func__);
+	if (zpool_is_bootable(zhp))
+		boot_type = ZPOOL_COPY_BOOT_LABEL;
+	else
+		boot_type = ZPOOL_NO_BOOT_LABEL;
+
+	boot_size = zpool_get_prop_int(zhp, ZPOOL_PROP_BOOTSIZE, NULL);
+	if (zpool_label_disk(g_zfshdl, zhp, diskname, boot_type, boot_size,
+	    NULL) != 0) {
+		(void) zpool_vdev_online(zhp, fullpath,
+		    ZFS_ONLINE_FORCEFAULT, &newstate);
 		return;
 	}
 

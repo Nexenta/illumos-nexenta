@@ -1,5 +1,4 @@
-/* $FreeBSD$ */
-OUTPUT_FORMAT("elf32-i386-freebsd", "elf32-i386-freebsd", "elf32-i386-freebsd")
+OUTPUT_FORMAT("elf32-i386-sol2", "elf32-i386-sol2", "elf32-i386-sol2")
 OUTPUT_ARCH(i386)
 ENTRY(_start)
 SECTIONS
@@ -34,6 +33,11 @@ SECTIONS
     __start_set_Xcommand_set = .;
     *(set_Xcommand_set)
     __stop_set_Xcommand_set = .;
+  }
+  set_Xficl_compile_set	: {
+    __start_set_Xficl_compile_set = .;
+    *(set_Xficl_compile_set)
+    __stop_set_Xficl_compile_set = .;
   }
   . = ALIGN(4096);
   __gp = .;
