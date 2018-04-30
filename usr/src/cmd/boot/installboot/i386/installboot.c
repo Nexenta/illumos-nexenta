@@ -32,6 +32,7 @@
 #include <locale.h>
 #include <strings.h>
 #include <libfdisk.h>
+#include <libgen.h>
 
 #include <sys/dktp/fdisk.h>
 #include <sys/dkio.h>
@@ -93,6 +94,18 @@
  *
  * Stored location values in MBR/stage2 also mean the bootblocks must be
  * reinstalled in case the partition content is relocated.
+ *
+ * EFI boot program installation:
+ * EFI boot requires EFI System partition with following directory
+ * hierarchy:
+ * EFI/VENDOR/file
+ * EFI/BOOT/BOOTx64.EFI
+ * Where EFI/BOOT is fallback directory. While we have no mechanism to set
+ * EFI variable values to define vendor specific boot program location, we
+ * will just use EFI/BOOT/BOOTx64.EFI; also this setup is only possible
+ * solution for removable media.
+ * For now the boot1.efi is used for boot program, boot1.efi is also
+ * versioned as is gptzfsboot.
  */
 
 static boolean_t	write_mbr = B_FALSE;
@@ -103,6 +116,9 @@ static boolean_t	do_version = B_FALSE;
 static boolean_t	do_mirror_bblk = B_FALSE;
 static boolean_t	strip = B_FALSE;
 static boolean_t	verbose_dump = B_FALSE;
+
+#define	EFIBOOT64	"bootx64.efi"
+#define	EFIBOOT32	"bootia32.efi"
 
 /* Versioning string, if present. */
 static char		*update_str;
@@ -944,7 +960,29 @@ get_boot_slice(ib_device_t *device, struct dk_gpt *vtoc)
 	char *path, *ptr;
 
 	for (i = 0; i < vtoc->efi_nparts; i++) {
-		if (vtoc->efi_parts[i].p_tag == V_BOOT) {
+		if (vtoc->efi_parts[i].p_tag == V_SYSTEM) {
+			if ((path = strdup(device->target.path)) == NULL) {
+				perror(gettext("Memory allocation failure"));
+				return (BC_ERROR);
+			}
+			ptr = strrchr(path, 's');
+			ptr++;
+			*ptr = '\0';
+			(void) asprintf(&ptr, "%s%d", path, i);
+			free(path);
+			if (ptr == NULL) {
+				perror(gettext("Memory allocation failure"));
+				return (BC_ERROR);
+			}
+			device->system.path = ptr;
+			device->system.fd = open_device(ptr);
+			device->system.id = i;
+			device->system.devtype = IG_DEV_EFI;
+			device->system.fstype = IG_FS_PCFS;
+			device->system.start = vtoc->efi_parts[i].p_start;
+			device->system.size = vtoc->efi_parts[i].p_size;
+			device->system.offset = 0;
+		} else if (vtoc->efi_parts[i].p_tag == V_BOOT) {
 			if ((path = strdup(device->target.path)) == NULL) {
 				perror(gettext("Memory allocation failure"));
 				return (BC_ERROR);
@@ -966,7 +1004,6 @@ get_boot_slice(ib_device_t *device, struct dk_gpt *vtoc)
 			device->stage.start = vtoc->efi_parts[i].p_start;
 			device->stage.size = vtoc->efi_parts[i].p_size;
 			device->stage.offset = 1; /* leave sector 0 for VBR */
-			return (BC_SUCCESS);
 		}
 	}
 	return (BC_SUCCESS);
@@ -985,6 +1022,7 @@ init_device(ib_device_t *device, char *path)
 	bzero(device, sizeof (*device));
 	device->fd = -1;	/* whole disk fd */
 	device->stage.fd = -1;	/* bootblock partition fd */
+	device->system.fd = -1;	/* efi system partition fd */
 	device->target.fd = -1;	/* target fs partition fd */
 
 	/* basic check, whole disk is not allowed */
@@ -1142,6 +1180,8 @@ cleanup_device(ib_device_t *device)
 		free(device->path);
 	if (device->stage.path)
 		free(device->stage.path);
+	if (device->system.path)
+		free(device->system.path);
 	if (device->target.path)
 		free(device->target.path);
 
@@ -1149,6 +1189,8 @@ cleanup_device(ib_device_t *device)
 		(void) close(device->fd);
 	if (device->stage.fd != -1)
 		(void) close(device->stage.fd);
+	if (device->system.fd != -1)
+		(void) close(device->system.fd);
 	if (device->target.fd != -1)
 		(void) close(device->target.fd);
 	bzero(device, sizeof (*device));
@@ -1252,9 +1294,12 @@ handle_install(char *progname, char **argv)
 {
 	ib_data_t	install_data;
 	ib_bootblock_t	*bblock = &install_data.bootblock;
+	ib_bootblock_t	*eblock = &install_data.efiblock;
 	char		*stage1 = NULL;
 	char		*bootblock = NULL;
+	char		*efiboot = NULL;
 	char		*device_path = NULL;
+	char		*tmp;
 	int		ret = BC_ERROR;
 
 	stage1 = strdup(argv[0]);
@@ -1264,6 +1309,18 @@ handle_install(char *progname, char **argv)
 	if (!device_path || !bootblock || !stage1) {
 		(void) fprintf(stderr, gettext("Missing parameter"));
 		usage(progname);
+		goto out;
+	}
+
+	tmp = strdup(argv[1]);
+	if (tmp == NULL) {
+		perror(gettext("Memory allocation failure"));
+		goto out;
+	}
+	(void) asprintf(&efiboot, "%s/" EFIBOOT64, dirname(tmp));
+	free(tmp);
+	if (efiboot == NULL) {
+		perror(gettext("Memory allocation failure"));
 		goto out;
 	}
 
@@ -1288,6 +1345,15 @@ handle_install(char *progname, char **argv)
 		goto out_dev;
 	}
 
+	/* only read EFI boot program if there is system partition */
+	if (install_data.device.system.fd != -1) {
+		if (read_bootblock_from_file(efiboot, eblock) != BC_SUCCESS) {
+			(void) fprintf(stderr, gettext("Error reading %s\n"),
+			    efiboot);
+			goto out_dev;
+		}
+	}
+
 	/*
 	 * is_update_necessary() will take care of checking if versioning and/or
 	 * forcing the update have been specified. It will also emit a warning
@@ -1308,6 +1374,7 @@ handle_install(char *progname, char **argv)
 out_dev:
 	cleanup_device(&install_data.device);
 out:
+	free(efiboot);
 	free(stage1);
 	free(bootblock);
 	free(device_path);

@@ -27,7 +27,6 @@
  */
 
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD$");
 
 #include <stand.h>
 #include <string.h>
@@ -112,7 +111,7 @@ bi_getboothowto(char *kargs)
  * Each variable is formatted as <name>=<value>, with a single nul
  * separating each variable, and a double nul terminating the environment.
  */
-static vm_offset_t
+vm_offset_t
 bi_copyenv(vm_offset_t start)
 {
 	struct env_var *ep;
@@ -301,7 +300,7 @@ bi_load_efi_data(struct preloaded_file *kfp)
 		 * memory map on a 16-byte boundary (the bootinfo block is page
 		 * aligned).
 		 */
-		efihdr = (struct efi_map_header *)addr;
+		efihdr = (struct efi_map_header *)(uintptr_t)addr;
 		mm = (void *)((uint8_t *)efihdr + efisz);
 		sz = (EFI_PAGE_SIZE * pages) - efisz;
 

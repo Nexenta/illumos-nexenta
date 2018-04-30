@@ -37,6 +37,8 @@
 #include <machine/bootinfo.h>
 #include <machine/cpufunc.h>
 #include <machine/psl.h>
+#include <sys/disk.h>
+#include <sys/param.h>
 #include <sys/reboot.h>
 
 #include "bootstrap.h"
@@ -161,6 +163,7 @@ main(void)
     archsw.arch_readin = i386_readin;
     archsw.arch_isainb = isa_inb;
     archsw.arch_isaoutb = isa_outb;
+    archsw.arch_loadaddr = i386_loadaddr;
 #ifdef LOADER_ZFS_SUPPORT
     archsw.arch_zfs_probe = i386_zfs_probe;
 #endif
@@ -171,6 +174,7 @@ main(void)
     for (i = 0; devsw[i] != NULL; i++)
 	if (devsw[i]->dv_init != NULL)
 	    (devsw[i]->dv_init)();
+
     printf("BIOS %dkB/%dkB available memory\n", bios_basemem / 1024, bios_extmem / 1024);
     if (initial_bootinfo != NULL) {
 	initial_bootinfo->bi_basemem = bios_basemem / 1024;
@@ -188,9 +192,8 @@ main(void)
 
     printf("\n%s", bootprog_info);
 
-    extract_currdev();				/* set $currdev and $loaddev */
-    setenv("LINES", "24", 1);			/* optional */
-    setenv("COLUMNS", "80", 1);			/* optional */
+    extract_currdev();			/* set $currdev and $loaddev */
+    autoload_font();			/* Set up the font list for console. */
 
     if (bi_checkcpu())
 	setenv("ISADIR", "amd64", 1);
@@ -435,5 +438,15 @@ i386_zfs_probe(void)
 	sprintf(devname, "disk%d:", unit);
 	zfs_probe_dev(devname, NULL);
     }
+}
+
+uint64_t
+ldi_get_size(void *priv)
+{
+	int fd = (uintptr_t) priv;
+	uint64_t size;
+
+	ioctl(fd, DIOCGMEDIASIZE, &size);
+	return (size);
 }
 #endif

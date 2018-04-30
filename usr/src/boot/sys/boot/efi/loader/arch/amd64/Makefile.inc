@@ -1,13 +1,15 @@
 
-SRCS +=	amd64_tramp.S \
+SRCS +=	multiboot_tramp.S \
 	start.S \
-	framebuffer.c \
-	elf64_freebsd.c
+	bootinfo64.c \
+	trap.c \
+	exc.S
 
-OBJS += amd64_tramp.o \
+OBJS += multiboot_tramp.o \
 	start.o \
-	framebuffer.o \
-	elf64_freebsd.o
+	bootinfo64.o \
+	trap.o \
+	exc.o
 
 SRCS +=	nullconsole.c \
 	spinconsole.c \
@@ -16,6 +18,3 @@ SRCS +=	nullconsole.c \
 OBJS += nullconsole.o \
 	spinconsole.o \
 	comconsole.o
-
-CFLAGS +=	-fPIC
-LDFLAGS +=	-znocombreloc

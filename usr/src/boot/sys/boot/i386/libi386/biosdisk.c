@@ -55,8 +55,10 @@ CTASSERT(sizeof(struct i386_devdesc) >= sizeof(struct disk_devdesc));
 #define BIOSDISK_SECSIZE	512
 #define BUFSIZE			(1 * BIOSDISK_SECSIZE)
 
-#define DT_ATAPI		0x10		/* disk type for ATAPI floppies */
-#define WDMAJOR			0		/* major numbers for devices we frontend for */
+#define DT_ATAPI		0x10	/* disk type for ATAPI floppies */
+
+/* major numbers for devices we frontend for */
+#define WDMAJOR			0
 #define WFDMAJOR		1
 #define FDMAJOR			2
 #define DAMAJOR			4
@@ -81,8 +83,10 @@ static struct bdinfo
 #define	BD_MODEINT13	0x0000
 #define	BD_MODEEDD1	0x0001
 #define	BD_MODEEDD3	0x0002
+#define	BD_MODEEDD	(BD_MODEEDD1 | BD_MODEEDD3)
 #define	BD_MODEMASK	0x0003
 #define	BD_FLOPPY	0x0004
+#define	BD_NO_MEDIA	0x0008
 	int		bd_type;	/* BIOS 'drive type' (floppy only) */
 	uint16_t	bd_sectorsize;	/* Sector size */
 	uint64_t	bd_sectors;	/* Disk size */
@@ -93,10 +97,7 @@ static int nbdinfo = 0;
 
 #define	BD(dev)		(bdinfo[(dev)->d_unit])
 
-static int bd_read(struct disk_devdesc *dev, daddr_t dblk, int blks,
-    caddr_t dest);
-static int bd_write(struct disk_devdesc *dev, daddr_t dblk, int blks,
-    caddr_t dest);
+static int bd_io(struct disk_devdesc *, daddr_t, int, caddr_t, int);
 static int bd_int13probe(struct bdinfo *bd);
 
 static int bd_init(void);
@@ -109,16 +110,42 @@ static int bd_close(struct open_file *f);
 static int bd_ioctl(struct open_file *f, u_long cmd, void *data);
 static int bd_print(int verbose);
 
+struct devsw biosfd = {
+	.dv_name = "fd",
+	.dv_type = DEVT_FD,
+	.dv_init = bd_init,
+	.dv_strategy = bd_strategy,
+	.dv_open = bd_open,
+	.dv_close = bd_close,
+	.dv_ioctl = bd_ioctl,
+	.dv_print = bd_print,
+	.dv_cleanup = NULL
+};
+
+#if 0
+struct devsw bioscd = {
+	.dv_name = "cd",
+	.dv_type = DEVT_CD,
+	.dv_init = bd_init,
+	.dv_strategy = bd_strategy,
+	.dv_open = bd_open,
+	.dv_close = bd_close,
+	.dv_ioctl = bd_ioctl,
+	.dv_print = bd_print,
+	.dv_cleanup = NULL
+};
+#endif
+
 struct devsw biosdisk = {
-	"disk",
-	DEVT_DISK,
-	bd_init,
-	bd_strategy,
-	bd_open,
-	bd_close,
-	bd_ioctl,
-	bd_print,
-	NULL
+	.dv_name = "disk",
+	.dv_type = DEVT_DISK,
+	.dv_init = bd_init,
+	.dv_strategy = bd_strategy,
+	.dv_open = bd_open,
+	.dv_close = bd_close,
+	.dv_ioctl = bd_ioctl,
+	.dv_print = bd_print,
+	.dv_cleanup = NULL
 };
 
 /*
@@ -189,60 +216,83 @@ bd_init(void)
 }
 
 /*
- * Try to detect a device supported by the legacy int13 BIOS
+ * Return EDD version or 0 if EDD is not supported on this drive.
  */
 static int
-bd_int13probe(struct bdinfo *bd)
+bd_check_extensions(int unit)
 {
-	struct edd_params params;
-	int ret = 1;	/* assume success */
+	/* Determine if we can use EDD with this device. */
+	v86.ctl = V86_FLAGS;
+	v86.addr = 0x13;
+	v86.eax = 0x4100;
+	v86.edx = unit;
+	v86.ebx = 0x55aa;
+	v86int();
 
+	if (V86_CY(v86.efl) ||			/* carry set */
+	    (v86.ebx & 0xffff) != 0xaa55)	/* signature */
+		return (0);
+
+	/* extended disk access functions (AH=42h-44h,47h,48h) supported */
+	if ((v86.ecx & EDD_INTERFACE_FIXED_DISK) == 0)
+		return (0);
+
+	return ((v86.eax >> 8) & 0xff);
+}
+
+static void
+bd_reset_disk(int unit)
+{
+	/* reset disk */
+	v86.ctl = V86_FLAGS;
+	v86.addr = 0x13;
+	v86.eax = 0;
+	v86.edx = unit;
+	v86int();
+}
+
+/*
+ * Read CHS info. Return 0 on success, error otherwise.
+ */
+static int
+bd_get_diskinfo_std(struct bdinfo *bd)
+{
+	bzero(&v86, sizeof (v86));
 	v86.ctl = V86_FLAGS;
 	v86.addr = 0x13;
 	v86.eax = 0x800;
 	v86.edx = bd->bd_unit;
 	v86int();
 
-	/* Don't error out if we get bad sector number, try EDD as well */
-	if (V86_CY(v86.efl) ||	/* carry set */
-	    (v86.edx & 0xff) <= (unsigned)(bd->bd_unit & 0x7f))	/* unit # bad */
-		return (0);	/* skip device */
+	if (V86_CY(v86.efl) && ((v86.eax & 0xff00) != 0))
+		return ((v86.eax & 0xff00) >> 8);
 
-	if ((v86.ecx & 0x3f) == 0)	/* absurd sector number */
-		ret = 0;	/* set error */
+	/* return custom error on absurd sector number */
+	if ((v86.ecx & 0x3f) == 0)
+		return (0x60);
 
-	/* Convert max cyl # -> # of cylinders */
 	bd->bd_cyl = ((v86.ecx & 0xc0) << 2) + ((v86.ecx & 0xff00) >> 8) + 1;
 	/* Convert max head # -> # of heads */
 	bd->bd_hds = ((v86.edx & 0xff00) >> 8) + 1;
 	bd->bd_sec = v86.ecx & 0x3f;
-	bd->bd_type = v86.ebx & 0xff;
-	bd->bd_flags |= BD_MODEINT13;
+	bd->bd_type = v86.ebx;
+	bd->bd_sectors = (uint64_t)bd->bd_cyl * bd->bd_hds * bd->bd_sec;
 
-	/* Calculate sectors count from the geometry */
-	bd->bd_sectors = bd->bd_cyl * bd->bd_hds * bd->bd_sec;
-	bd->bd_sectorsize = BIOSDISK_SECSIZE;
-	DEBUG("unit 0x%x geometry %d/%d/%d", bd->bd_unit, bd->bd_cyl,
-	    bd->bd_hds, bd->bd_sec);
+	return (0);
+}
 
-	/* Determine if we can use EDD with this device. */
-	v86.ctl = V86_FLAGS;
-	v86.addr = 0x13;
-	v86.eax = 0x4100;
-	v86.edx = bd->bd_unit;
-	v86.ebx = 0x55aa;
-	v86int();
-	if (V86_CY(v86.efl) ||	/* carry set */
-	    (v86.ebx & 0xffff) != 0xaa55 || /* signature */
-	    (v86.ecx & EDD_INTERFACE_FIXED_DISK) == 0)
-		return (ret);	/* return code from int13 AH=08 */
+/*
+ * Read EDD info. Return 0 on success, error otherwise.
+ */
+static int
+bd_get_diskinfo_ext(struct bdinfo *bd)
+{
+	struct edd_params params;
+	uint64_t total;
 
-	/* EDD supported */
-	bd->bd_flags |= BD_MODEEDD1;
-	if ((v86.eax & 0xff00) >= 0x3000)
-		bd->bd_flags |= BD_MODEEDD3;
 	/* Get disk params */
-	params.len = sizeof(struct edd_params);
+	bzero(&params, sizeof (params));
+	params.len = sizeof (params);
 	v86.ctl = V86_FLAGS;
 	v86.addr = 0x13;
 	v86.eax = 0x4800;
@@ -250,36 +300,88 @@ bd_int13probe(struct bdinfo *bd)
 	v86.ds = VTOPSEG(&params);
 	v86.esi = VTOPOFF(&params);
 	v86int();
-	if (!V86_CY(v86.efl)) {
-		uint64_t total;
 
-		/*
-		 * Sector size must be a multiple of 512 bytes.
-		 * An alternate test would be to check power of 2,
-		 * powerof2(params.sector_size).
-		 */
-		if (params.sector_size % BIOSDISK_SECSIZE)
-			bd->bd_sectorsize = BIOSDISK_SECSIZE;
-		else
-			bd->bd_sectorsize = params.sector_size;
+	if (V86_CY(v86.efl) && ((v86.eax & 0xff00) != 0))
+		return ((v86.eax & 0xff00) >> 8);
 
-		total = bd->bd_sectorsize * params.sectors;
-		if (params.sectors != 0) {
-			/* Only update if we did not overflow. */
-			if (total > params.sectors)
-				bd->bd_sectors = params.sectors;
-		}
+	/*
+	 * Sector size must be a multiple of 512 bytes.
+	 * An alternate test would be to check power of 2,
+	 * powerof2(params.sector_size).
+	 */
+	if (params.sector_size % BIOSDISK_SECSIZE)
+		bd->bd_sectorsize = BIOSDISK_SECSIZE;
+	else
+		bd->bd_sectorsize = params.sector_size;
 
+	bd->bd_cyl = params.cylinders;
+	bd->bd_hds = params.heads;
+	bd->bd_sec = params.sectors_per_track;
+
+	if (params.sectors != 0) {
+		total = params.sectors;
+	} else {
 		total = (uint64_t)params.cylinders *
 		    params.heads * params.sectors_per_track;
-		if (bd->bd_sectors < total)
-			bd->bd_sectors = total;
-
-		ret = 1;
 	}
-	DEBUG("unit 0x%x flags %x, sectors %llu, sectorsize %u",
-	    bd->bd_unit, bd->bd_flags, bd->bd_sectors, bd->bd_sectorsize);
-	return (ret);
+	bd->bd_sectors = total;
+
+	return (0);
+}
+
+/*
+ * Try to detect a device supported by the legacy int13 BIOS
+ */
+static int
+bd_int13probe(struct bdinfo *bd)
+{
+	int edd;
+	int ret;
+
+	bd->bd_flags &= ~BD_NO_MEDIA;
+
+	edd = bd_check_extensions(bd->bd_unit);
+	if (edd == 0)
+		bd->bd_flags |= BD_MODEINT13;
+	else if (edd < 0x30)
+		bd->bd_flags |= BD_MODEEDD1;
+	else
+		bd->bd_flags |= BD_MODEEDD3;
+
+	/* Default sector size */
+	bd->bd_sectorsize = BIOSDISK_SECSIZE;
+
+	if (bd->bd_unit < 0x80) {
+		/* reset disk */
+		bd_reset_disk(bd->bd_unit);
+
+		/* Get disk type */
+		v86.ctl = V86_FLAGS;
+		v86.addr = 0x13;
+		v86.eax = 0x1500;
+		v86.edx = bd->bd_unit;
+		v86int();
+		if (V86_CY(v86.efl) || (v86.eax & 0x300) == 0)
+			return (0);
+
+		/* Set defaults for 1.44 floppy */
+		bd->bd_cyl = 80;
+		bd->bd_hds = 2;
+		bd->bd_sec = 18;
+		bd->bd_type = 4;
+		bd->bd_sectors = 2880;
+	}
+
+	ret = 1;
+	if (edd != 0)
+		ret = bd_get_diskinfo_ext(bd);
+	if (ret != 0)
+		ret = bd_get_diskinfo_std(bd);
+
+	DEBUG("unit 0x%x geometry %d/%d/%d", bd->bd_unit, bd->bd_cyl,
+	    bd->bd_hds, bd->bd_sec);
+
+	return (1);
 }
 
 /*
@@ -301,9 +403,11 @@ bd_print(int verbose)
 
 	for (i = 0; i < nbdinfo; i++) {
 		snprintf(line, sizeof (line),
-		    "    disk%d:   BIOS drive %c (%ju X %u):\n", i,
+		    "    disk%d:   BIOS drive %c (%s%ju X %u):\n", i,
 		    (bdinfo[i].bd_unit < 0x80) ? ('A' + bdinfo[i].bd_unit):
 		    ('C' + bdinfo[i].bd_unit - 0x80),
+		    (bdinfo[i].bd_flags & BD_NO_MEDIA) == BD_NO_MEDIA ?
+		    "no media, " : "",
 		    (uintmax_t)bdinfo[i].bd_sectors,
 		    bdinfo[i].bd_sectorsize);
 		ret = pager_output(line);
@@ -352,6 +456,11 @@ bd_open(struct open_file *f, ...)
 
 	if (dev->d_unit < 0 || dev->d_unit >= nbdinfo)
 		return (EIO);
+
+	if ((BD(dev).bd_flags & BD_NO_MEDIA) == BD_NO_MEDIA) {
+		if (!bd_int13probe(&BD(dev)))
+			return (EIO);
+	}
 	BD(dev).bd_open++;
 	if (BD(dev).bd_bcache == NULL)
 	    BD(dev).bd_bcache = bcache_allocate();
@@ -412,8 +521,14 @@ static int
 bd_ioctl(struct open_file *f, u_long cmd, void *data)
 {
 	struct disk_devdesc *dev;
+	int rc;
 
 	dev = (struct disk_devdesc *)f->f_devdata;
+
+	rc = disk_ioctl(dev, cmd, data);
+	if (rc != ENOTTY)
+		return (rc);
+
 	switch (cmd) {
 	case DIOCGSECTORSIZE:
 		*(u_int *)data = BD(dev).bd_sectorsize;
@@ -447,101 +562,144 @@ static int
 bd_realstrategy(void *devdata, int rw, daddr_t dblk, size_t size,
     char *buf, size_t *rsize)
 {
-    struct disk_devdesc *dev = (struct disk_devdesc *)devdata;
-    uint64_t		disk_blocks;
-    int			blks, rc;
-#ifdef BD_SUPPORT_FRAGS /* XXX: sector size */
-    char		fragbuf[BIOSDISK_SECSIZE];
-    size_t		fragsize;
+	struct disk_devdesc *dev = (struct disk_devdesc *)devdata;
+	uint64_t disk_blocks, offset;
+	size_t blks, blkoff, bsize, rest;
+	caddr_t bbuf;
+	int rc;
 
-    fragsize = size % BIOSDISK_SECSIZE;
-#else
-    if (size % BD(dev).bd_sectorsize)
-	panic("bd_strategy: %d bytes I/O not multiple of block size", size);
-#endif
-
-    DEBUG("open_disk %p", dev);
-
-    /*
-     * Check the value of the size argument. We do have quite small
-     * heap (64MB), but we do not know good upper limit, so we check against
-     * INT_MAX here. This will also protect us against possible overflows
-     * while translating block count to bytes.
-     */
-    if (size > INT_MAX) {
-	DEBUG("too large read: %zu bytes", size);
-	return (EIO);
-    }
-
-    blks = size / BD(dev).bd_sectorsize;
-    if (dblk > dblk + blks)
-	return (EIO);
-
-    if (rsize)
-	*rsize = 0;
-
-    /* Get disk blocks, this value is either for whole disk or for partition */
-    if (disk_ioctl(dev, DIOCGMEDIASIZE, &disk_blocks) == 0) {
-	/* DIOCGMEDIASIZE does return bytes. */
-	disk_blocks /= BD(dev).bd_sectorsize;
-    } else {
-	/* We should not get here. Just try to survive. */
-	disk_blocks = BD(dev).bd_sectors - dev->d_offset;
-    }
-
-    /* Validate source block address. */
-    if (dblk < dev->d_offset || dblk >= dev->d_offset + disk_blocks)
-	return (EIO);
-
-    /*
-     * Truncate if we are crossing disk or partition end.
-     */
-    if (dblk + blks >= dev->d_offset + disk_blocks) {
-	blks = dev->d_offset + disk_blocks - dblk;
-	size = blks * BD(dev).bd_sectorsize;
-	DEBUG("short read %d", blks);
-    }
-
-    switch(rw){
-    case F_READ:
-	DEBUG("read %d from %lld to %p", blks, dblk, buf);
-
-	if (blks && (rc = bd_read(dev, dblk, blks, buf))) {
-	    printf("read %d from %lld to %p, error: 0x%x", blks, dblk, buf, rc);
-	    return (EIO);
+	/*
+	 * First make sure the IO size is a multiple of 512 bytes. While we do
+	 * process partial reads below, the strategy mechanism is built
+	 * assuming IO is a multiple of 512B blocks. If the request is not
+	 * a multiple of 512B blocks, it has to be some sort of bug.
+	 */
+	if (size == 0 || (size % BIOSDISK_SECSIZE) != 0) {
+		printf("bd_strategy: %d bytes I/O not multiple of %d\n",
+		    size, BIOSDISK_SECSIZE);
+		return (EIO);
 	}
-#ifdef BD_SUPPORT_FRAGS /* XXX: sector size */
-	DEBUG("bd_strategy: frag read %d from %d+%d to %p",
-	    fragsize, dblk, blks, buf + (blks * BIOSDISK_SECSIZE));
-	if (fragsize && bd_read(od, dblk + blks, 1, fragsize)) {
-	    DEBUG("frag read error");
-	    return(EIO);
-	}
-	bcopy(fragbuf, buf + (blks * BIOSDISK_SECSIZE), fragsize);
-#endif
-	break;
-    case F_WRITE :
-	DEBUG("write %d from %d to %p", blks, dblk, buf);
 
-	if (blks && bd_write(dev, dblk, blks, buf)) {
-	    DEBUG("write error");
-	    return (EIO);
-	}
-#ifdef BD_SUPPORT_FRAGS
-	if(fragsize) {
-	    DEBUG("Attempted to write a frag");
-	    return (EIO);
-	}
-#endif
-	break;
-    default:
-	/* DO NOTHING */
-	return (EROFS);
-    }
+	DEBUG("open_disk %p", dev);
 
-    if (rsize)
-	*rsize = size;
-    return (0);
+	offset = dblk * BIOSDISK_SECSIZE;
+	dblk = offset / BD(dev).bd_sectorsize;
+	blkoff = offset % BD(dev).bd_sectorsize;
+
+	/*
+	 * Check the value of the size argument. We do have quite small
+	 * heap (64MB), but we do not know good upper limit, so we check against
+	 * INT_MAX here. This will also protect us against possible overflows
+	 * while translating block count to bytes.
+	 */
+	if (size > INT_MAX) {
+		DEBUG("requested read: %zu too large", size);
+		return (EIO);
+	}
+
+	blks = size / BD(dev).bd_sectorsize;
+	if (blks == 0 || (size % BD(dev).bd_sectorsize) != 0)
+		blks++;
+
+	if (dblk > dblk + blks)
+		return (EIO);
+
+	if (rsize)
+		*rsize = 0;
+
+	/*
+	 * Get disk blocks, this value is either for whole disk or for
+	 * partition.
+	 */
+	if (disk_ioctl(dev, DIOCGMEDIASIZE, &disk_blocks) == 0) {
+		/* DIOCGMEDIASIZE does return bytes. */
+		disk_blocks /= BD(dev).bd_sectorsize;
+	} else {
+		/* We should not get here. Just try to survive. */
+		disk_blocks = BD(dev).bd_sectors - dev->d_offset;
+	}
+
+	/* Validate source block address. */
+	if (dblk < dev->d_offset || dblk >= dev->d_offset + disk_blocks)
+		return (EIO);
+
+	/*
+	 * Truncate if we are crossing disk or partition end.
+	 */
+	if (dblk + blks >= dev->d_offset + disk_blocks) {
+		blks = dev->d_offset + disk_blocks - dblk;
+		size = blks * BD(dev).bd_sectorsize;
+		DEBUG("short read %d", blks);
+	}
+
+	if (V86_IO_BUFFER_SIZE / BD(dev).bd_sectorsize == 0)
+		panic("BUG: Real mode buffer is too small\n");
+
+	bbuf = PTOV(V86_IO_BUFFER);
+	rest = size;
+
+	while (blks > 0) {
+		int x = min(blks, V86_IO_BUFFER_SIZE / BD(dev).bd_sectorsize);
+
+		switch (rw & F_MASK) {
+		case F_READ:
+			DEBUG("read %d from %lld to %p", x, dblk, buf);
+			bsize = BD(dev).bd_sectorsize * x - blkoff;
+			if (rest < bsize)
+				bsize = rest;
+
+			if ((rc = bd_io(dev, dblk, x, bbuf, 0)) != 0)
+				return (EIO);
+
+			bcopy(bbuf + blkoff, buf, bsize);
+			break;
+		case F_WRITE :
+			DEBUG("write %d from %lld to %p", x, dblk, buf);
+			if (blkoff != 0) {
+				/*
+				 * We got offset to sector, read 1 sector to
+				 * bbuf.
+				 */
+				x = 1;
+				bsize = BD(dev).bd_sectorsize - blkoff;
+				bsize = min(bsize, rest);
+				rc = bd_io(dev, dblk, x, bbuf, 0);
+			} else if (rest < BD(dev).bd_sectorsize) {
+				/*
+				 * The remaining block is not full
+				 * sector. Read 1 sector to bbuf.
+				 */
+				x = 1;
+				bsize = rest;
+				rc = bd_io(dev, dblk, x, bbuf, 0);
+			} else {
+				/* We can write full sector(s). */
+				bsize = BD(dev).bd_sectorsize * x;
+			}
+			/*
+			 * Put your Data In, Put your Data out,
+			 * Put your Data In, and shake it all about
+			 */
+			bcopy(buf, bbuf + blkoff, bsize);
+			if ((rc = bd_io(dev, dblk, x, bbuf, 1)) != 0)
+				return (EIO);
+
+			break;
+		default:
+			/* DO NOTHING */
+			return (EROFS);
+		}
+
+		blkoff = 0;
+		buf += bsize;
+		rest -= bsize;
+		blks -= x;
+		dblk += x;
+	}
+
+	if (rsize != NULL)
+		*rsize = size;
+	return (0);
 }
 
 static int
@@ -611,114 +769,55 @@ static int
 bd_io(struct disk_devdesc *dev, daddr_t dblk, int blks, caddr_t dest,
     int dowrite)
 {
-    u_int	x, sec, result, resid, retry, maxfer;
-    caddr_t	p, xp, bbuf;
+	u_int result, retry;
 
-    /* Just in case some idiot actually tries to read/write -1 blocks... */
-    if (blks < 0)
-	return (-1);
-
-    resid = blks;
-    p = dest;
-
-    /* Decide whether we have to bounce */
-    if (VTOP(dest) >> 20 != 0 || (BD(dev).bd_unit < 0x80 &&
-	(VTOP(dest) >> 16) != (VTOP(dest +
-	blks * BD(dev).bd_sectorsize) >> 16))) {
-
-	/* 
-	 * There is a 64k physical boundary somewhere in the
-	 * destination buffer, or the destination buffer is above
-	 * first 1MB of physical memory so we have to arrange a
-	 * suitable bounce buffer.  Allocate a buffer twice as large
-	 * as we need to.  Use the bottom half unless there is a break
-	 * there, in which case we use the top half.
-	 */
-	x = V86_IO_BUFFER_SIZE / BD(dev).bd_sectorsize;
-	if (x == 0)
-		panic("BUG: Real mode buffer is too small\n");
-	x = min(x, (unsigned)blks);
-	bbuf = PTOV(V86_IO_BUFFER);
-	maxfer = x;		/* limit transfers to bounce region size */
-    } else {
-	bbuf = NULL;
-	maxfer = 0;
-    }
-
-    while (resid > 0) {
-	/*
-	 * Play it safe and don't cross track boundaries.
-	 * (XXX this is probably unnecessary)
-	 */
-	sec = dblk % BD(dev).bd_sec;	/* offset into track */
-	x = min(BD(dev).bd_sec - sec, resid);
-	if (maxfer > 0)
-	    x = min(x, maxfer);		/* fit bounce buffer */
-
-	/* where do we transfer to? */
-	xp = bbuf == NULL ? p : bbuf;
-
-	/*
-	 * Put your Data In, Put your Data out,
-	 * Put your Data In, and shake it all about
-	 */
-	if (dowrite && bbuf != NULL)
-	    bcopy(p, bbuf, x * BD(dev).bd_sectorsize);
+	/* Just in case some idiot actually tries to read/write -1 blocks... */
+	if (blks < 0)
+		return (-1);
 
 	/*
 	 * Loop retrying the operation a couple of times.  The BIOS
 	 * may also retry.
 	 */
 	for (retry = 0; retry < 3; retry++) {
-	    /* if retrying, reset the drive */
-	    if (retry > 0) {
-		v86.ctl = V86_FLAGS;
-		v86.addr = 0x13;
-		v86.eax = 0;
-		v86.edx = BD(dev).bd_unit;
-		v86int();
-	    }
+		if (BD(dev).bd_flags & BD_MODEEDD)
+			result = bd_edd_io(dev, dblk, blks, dest, dowrite);
+		else
+			result = bd_chs_io(dev, dblk, blks, dest, dowrite);
 
-	    if (BD(dev).bd_flags & BD_MODEEDD1)
-		result = bd_edd_io(dev, dblk, x, xp, dowrite);
-	    else
-		result = bd_chs_io(dev, dblk, x, xp, dowrite);
-	    if (result == 0)
-		break;
+		if (result == 0) {
+			if (BD(dev).bd_flags & BD_NO_MEDIA)
+				BD(dev).bd_flags &= ~BD_NO_MEDIA;
+			break;
+		}
+
+		bd_reset_disk(BD(dev).bd_unit);
+
+		/*
+		 * Error codes:
+		 * 20h	controller failure
+		 * 31h	no media in drive (IBM/MS INT 13 extensions)
+		 * There is no reason to repeat the IO with errors above.
+		 */
+		if (result == 0x20 || result == 0x31 || result == 0x80) {
+			BD(dev).bd_flags |= BD_NO_MEDIA;
+			break;
+		}
 	}
 
-	if (dowrite)
-	    DEBUG("Write %d sector(s) from %p (0x%x) to %lld %s", x,
-		p, VTOP(p), dblk, result ? "failed" : "ok");
-	else
-	    DEBUG("Read %d sector(s) from %lld to %p (0x%x) %s", x,
-		dblk, p, VTOP(p), result ? "failed" : "ok");
-	if (result) {
-	    return(result);
+	if (result != 0 && (BD(dev).bd_flags & BD_NO_MEDIA) == 0) {
+		if (dowrite != 0) {
+			printf("%s%d: Write %d sector(s) from %p (0x%x) "
+			    "to %lld: 0x%x\n", dev->d_dev->dv_name, dev->d_unit,
+			    blks, dest, VTOP(dest), dblk, result);
+		} else {
+			printf("%s%d: Read %d sector(s) from %lld to %p "
+			    "(0x%x): 0x%x\n", dev->d_dev->dv_name, dev->d_unit,
+			    blks, dblk, dest, VTOP(dest), result);
+		}
 	}
-	if (!dowrite && bbuf != NULL)
-	    bcopy(bbuf, p, x * BD(dev).bd_sectorsize);
-	p += (x * BD(dev).bd_sectorsize);
-	dblk += x;
-	resid -= x;
-    }
 
-/*    hexdump(dest, (blks * BD(dev).bd_sectorsize)); */
-    return(0);
-}
-
-static int
-bd_read(struct disk_devdesc *dev, daddr_t dblk, int blks, caddr_t dest)
-{
-
-	return (bd_io(dev, dblk, blks, dest, 0));
-}
-
-static int
-bd_write(struct disk_devdesc *dev, daddr_t dblk, int blks, caddr_t dest)
-{
-
-	return (bd_io(dev, dblk, blks, dest, 1));
+	return (result);
 }
 
 /*

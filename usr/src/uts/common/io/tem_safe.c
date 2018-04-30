@@ -87,18 +87,17 @@ tem_safe_callbacks_t tem_safe_pix_callbacks = {
 	&tem_safe_pix_cls
 };
 
-
-static void	tem_safe_control(struct tem_vt_state *, uchar_t,
+static void	tem_safe_control(struct tem_vt_state *, tem_char_t,
 			cred_t *, enum called_from);
 static void	tem_safe_setparam(struct tem_vt_state *, int, int);
 static void	tem_safe_selgraph(struct tem_vt_state *);
-static void	tem_safe_chkparam(struct tem_vt_state *, uchar_t,
+static void	tem_safe_chkparam(struct tem_vt_state *, tem_char_t,
 			cred_t *, enum called_from);
-static void	tem_safe_getparams(struct tem_vt_state *, uchar_t,
+static void	tem_safe_getparams(struct tem_vt_state *, tem_char_t,
 			cred_t *, enum called_from);
-static void	tem_safe_outch(struct tem_vt_state *, uchar_t,
+static void	tem_safe_outch(struct tem_vt_state *, tem_char_t,
 			cred_t *, enum called_from);
-static void	tem_safe_parse(struct tem_vt_state *, uchar_t,
+static void	tem_safe_parse(struct tem_vt_state *, tem_char_t,
 			cred_t *, enum called_from);
 
 static void	tem_safe_new_line(struct tem_vt_state *,
@@ -137,39 +136,26 @@ static void	tem_safe_bell(struct tem_vt_state *tem,
 			enum called_from called_from);
 static void	tem_safe_pix_clear_prom_output(struct tem_vt_state *tem,
 			cred_t *credp, enum called_from called_from);
+static void	tem_safe_get_color(text_color_t *, text_color_t *, term_char_t);
 
 static void	tem_safe_virtual_cls(struct tem_vt_state *, int, screen_pos_t,
 		    screen_pos_t);
 static void	tem_safe_virtual_display(struct tem_vt_state *,
-		    unsigned char *, int, screen_pos_t, screen_pos_t,
-		    text_color_t, text_color_t);
+		    term_char_t *, int, screen_pos_t, screen_pos_t);
 static void	tem_safe_virtual_copy(struct tem_vt_state *, screen_pos_t,
 		    screen_pos_t, screen_pos_t, screen_pos_t,
 		    screen_pos_t, screen_pos_t);
 static void	tem_safe_align_cursor(struct tem_vt_state *tem);
-static void	bit_to_pix4(struct tem_vt_state *tem, uchar_t c,
+static void	bit_to_pix4(struct tem_vt_state *tem, tem_char_t c,
 		    text_color_t fg_color, text_color_t bg_color);
-static void	bit_to_pix8(struct tem_vt_state *tem, uchar_t c,
+static void	bit_to_pix8(struct tem_vt_state *tem, tem_char_t c,
 		    text_color_t fg_color, text_color_t bg_color);
-static void	bit_to_pix24(struct tem_vt_state *tem, uchar_t c,
+static void	bit_to_pix16(struct tem_vt_state *tem, tem_char_t c,
 		    text_color_t fg_color, text_color_t bg_color);
-
-/* BEGIN CSTYLED */
-/*                                  Bk  Rd  Gr  Br  Bl  Mg  Cy  Wh */
-static text_color_t dim_xlate[] = {  1,  5,  3,  7,  2,  6,  4,  8 };
-static text_color_t brt_xlate[] = {  9, 13, 11, 15, 10, 14, 12,  0 };
-/* END CSTYLED */
-
-
-text_cmap_t cmap4_to_24 = {
-/* BEGIN CSTYLED */
-/* 0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
-  Wh+  Bk   Bl   Gr   Cy   Rd   Mg   Br   Wh   Bk+  Bl+  Gr+  Cy+  Rd+  Mg+  Yw */
-  0xff,0x00,0x00,0x00,0x00,0x80,0x80,0x80,0x80,0x40,0x00,0x00,0x00,0xff,0xff,0xff,
-  0xff,0x00,0x00,0x80,0x80,0x00,0x00,0x80,0x80,0x40,0x00,0xff,0xff,0x00,0x00,0xff,
-  0xff,0x00,0x80,0x00,0x80,0x00,0x80,0x00,0x80,0x40,0xff,0x00,0xff,0x00,0xff,0x00
-/* END CSTYLED */
-};
+static void	bit_to_pix24(struct tem_vt_state *tem, tem_char_t c,
+		    text_color_t fg_color, text_color_t bg_color);
+static void	bit_to_pix32(struct tem_vt_state *tem, tem_char_t c,
+		    text_color_t fg_color, text_color_t bg_color);
 
 #define	PIX4TO32(pix4) (uint32_t)(  \
     cmap4_to_24.red[pix4] << 16 |  \
@@ -182,9 +168,9 @@ text_cmap_t cmap4_to_24 = {
 #define	tem_safe_callback_copy		(*tems.ts_callbacks->tsc_copy)
 #define	tem_safe_callback_cursor	(*tems.ts_callbacks->tsc_cursor)
 #define	tem_safe_callback_cls		(*tems.ts_callbacks->tsc_cls)
-#define	tem_safe_callback_bit2pix(tem, c, fg, bg)	{		\
+#define	tem_safe_callback_bit2pix(tem, c)	{		\
 	ASSERT(tems.ts_callbacks->tsc_bit2pix != NULL);			\
-	(void) (*tems.ts_callbacks->tsc_bit2pix)((tem), (c), (fg), (bg));\
+	(void) (*tems.ts_callbacks->tsc_bit2pix)((tem), (c));\
 }
 
 void
@@ -208,10 +194,11 @@ tem_safe_check_first_time(
 		return;
 
 	first_time = 0;
-	if (tems.ts_display_mode == VIS_TEXT) {
+	if (tems.ts_display_mode == VIS_TEXT)
 		tem_safe_text_cursor(tem, VIS_GET_CURSOR, credp, called_from);
-		tem_safe_align_cursor(tem);
-	}
+	else
+		tem_safe_pix_cursor(tem, VIS_GET_CURSOR, credp, called_from);
+	tem_safe_align_cursor(tem);
 }
 
 /*
@@ -249,7 +236,7 @@ static void
 tem_safe_input_partial(struct tem_vt_state *tem, cred_t *credp,
     enum called_from called_from)
 {
-	int i;
+	unsigned i;
 	uint8_t c;
 
 	if (tem->tvs_utf8_left == 0)
@@ -344,9 +331,6 @@ tem_safe_input_byte(struct tem_vt_state *tem, uchar_t c, cred_t *credp,
 				v = (v << 6) | (b & 0x3f);
 			}
 
-			/* Use '?' as replacement if needed. */
-			if (v > 0xff)
-				v = '?';
 			tem_safe_parse(tem, v, credp, called_from);
 			tem->tvs_utf8_partial = 0;
 		}
@@ -446,7 +430,7 @@ tems_safe_cursor(struct vis_conscursor *pca, cred_t *credp,
  */
 
 static void
-tem_safe_control(struct tem_vt_state *tem, uchar_t ch, cred_t *credp,
+tem_safe_control(struct tem_vt_state *tem, tem_char_t ch, cred_t *credp,
     enum called_from called_from)
 {
 	tem->tvs_state = A_STATE_START;
@@ -502,6 +486,19 @@ tem_safe_control(struct tem_vt_state *tem, uchar_t ch, cred_t *credp,
 			for (i = 0; i < TEM_MAXPARAMS; i++)
 				tem->tvs_params[i] = -1;
 			tem->tvs_state = A_STATE_CSI;
+		}
+		break;
+
+	case A_OSC:
+		{
+			int i;
+			tem->tvs_curparam = 0;
+			tem->tvs_paramval = 0;
+			tem->tvs_gotparam = B_FALSE;
+			/* clear the parameters */
+			for (i = 0; i < TEM_MAXPARAMS; i++)
+				tem->tvs_params[i] = -1;
+			tem->tvs_state = A_STATE_OSC;
 		}
 		break;
 
@@ -565,6 +562,9 @@ tem_safe_selgraph(struct tem_vt_state *tem)
 			tem->tvs_flags &= ~TEM_ATTR_BOLD;
 			break;
 
+		case 4: /* Underline */
+			tem->tvs_flags |= TEM_ATTR_UNDERLINE;
+			break;
 		case 5: /* Blink */
 			tem->tvs_flags |= TEM_ATTR_BLINK;
 			break;
@@ -574,6 +574,26 @@ tem_safe_selgraph(struct tem_vt_state *tem)
 				tem->tvs_flags &= ~TEM_ATTR_REVERSE;
 			} else {
 				tem->tvs_flags |= TEM_ATTR_REVERSE;
+			}
+			break;
+
+		case 22: /* Remove Bold */
+			tem->tvs_flags &= ~TEM_ATTR_BOLD;
+			break;
+
+		case 24: /* Remove Underline */
+			tem->tvs_flags &= ~TEM_ATTR_UNDERLINE;
+			break;
+
+		case 25: /* Remove Blink */
+			tem->tvs_flags &= ~TEM_ATTR_BLINK;
+			break;
+
+		case 27: /* Remove Reverse */
+			if (tem->tvs_flags & TEM_ATTR_SCREEN_REVERSE) {
+				tem->tvs_flags |= TEM_ATTR_REVERSE;
+			} else {
+				tem->tvs_flags &= ~TEM_ATTR_REVERSE;
 			}
 			break;
 
@@ -663,7 +683,7 @@ tem_safe_selgraph(struct tem_vt_state *tem)
  *                It assumes that the next lower level will do so.
  */
 static void
-tem_safe_chkparam(struct tem_vt_state *tem, uchar_t ch, cred_t *credp,
+tem_safe_chkparam(struct tem_vt_state *tem, tem_char_t ch, cred_t *credp,
     enum called_from called_from)
 {
 	int	i;
@@ -926,7 +946,7 @@ tem_safe_chkparam(struct tem_vt_state *tem, uchar_t ch, cred_t *credp,
  * Gather the parameters of an ANSI escape sequence
  */
 static void
-tem_safe_getparams(struct tem_vt_state *tem, uchar_t ch,
+tem_safe_getparams(struct tem_vt_state *tem, tem_char_t ch,
     cred_t *credp, enum called_from called_from)
 {
 	ASSERT((called_from == CALLED_FROM_STANDALONE) ||
@@ -961,21 +981,82 @@ tem_safe_getparams(struct tem_vt_state *tem, uchar_t ch,
 }
 
 /*
+ * Gather the OSC string.
+ * OSC Ps ; Pt ST
+ * OSC Ps ; Pt BEL
+ * Ps is number sequence identifying the function. We only support
+ * Ps = 4 and Ps = 104.
+ * Quite obviously this is nowhere close to be done;)
+ */
+/* ARGSUSED */
+static void
+tem_safe_get_oscstring(struct tem_vt_state *tem, uchar_t ch,
+    cred_t *credp __unused, enum called_from called_from)
+{
+	ASSERT((called_from == CALLED_FROM_STANDALONE) ||
+	    MUTEX_HELD(&tem->tvs_lock));
+
+	/* Should we cancel? */
+	if (ch == A_CAN || ch == A_SUB || ch == A_ESC) {
+		tem->tvs_state = A_STATE_START;
+		return;
+	}
+
+	/* following two if statements will read in the numeric parameter */
+	if (ch >= '0' && ch <= '9') {
+		tem->tvs_paramval = ((tem->tvs_paramval * 10) + (ch - '0'));
+		tem->tvs_gotparam = B_TRUE;  /* Remember got parameter */
+		return; /* Return immediately */
+	}
+
+	if (tem->tvs_gotparam && ch == ';') {
+		/* get the parameter value */
+		tem->tvs_params[tem->tvs_curparam] = tem->tvs_paramval;
+		tem->tvs_curparam++;
+		tem->tvs_gotparam = B_FALSE;
+		tem->tvs_paramval = 0;
+	}
+
+	if (tem->tvs_curparam == 0) {
+		/* bad sequence */
+		tem->tvs_state = A_STATE_START;
+		return;
+	}
+	if (tem->tvs_gotparam == B_FALSE && tem->tvs_curparam > 0) {
+		if (tem->tvs_params[0] != 4 && tem->tvs_params[0] != 104) {
+			/* make sure tvs_params will not get filled up */
+			tem->tvs_curparam = 1;
+		}
+	}
+	if (ch == A_ST || ch == A_BEL) {
+		/* done */
+		tem->tvs_state = A_STATE_START;
+		return;
+	}
+}
+
+/*
  * Add character to internal buffer.
  * When its full, send it to the next layer.
  */
 
 static void
-tem_safe_outch(struct tem_vt_state *tem, uchar_t ch,
+tem_safe_outch(struct tem_vt_state *tem, tem_char_t ch,
     cred_t *credp, enum called_from called_from)
 {
+	text_color_t fg;
+	text_color_t bg;
+	text_attr_t attr;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
 
 	/* buffer up the character until later */
-
-	tem->tvs_outbuf[tem->tvs_outindex++] = ch;
+	tem_safe_get_attr(tem, &fg, &bg, &attr, TEM_ATTR_REVERSE);
+	tem->tvs_outbuf[tem->tvs_outindex].tc_char = ch | TEM_ATTR(attr);
+	tem->tvs_outbuf[tem->tvs_outindex].tc_fg_color = fg;
+	tem->tvs_outbuf[tem->tvs_outindex].tc_bg_color = bg;
+	tem->tvs_outindex++;
 	tem->tvs_c_cursor.col++;
 	if (tem->tvs_c_cursor.col >= tems.ts_c_dimension.width) {
 		tem_safe_send_data(tem, credp, called_from);
@@ -1054,9 +1135,6 @@ static void
 tem_safe_send_data(struct tem_vt_state *tem, cred_t *credp,
     enum called_from called_from)
 {
-	text_color_t fg_color;
-	text_color_t bg_color;
-
 	ASSERT((called_from == CALLED_FROM_STANDALONE) ||
 	    MUTEX_HELD(&tem->tvs_lock));
 
@@ -1065,11 +1143,9 @@ tem_safe_send_data(struct tem_vt_state *tem, cred_t *credp,
 		return;
 	}
 
-	tem_safe_get_color(tem, &fg_color, &bg_color, TEM_ATTR_REVERSE);
 	tem_safe_virtual_display(tem,
 	    tem->tvs_outbuf, tem->tvs_outindex,
-	    tem->tvs_s_cursor.row, tem->tvs_s_cursor.col,
-	    fg_color, bg_color);
+	    tem->tvs_s_cursor.row, tem->tvs_s_cursor.col);
 
 	if (tem->tvs_isactive) {
 		/*
@@ -1078,7 +1154,6 @@ tem_safe_send_data(struct tem_vt_state *tem, cred_t *credp,
 		tem_safe_callback_display(tem,
 		    tem->tvs_outbuf, tem->tvs_outindex,
 		    tem->tvs_s_cursor.row, tem->tvs_s_cursor.col,
-		    fg_color, bg_color,
 		    credp, called_from);
 	}
 
@@ -1106,7 +1181,7 @@ tem_safe_align_cursor(struct tem_vt_state *tem)
  */
 
 static void
-tem_safe_parse(struct tem_vt_state *tem, uchar_t ch,
+tem_safe_parse(struct tem_vt_state *tem, tem_char_t ch,
     cred_t *credp, enum called_from called_from)
 {
 	int	i;
@@ -1115,7 +1190,7 @@ tem_safe_parse(struct tem_vt_state *tem, uchar_t ch,
 	    MUTEX_HELD(&tem->tvs_lock));
 
 	if (tem->tvs_state == A_STATE_START) {	/* Normal state? */
-		if (ch == A_CSI || ch == A_ESC || ch < ' ') {
+		if (ch == A_CSI || ch == A_OSC || ch == A_ESC || ch < ' ') {
 			/* Control */
 			tem_safe_control(tem, ch, credp, called_from);
 		} else {
@@ -1127,6 +1202,11 @@ tem_safe_parse(struct tem_vt_state *tem, uchar_t ch,
 
 	/* In <ESC> sequence */
 	if (tem->tvs_state != A_STATE_ESC) {	/* Need to get parameters? */
+		if (tem->tvs_state == A_STATE_OSC) {
+			tem_safe_get_oscstring(tem, ch, credp, called_from);
+			return;
+		}
+
 		if (tem->tvs_state != A_STATE_CSI) {
 			tem_safe_getparams(tem, ch, credp, called_from);
 			return;
@@ -1237,6 +1317,14 @@ tem_safe_parse(struct tem_vt_state *tem, uchar_t ch,
 		for (i = 0; i < TEM_MAXPARAMS; i++)
 			tem->tvs_params[i] = -1;
 		tem->tvs_state = A_STATE_CSI;
+	} else if (ch == ']') {
+		tem->tvs_curparam = 0;
+		tem->tvs_paramval = 0;
+		tem->tvs_gotparam = B_FALSE;
+		/* clear the parameters */
+		for (i = 0; i < TEM_MAXPARAMS; i++)
+			tem->tvs_params[i] = -1;
+		tem->tvs_state = A_STATE_OSC;
 	} else if (ch == 'Q') {	/* <ESC>Q ? */
 		tem->tvs_state = A_STATE_START;
 	} else if (ch == 'C') {	/* <ESC>C ? */
@@ -1397,25 +1485,28 @@ tem_safe_clear_chars(struct tem_vt_state *tem, int count, screen_pos_t row,
 
 /*ARGSUSED*/
 void
-tem_safe_text_display(struct tem_vt_state *tem, uchar_t *string,
+tem_safe_text_display(struct tem_vt_state *tem, term_char_t *string,
     int count, screen_pos_t row, screen_pos_t col,
-    text_color_t fg_color, text_color_t bg_color,
     cred_t *credp, enum called_from called_from)
 {
 	struct vis_consdisplay da;
+	int i;
+	tem_char_t c;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
 
-	da.data = string;
-	da.width = (screen_size_t)count;
+	da.data = (uint8_t *)&c;
+	da.width = 1;
 	da.row = row;
 	da.col = col;
 
-	da.fg_color = fg_color;
-	da.bg_color = bg_color;
-
-	tems_safe_display(&da, credp, called_from);
+	for (i = 0; i < count; i++) {
+		tem_safe_get_color(&da.fg_color, &da.bg_color, string[i]);
+		c = TEM_CHAR(string[i].tc_char);
+		tems_safe_display(&da, credp, called_from);
+		da.col++;
+	}
 }
 
 /*
@@ -1451,7 +1542,6 @@ tem_safe_image_display(struct tem_vt_state *tem, uchar_t *image,
 	mutex_exit(&tems.ts_lock);
 }
 
-
 /*ARGSUSED*/
 void
 tem_safe_text_copy(struct tem_vt_state *tem,
@@ -1480,26 +1570,32 @@ tem_safe_text_cls(struct tem_vt_state *tem,
     int count, screen_pos_t row, screen_pos_t col, cred_t *credp,
     enum called_from called_from)
 {
-	struct vis_consdisplay da;
+	text_attr_t attr;
+	term_char_t c;
+	int i;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
 
-	da.data = tems.ts_blank_line;
-	da.width = (screen_size_t)count;
-	da.row = row;
-	da.col = col;
-
-	tem_safe_get_color(tem, &da.fg_color, &da.bg_color,
+	tem_safe_get_attr(tem, &c.tc_fg_color, &c.tc_bg_color, &attr,
 	    TEM_ATTR_SCREEN_REVERSE);
-	tems_safe_display(&da, credp, called_from);
+	c.tc_char = TEM_ATTR(attr & ~TEM_ATTR_UNDERLINE) | ' ';
+
+	if (count > tems.ts_c_dimension.width ||
+	    col + count > tems.ts_c_dimension.width)
+		count = tems.ts_c_dimension.width - col;
+
+	for (i = 0; i < count; i++)
+		tems.ts_blank_line[i] = c;
+
+	tem_safe_text_display(tem, tems.ts_blank_line, count, row, col,
+		credp, called_from);
 }
 
 void
 tem_safe_pix_display(struct tem_vt_state *tem,
-    uchar_t *string, int count,
+    term_char_t *string, int count,
     screen_pos_t row, screen_pos_t col,
-    text_color_t fg_color, text_color_t bg_color,
     cred_t *credp, enum called_from called_from)
 {
 	struct vis_consdisplay da;
@@ -1509,13 +1605,13 @@ tem_safe_pix_display(struct tem_vt_state *tem,
 	    called_from == CALLED_FROM_STANDALONE);
 
 	da.data = (uchar_t *)tem->tvs_pix_data;
-	da.width = tems.ts_font.width;
-	da.height = tems.ts_font.height;
+	da.width = (screen_size_t)tems.ts_font.vf_width;
+	da.height = (screen_size_t)tems.ts_font.vf_height;
 	da.row = (row * da.height) + tems.ts_p_offset.y;
 	da.col = (col * da.width) + tems.ts_p_offset.x;
 
 	for (i = 0; i < count; i++) {
-		tem_safe_callback_bit2pix(tem, string[i], fg_color, bg_color);
+		tem_safe_callback_bit2pix(tem, string[i]);
 		tems_safe_display(&da, credp, called_from);
 		da.col += da.width;
 	}
@@ -1548,9 +1644,10 @@ tem_safe_pix_copy(struct tem_vt_state *tem,
 	}
 	need_clear = B_FALSE;
 
-	ma.s_row = s_row * tems.ts_font.height + tems.ts_p_offset.y;
-	ma.e_row = (e_row + 1) * tems.ts_font.height + tems.ts_p_offset.y - 1;
-	ma.t_row = t_row * tems.ts_font.height + tems.ts_p_offset.y;
+	ma.s_row = s_row * tems.ts_font.vf_height + tems.ts_p_offset.y;
+	ma.e_row = (e_row + 1) * tems.ts_font.vf_height +
+	    tems.ts_p_offset.y - 1;
+	ma.t_row = t_row * tems.ts_font.vf_height + tems.ts_p_offset.y;
 
 	/*
 	 * Check if we're in process of clearing OBP's columns area,
@@ -1562,15 +1659,15 @@ tem_safe_pix_copy(struct tem_vt_state *tem,
 		 * We need to clear OBP's columns area outside our kernel
 		 * console term. So that we set ma.e_col to entire row here.
 		 */
-		ma.s_col = s_col * tems.ts_font.width;
+		ma.s_col = s_col * tems.ts_font.vf_width;
 		ma.e_col = tems.ts_p_dimension.width - 1;
 
-		ma.t_col = t_col * tems.ts_font.width;
+		ma.t_col = t_col * tems.ts_font.vf_width;
 	} else {
-		ma.s_col = s_col * tems.ts_font.width + tems.ts_p_offset.x;
-		ma.e_col = (e_col + 1) * tems.ts_font.width +
+		ma.s_col = s_col * tems.ts_font.vf_width + tems.ts_p_offset.x;
+		ma.e_col = (e_col + 1) * tems.ts_font.vf_width +
 		    tems.ts_p_offset.x - 1;
-		ma.t_col = t_col * tems.ts_font.width + tems.ts_p_offset.x;
+		ma.t_col = t_col * tems.ts_font.vf_width + tems.ts_p_offset.x;
 	}
 
 	tems_safe_copy(&ma, credp, called_from);
@@ -1587,12 +1684,13 @@ tem_safe_pix_copy(struct tem_vt_state *tem,
 }
 
 void
-tem_safe_pix_bit2pix(struct tem_vt_state *tem, unsigned char c,
-    unsigned char fg, unsigned char bg)
+tem_safe_pix_bit2pix(struct tem_vt_state *tem, term_char_t c)
 {
-	void (*fp)(struct tem_vt_state *, unsigned char,
+	text_color_t fg, bg;
+	void (*fp)(struct tem_vt_state *, tem_char_t,
 	    unsigned char, unsigned char);
 
+	tem_safe_get_color(&fg, &bg, c);
 	switch (tems.ts_pdepth) {
 	case 4:
 		fp = bit_to_pix4;
@@ -1600,12 +1698,21 @@ tem_safe_pix_bit2pix(struct tem_vt_state *tem, unsigned char c,
 	case 8:
 		fp = bit_to_pix8;
 		break;
+	case 15:
+	case 16:
+		fp = bit_to_pix16;
+		break;
 	case 24:
-	case 32:
 		fp = bit_to_pix24;
+		break;
+	case 32:
+		fp = bit_to_pix32;
+		break;
+	default:
+		return;
 	}
 
-	fp(tem, c, fg, bg);
+	fp(tem, c.tc_char, fg, bg);
 }
 
 
@@ -1651,19 +1758,21 @@ static void
 tem_safe_pix_clear_prom_output(struct tem_vt_state *tem, cred_t *credp,
     enum called_from called_from)
 {
-	int	nrows, ncols, width, height;
+	int	nrows, ncols, width, height, offset;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
 
-	width = tems.ts_font.width;
-	height = tems.ts_font.height;
+	width = tems.ts_font.vf_width;
+	height = tems.ts_font.vf_height;
+	offset = tems.ts_p_offset.y % height;
 
-	nrows = (tems.ts_p_offset.y + (height - 1))/ height;
+	nrows = tems.ts_p_offset.y / height;
 	ncols = (tems.ts_p_dimension.width + (width - 1))/ width;
 
-	tem_safe_pix_cls_range(tem, 0, nrows, 0, 0, ncols, 0,
-	    B_FALSE, credp, called_from);
+	if (nrows > 0)
+		tem_safe_pix_cls_range(tem, 0, nrows, offset, 0, ncols, 0,
+		    B_FALSE, credp, called_from);
 }
 
 /*
@@ -1674,19 +1783,34 @@ void
 tem_safe_pix_clear_entire_screen(struct tem_vt_state *tem, cred_t *credp,
     enum called_from called_from)
 {
-	int	nrows, ncols, width, height;
+	struct vis_consclear cl;
+	text_color_t fg_color;
+	text_color_t bg_color;
+	text_attr_t attr;
+	term_char_t c;
+	int nrows, ncols, width, height;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
 
-	width = tems.ts_font.width;
-	height = tems.ts_font.height;
+	/* call driver first, if error, clear terminal area */
+	tem_safe_get_attr(tem, &c.tc_fg_color, &c.tc_bg_color, &attr,
+	    TEM_ATTR_SCREEN_REVERSE);
+	c.tc_char = TEM_ATTR(attr);
+
+	tem_safe_get_color(&fg_color, &bg_color, c);
+	cl.bg_color = bg_color;
+	if (tems_cls_layered(&cl, credp) == 0)
+		return;
+
+	width = tems.ts_font.vf_width;
+	height = tems.ts_font.vf_height;
 
 	nrows = (tems.ts_p_dimension.height + (height - 1))/ height;
 	ncols = (tems.ts_p_dimension.width + (width - 1))/ width;
 
-	tem_safe_pix_cls_range(tem, 0, nrows, 0, 0, ncols, 0,
-	    B_FALSE, credp, called_from);
+	tem_safe_pix_cls_range(tem, 0, nrows, tems.ts_p_offset.y, 0, ncols,
+	    tems.ts_p_offset.x, B_FALSE, credp, called_from);
 
 	/*
 	 * Since the whole screen is cleared, we don't need
@@ -2004,25 +2128,49 @@ tem_safe_pix_cursor(struct tem_vt_state *tem, short action,
     cred_t *credp, enum called_from called_from)
 {
 	struct vis_conscursor	ca;
+	uint32_t color;
+	text_color_t fg, bg;
+	term_char_t c;
+	text_attr_t attr;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
 
-	ca.row = tem->tvs_c_cursor.row * tems.ts_font.height +
+	ca.row = tem->tvs_c_cursor.row * tems.ts_font.vf_height +
 	    tems.ts_p_offset.y;
-	ca.col = tem->tvs_c_cursor.col * tems.ts_font.width +
+	ca.col = tem->tvs_c_cursor.col * tems.ts_font.vf_width +
 	    tems.ts_p_offset.x;
-	ca.width = tems.ts_font.width;
-	ca.height = tems.ts_font.height;
-	if (tems.ts_pdepth == 8 || tems.ts_pdepth == 4) {
-		if (tem->tvs_flags & TEM_ATTR_REVERSE) {
-			ca.fg_color.mono = TEM_TEXT_WHITE;
-			ca.bg_color.mono = TEM_TEXT_BLACK;
-		} else {
-			ca.fg_color.mono = TEM_TEXT_BLACK;
-			ca.bg_color.mono = TEM_TEXT_WHITE;
-		}
-	} else if (tems.ts_pdepth == 24 || tems.ts_pdepth == 32) {
+	ca.width = (screen_size_t)tems.ts_font.vf_width;
+	ca.height = (screen_size_t)tems.ts_font.vf_height;
+
+	tem_safe_get_attr(tem, &c.tc_fg_color, &c.tc_bg_color, &attr,
+	    TEM_ATTR_REVERSE);
+	c.tc_char = TEM_ATTR(attr);
+
+	tem_safe_get_color(&fg, &bg, c);
+
+	switch (tems.ts_pdepth) {
+	case 4:
+		ca.fg_color.mono = fg;
+		ca.bg_color.mono = bg;
+		break;
+	case 8:
+		ca.fg_color.mono = tems.ts_color_map(fg);
+		ca.bg_color.mono = tems.ts_color_map(bg);
+		break;
+	case 15:
+	case 16:
+		color = tems.ts_color_map(fg);
+		ca.fg_color.sixteen[0] = (color >> 8) & 0xFF;
+		ca.fg_color.sixteen[1] = color & 0xFF;
+		color = tems.ts_color_map(bg);
+		ca.bg_color.sixteen[0] = (color >> 8) & 0xFF;
+		ca.bg_color.sixteen[1] = color & 0xFF;
+		break;
+	case 24:
+	case 32:
+#ifdef _HAVE_TEM_FIRMWARE
+		/* Keeping this block to support old binary only drivers */
 		if (tem->tvs_flags & TEM_ATTR_REVERSE) {
 			ca.fg_color.twentyfour[0] = TEM_TEXT_WHITE24_RED;
 			ca.fg_color.twentyfour[1] = TEM_TEXT_WHITE24_GREEN;
@@ -2040,15 +2188,40 @@ tem_safe_pix_cursor(struct tem_vt_state *tem, short action,
 			ca.bg_color.twentyfour[1] = TEM_TEXT_WHITE24_GREEN;
 			ca.bg_color.twentyfour[2] = TEM_TEXT_WHITE24_BLUE;
 		}
+#else
+		color = tems.ts_color_map(fg);
+		ca.fg_color.twentyfour[0] = (color >> 16) & 0xFF;
+		ca.fg_color.twentyfour[1] = (color >> 8) & 0xFF;
+		ca.fg_color.twentyfour[2] = color & 0xFF;
+		color = tems.ts_color_map(bg);
+		ca.bg_color.twentyfour[0] = (color >> 16) & 0xFF;
+		ca.bg_color.twentyfour[1] = (color >> 8) & 0xFF;
+		ca.bg_color.twentyfour[2] = color & 0xFF;
+		break;
+#endif
 	}
 
 	ca.action = action;
 
 	tems_safe_cursor(&ca, credp, called_from);
+
+	if (action == VIS_GET_CURSOR) {
+		tem->tvs_c_cursor.row = 0;
+		tem->tvs_c_cursor.col = 0;
+
+		if (ca.row != 0) {
+			tem->tvs_c_cursor.row = (ca.row - tems.ts_p_offset.y) /
+			    tems.ts_font.vf_height;
+		}
+		if (ca.col != 0) {
+			tem->tvs_c_cursor.col = (ca.col - tems.ts_p_offset.x) /
+			    tems.ts_font.vf_width;
+		}
+	}
 }
 
 static void
-bit_to_pix4(struct tem_vt_state *tem, uchar_t c, text_color_t fg_color,
+bit_to_pix4(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color,
     text_color_t bg_color)
 {
 	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
@@ -2056,66 +2229,106 @@ bit_to_pix4(struct tem_vt_state *tem, uchar_t c, text_color_t fg_color,
 }
 
 static void
-bit_to_pix8(struct tem_vt_state *tem, uchar_t c, text_color_t fg_color,
+bit_to_pix8(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color,
     text_color_t bg_color)
 {
 	uint8_t *dest = (uint8_t *)tem->tvs_pix_data;
+
+	fg_color = (text_color_t)tems.ts_color_map(fg_color);
+	bg_color = (text_color_t)tems.ts_color_map(bg_color);
 	font_bit_to_pix8(&tems.ts_font, dest, c, fg_color, bg_color);
 }
 
 static void
-bit_to_pix24(struct tem_vt_state *tem, uchar_t c, text_color_t fg_color4,
+bit_to_pix16(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color4,
+    text_color_t bg_color4)
+{
+	uint16_t fg_color16, bg_color16;
+	uint16_t *dest;
+
+	ASSERT(fg_color4 < 16 && bg_color4 < 16);
+
+	fg_color16 = (uint16_t)tems.ts_color_map(fg_color4);
+	bg_color16 = (uint16_t)tems.ts_color_map(bg_color4);
+
+	dest = (uint16_t *)tem->tvs_pix_data;
+	font_bit_to_pix16(&tems.ts_font, dest, c, fg_color16, bg_color16);
+}
+
+static void
+bit_to_pix24(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color4,
+    text_color_t bg_color4)
+{
+	uint32_t fg_color32, bg_color32;
+	uint8_t *dest;
+
+	ASSERT(fg_color4 < 16 && bg_color4 < 16);
+
+#ifdef _HAVE_TEM_FIRMWARE
+	fg_color32 = PIX4TO32(fg_color4);
+	bg_color32 = PIX4TO32(bg_color4);
+#else
+	fg_color32 = tems.ts_color_map(fg_color4);
+	bg_color32 = tems.ts_color_map(bg_color4);
+#endif
+
+	dest = (uint8_t *)tem->tvs_pix_data;
+	font_bit_to_pix24(&tems.ts_font, dest, c, fg_color32, bg_color32);
+}
+
+static void
+bit_to_pix32(struct tem_vt_state *tem, tem_char_t c, text_color_t fg_color4,
     text_color_t bg_color4)
 {
 	uint32_t fg_color32, bg_color32, *dest;
 
 	ASSERT(fg_color4 < 16 && bg_color4 < 16);
 
+#ifdef _HAVE_TEM_FIRMWARE
 	fg_color32 = PIX4TO32(fg_color4);
 	bg_color32 = PIX4TO32(bg_color4);
+#else
+	fg_color32 = ((uint32_t)0xFF << 24) | tems.ts_color_map(fg_color4);
+	bg_color32 = ((uint32_t)0xFF << 24) | tems.ts_color_map(bg_color4);
+#endif
 
 	dest = (uint32_t *)tem->tvs_pix_data;
-	font_bit_to_pix24(&tems.ts_font, dest, c, fg_color32, bg_color32);
-}
-
-static text_color_t
-ansi_bg_to_solaris(struct tem_vt_state *tem, int ansi)
-{
-	if (tem->tvs_flags & TEM_ATTR_BRIGHT_BG)
-		return (brt_xlate[ansi]);
-	else
-		return (dim_xlate[ansi]);
-}
-
-static text_color_t
-ansi_fg_to_solaris(struct tem_vt_state *tem, int ansi)
-{
-	if (tem->tvs_flags & TEM_ATTR_BRIGHT_FG ||
-	    tem->tvs_flags & TEM_ATTR_BOLD) {
-		return (brt_xlate[ansi]);
-	} else {
-		return (dim_xlate[ansi]);
-	}
+	font_bit_to_pix32(&tems.ts_font, dest, c, fg_color32, bg_color32);
 }
 
 /*
  * flag: TEM_ATTR_SCREEN_REVERSE or TEM_ATTR_REVERSE
  */
 void
-tem_safe_get_color(struct tem_vt_state *tem, text_color_t *fg,
-    text_color_t *bg, uint8_t flag)
+tem_safe_get_attr(struct tem_vt_state *tem, text_color_t *fg,
+    text_color_t *bg, text_attr_t *attr, uint8_t flag)
 {
 	if (tem->tvs_flags & flag) {
-		*fg = ansi_fg_to_solaris(tem,
-		    tem->tvs_bg_color);
-		*bg = ansi_bg_to_solaris(tem,
-		    tem->tvs_fg_color);
+		*fg = tem->tvs_bg_color;
+		*bg = tem->tvs_fg_color;
 	} else {
-		*fg = ansi_fg_to_solaris(tem,
-		    tem->tvs_fg_color);
-		*bg = ansi_bg_to_solaris(tem,
-		    tem->tvs_bg_color);
+		*fg = tem->tvs_fg_color;
+		*bg = tem->tvs_bg_color;
 	}
+
+	if (attr == NULL)
+		return;
+
+	*attr = tem->tvs_flags;
+}
+
+static void
+tem_safe_get_color(text_color_t *fg, text_color_t *bg, term_char_t c)
+{
+	if (TEM_CHAR_ATTR(c.tc_char) & (TEM_ATTR_BRIGHT_FG | TEM_ATTR_BOLD))
+		*fg = brt_xlate[c.tc_fg_color];
+	else
+		*fg = dim_xlate[c.tc_fg_color];
+
+	if (TEM_CHAR_ATTR(c.tc_char) & TEM_ATTR_BRIGHT_BG)
+		*bg = brt_xlate[c.tc_bg_color];
+	else
+		*bg = dim_xlate[c.tc_bg_color];
 }
 
 /*
@@ -2141,8 +2354,8 @@ tem_safe_pix_cls_range(struct tem_vt_state *tem,
 	struct vis_consdisplay da;
 	int	i, j;
 	int	row_add = 0;
-	text_color_t fg_color;
-	text_color_t bg_color;
+	term_char_t c;
+	text_attr_t attr;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
@@ -2150,12 +2363,15 @@ tem_safe_pix_cls_range(struct tem_vt_state *tem,
 	if (sroll_up)
 		row_add = tems.ts_c_dimension.height - 1;
 
-	da.width = tems.ts_font.width;
-	da.height = tems.ts_font.height;
+	da.width = (screen_size_t)tems.ts_font.vf_width;
+	da.height = (screen_size_t)tems.ts_font.vf_height;
 
-	tem_safe_get_color(tem, &fg_color, &bg_color, TEM_ATTR_SCREEN_REVERSE);
+	tem_safe_get_attr(tem, &c.tc_fg_color, &c.tc_bg_color, &attr,
+	    TEM_ATTR_SCREEN_REVERSE);
+	/* Make sure we will not draw underlines */
+	c.tc_char = TEM_ATTR(attr & ~TEM_ATTR_UNDERLINE) | ' ';
 
-	tem_safe_callback_bit2pix(tem, ' ', fg_color, bg_color);
+	tem_safe_callback_bit2pix(tem, c);
 	da.data = (uchar_t *)tem->tvs_pix_data;
 
 	for (i = 0; i < nrows; i++, row++) {
@@ -2172,14 +2388,11 @@ tem_safe_pix_cls_range(struct tem_vt_state *tem,
  * virtual screen operations
  */
 static void
-tem_safe_virtual_display(struct tem_vt_state *tem, unsigned char *string,
-    int count, screen_pos_t row, screen_pos_t col,
-    text_color_t fg_color, text_color_t bg_color)
+tem_safe_virtual_display(struct tem_vt_state *tem, term_char_t *string,
+    int count, screen_pos_t row, screen_pos_t col)
 {
 	int i, width;
-	unsigned char *addr;
-	text_color_t *pfgcolor;
-	text_color_t *pbgcolor;
+	term_char_t *addr;
 
 	if (row < 0 || row >= tems.ts_c_dimension.height ||
 	    col < 0 || col >= tems.ts_c_dimension.width ||
@@ -2187,28 +2400,24 @@ tem_safe_virtual_display(struct tem_vt_state *tem, unsigned char *string,
 		return;
 
 	width = tems.ts_c_dimension.width;
-	addr = tem->tvs_screen_buf +  (row * width + col);
-	pfgcolor = tem->tvs_fg_buf + (row * width + col);
-	pbgcolor = tem->tvs_bg_buf + (row * width + col);
+	addr = tem->tvs_screen_buf + (row * width + col);
 	for (i = 0; i < count; i++) {
 		*addr++ = string[i];
-		*pfgcolor++ = fg_color;
-		*pbgcolor++ = bg_color;
 	}
 }
 
 static void
-i_virtual_copy(unsigned char *base,
+i_virtual_copy_tem_chars(term_char_t *base,
     screen_pos_t s_col, screen_pos_t s_row,
     screen_pos_t e_col, screen_pos_t e_row,
     screen_pos_t t_col, screen_pos_t t_row)
 {
-	unsigned char   *from;
-	unsigned char   *to;
+	term_char_t	*from;
+	term_char_t	*to;
 	int		cnt;
 	screen_size_t chars_per_row;
-	unsigned char   *to_row_start;
-	unsigned char   *from_row_start;
+	term_char_t	*to_row_start;
+	term_char_t	*from_row_start;
 	screen_size_t   rows_to_move;
 	int		cols = tems.ts_c_dimension.width;
 
@@ -2275,27 +2484,26 @@ tem_safe_virtual_copy(struct tem_vt_state *tem,
 	    t_col + chars_per_row > cols)
 		return;
 
-	i_virtual_copy(tem->tvs_screen_buf, s_col, s_row,
+	i_virtual_copy_tem_chars(tem->tvs_screen_buf, s_col, s_row,
 	    e_col, e_row, t_col, t_row);
-
-	/* text_color_t is the same size as char */
-	i_virtual_copy((unsigned char *)tem->tvs_fg_buf,
-	    s_col, s_row, e_col, e_row, t_col, t_row);
-	i_virtual_copy((unsigned char *)tem->tvs_bg_buf,
-	    s_col, s_row, e_col, e_row, t_col, t_row);
-
 }
 
 static void
 tem_safe_virtual_cls(struct tem_vt_state *tem,
     int count, screen_pos_t row, screen_pos_t col)
 {
-	text_color_t fg_color;
-	text_color_t bg_color;
+	int i;
+	text_attr_t attr;
+	term_char_t c;
 
-	tem_safe_get_color(tem, &fg_color, &bg_color, TEM_ATTR_SCREEN_REVERSE);
-	tem_safe_virtual_display(tem, tems.ts_blank_line, count, row, col,
-	    fg_color, bg_color);
+	tem_safe_get_attr(tem, &c.tc_fg_color, &c.tc_bg_color, &attr,
+	    TEM_ATTR_SCREEN_REVERSE);
+	c.tc_char = TEM_ATTR(attr & ~TEM_ATTR_UNDERLINE) | ' ';
+
+	for (i = 0; i < tems.ts_c_dimension.width; i++)
+		tems.ts_blank_line[i] = c;
+
+	tem_safe_virtual_display(tem, tems.ts_blank_line, count, row, col);
 }
 
 /*
@@ -2329,12 +2537,7 @@ void
 tem_safe_unblank_screen(struct tem_vt_state *tem, cred_t *credp,
     enum called_from called_from)
 {
-	text_color_t fg_color, fg_last;
-	text_color_t bg_color, bg_last;
-	size_t	tc_size = sizeof (text_color_t);
-	int	row, col, count, col_start;
-	int	width;
-	unsigned char *buf;
+	int	row;
 
 	ASSERT((MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&tem->tvs_lock)) ||
 	    called_from == CALLED_FROM_STANDALONE);
@@ -2344,8 +2547,6 @@ tem_safe_unblank_screen(struct tem_vt_state *tem, cred_t *credp,
 
 	tem_safe_callback_cursor(tem, VIS_HIDE_CURSOR, credp, called_from);
 
-	width = tems.ts_c_dimension.width;
-
 	/*
 	 * Display data in tvs_screen_buf to the actual framebuffer in a
 	 * row by row way.
@@ -2353,44 +2554,8 @@ tem_safe_unblank_screen(struct tem_vt_state *tem, cred_t *credp,
 	 * and background color all together.
 	 */
 	for (row = 0; row < tems.ts_c_dimension.height; row++) {
-		buf = tem->tvs_screen_buf + (row * width);
-		count = col_start = 0;
-		for (col = 0; col < width; col++) {
-			fg_color =
-			    tem->tvs_fg_buf[(row * width + col) * tc_size];
-			bg_color =
-			    tem->tvs_bg_buf[(row * width + col) * tc_size];
-			if (col == 0) {
-				fg_last = fg_color;
-				bg_last = bg_color;
-			}
-
-			if ((fg_color != fg_last) || (bg_color != bg_last)) {
-				/*
-				 * Call the primitive to render this data.
-				 */
-				tem_safe_callback_display(tem,
-				    buf, count, row, col_start,
-				    fg_last, bg_last, credp, called_from);
-				buf += count;
-				count = 1;
-				col_start = col;
-				fg_last = fg_color;
-				bg_last = bg_color;
-			} else {
-				count++;
-			}
-		}
-
-		if (col_start == (width - 1))
-			continue;
-
-		/*
-		 * Call the primitive to render this data.
-		 */
-		tem_safe_callback_display(tem,
-		    buf, count, row, col_start,
-		    fg_last, bg_last, credp, called_from);
+		tem_safe_callback_display(tem, tem->tvs_screen_rows[row],
+		    tems.ts_c_dimension.width, row, 0, credp, called_from);
 	}
 
 	tem_safe_callback_cursor(tem, VIS_DISPLAY_CURSOR, credp, called_from);

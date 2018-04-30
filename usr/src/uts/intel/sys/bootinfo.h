@@ -61,7 +61,9 @@ typedef void *native_ptr_t;
 typedef enum boot_module_type {
 	BMT_ROOTFS,
 	BMT_FILE,
-	BMT_HASH
+	BMT_HASH,
+	BMT_ENV,
+	BMT_FONT
 } boot_module_type_t;
 
 struct boot_memlist {
@@ -82,6 +84,12 @@ struct boot_modules {
 	boot_module_type_t	bm_type;
 };
 
+/* To help to identify UEFI system. */
+typedef enum uefi_arch_type {
+	XBI_UEFI_ARCH_NONE,
+	XBI_UEFI_ARCH_32,
+	XBI_UEFI_ARCH_64
+} uefi_arch_type_t;
 /*
  *
  */
@@ -107,8 +115,14 @@ struct xboot_info {
 	native_ptr_t	bi_xen_start_info;
 	native_ptr_t	bi_shared_info;		/* VA for shared_info */
 #else
-	native_ptr_t	bi_mb_info;
+	native_ptr_t	bi_mb_info;		/* multiboot 1 or 2 info */
+	int		bi_mb_version;		/* multiboot version */
+	native_ptr_t	bi_acpi_rsdp;
+	native_ptr_t	bi_smbios;
+	native_ptr_t	bi_uefi_systab;
+	uefi_arch_type_t bi_uefi_arch;
 #endif
+	native_ptr_t	bi_framebuffer;
 };
 #pragma pack()
 

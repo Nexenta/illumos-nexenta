@@ -163,7 +163,7 @@ HECI_OBJS += 		\
 
 STRATEGY_OBJS += strategy.o
 UCODE_OBJS += ucode_drv.o
-VGATEXT_OBJS += vgatext.o vgasubr.o
+VGATEXT_OBJS += vgatext.o
 
 #
 #	Kernel linker

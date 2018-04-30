@@ -85,7 +85,18 @@ ptblread(void *d, void *buf, size_t blocks, uint64_t offset)
 
 	dev = (struct disk_devdesc *)d;
 	od = (struct open_disk *)dev->d_opendata;
-	return (dev->d_dev->dv_strategy(dev, F_READ, offset,
+
+	/*
+	 * The strategy function assumes the offset is in units of 512 byte
+	 * sectors. For larger sector sizes, we need to adjust the offset to
+	 * match the actual sector size.
+	 */
+	offset *= (od->sectorsize / 512);
+	/*
+	 * As the GPT backup partition is located at the end of the disk,
+	 * to avoid reading past disk end, flag bcache not to use RA.
+	 */
+	return (dev->d_dev->dv_strategy(dev, F_READ | F_NORA , offset,
 	    blocks * od->sectorsize, (char *)buf, NULL));
 }
 
@@ -93,6 +104,7 @@ ptblread(void *d, void *buf, size_t blocks, uint64_t offset)
 static int
 ptable_print(void *arg, const char *pname, const struct ptable_entry *part)
 {
+	struct disk_devdesc dev;
 	struct print_args *pa, bsd;
 	struct open_disk *od;
 	struct ptable *table;
@@ -113,17 +125,26 @@ ptable_print(void *arg, const char *pname, const struct ptable_entry *part)
 		return (ret);
 	if (part->type == PART_FREEBSD || part->type == PART_SOLARIS2) {
 		/* Open slice with BSD or VTOC label */
-		pa->dev->d_offset = part->start;
-		table = ptable_open(pa->dev, part->end - part->start + 1,
-		    od->sectorsize, ptblread);
-		if (table == NULL)
-			return (ret);
-		sprintf(line, "  %s%s", pa->prefix, pname);
-		bsd.dev = pa->dev;
-		bsd.prefix = line;
-		bsd.verbose = pa->verbose;
-		ret = ptable_iterate(table, &bsd, ptable_print);
-		ptable_close(table);
+		dev.d_dev = pa->dev->d_dev;
+		dev.d_unit = pa->dev->d_unit;
+		dev.d_slice = part->index;
+		dev.d_partition = -1;
+		if (disk_open(&dev, part->end - part->start + 1,
+		    od->sectorsize) == 0) {
+			table = ptable_open(&dev, part->end - part->start + 1,
+			    od->sectorsize, ptblread);
+			if (table != NULL &&
+			    (ptable_gettype(table) == PTABLE_BSD ||
+			    ptable_gettype(table) == PTABLE_VTOC8)) {
+				sprintf(line, "  %s%s", pa->prefix, pname);
+				bsd.dev = &dev;
+				bsd.prefix = line;
+				bsd.verbose = pa->verbose;
+				ret = ptable_iterate(table, &bsd, ptable_print);
+			}
+			ptable_close(table);
+			disk_close(&dev);
+		}
 	}
 	return (ret);
 }
@@ -236,9 +257,7 @@ disk_open(struct disk_devdesc *dev, uint64_t mediasize, u_int sectorsize)
 		rc = ENXIO;
 		goto out;
 	}
-	if (mediasize > od->mediasize) {
-		od->mediasize = mediasize;
-	}
+	od->mediasize = mediasize;
 
 	if (ptable_gettype(od->table) == PTABLE_BSD &&
 	    partition >= 0) {

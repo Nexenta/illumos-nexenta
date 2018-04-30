@@ -196,7 +196,7 @@ main(void)
 	env_nounset);
 
     /* Process configuration file */
-    setenv("LINES", "24", 1);
+    setenv("screen-#rows", "24", 1);
     auto_boot = 1;
 
     fd = open(PATH_CONFIG, O_RDONLY);
@@ -508,9 +508,6 @@ parse_cmd(void)
 		pager_open();
 		for (i = 0; devsw[i] != NULL; i++) {
 		    if (devsw[i]->dv_print != NULL) {
-			sprintf(line, "\n%s devices:\n", devsw[i]->dv_name);
-			if (pager_output(line))
-			    break;
 			if (devsw[i]->dv_print(1))
 			    break;
 		    } else {
@@ -616,11 +613,16 @@ probe_partition(void *arg, const char *partname,
 		table = ptable_open(&pa, part->end - part->start + 1,
 		    ppa->secsz, parttblread);
 		if (table != NULL) {
-			ret = ptable_iterate(table, &pa, probe_partition);
+			if (ptable_gettype(table) == PTABLE_VTOC8) {
+				ret = ptable_iterate(table, &pa,
+				    probe_partition);
+				ptable_close(table);
+				close(pa.fd);
+				return (ret);
+			}
 			ptable_close(table);
 		}
 		close(pa.fd);
-		return (ret);
 	}
 
 	if (ppa->offset + part->start == start_sector) {
@@ -709,6 +711,8 @@ i386_zfs_probe(void)
 	for (unit = 0; unit < MAXBDDEV; unit++) {
 		if (bd_unit2bios(unit) == -1)
 			break;
+		if (bd_unit2bios(unit) < 0x80)
+			continue;
 
 		sprintf(devname, "disk%d:", unit);
 		/* If this is not boot disk, use generic probe. */
@@ -717,4 +721,14 @@ i386_zfs_probe(void)
 		else
 			probe_disk(devname);
 	}
+}
+
+uint64_t
+ldi_get_size(void *priv)
+{
+	int fd = (uintptr_t) priv;
+	uint64_t size;
+
+	ioctl(fd, DIOCGMEDIASIZE, &size);
+	return (size);
 }
