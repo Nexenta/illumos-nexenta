@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -152,8 +152,6 @@ smb2_invalid_cmd(smb_request_t *sr)
 	return (SDRC_DROP_VC);
 }
 
-int smb2_cancel_in_reader = 1;
-
 /*
  * This is the SMB2 handler for new smb requests, called from
  * smb_session_reader after SMB negotiate is done.  For most SMB2
@@ -171,33 +169,59 @@ int smb2_cancel_in_reader = 1;
 int
 smb2sr_newrq(smb_request_t *sr)
 {
+	struct mbuf_chain *mbc = &sr->command;
 	uint32_t magic;
+	int rc, skip;
 
-	magic = LE_IN32(sr->sr_request_buf);
-	if (magic != SMB2_PROTOCOL_MAGIC) {
-		smb_request_free(sr);
-		/* will drop the connection */
-		return (EPROTO);
-	}
+	if (smb_mbc_peek(mbc, 0, "l", &magic) != 0)
+		goto drop;
+
+	if (magic != SMB2_PROTOCOL_MAGIC)
+		goto drop;
 
 	/*
-	 * Execute Cancel requests immediately, (here in the
-	 * reader thread) so they won't wait for any other
-	 * commands we might already have in the task queue.
-	 * Cancel also skips signature verification and
-	 * does not consume a sequence number.
-	 * [MS-SMB2] 3.2.4.24 Cancellation...
+	 * Walk the SMB2 commands in this compound message and
+	 * update the scoreboard to record that we've received
+	 * the new message IDs in these commands.
 	 */
-	if (smb2_cancel_in_reader != 0) {
-		uint16_t command;
+	for (;;) {
+		if (smb2_decode_header(sr) != 0)
+			goto drop;
 
-		command = LE_IN16((uint8_t *)sr->sr_request_buf + 12);
-		if (command == SMB2_CANCEL) {
-			int rc = smb2_newrq_cancel(sr);
+		/*
+		 * Cancel requests are special:  They refer to
+		 * an earlier message ID (or an async. ID),
+		 * never a new ID, and are never compounded.
+		 * This is intentionally not "goto drop"
+		 * because rc may be zero (success).
+		 */
+		if (sr->smb2_cmd_code == SMB2_CANCEL) {
+			rc = smb2_newrq_cancel(sr);
 			smb_request_free(sr);
 			return (rc);
 		}
+
+		if ((rc = smb2_scoreboard_cmd_new(sr)) != 0) {
+			/* Logging was done in the above call. */
+			goto drop;
+		}
+
+		/* Normal loop exit on next == zero */
+		if (sr->smb2_next_command == 0)
+			break;
+
+		/* Abundance of caution... */
+		if (sr->smb2_next_command < SMB2_HDR_SIZE)
+			goto drop;
+
+		/* Advance to the next header. */
+		skip = sr->smb2_next_command - SMB2_HDR_SIZE;
+		if (MBC_ROOM_FOR(mbc, skip) == 0)
+			goto drop;
+		mbc->chain_offset += skip;
 	}
+	/* Rewind back to the top. */
+	mbc->chain_offset = 0;
 
 	/*
 	 * Submit the request to the task queue, which calls
@@ -208,8 +232,11 @@ smb2sr_newrq(smb_request_t *sr)
 	smb_srqueue_waitq_enter(sr->session->s_srqueue);
 	(void) taskq_dispatch(sr->sr_server->sv_worker_pool,
 	    smb2_tq_work, sr, TQ_SLEEP);
-
 	return (0);
+
+drop:
+	smb_request_free(sr);
+	return (-1);
 }
 
 static void
@@ -319,17 +346,18 @@ cmd_start:
 	}
 
 	/*
-	 * Update the "scoreboard" for this new command.
-	 * If rc != 0, it's a replay attempt.  Drop them.
-	 * If we missed a cancel, this discovers that and
-	 * sets the SR state to cancelled (not sr_status).
+	 * Update the "scoreboard" for this new command, and
+	 * check whether this message ID was marked cancelled.
 	 */
-	if ((rc = smb2_scoreboard_cmd_start(sr)) != 0) {
-		cmn_err(CE_WARN, "clnt %s SMB2 replay MID=0x%llx",
-		    session->ip_addr_str,
-		    (u_longlong_t)sr->smb2_messageid);
-		disconnect = B_TRUE;
-		goto cleanup;
+	if (smb2_scoreboard_cmd_start(sr)) {
+		/*
+		 * This command was cancelled.  Update sr_state
+		 * and continue.  See notes above at cmd_start.
+		 */
+		mutex_enter(&sr->sr_mutex);
+		if (sr->sr_state == SMB_REQ_STATE_ACTIVE)
+			sr->sr_state = SMB_REQ_STATE_CANCELLED;
+		mutex_exit(&sr->sr_mutex);
 	}
 
 	/*
@@ -706,7 +734,11 @@ cmd_done:
 	atomic_add_64(&sds->sdt_txb,
 	    (int64_t)(sr->reply.chain_offset - sr->smb2_reply_hdr));
 
-	smb2_scoreboard_cmd_done(sr);
+	/*
+	 * Mark this command "done" in the scoreboard, but keep track
+	 * of whether there's async work still to happen (for debug)
+	 */
+	smb2_scoreboard_cmd_done(sr, (sr->sr_async_req != NULL));
 
 	switch (rc) {
 	case SDRC_SUCCESS:

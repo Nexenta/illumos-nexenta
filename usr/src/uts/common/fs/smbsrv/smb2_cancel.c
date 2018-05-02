@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -29,17 +29,11 @@ static void smb2_cancel_sync(smb_request_t *);
  * Note that Cancel does NOT get a response.
  *
  * Any non-zero return causes disconnect.
+ * SMB2 header is already decoded.
  */
 int
 smb2_newrq_cancel(smb_request_t *sr)
 {
-	int rc;
-
-	/*
-	 * Decode the header
-	 */
-	if ((rc = smb2_decode_header(sr)) != 0)
-		return (rc);
 
 	/*
 	 * If we get SMB2 cancel as part of a compound,
@@ -92,7 +86,7 @@ smb2_cancel_sync(smb_request_t *sr)
 	int cnt = 0;
 	boolean_t was_active;
 
-	was_active = smb2_scoreboard_cancel(sr);
+	was_active = smb2_scoreboard_cmd_cancel(sr);
 
 	/*
 	 * Could optimize and skip the cmd list walk when the

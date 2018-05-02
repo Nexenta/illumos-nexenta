@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB2_KPROTO_H_
@@ -97,9 +97,10 @@ void smb2sr_finish_async(smb_request_t *);
 void smb2_scoreboard_init(smb_session_t *);
 void smb2_scoreboard_fini(smb_session_t *);
 
-int smb2_scoreboard_cmd_start(smb_request_t *);
-void smb2_scoreboard_cmd_done(smb_request_t *);
-boolean_t smb2_scoreboard_cancel(smb_request_t *);
+int smb2_scoreboard_cmd_new(smb_request_t *);
+boolean_t  smb2_scoreboard_cmd_start(smb_request_t *);
+void smb2_scoreboard_cmd_done(smb_request_t *, boolean_t);
+boolean_t smb2_scoreboard_cmd_cancel(smb_request_t *);
 
 #ifdef	__cplusplus
 }
