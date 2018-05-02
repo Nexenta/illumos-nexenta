@@ -27,7 +27,7 @@
 # Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"%Z%%M%	%I%	%E% SMI"
+# Copyright 2018 Nexenta Systems Inc. 
 
 . /lib/svc/share/smf_include.sh
 . /lib/svc/share/net_include.sh
@@ -54,7 +54,12 @@ LD_LIBRARY_PATH=/lib; export LD_LIBRARY_PATH
 smf_netstrategy
 
 case "$_INIT_NET_STRATEGY" in
-	"dhcp") hostname=`/sbin/dhcpinfo Hostname` ;;
+	"dhcp") if [ -s /etc/nodename ]; then
+			hostname=`shcat /etc/nodename 2>/dev/null`
+		else
+	       		hostname=`/sbin/dhcpinfo Hostname`
+		fi
+		       	;;
 	"rarp") hostname=`/sbin/hostconfig -h -p bootparams`
 		trap 'intr=1' 2 3
 		while [ -z "$hostname" -a ! -f /etc/.UNCONFIGURED -a \
