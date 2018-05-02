@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
@@ -199,7 +199,7 @@ volatile int	stmf_default_task_timeout = 75;
 volatile int	stmf_allow_modunload = 0;
 
 volatile int stmf_max_nworkers = 1024;
-volatile int stmf_min_nworkers = 32;
+volatile int stmf_min_nworkers = 512;
 volatile int stmf_worker_scale_down_delay = 3600;
 uint8_t stmf_enable_scaledown = 0;
 
@@ -4957,18 +4957,6 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 		mutex_enter(&w->worker_lock);
 	}
 
-	/*
-	 * if this command is a write_same or unmap just use worker 0
-	 * to limit starvation.
-	 */
-	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
-	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
-	    task->task_cdb[0] == SCMD_UNMAP) {
-		mutex_exit(&w->worker_lock);
-		w = &stmf_workers[0];
-		mutex_enter(&w->worker_lock);
-	}
-
 	itask->itask_worker = w;
 
 	/*
@@ -6897,6 +6885,9 @@ stmf_worker_mgmt()
 	}
 	/* Check if we are trying to decrease the # of workers */
 	for (i = (stmf_nworkers_cur - 1); i >= stmf_nworkers_needed; i--) {
+		if (stmf_enable_scaledown == 0)
+			break;
+
 		if ((stmf_workers[i].worker_flags & STMF_WORKER_STARTED) == 0) {
 			stmf_nworkers_cur--;
 			/*
