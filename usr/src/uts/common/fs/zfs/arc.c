@@ -484,8 +484,13 @@ typedef struct arc_stats {
 	 */
 	kstat_named_t arcstat_mutex_miss;
 	/*
+	 * Number of buffers skipped when updating the access state due to the
+	 * header having already been released after acquiring the hash lock.
+	 */
+	kstat_named_t arcstat_access_skip;
+	/*
 	 * Number of buffers skipped because they have I/O in progress, are
-	 * indrect prefetch buffers that have not lived long enough, or are
+	 * indirect prefetch buffers that have not lived long enough, or are
 	 * not from the spa we're trying to evict from.
 	 */
 	kstat_named_t arcstat_evict_skip;
@@ -771,6 +776,7 @@ static arc_stats_t arc_stats = {
 	{ "mfu_ghost_hits",		KSTAT_DATA_UINT64 },
 	{ "deleted",			KSTAT_DATA_UINT64 },
 	{ "mutex_miss",			KSTAT_DATA_UINT64 },
+	{ "access_skip",		KSTAT_DATA_UINT64 },
 	{ "evict_skip",			KSTAT_DATA_UINT64 },
 	{ "evict_not_enough",		KSTAT_DATA_UINT64 },
 	{ "evict_l2_cached",		KSTAT_DATA_UINT64 },
@@ -5276,6 +5282,65 @@ arc_access(arc_buf_hdr_t *hdr, kmutex_t *hash_lock)
 		arc_change_state(arc_mfu, hdr, hash_lock);
 	} else {
 		ASSERT(!"invalid arc state");
+	}
+}
+
+/*
+ * This routine is called by dbuf_hold() to update the arc_access() state
+ * which otherwise would be skipped for entries in the dbuf cache.
+ */
+void
+arc_buf_access(arc_buf_t *buf)
+{
+	mutex_enter(&buf->b_evict_lock);
+	arc_buf_hdr_t *hdr = buf->b_hdr;
+
+	/*
+	 * Avoid taking the hash_lock when possible as an optimization.
+	 * The header must be checked again under the hash_lock in order
+	 * to handle the case where it is concurrently being released.
+	 */
+	if (hdr->b_l1hdr.b_state == arc_anon || HDR_EMPTY(hdr)) {
+		mutex_exit(&buf->b_evict_lock);
+		return;
+	}
+
+	kmutex_t *hash_lock = HDR_LOCK(hdr);
+	mutex_enter(hash_lock);
+
+	if (hdr->b_l1hdr.b_state == arc_anon || HDR_EMPTY(hdr)) {
+		mutex_exit(hash_lock);
+		mutex_exit(&buf->b_evict_lock);
+		ARCSTAT_BUMP(arcstat_access_skip);
+		return;
+	}
+
+	mutex_exit(&buf->b_evict_lock);
+
+	ASSERT(hdr->b_l1hdr.b_state == arc_mru ||
+	    hdr->b_l1hdr.b_state == arc_mfu);
+
+	DTRACE_PROBE1(arc__hit, arc_buf_hdr_t *, hdr);
+	arc_access(hdr, hash_lock);
+	mutex_exit(hash_lock);
+
+	ARCSTAT_BUMP(arcstat_hits);
+	/*
+	 * Upstream used the ARCSTAT_CONDSTAT macro here, but they changed
+	 * the argument format for that macro, which would requie that we
+	 * go and modify all other uses of it. So it's easier to just expand
+	 * this one invocation of the macro to do the right thing.
+	 */
+	if (!HDR_PREFETCH(hdr)) {
+		if (!HDR_ISTYPE_METADATA(hdr))
+			ARCSTAT_BUMP(arcstat_demand_data_hits);
+		else
+			ARCSTAT_BUMP(arcstat_demand_metadata_hits);
+	} else {
+		if (!HDR_ISTYPE_METADATA(hdr))
+			ARCSTAT_BUMP(arcstat_prefetch_data_hits);
+		else
+			ARCSTAT_BUMP(arcstat_prefetch_metadata_hits);
 	}
 }
 
