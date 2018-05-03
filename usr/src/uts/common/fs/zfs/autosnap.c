@@ -19,6 +19,7 @@
 #include <sys/dsl_dataset.h>
 #include <sys/dsl_dir.h>
 #include <sys/dsl_destroy.h>
+#include <sys/zfs_ioctl.h>
 #include <sys/unique.h>
 #include <sys/ctype.h>
 
@@ -1314,6 +1315,7 @@ autosnap_destroyer_thread(void *void_spa)
 	mutex_enter(&autosnap->autosnap_lock);
 	while (!autosnap->need_stop) {
 		nvlist_t *nvl = NULL, *errlist;
+		nvpair_t *nvp = NULL;
 		int err;
 
 		if (!list_is_empty(&error_destroy) &&
@@ -1349,6 +1351,15 @@ autosnap_destroyer_thread(void *void_spa)
 			mutex_enter(&autosnap->autosnap_lock);
 			continue;
 		}
+
+#ifdef _KERNEL
+		/*
+		 * Mounted snapshots (.zfs/snapshots) cannot be destroyed,
+		 * so we unmount them before pass to the destroyer
+		 */
+		while ((nvp = nvlist_next_nvpair(nvl, nvp)) != NULL)
+			zfs_unmount_snap(nvpair_name(nvp));
+#endif
 
 		errlist = fnvlist_alloc();
 		err = dsl_destroy_snapshots_nvl(nvl, B_TRUE, errlist);
