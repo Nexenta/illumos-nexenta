@@ -18,11 +18,15 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
 
 /*
  * EHCI Host Controller Driver (EHCI)
@@ -695,15 +699,6 @@ ehci_intr(caddr_t arg1, caddr_t arg2)
 	USB_DPRINTF_L3(PRINT_MASK_INTR, ehcip->ehci_log_hdl,
 	    "Interrupt status 0x%x", intr);
 
-	/*
-	 * If necessary broadcast that an interrupt has occured.  This
-	 * is only necessary during controller init.
-	 */
-	if (ehcip->ehci_flags & EHCI_CV_INTR) {
-		ehcip->ehci_flags &= ~EHCI_CV_INTR;
-		cv_broadcast(&ehcip->ehci_async_schedule_advance_cv);
-	}
-
 	/* Check for Frame List Rollover */
 	if (intr & EHCI_INTR_FRAME_LIST_ROLLOVER) {
 		USB_DPRINTF_L3(PRINT_MASK_INTR, ehcip->ehci_log_hdl,
@@ -726,13 +721,6 @@ ehci_intr(caddr_t arg1, caddr_t arg2)
 		/* Disable async list advance interrupt */
 		Set_OpReg(ehci_interrupt,
 		    (Get_OpReg(ehci_interrupt) & ~EHCI_INTR_ASYNC_ADVANCE));
-
-		/*
-		 * Call cv_broadcast on every this interrupt to wakeup
-		 * all the threads that are waiting the async list advance
-		 * event.
-		 */
-		cv_broadcast(&ehcip->ehci_async_schedule_advance_cv);
 	}
 
 	/* Always process completed itds */

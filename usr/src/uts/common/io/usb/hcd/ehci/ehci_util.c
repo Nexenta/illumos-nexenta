@@ -24,6 +24,10 @@
  */
 
 /*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
+/*
  * EHCI Host Controller Driver (EHCI)
  *
  * The EHCI driver is a software driver which interfaces to the Universal
@@ -745,7 +749,7 @@ ehci_register_intrs_and_init_mutex(ehci_state_t	*ehcip)
 		(void) thread_create(NULL, 0, ehci_poll_intr, ehcip, 0, &p0,
 		    TS_RUN, maxclsyspri);
 
-		goto skip_intr;
+		return (DDI_SUCCESS);
 	}
 
 #if defined(__x86)
@@ -818,11 +822,6 @@ ehci_register_intrs_and_init_mutex(ehci_state_t	*ehcip)
 		ehcip->ehci_intr_type = DDI_INTR_TYPE_FIXED;
 		ehcip->ehci_flags |= EHCI_INTR;
 	}
-
-skip_intr:
-	/* Create prototype for advance on async schedule */
-	cv_init(&ehcip->ehci_async_schedule_advance_cv,
-	    NULL, CV_DRIVER, NULL);
 
 	return (DDI_SUCCESS);
 }
@@ -1174,58 +1173,6 @@ ehci_init_workaround(ehci_state_t	*ehcip)
 	return (DDI_SUCCESS);
 }
 
-
-/*
- * ehci_init_check_status
- *
- * Check if EHCI host controller is running
- */
-int
-ehci_init_check_status(ehci_state_t	*ehcip)
-{
-	clock_t			sof_time_wait;
-
-	/*
-	 * Get the number of clock ticks to wait.
-	 * This is based on the maximum time it takes for a frame list rollover
-	 * and maximum time wait for SOFs to begin.
-	 */
-	sof_time_wait = drv_usectohz((EHCI_NUM_PERIODIC_FRAME_LISTS * 1000) +
-	    EHCI_SOF_TIMEWAIT);
-
-	/* Tell the ISR to broadcast ehci_async_schedule_advance_cv */
-	ehcip->ehci_flags |= EHCI_CV_INTR;
-
-	/* We need to add a delay to allow the chip time to start running */
-	(void) cv_reltimedwait(&ehcip->ehci_async_schedule_advance_cv,
-	    &ehcip->ehci_int_mutex, sof_time_wait, TR_CLOCK_TICK);
-
-	/*
-	 * Check EHCI host controller is running, otherwise return failure.
-	 */
-	if ((ehcip->ehci_flags & EHCI_CV_INTR) ||
-	    (Get_OpReg(ehci_status) & EHCI_STS_HOST_CTRL_HALTED)) {
-
-		USB_DPRINTF_L0(PRINT_MASK_ATTA, ehcip->ehci_log_hdl,
-		    "No SOF interrupts have been received, this USB EHCI host"
-		    "controller is unusable");
-
-		/*
-		 * Route all Root hub ports to Classic host
-		 * controller, in case this is an unusable ALI M5273
-		 * EHCI controller.
-		 */
-		if (ehcip->ehci_vendor_id == PCI_VENDOR_ALI) {
-			Set_OpReg(ehci_config_flag, EHCI_CONFIG_FLAG_CLASSIC);
-		}
-
-		return (DDI_FAILURE);
-	}
-
-	return (DDI_SUCCESS);
-}
-
-
 /*
  * ehci_init_ctlr:
  *
@@ -1324,7 +1271,6 @@ ehci_init_ctlr(ehci_state_t	*ehcip,
 	ASSERT(Get_OpReg(ehci_command) & EHCI_CMD_HOST_CTRL_RUN);
 
 	if (init_type == EHCI_NORMAL_INITIALIZATION) {
-
 		if (ehci_init_workaround(ehcip) != DDI_SUCCESS) {
 
 			/* Set host controller soft state to error */
@@ -1332,17 +1278,6 @@ ehci_init_ctlr(ehci_state_t	*ehcip,
 
 			return (DDI_FAILURE);
 		}
-
-		if (ehci_init_check_status(ehcip) != DDI_SUCCESS) {
-
-			/* Set host controller soft state to error */
-			ehcip->ehci_hc_soft_state = EHCI_CTLR_ERROR_STATE;
-
-			return (DDI_FAILURE);
-		}
-
-		USB_DPRINTF_L4(PRINT_MASK_ATTA, ehcip->ehci_log_hdl,
-		    "ehci_init_ctlr: SOF's have started");
 	}
 
 	/* Route all Root hub ports to EHCI host controller */
@@ -1931,9 +1866,6 @@ ehci_cleanup(ehci_state_t	*ehcip)
 	if (flags & EHCI_INTR) {
 		/* Destroy the mutex */
 		mutex_destroy(&ehcip->ehci_int_mutex);
-
-		/* Destroy the async schedule advance condition variable */
-		cv_destroy(&ehcip->ehci_async_schedule_advance_cv);
 	}
 
 	/* clean up kstat structs */

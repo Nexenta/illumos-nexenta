@@ -18,8 +18,13 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
+ */
+
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #ifndef _SYS_USB_EHCID_H
@@ -130,9 +135,6 @@ typedef struct ehci_state {
 	ddi_dma_cookie_t	ehci_itd_pool_cookie;	/* DMA cookie */
 	ddi_dma_handle_t	ehci_itd_pool_dma_handle;	/* DMA hndle */
 	ddi_acc_handle_t	ehci_itd_pool_mem_handle;	/* Mem hndle */
-
-	/* Condition variable for advance on Asynchronous Schedule */
-	kcondvar_t		ehci_async_schedule_advance_cv;
 
 	/* Head of Asynchronous Schedule List */
 	ehci_qh_t		*ehci_head_of_async_sched_list;
@@ -1027,13 +1029,6 @@ typedef struct setup_pkt {
 #define	EHCI_INTR		0x04	/* Interrupt handler registered */
 #define	EHCI_USBAREG		0x08	/* USBA registered */
 #define	EHCI_RHREG		0x10	/* Root hub driver loaded */
-
-/*
- * This variable is used in the EHCI_FLAGS to tell the ISR to broadcase
- * the ehci_async_schedule_advance_cv when an intr occurs.  It is used to
- * make sure that EHCI is receiving interrupts.
- */
-#define	EHCI_CV_INTR		0x20	/* Ask INTR to broadcast cv */
 
 #define	EHCI_UNIT(dev)	(getminor((dev)) & ~HUBD_IS_ROOT_HUB)
 
