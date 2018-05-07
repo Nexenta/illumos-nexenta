@@ -55,6 +55,7 @@ struct console nullconsole = {
 	.c_out = nullc_putchar,
 	.c_in = nullc_getchar,
 	.c_ready = nullc_ischar,
+	.c_ioctl = NULL,
 	.c_private = NULL
 };
 
@@ -65,26 +66,24 @@ nullc_probe(struct console *cp)
 }
 
 static int
-nullc_init(struct console *cp __attribute((unused)),
-    int arg __attribute((unused)))
+nullc_init(struct console *cp __unused, int arg __unused)
 {
 	return(0);
 }
 
 static void
-nullc_putchar(struct console *cp __attribute((unused)),
-    int c __attribute((unused)))
+nullc_putchar(struct console *cp __unused, int c __unused)
 {
 }
 
 static int
-nullc_getchar(struct console *cp __attribute((unused)))
+nullc_getchar(struct console *cp __unused)
 {
 	return(-1);
 }
 
 static int
-nullc_ischar(struct console *cp __attribute((unused)))
+nullc_ischar(struct console *cp __unused)
 {
 	return(0);
 }

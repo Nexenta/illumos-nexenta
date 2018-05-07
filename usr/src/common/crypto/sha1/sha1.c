@@ -32,6 +32,10 @@
  * and appreciated.
  */
 
+#if defined(_STANDALONE)
+#include <sys/cdefs.h>
+#define _RESTRICT_KYWD	restrict
+#else
 #if !defined(_KERNEL) && !defined(_BOOT)
 #include <stdint.h>
 #include <strings.h>
@@ -39,6 +43,7 @@
 #include <errno.h>
 #include <sys/systeminfo.h>
 #endif  /* !_KERNEL && !_BOOT */
+#endif	/* _STANDALONE */
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -47,9 +52,19 @@
 #include <sys/sha1.h>
 #include <sys/sha1_consts.h>
 
+#if defined(_STANDALONE)
+#include <sys/endian.h>
+#define	HAVE_HTONL
+#if _BYTE_ORDER == _LITTLE_ENDIAN
+#undef _BIG_ENDIAN
+#else
+#undef _LITTLE_ENDIAN
+#endif
+#else
 #ifdef _LITTLE_ENDIAN
 #include <sys/byteorder.h>
 #define	HAVE_HTONL
+#endif
 #endif
 
 #ifdef	_BOOT
@@ -68,7 +83,7 @@ static void Encode(uint8_t *, const uint32_t *, size_t);
 static void SHA1Transform(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
     SHA1_CTX *, const uint8_t *);
 
-#elif	defined(__amd64)
+#elif	defined(__amd64) && !defined(_STANDALONE)
 
 #define	SHA1_TRANSFORM(ctx, in) sha1_block_data_order((ctx), (in), 1)
 #define	SHA1_TRANSFORM_BLOCKS(ctx, in, num) sha1_block_data_order((ctx), \
@@ -334,7 +349,7 @@ SHA1Update(SHA1_CTX *ctx, const void *inptr, size_t input_len)
 {
 	uint32_t i, buf_index, buf_len;
 	const uint8_t *input = inptr;
-#if defined(__amd64)
+#if defined(__amd64) && !defined(_STANDALONE)
 	uint32_t	block_count;
 #endif	/* __amd64 */
 
@@ -373,7 +388,7 @@ SHA1Update(SHA1_CTX *ctx, const void *inptr, size_t input_len)
 			i = buf_len;
 		}
 
-#if !defined(__amd64)
+#if !defined(__amd64) || defined(_STANDALONE)
 		for (; i + 63 < input_len; i += 64)
 			SHA1_TRANSFORM(ctx, &input[i]);
 #else
@@ -439,7 +454,7 @@ SHA1Final(void *digest, SHA1_CTX *ctx)
 }
 
 
-#if !defined(__amd64)
+#if !defined(__amd64) || defined(_STANDALONE)
 
 typedef uint32_t sha1word;
 

@@ -36,8 +36,8 @@ REL1=	0x700
 ORG1=	0x7c00
 ORG2=	0x0
 
-CPPFLAGS=
-CFLAGS=	-nostdinc -DBOOTPROG=\"gptzfsboot\" \
+CPPFLAGS=	-nostdinc
+CFLAGS=	-DBOOTPROG=\"gptzfsboot\" \
 	-O1 \
 	-DGPT -DBOOT2 \
 	-DLOADER_MBR_SUPPORT -DLOADER_GPT_SUPPORT \
@@ -46,13 +46,13 @@ CFLAGS=	-nostdinc -DBOOTPROG=\"gptzfsboot\" \
 	-DSIOSPD=${BOOT_COMCONSOLE_SPEED} \
 	-I../../../../include \
 	-I../../../../lib/libstand \
+	-I../../../../lib/libz \
 	-I../../common \
 	-I../common \
 	-I../../zfs \
 	-I../../../cddl/boot/zfs \
 	-I../btx/lib -I. \
 	-I../../.. \
-	-I../../../sys \
 	-I../libi386 \
 	-Wall -Waggregate-return -Wbad-function-cast -Wcast-align \
 	-Wmissing-declarations -Wmissing-prototypes -Wnested-externs \
@@ -64,10 +64,12 @@ CFLAGS +=	-fno-reorder-functions
 
 LD_FLAGS=-static -N --gc-sections
 CCASFLAGS=-Wa,--divide
-LIBSTAND=	../../libstand/i386/libstand.a
-LIBZFSBOOT=	../../zfs/i386/libzfsboot.a
+LIBSTAND=	../../libstand/$(MACH)/libstand.a
+LIBZFSBOOT=	../../zfs/$(MACH)/libzfsboot.a
 
 include ../Makefile.inc
+
+CPPFLAGS +=	-I$(SRC)/uts/common
 
 .PARALLEL:
 
@@ -77,7 +79,7 @@ install: all $(ROOTBOOTPROG)
 
 OBJS =	multiboot.o zfsboot.o sio.o cons.o panic.o devopen.o \
 	part.o biosmem.o smbios.o biosdisk.o devicename.o disk.o bcache.o \
-	time.o crc32.o
+	time.o
 
 CLEANFILES=	gptzfsboot $(OBJS)
 
@@ -134,6 +136,9 @@ devicename.o: ../libi386/devicename.c
 
 time.o: ../libi386/time.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ ../libi386/$*.c
+
+multiboot.o: ../../common/multiboot.S
+	$(CC) $(CFLAGS) $(CCASFLAGS) -c -o $@ ../../common/$*.S
 
 .S.o:
 	$(CC) $(CFLAGS) $(CCASFLAGS) -c -o $@ $<

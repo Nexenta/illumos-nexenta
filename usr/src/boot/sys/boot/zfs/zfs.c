@@ -1,4 +1,4 @@
-/*-
+/*
  * Copyright (c) 2007 Doug Rabson
  * All rights reserved.
  *
@@ -22,8 +22,6 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *	$FreeBSD$
  */
 
 #include <sys/cdefs.h>
@@ -52,7 +50,6 @@
 #define		ZFS_BE_LAST	8
 
 static int	zfs_open(const char *path, struct open_file *f);
-static int	zfs_write(struct open_file *f, void *buf, size_t size, size_t *resid);
 static int	zfs_close(struct open_file *f);
 static int	zfs_read(struct open_file *f, void *buf, size_t size, size_t *resid);
 static off_t	zfs_seek(struct open_file *f, off_t offset, int where);
@@ -66,7 +63,7 @@ struct fs_ops zfs_fsops = {
 	zfs_open,
 	zfs_close,
 	zfs_read,
-	zfs_write,
+	null_write,
 	zfs_seek,
 	zfs_stat,
 	zfs_readdir
@@ -170,16 +167,6 @@ zfs_read(struct open_file *f, void *start, size_t size, size_t *resid	/* out */)
 		*resid = size - n;
 
 	return (0);
-}
-
-/*
- * Don't be silly - the bootstrap has no business writing anything.
- */
-static int
-zfs_write(struct open_file *f, void *start, size_t size, size_t *resid	/* out */)
-{
-
-	return (EROFS);
 }
 
 static off_t
@@ -369,17 +356,61 @@ zfs_readdir(struct open_file *f, struct dirent *d)
 }
 
 static int
-vdev_read(vdev_t *vdev, void *priv, off_t offset, void *buf, size_t size)
+vdev_read(vdev_t *vdev, void *priv, off_t offset, void *buf, size_t bytes)
 {
-	int fd;
+	int fd, ret;
+	size_t res, size, remainder, rb_size, blksz;
+	unsigned secsz;
+	off_t off;
+	char *bouncebuf, *rb_buf;
 
 	fd = (uintptr_t) priv;
-	lseek(fd, offset, SEEK_SET);
-	if (read(fd, buf, size) == size) {
-		return 0;
-	} else {
-		return (EIO);
+	bouncebuf = NULL;
+
+	ret = ioctl(fd, DIOCGSECTORSIZE, &secsz);
+	if (ret != 0)
+		return (ret);
+
+	off = offset / secsz;
+	remainder = offset % secsz;
+	if (lseek(fd, off * secsz, SEEK_SET) == -1)
+		return (errno);
+
+	rb_buf = buf;
+	rb_size = bytes;
+	size = roundup2(bytes + remainder, secsz);
+	blksz = size;
+	if (remainder != 0 || size != bytes) {
+		bouncebuf = zfs_alloc(secsz);
+		if (bouncebuf == NULL) {
+			printf("vdev_read: out of memory\n");
+			return (ENOMEM);
+		}
+		rb_buf = bouncebuf;
+		blksz = rb_size - remainder;
 	}
+
+	while (bytes > 0) {
+		res = read(fd, rb_buf, rb_size);
+		if (res != rb_size) {
+			ret = EIO;
+			goto error;
+		}
+		if (bytes < blksz)
+			blksz = bytes;
+		if (bouncebuf != NULL)
+			memcpy(buf, rb_buf + remainder, blksz);
+		buf = (void *)((uintptr_t)buf + blksz);
+		bytes -= blksz;
+		remainder = 0;
+		blksz = rb_size;
+	}
+
+	ret = 0;
+error:
+	if (bouncebuf != NULL)
+		zfs_free(bouncebuf, secsz);
+	return (ret);
 }
 
 static int
@@ -455,7 +486,7 @@ zfs_probe_partition(void *arg, const char *partname,
 	case PART_VTOC_SWAP:
 		return (ret);
 	default:
-		break;;
+		break;
 	}
 	ppa = (struct zfs_probe_args *)arg;
 	strncpy(devname, ppa->devname, strlen(ppa->devname) - 1);
@@ -474,7 +505,10 @@ zfs_probe_partition(void *arg, const char *partname,
 		table = ptable_open(&pa, part->end - part->start + 1,
 		    ppa->secsz, zfs_diskread);
 		if (table != NULL) {
-			ptable_iterate(table, &pa, zfs_probe_partition);
+			enum ptable_type pt = ptable_gettype(table);
+
+			if (pt == PTABLE_VTOC8 || pt == PTABLE_VTOC)
+				ptable_iterate(table, &pa, zfs_probe_partition);
 			ptable_close(table);
 		}
 	}

@@ -43,7 +43,17 @@
  */
 #ifndef	SKEIN_NEED_SWAP		/* compile-time "override" for endianness? */
 
+#ifndef	_STANDALONE
 #include <sys/isa_defs.h>	/* get endianness selection */
+#else
+#include <sys/param.h>		/* get endianness selection */
+#define	_ALIGNMENT_REQUIRED	1
+#if (_BYTE_ORDER == _LITTLE_ENDIAN)
+#undef _BIG_ENDIAN
+#else
+#undef _LITTLE_ENDIAN
+#endif
+#endif
 
 #define	PLATFORM_MUST_ALIGN	_ALIGNMENT_REQUIRED
 #if	defined(_BIG_ENDIAN)

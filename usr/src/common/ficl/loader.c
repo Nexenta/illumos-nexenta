@@ -31,7 +31,7 @@
  * Additional FICL words designed for FreeBSD's loader
  */
 
-#ifndef STAND
+#ifndef _STANDALONE
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -43,17 +43,15 @@
 #include <termios.h>
 #else
 #include <stand.h>
-#ifdef __i386__
-#include <machine/cpufunc.h>
-#endif
 #include "bootstrap.h"
 #endif
-#ifdef STAND
+#ifdef _STANDALONE
 #include <uuid.h>
 #else
 #include <uuid/uuid.h>
 #endif
 #include <string.h>
+#include <gfx_fb.h>
 #include "ficl.h"
 
 /*
@@ -71,6 +69,111 @@
  *		uuid-to-string ( addr' -- addr n | -1 )
  *		.#	    ( value -- )
  */
+
+void
+ficl_fb_putimage(ficlVm *pVM)
+{
+	char *namep, *name;
+	int names, ret = 0;
+	png_t png;
+
+	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 2, 1);
+
+	names = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	namep = (char *)ficlStackPopPointer(ficlVmGetDataStack(pVM));
+
+	name = ficlMalloc(names+1);
+	if (!name)
+		ficlVmThrowError(pVM, "Error: out of memory");
+	strncpy(name, namep, names);
+	name[names] = '\0';
+
+	if ((ret = png_open(&png, name)) != PNG_NO_ERROR) {
+		ret = 0;
+		ficlFree(name);
+		ficlStackPushInteger(ficlVmGetDataStack(pVM), ret);
+		return;
+	}
+
+	if (gfx_fb_putimage(&png) == 0)
+		ret = -1;	/* success */
+	png_close(&png);
+	ficlFree(name);
+	ficlStackPushInteger(ficlVmGetDataStack(pVM), ret);
+}
+
+void
+ficl_fb_setpixel(ficlVm *pVM)
+{
+	uint32_t x, y;
+
+	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 2, 0);
+
+	y = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	gfx_fb_setpixel(x, y);
+}
+
+void
+ficl_fb_line(ficlVm *pVM)
+{
+	uint32_t x0, y0, x1, y1, wd;
+
+	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 5, 0);
+
+	wd = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y0 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x0 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	gfx_fb_line(x0, y0, x1, y1, wd);
+}
+
+void
+ficl_fb_bezier(ficlVm *pVM)
+{
+	uint32_t x0, y0, x1, y1, x2, y2, width;
+
+	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 7, 0);
+
+	width = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y2 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x2 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y0 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x0 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	gfx_fb_bezier(x0, y0, x1, y1, x2, y2, width);
+}
+
+void
+ficl_fb_drawrect(ficlVm *pVM)
+{
+	uint32_t x1, x2, y1, y2, fill;
+
+	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 5, 0);
+
+	fill = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y2 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x2 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	gfx_fb_drawrect(x1, y1, x2, y2, fill);
+}
+
+void
+ficl_term_drawrect(ficlVm *pVM)
+{
+	uint32_t x1, x2, y1, y2;
+
+	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 4, 0);
+
+	y2 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x2 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	y1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	x1 = ficlStackPopInteger(ficlVmGetDataStack(pVM));
+	gfx_term_drawrect(x1, y1, x2, y2);
+}
 
 void
 ficlSetenv(ficlVm *pVM)
@@ -186,7 +289,7 @@ ficlUnsetenv(ficlVm *pVM)
 void
 ficlCopyin(ficlVm *pVM)
 {
-#ifdef STAND
+#ifdef _STANDALONE
 	void*		src;
 	vm_offset_t	dest;
 	size_t		len;
@@ -194,7 +297,7 @@ ficlCopyin(ficlVm *pVM)
 
 	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 3, 0);
 
-#ifdef STAND
+#ifdef _STANDALONE
 	len = ficlStackPopInteger(ficlVmGetDataStack(pVM));
 	dest = ficlStackPopInteger(ficlVmGetDataStack(pVM));
 	src = ficlStackPopPointer(ficlVmGetDataStack(pVM));
@@ -209,7 +312,7 @@ ficlCopyin(ficlVm *pVM)
 void
 ficlCopyout(ficlVm *pVM)
 {
-#ifdef STAND
+#ifdef _STANDALONE
 	void*		dest;
 	vm_offset_t	src;
 	size_t		len;
@@ -217,7 +320,7 @@ ficlCopyout(ficlVm *pVM)
 
 	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 3, 0);
 
-#ifdef STAND
+#ifdef _STANDALONE
 	len = ficlStackPopInteger(ficlVmGetDataStack(pVM));
 	dest = ficlStackPopPointer(ficlVmGetDataStack(pVM));
 	src = ficlStackPopInteger(ficlVmGetDataStack(pVM));
@@ -232,7 +335,7 @@ ficlCopyout(ficlVm *pVM)
 void
 ficlFindfile(ficlVm *pVM)
 {
-#ifdef STAND
+#ifdef _STANDALONE
 	char	*name, *type;
 	char	*namep, *typep;
 	int	names, types;
@@ -241,7 +344,7 @@ ficlFindfile(ficlVm *pVM)
 
 	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 4, 1);
 
-#ifdef STAND
+#ifdef _STANDALONE
 	types = ficlStackPopInteger(ficlVmGetDataStack(pVM));
 	typep = (char *)ficlStackPopPointer(ficlVmGetDataStack(pVM));
 	names = ficlStackPopInteger(ficlVmGetDataStack(pVM));
@@ -300,7 +403,7 @@ ficlUuidFromString(ficlVm *pVM)
 	char	*uuid_ptr;
 	int	uuid_size;
 	uuid_t	*u;
-#ifdef STAND
+#ifdef _STANDALONE
 	uint32_t status;
 #else
 	int status;
@@ -318,7 +421,7 @@ ficlUuidFromString(ficlVm *pVM)
 	uuid[uuid_size] = '\0';
 
 	u = ficlMalloc(sizeof (*u));
-#ifdef STAND
+#ifdef _STANDALONE
 	uuid_from_string(uuid, u, &status);
 	ficlFree(uuid);
 	if (status != uuid_s_ok) {
@@ -341,14 +444,14 @@ ficlUuidToString(ficlVm *pVM)
 {
 	char	*uuid;
 	uuid_t	*u;
-#ifdef STAND
+#ifdef _STANDALONE
 	uint32_t status;
 #endif
 
 	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 1, 0);
 
 	u = ficlStackPopPointer(ficlVmGetDataStack(pVM));
-#ifdef STAND
+#ifdef _STANDALONE
 	uuid_to_string(u, &uuid, &status);
 	if (status == uuid_s_ok) {
 		ficlStackPushPointer(ficlVmGetDataStack(pVM), uuid);
@@ -476,7 +579,7 @@ pfopen(ficlVm *pVM)
 {
 	int mode, fd, count;
 	char *ptr, *name;
-#ifndef STAND
+#ifndef _STANDALONE
 	char *tmp;
 #endif
 
@@ -495,7 +598,7 @@ pfopen(ficlVm *pVM)
 	name = (char *)malloc(count+1);
 	bcopy(ptr, name, count);
 	name[count] = 0;
-#ifndef STAND
+#ifndef _STANDALONE
 	tmp = get_dev(name);
 	free(name);
 	name = tmp;
@@ -552,7 +655,7 @@ pfread(ficlVm *pVM)
  */
 static void pfopendir(ficlVm *pVM)
 {
-#ifndef STAND
+#ifndef _STANDALONE
 	DIR *dir;
 	char *tmp;
 #else
@@ -576,7 +679,7 @@ static void pfopendir(ficlVm *pVM)
 	name = (char *)malloc(count+1);
 	bcopy(ptr, name, count);
 	name[count] = 0;
-#ifndef STAND
+#ifndef _STANDALONE
 	tmp = get_dev(name);
 	free(name);
 	name = tmp;
@@ -602,7 +705,7 @@ static void pfopendir(ficlVm *pVM)
 	ficlStackPushInteger(ficlVmGetDataStack(pVM), flag);
 		return;
 #endif
-#ifndef STAND
+#ifndef _STANDALONE
 	dir = opendir(name);
 	if (dir == NULL) {
 		ficlStackPushInteger(ficlVmGetDataStack(pVM), flag);
@@ -622,7 +725,7 @@ static void pfopendir(ficlVm *pVM)
 static void
 pfreaddir(ficlVm *pVM)
 {
-#ifndef STAND
+#ifndef _STANDALONE
 	static DIR *dir = NULL;
 #else
 	int fd;
@@ -634,7 +737,7 @@ pfreaddir(ficlVm *pVM)
 	 * libstand readdir does not always return . nor .. so filter
 	 * them out to have consistent behaviour.
 	 */
-#ifndef STAND
+#ifndef _STANDALONE
 	dir = ficlStackPopPointer(ficlVmGetDataStack(pVM));
 	if (dir != NULL)
 		do {
@@ -675,7 +778,7 @@ pfreaddir(ficlVm *pVM)
 static void
 pfclosedir(ficlVm *pVM)
 {
-#ifndef STAND
+#ifndef _STANDALONE
 	DIR *dir;
 #else
 	int fd;
@@ -683,7 +786,7 @@ pfclosedir(ficlVm *pVM)
 
 	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 1, 0);
 
-#ifndef STAND
+#ifndef _STANDALONE
 	dir = ficlStackPopPointer(ficlVmGetDataStack(pVM)); /* get dir */
 	if (dir != NULL)
 		closedir(dir);
@@ -771,7 +874,7 @@ key(ficlVm *pVM)
 static void
 keyQuestion(ficlVm *pVM)
 {
-#ifndef STAND
+#ifndef _STANDALONE
 	char ch = -1;
 	struct termios oldt;
 	struct termios newt;
@@ -779,7 +882,7 @@ keyQuestion(ficlVm *pVM)
 
 	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 0, 1);
 
-#ifndef STAND
+#ifndef _STANDALONE
 	tcgetattr(STDIN_FILENO, &oldt);
 	newt = oldt;
 	newt.c_lflag &= ~(ICANON | ECHO);
@@ -828,7 +931,7 @@ ms(ficlVm *pVM)
 {
 	FICL_STACK_CHECK(ficlVmGetDataStack(pVM), 1, 0);
 
-#ifndef STAND
+#ifndef _STANDALONE
 	usleep(ficlStackPopUnsigned(ficlVmGetDataStack(pVM)) * 1000);
 #else
 	delay(ficlStackPopUnsigned(ficlVmGetDataStack(pVM)) * 1000);
@@ -852,42 +955,6 @@ fkey(ficlVm *pVM)
 	ficlStackPushInteger(ficlVmGetDataStack(pVM), i > 0 ? ch : -1);
 }
 
-
-#ifdef STAND
-#ifdef __i386__
-
-/*
- * outb ( port# c -- )
- * Store a byte to I/O port number port#
- */
-void
-ficlOutb(ficlVm *pVM)
-{
-	uint8_t c;
-	uint32_t port;
-
-	port = ficlStackPopUnsigned(ficlVmGetDataStack(pVM));
-	c = ficlStackPopInteger(ficlVmGetDataStack(pVM));
-	outb(port, c);
-}
-
-/*
- * inb ( port# -- c )
- * Fetch a byte from I/O port number port#
- */
-void
-ficlInb(ficlVm *pVM)
-{
-	uint8_t c;
-	uint32_t port;
-
-	port = ficlStackPopUnsigned(ficlVmGetDataStack(pVM));
-	c = inb(port);
-	ficlStackPushInteger(ficlVmGetDataStack(pVM), c);
-}
-#endif
-#endif
-
 /*
  * Retrieves free space remaining on the dictionary
  */
@@ -907,7 +974,7 @@ ficlSystemCompilePlatform(ficlSystem *pSys)
 {
 	ficlDictionary *dp = ficlSystemGetDictionary(pSys);
 	ficlDictionary *env = ficlSystemGetEnvironment(pSys);
-#ifdef STAND
+#ifdef _STANDALONE
 	ficlCompileFcn **fnpp;
 #endif
 
@@ -953,11 +1020,19 @@ ficlSystemCompilePlatform(ficlSystem *pSys)
 	    FICL_WORD_DEFAULT);
 	ficlDictionarySetPrimitive(dp, "uuid-to-string", ficlUuidToString,
 	    FICL_WORD_DEFAULT);
-#ifdef STAND
-#ifdef __i386__
-	ficlDictionarySetPrimitive(dp, "outb", ficlOutb, FICL_WORD_DEFAULT);
-	ficlDictionarySetPrimitive(dp, "inb", ficlInb, FICL_WORD_DEFAULT);
-#endif
+	ficlDictionarySetPrimitive(dp, "fb-setpixel", ficl_fb_setpixel,
+	    FICL_WORD_DEFAULT);
+	ficlDictionarySetPrimitive(dp, "fb-line", ficl_fb_line,
+	    FICL_WORD_DEFAULT);
+	ficlDictionarySetPrimitive(dp, "fb-bezier", ficl_fb_bezier,
+	    FICL_WORD_DEFAULT);
+	ficlDictionarySetPrimitive(dp, "fb-drawrect", ficl_fb_drawrect,
+	    FICL_WORD_DEFAULT);
+	ficlDictionarySetPrimitive(dp, "fb-putimage", ficl_fb_putimage,
+	    FICL_WORD_DEFAULT);
+	ficlDictionarySetPrimitive(dp, "term-drawrect", ficl_term_drawrect,
+	    FICL_WORD_DEFAULT);
+#ifdef _STANDALONE
 	/* Register words from linker set. */
 	SET_FOREACH(fnpp, Xficl_compile_set)
 		(*fnpp)(pSys);
