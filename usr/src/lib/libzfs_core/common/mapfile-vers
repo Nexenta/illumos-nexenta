@@ -46,6 +46,7 @@ SYMBOL_VERSION SUNWprivate {
 	lzc_pool_configs;
 	lzc_pool_get_props;
 	lzc_pool_stats;
+	lzc_set_props_mds;
 	lzc_snapshot_list_next;
 };
 

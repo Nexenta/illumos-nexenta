@@ -25,7 +25,7 @@
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
  * Copyright (c) 2013, Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /* Portions Copyright 2010 Robert Milkowski */
@@ -1037,6 +1037,7 @@ typedef enum zfs_ioc {
 	ZFS_IOC_CHECK_KRRP,
 	ZFS_IOC_BULK_LIST,
 	ZFS_IOC_POOL_TRIM,
+	ZFS_IOC_SET_PROPS_MDS,
 	ZFS_IOC_LAST
 } zfs_ioc_t;
 

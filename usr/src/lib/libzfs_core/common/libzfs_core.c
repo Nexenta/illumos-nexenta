@@ -20,7 +20,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2014 by Delphix. All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
@@ -1071,4 +1071,24 @@ lzc_bulk_list(const char *fsname, uint32_t count, uint32_t skip,
 	/* Zero error code indicates "success and continue" */
 	VERIFY0(error);
 	return (error);
+}
+
+/*
+ *
+ * The format of 'dss_props' nvlist as follows:
+ * <full dataset name A> -> {
+ *     <name of property A> -> <value>
+ *     <name of property B> -> <value>
+ *     <name of property C> -> <value>
+ *  }
+ * <full dataset name B> -> {
+ *     <name of property A> -> <value>
+ *     <name of property F> -> <value>
+ *     <name of property B> -> <value>
+ *  }
+ */
+int
+lzc_set_props_mds(const char *pool, nvlist_t *dss_props, nvlist_t **outnvl)
+{
+	return lzc_ioctl(ZFS_IOC_SET_PROPS_MDS, pool, dss_props, outnvl);
 }
