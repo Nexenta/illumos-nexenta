@@ -3026,6 +3026,88 @@ zfs_ioc_set_prop_impl(char *name, nvlist_t *props,
 }
 
 /*
+ * XXX This functionality will be removed after integration of
+ * functionality, that does the same via zfs-channel programm.
+ * The zfs-channel programm implementation is being developed
+ * by Delphix.
+ *
+ * This functions sets provided props for provided datasets
+ * in one sync-round. There are some requirements:
+ *  - all datasets should belong to the same pool
+ *  - only user-properties
+ *
+ * This function does all or nothing.
+ *
+ * inputs:
+ * zc_nvlist_src{_size}	nvlist of datasets and properties to apply
+ *
+ * outputs:
+ * zc_nvlist_dst{_size} error for each unapplied property
+ */
+/* ARGSUSED */
+static int
+zfs_ioc_set_prop_mds(const char *pool_name, nvlist_t *dss_props,
+    nvlist_t *outnvl)
+{
+	int error = 0;
+	spa_t *spa = NULL;
+	nvpair_t *pair = NULL;
+	size_t pool_name_len;
+	size_t total_num_props = 0;
+
+	ASSERT(dss_props != NULL);
+
+	if (nvlist_empty(dss_props))
+		return (SET_ERROR(ENODATA));
+
+	pool_name_len = strlen(pool_name);
+	while ((pair = nvlist_next_nvpair(dss_props, pair)) != NULL) {
+		nvlist_t *props;
+		nvpair_t *prop_nvp = NULL;
+		const char *ds_name;
+
+		ds_name = nvpair_name(pair);
+		if (strncmp(pool_name, ds_name, pool_name_len) == 0) {
+			char c = ds_name[pool_name_len];
+			if (c != '\0' && c != '/' && c != '@')
+				return (SET_ERROR(EXDEV));
+		}
+
+		if (nvpair_type(pair) != DATA_TYPE_NVLIST)
+			return (SET_ERROR(EINVAL));
+
+		props = fnvpair_value_nvlist(pair);
+		while ((prop_nvp = nvlist_next_nvpair(props,
+		    prop_nvp)) != NULL) {
+			const char *propname = nvpair_name(prop_nvp);
+			/* Only user-props */
+			if (!zfs_prop_user(propname) ||
+			    nvpair_type(prop_nvp) != DATA_TYPE_STRING)
+				return (SET_ERROR(EINVAL));
+
+			/*
+			 * We count the number to use it
+			 * later to check for ENOSPC
+			 */
+			total_num_props++;
+		}
+	}
+
+	if ((error = spa_open(pool_name, &spa, FTAG)) != 0)
+		return (error);
+
+	error = dsl_props_set_mds(pool_name, dss_props, total_num_props);
+	spa_close(spa, FTAG);
+	if (error == 0) {
+		nvlist_t *event = fnvlist_alloc();
+		fnvlist_add_nvlist(event, "properties", dss_props);
+		zfs_event_post(ZFS_EC_STATUS, "set-mds", event);
+	}
+
+	return (error);
+}
+
+/*
  * inputs:
  * zc_name		name of filesystem
  * zc_value		name of property to set
@@ -7198,6 +7280,11 @@ zfs_ioctl_init(void)
 	    zfs_ioc_channel_program, zfs_secpolicy_config,
 	    POOL_NAME, POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE,
 	    B_TRUE);
+
+	zfs_ioctl_register("set_props_mds", ZFS_IOC_SET_PROPS_MDS,
+	    zfs_ioc_set_prop_mds, zfs_secpolicy_config,
+	    POOL_NAME,
+	    POOL_CHECK_SUSPENDED | POOL_CHECK_READONLY, B_TRUE, B_TRUE);
 
 	/* IOCTLS that use the legacy function signature */
 

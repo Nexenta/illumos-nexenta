@@ -1172,6 +1172,93 @@ dsl_props_set(const char *dsname, zprop_source_t source, nvlist_t *props)
 	    &dpsa, nblks, ZFS_SPACE_CHECK_RESERVED));
 }
 
+static void
+dsl_props_mds_set_sync(void *arg, dmu_tx_t *tx)
+{
+	dsl_props_set_arg_t *top_dpsa = arg;
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+	nvlist_t *dss_props = top_dpsa->dpsa_props;
+	nvpair_t *pair = NULL;
+
+	while ((pair = nvlist_next_nvpair(dss_props, pair)) != NULL) {
+		dsl_props_set_arg_t dpsa;
+		dsl_dataset_t *ds = NULL;
+		const char *ds_name;
+
+		ds_name = nvpair_name(pair);
+		VERIFY0(dsl_dataset_hold(dp, ds_name, FTAG, &ds));
+
+		dpsa.dpsa_dsname = ds_name;
+		dpsa.dpsa_source = ZPROP_SRC_LOCAL;
+		dpsa.dpsa_props = fnvpair_value_nvlist(pair);
+
+		dsl_props_set_sync(&dpsa, tx);
+		dsl_dataset_rele(ds, FTAG);
+	}
+}
+
+static int
+dsl_props_mds_set_check(void *arg, dmu_tx_t *tx)
+{
+	dsl_props_set_arg_t *top_dpsa = arg;
+	dsl_pool_t *dp = dmu_tx_pool(tx);
+	nvlist_t *dss_props = top_dpsa->dpsa_props;
+	nvpair_t *pair = NULL;
+
+	while ((pair = nvlist_next_nvpair(dss_props, pair)) != NULL) {
+		dsl_props_set_arg_t dpsa;
+		dsl_dataset_t *ds = NULL;
+		const char *ds_name;
+		int err;
+
+		ds_name = nvpair_name(pair);
+		err = dsl_dataset_hold(dp, ds_name, FTAG, &ds);
+		if (err != 0)
+			return (err);
+
+		if (nvpair_type(pair) != DATA_TYPE_NVLIST) {
+			dsl_dataset_rele(ds, FTAG);
+			return (SET_ERROR(EINVAL));
+		}
+
+		dpsa.dpsa_dsname = ds_name;
+		dpsa.dpsa_source = ZPROP_SRC_LOCAL;
+		dpsa.dpsa_props = fnvpair_value_nvlist(pair);
+
+		err = dsl_props_set_check(&dpsa, tx);
+		dsl_dataset_rele(ds, FTAG);
+		if (err != 0)
+			return (err);
+	}
+
+	return (0);
+}
+
+
+/*
+ * The given 'dss_props' nvlist represents the following struct:
+ *  ds1 -> prop1:value
+ *      -> prop3:value
+ *  ds2 -> prop1:value
+ *      -> prop2:value
+ *
+ * All-or-nothing: if any prop can't be set, nothing will be modified.
+ */
+int
+dsl_props_set_mds(const char *pool_name, nvlist_t *dss_props,
+    size_t num_props)
+{
+	dsl_props_set_arg_t dpsa;
+
+	dpsa.dpsa_dsname = pool_name;
+	dpsa.dpsa_source = ZPROP_SRC_LOCAL;
+	dpsa.dpsa_props = dss_props;
+
+	return (dsl_sync_task(pool_name, dsl_props_mds_set_check,
+	    dsl_props_mds_set_sync, &dpsa, 2 * num_props,
+	    ZFS_SPACE_CHECK_RESERVED));
+}
+
 typedef enum dsl_prop_getflags {
 	DSL_PROP_GET_INHERITING = 0x1,	/* searching parent of target ds */
 	DSL_PROP_GET_SNAPSHOT = 0x2,	/* snapshot dataset */
