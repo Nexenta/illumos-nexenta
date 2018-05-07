@@ -1317,7 +1317,7 @@ autosnap_destroyer_thread(void *void_spa)
 		 * so we unmount them before pass to the destroyer
 		 */
 		while ((nvp = nvlist_next_nvpair(nvl, nvp)) != NULL)
-			zfs_unmount_snap(nvpair_name(nvp));
+			(void) zfs_unmount_snap(nvpair_name(nvp));
 #endif
 
 		errlist = fnvlist_alloc();
