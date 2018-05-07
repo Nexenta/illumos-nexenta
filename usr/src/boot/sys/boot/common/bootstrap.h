@@ -28,6 +28,7 @@
 #define	_BOOTSTRAP_H_
 
 #include <sys/types.h>
+#include <stdbool.h>
 #include <sys/queue.h>
 #include <sys/linker_set.h>
 
@@ -108,11 +109,13 @@ struct console
     void	(*c_out)(struct console *, int);	/* emit c */
     int		(*c_in)(struct console *);	/* wait for and return input */
     int		(*c_ready)(struct console *);	/* return nonzer if input waiting */
+    int		(*c_ioctl)(struct console *, int, void *);
     void	*c_private;		/* private data */
 };
 extern struct console	*consoles[];
 void		cons_probe(void);
 void		cons_mode(int);
+void		autoload_font(void);
 
 /*
  * Plug-and-play enumerator/configurator interface.
@@ -231,7 +234,9 @@ void file_addmetadata(struct preloaded_file *fp, int type, size_t size, void *p)
 int  file_addmodule(struct preloaded_file *fp, char *modname, int version,
 	struct kernel_module **newmp);
 void build_environment_module(void);
+void build_font_module(void);
 vm_offset_t bi_copyenv(vm_offset_t);
+bool sha1(vm_offset_t, size_t, uint8_t *);
 
 /* MI module loaders */
 #ifdef __elfN
@@ -304,7 +309,7 @@ struct arch_switch
      * Interface to adjust the load address according to the "object"
      * being loaded.
      */
-    uint64_t	(*arch_loadaddr)(u_int type, void *data, uint64_t addr);
+    vm_offset_t	(*arch_loadaddr)(u_int type, void *data, vm_offset_t addr);
 #define	LOAD_ELF	1	/* data points to the ELF header. */
 #define	LOAD_RAW	2	/* data points to the module file name. */
 #define	LOAD_KERN	3	/* data points to the kernel file name. */
@@ -312,7 +317,7 @@ struct arch_switch
     /*
      * Interface to release the load address.
      */
-    void	(*arch_free_loadaddr)(uint64_t addr, uint64_t pages);
+    void	(*arch_free_loadaddr)(vm_offset_t addr, size_t pages);
 
     /*
      * Interface to inform MD code about a loaded (ELF) segment. This

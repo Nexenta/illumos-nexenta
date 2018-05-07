@@ -37,6 +37,8 @@
 
 : logo ( x y -- ) \ color Illumos logo
 
+	s" /boot/illumos.png" fb-putimage if 2drop exit then
+
 	s"     @[33m,                             " logo+
 	s"    @[33m,./% @[31m&                         " logo+
 	s"    @[33m(****@[31m*(                        " logo+

@@ -1,13 +1,13 @@
 
 SRCS +=	multiboot_tramp.S \
 	start.S \
-	framebuffer.c \
+	bootinfo64.c \
 	trap.c \
 	exc.S
 
 OBJS += multiboot_tramp.o \
 	start.o \
-	framebuffer.o \
+	bootinfo64.o \
 	trap.o \
 	exc.o
 
@@ -18,6 +18,3 @@ SRCS +=	nullconsole.c \
 OBJS += nullconsole.o \
 	spinconsole.o \
 	comconsole.o
-
-CFLAGS +=	-fPIC
-LDFLAGS +=	-znocombreloc

@@ -37,7 +37,7 @@
 
 #ifdef EFI_DEBUG
 #define DPRINTF(fmt, args...) printf(fmt, ##args)
-#define DSTALL(d) bs->Stall(d)
+#define DSTALL(d) BS->Stall(d)
 #else
 #define DPRINTF(fmt, ...) {}
 #define DSTALL(d) {}
@@ -96,18 +96,11 @@ typedef struct boot_module_t
 } boot_module_t;
 
 /* Standard boot modules. */
-#ifdef EFI_UFS_BOOT
 extern const boot_module_t ufs_module;
-#endif
-#ifdef EFI_ZFS_BOOT
 extern const boot_module_t zfs_module;
-#endif
 
 /* Functions available to modules. */
 extern void add_device(dev_info_t **devinfop, dev_info_t *devinfo);
-
-extern EFI_SYSTEM_TABLE *systab;
-extern EFI_BOOT_SERVICES *bs;
 
 extern int devpath_strlcat(char *buf, size_t size, EFI_DEVICE_PATH *devpath);
 extern char *devpath_str(EFI_DEVICE_PATH *devpath);

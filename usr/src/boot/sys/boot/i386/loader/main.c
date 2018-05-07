@@ -40,7 +40,6 @@
 #include <sys/disk.h>
 #include <sys/param.h>
 #include <sys/reboot.h>
-#include <sys/multiboot2.h>
 
 #include "bootstrap.h"
 #include "common/bootargs.h"
@@ -82,18 +81,6 @@ extern char end[];
 
 static void *heap_top;
 static void *heap_bottom;
-
-static uint64_t
-i386_loadaddr(u_int type, void *data, uint64_t addr)
-{
-	/*
-	 * Our modules are page aligned.
-	 */
-	if (type == LOAD_RAW || type == LOAD_MEM)
-                return (roundup2(addr, MULTIBOOT_MOD_ALIGN));
-
-        return (addr);
-}
 
 int
 main(void)
@@ -187,6 +174,7 @@ main(void)
     for (i = 0; devsw[i] != NULL; i++)
 	if (devsw[i]->dv_init != NULL)
 	    (devsw[i]->dv_init)();
+
     printf("BIOS %dkB/%dkB available memory\n", bios_basemem / 1024, bios_extmem / 1024);
     if (initial_bootinfo != NULL) {
 	initial_bootinfo->bi_basemem = bios_basemem / 1024;
@@ -204,9 +192,8 @@ main(void)
 
     printf("\n%s", bootprog_info);
 
-    extract_currdev();				/* set $currdev and $loaddev */
-    setenv("LINES", "24", 1);			/* optional */
-    setenv("COLUMNS", "80", 1);			/* optional */
+    extract_currdev();			/* set $currdev and $loaddev */
+    autoload_font();			/* Set up the font list for console. */
 
     if (bi_checkcpu())
 	setenv("ISADIR", "amd64", 1);

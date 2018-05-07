@@ -1,4 +1,3 @@
-/* $FreeBSD$ */
 /*++
 
 Copyright (c)  1999 - 2003 Intel Corporation. All rights reserved
@@ -28,9 +27,9 @@ Revision History
 #pragma pack()
 
 
-#ifdef __FreeBSD__
 #include <sys/stdint.h>
-#else
+
+#if 0
 //
 // Basic int types of various widths
 //
@@ -79,7 +78,7 @@ Revision History
         #endif
     #endif
 #endif
-#endif	/* __FreeBSD__ */
+#endif
 
 //
 // Basic EFI types of various widths
@@ -245,9 +244,8 @@ typedef uint32_t   UINTN;
 
 #endif // EFI_FW_NT 
 
-#ifdef __FreeBSD__
 #define INTERFACE_DECL(x) struct x
-#else
+#if 0
 //
 // Some compilers don't support the forward reference construct:
 //  typedef struct XXXXX
@@ -264,4 +262,3 @@ typedef uint32_t   UINTN;
 #ifdef _MSC_EXTENSIONS
 #pragma warning ( disable : 4731 )  // Suppress warnings about modification of EBP
 #endif
-

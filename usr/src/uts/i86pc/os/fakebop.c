@@ -50,6 +50,7 @@
 #include <sys/machsystm.h>
 #include <sys/archsystm.h>
 #include <sys/boot_console.h>
+#include <sys/framebuffer.h>
 #include <sys/cmn_err.h>
 #include <sys/systm.h>
 #include <sys/promif.h>
@@ -72,6 +73,7 @@
 #include <sys/fastboot_impl.h>
 #include <sys/acpi/acconfig.h>
 #include <sys/acpi/acpi.h>
+#include <sys/ddipropdefs.h>	/* For DDI prop types */
 
 static int have_console = 0;	/* set once primitive console is initialized */
 static char *boot_args = "";
@@ -90,6 +92,9 @@ static uint_t kbm_debug = 0;
 	for (cp = (s); *cp; ++cp)		\
 		bcons_putchar(*cp);		\
 	}
+
+/* callback to boot_fb to set shadow frame buffer */
+extern void boot_fb_shadow_init(bootops_t *);
 
 bootops_t bootop;	/* simple bootops we'll pass on to kernel */
 struct bsys_mem bm;
@@ -115,7 +120,8 @@ static char buffer[BUFFERSIZE];
 typedef struct bootprop {
 	struct bootprop *bp_next;
 	char *bp_name;
-	uint_t bp_vlen;
+	int bp_flags;			/* DDI prop type */
+	uint_t bp_vlen;			/* 0 for boolean */
 	char *bp_value;
 } bootprop_t;
 
@@ -361,7 +367,7 @@ do_bsys_ealloc(bootops_t *bop, caddr_t virthint, size_t size,
 
 
 static void
-bsetprop(char *name, int nlen, void *value, int vlen)
+bsetprop(int flags, char *name, int nlen, void *value, int vlen)
 {
 	uint_t size;
 	uint_t need_size;
@@ -397,6 +403,11 @@ bsetprop(char *name, int nlen, void *value, int vlen)
 	curr_space -= nlen + 1;
 
 	/*
+	 * set the property type
+	 */
+	b->bp_flags = flags & DDI_PROP_TYPE_MASK;
+
+	/*
 	 * copy in value, but no ending zero byte
 	 */
 	b->bp_value = curr_page;
@@ -419,13 +430,22 @@ bsetprop(char *name, int nlen, void *value, int vlen)
 static void
 bsetprops(char *name, char *value)
 {
-	bsetprop(name, strlen(name), value, strlen(value) + 1);
+	bsetprop(DDI_PROP_TYPE_STRING, name, strlen(name),
+	    value, strlen(value) + 1);
+}
+
+static void
+bsetprop32(char *name, uint32_t value)
+{
+	bsetprop(DDI_PROP_TYPE_INT, name, strlen(name),
+	    (void *)&value, sizeof (value));
 }
 
 static void
 bsetprop64(char *name, uint64_t value)
 {
-	bsetprop(name, strlen(name), (void *)&value, sizeof (value));
+	bsetprop(DDI_PROP_TYPE_INT64, name, strlen(name),
+	    (void *)&value, sizeof (value));
 }
 
 static void
@@ -435,6 +455,23 @@ bsetpropsi(char *name, int value)
 
 	(void) snprintf(prop_val, sizeof (prop_val), "%d", value);
 	bsetprops(name, prop_val);
+}
+
+/*
+ * to find the type of the value associated with this name
+ */
+/*ARGSUSED*/
+int
+do_bsys_getproptype(bootops_t *bop, const char *name)
+{
+	bootprop_t *b;
+
+	for (b = bprops; b; b = b->bp_next) {
+		if (strcmp(name, b->bp_name) != 0)
+			continue;
+		return (b->bp_flags);
+	}
+	return (-1);
 }
 
 /*
@@ -577,7 +614,8 @@ static void
 boot_prop_display(char *buffer)
 {
 	char *name = "";
-	int i, len;
+	int i, len, flags, *buf32;
+	uint64_t *buf64;
 
 	bop_printf(NULL, "\nBoot properties:\n");
 
@@ -585,16 +623,43 @@ boot_prop_display(char *buffer)
 		bop_printf(NULL, "\t0x%p %s = ", (void *)name, name);
 		(void) do_bsys_getprop(NULL, name, buffer);
 		len = do_bsys_getproplen(NULL, name);
+		flags = do_bsys_getproptype(NULL, name);
 		bop_printf(NULL, "len=%d ", len);
-		if (!unprintable(buffer, len)) {
-			buffer[len] = 0;
-			bop_printf(NULL, "%s\n", buffer);
-			continue;
-		}
-		for (i = 0; i < len; i++) {
-			bop_printf(NULL, "%02x", buffer[i] & 0xff);
-			if (i < len - 1)
-				bop_printf(NULL, ".");
+
+		switch (flags) {
+		case DDI_PROP_TYPE_INT:
+			len = len / sizeof (int);
+			buf32 = (int *)buffer;
+			for (i = 0; i < len; i++) {
+				bop_printf(NULL, "%08x", buf32[i]);
+				if (i < len - 1)
+					bop_printf(NULL, ".");
+			}
+			break;
+		case DDI_PROP_TYPE_STRING:
+			bop_printf(NULL, buffer);
+			break;
+		case DDI_PROP_TYPE_INT64:
+			len = len / sizeof (uint64_t);
+			buf64 = (uint64_t *)buffer;
+			for (i = 0; i < len; i++) {
+				bop_printf(NULL, "%016" PRIx64, buf64[i]);
+				if (i < len - 1)
+					bop_printf(NULL, ".");
+			}
+			break;
+		default:
+			if (!unprintable(buffer, len)) {
+				buffer[len] = 0;
+				bop_printf(NULL, "%s", buffer);
+				break;
+			}
+			for (i = 0; i < len; i++) {
+				bop_printf(NULL, "%02x", buffer[i] & 0xff);
+				if (i < len - 1)
+					bop_printf(NULL, ".");
+			}
+			break;
 		}
 		bop_printf(NULL, "\n");
 	}
@@ -723,10 +788,10 @@ boot_prop_finish(void)
 		 * If a property was explicitly set on the command line
 		 * it will override a setting in bootenv.rc
 		 */
-		if (do_bsys_getproplen(NULL, name) > 0)
+		if (do_bsys_getproplen(NULL, name) >= 0)
 			continue;
 
-		bsetprop(name, n_len, value, v_len + 1);
+		bsetprops(name, value);
 	}
 done:
 	if (fd >= 0)
@@ -1000,7 +1065,7 @@ xen_nfsroot_props(char *s)
 	};
 	int n_prop = sizeof (prop_map) / sizeof (prop_map[0]);
 
-	bsetprop("fstype", 6, "nfs", 4);
+	bsetprops("fstype", "nfs");
 
 	xen_parse_props(s, prop_map, n_prop);
 
@@ -1366,7 +1431,9 @@ build_boot_properties(struct xboot_info *xbp)
 				rdbm = &bm[i];
 				continue;
 			}
-			if (bm[i].bm_type == BMT_HASH || bm[i].bm_name == NULL)
+			if (bm[i].bm_type == BMT_HASH ||
+			    bm[i].bm_type == BMT_FONT ||
+			    bm[i].bm_name == NULL)
 				continue;
 
 			if (bm[i].bm_type == BMT_ENV) {
@@ -1581,7 +1648,8 @@ build_boot_properties(struct xboot_info *xbp)
 			}
 
 			if (value_len == 0) {
-				bsetprop(name, name_len, "true", 5);
+				bsetprop(DDI_PROP_TYPE_ANY, name, name_len,
+				    NULL, 0);
 			} else {
 				char *v = value;
 				int l = value_len;
@@ -1592,8 +1660,8 @@ build_boot_properties(struct xboot_info *xbp)
 				}
 				bcopy(v, propbuf, l);
 				propbuf[l] = '\0';
-				bsetprop(name, name_len, propbuf,
-				    l + 1);
+				bsetprop(DDI_PROP_TYPE_STRING, name, name_len,
+				    propbuf, l + 1);
 			}
 			name = value + value_len;
 			while (*name == ',')
@@ -1652,7 +1720,8 @@ build_boot_properties(struct xboot_info *xbp)
 		if (netboot && mbi->drives_length != 0) {
 			sip = (struct sol_netinfo *)(uintptr_t)mbi->drives_addr;
 			if (sip->sn_infotype == SN_TYPE_BOOTP)
-				bsetprop("bootp-response",
+				bsetprop(DDI_PROP_TYPE_BYTE,
+				    "bootp-response",
 				    sizeof ("bootp-response"),
 				    (void *)(uintptr_t)mbi->drives_addr,
 				    mbi->drives_length);
@@ -1679,15 +1748,15 @@ build_boot_properties(struct xboot_info *xbp)
 			bsetprops("bios-boot-device", str);
 		}
 		if (netdev != NULL) {
-			bsetprop("bootp-response", sizeof ("bootp-response"),
+			bsetprop(DDI_PROP_TYPE_BYTE,
+			    "bootp-response", sizeof ("bootp-response"),
 			    (void *)(uintptr_t)netdev->mb_dhcpack,
 			    netdev->mb_size -
 			    sizeof (multiboot_tag_network_t));
 		}
 	}
 
-	bsetprop("stdout", strlen("stdout"),
-	    &stdout_val, sizeof (stdout_val));
+	bsetprop32("stdout", stdout_val);
 #endif /* __xpv */
 
 	/*
@@ -2064,6 +2133,8 @@ _start(struct xboot_info *xbp)
 	 */
 	bop_idt_init();
 #endif
+	/* Set up the shadow fb for framebuffer console */
+	boot_fb_shadow_init(bops);
 
 	/*
 	 * Start building the boot properties from the command line
@@ -2343,7 +2414,8 @@ process_mcfg(ACPI_TABLE_MCFG *tp)
 			ecfginfo[1] = cfg_baap->PciSegment;
 			ecfginfo[2] = cfg_baap->StartBusNumber;
 			ecfginfo[3] = cfg_baap->EndBusNumber;
-			bsetprop(MCFG_PROPNAME, strlen(MCFG_PROPNAME),
+			bsetprop(DDI_PROP_TYPE_INT64,
+			    MCFG_PROPNAME, strlen(MCFG_PROPNAME),
 			    ecfginfo, sizeof (ecfginfo));
 			break;
 		}
@@ -2431,7 +2503,8 @@ process_madt(ACPI_TABLE_MADT *tp)
 		 * Make boot property for array of "final" APIC IDs for each
 		 * CPU
 		 */
-		bsetprop(BP_CPU_APICID_ARRAY, strlen(BP_CPU_APICID_ARRAY),
+		bsetprop(DDI_PROP_TYPE_INT,
+		    BP_CPU_APICID_ARRAY, strlen(BP_CPU_APICID_ARRAY),
 		    cpu_apicid_array, cpu_count * sizeof (*cpu_apicid_array));
 	}
 
@@ -2524,7 +2597,8 @@ process_srat(ACPI_TABLE_SRAT *tp)
 			processor.sapic_id = cpu->LocalSapicEid;
 			(void) snprintf(prop_name, 30, "acpi-srat-processor-%d",
 			    proc_num);
-			bsetprop(prop_name, strlen(prop_name), &processor,
+			bsetprop(DDI_PROP_TYPE_INT,
+			    prop_name, strlen(prop_name), &processor,
 			    sizeof (processor));
 			proc_num++;
 			break;
@@ -2541,7 +2615,8 @@ process_srat(ACPI_TABLE_SRAT *tp)
 			memory.flags = mem->Flags;
 			(void) snprintf(prop_name, 30, "acpi-srat-memory-%d",
 			    mem_num);
-			bsetprop(prop_name, strlen(prop_name), &memory,
+			bsetprop(DDI_PROP_TYPE_INT,
+			    prop_name, strlen(prop_name), &memory,
 			    sizeof (memory));
 			if ((mem->Flags & ACPI_SRAT_MEM_HOT_PLUGGABLE) &&
 			    (memory.addr + memory.length > maxmem)) {
@@ -2560,7 +2635,8 @@ process_srat(ACPI_TABLE_SRAT *tp)
 			x2apic.x2apic_id = x2cpu->ApicId;
 			(void) snprintf(prop_name, 30, "acpi-srat-processor-%d",
 			    proc_num);
-			bsetprop(prop_name, strlen(prop_name), &x2apic,
+			bsetprop(DDI_PROP_TYPE_INT,
+			    prop_name, strlen(prop_name), &x2apic,
 			    sizeof (x2apic));
 			proc_num++;
 			break;
@@ -2601,9 +2677,9 @@ process_slit(ACPI_TABLE_SLIT *tp)
 	if (tp->LocalityCount >= SLIT_LOCALITIES_MAX)
 		return;
 
-	bsetprop(SLIT_NUM_PROPNAME, strlen(SLIT_NUM_PROPNAME),
-	    &tp->LocalityCount, sizeof (tp->LocalityCount));
-	bsetprop(SLIT_PROPNAME, strlen(SLIT_PROPNAME), &tp->Entry,
+	bsetprop64(SLIT_NUM_PROPNAME, tp->LocalityCount);
+	bsetprop(DDI_PROP_TYPE_BYTE,
+	    SLIT_PROPNAME, strlen(SLIT_PROPNAME), &tp->Entry,
 	    tp->LocalityCount * tp->LocalityCount);
 }
 
@@ -2795,8 +2871,7 @@ defcons_init(size_t size)
 
 	p = do_bsys_alloc(NULL, NULL, size, MMU_PAGESIZE);
 	*p = 0;
-	bsetprop("deferred-console-buf", strlen("deferred-console-buf") + 1,
-	    &p, sizeof (p));
+	bsetprop32("deferred-console-buf", (uint32_t)((uintptr_t)&p));
 	return (p);
 }
 

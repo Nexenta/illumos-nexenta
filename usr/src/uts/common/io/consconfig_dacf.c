@@ -443,6 +443,10 @@ consconfig_print_paths(void)
 	if (path != NULL)
 		DPRINTF(DPRINT_L0, "stdout path = %s\n", path);
 
+	path = plat_diagpath();
+	if (path != NULL)
+		DPRINTF(DPRINT_L0, "diag path = %s\n", path);
+
 	path = plat_fbpath();
 	if (path != NULL)
 		DPRINTF(DPRINT_L0, "fb path = %s\n", path);
@@ -660,6 +664,7 @@ consconfig_state_init(void)
 	 * Find keyboard, mouse, stdin and stdout devices, if they
 	 * exist on this platform.
 	 */
+	sp->cons_diag_path = plat_diagpath();
 
 	if (consconfig_usb_kb_path != NULL) {
 		sp->cons_keyboard_path = consconfig_usb_kb_path;
@@ -993,7 +998,9 @@ consconfig_load_drivers(cons_state_t *sp)
 	if (sp->cons_keyboard_path != NULL)
 		kbddev = ddi_pathname_to_dev_t(sp->cons_keyboard_path);
 	if (sp->cons_mouse_path != NULL)
-		mousedev =  ddi_pathname_to_dev_t(sp->cons_mouse_path);
+		mousedev = ddi_pathname_to_dev_t(sp->cons_mouse_path);
+	if (sp->cons_diag_path != NULL)
+		diagdev = ddi_pathname_to_dev_t(sp->cons_diag_path);
 
 	/*
 	 * On x86, make sure the fb driver is loaded even if we don't use it
@@ -1006,7 +1013,8 @@ consconfig_load_drivers(cons_state_t *sp)
 #endif
 
 	DPRINTF(DPRINT_L0, "stdindev %lx, stdoutdev %lx, kbddev %lx, "
-	    "mousedev %lx\n", stdindev, stdoutdev, kbddev, mousedev);
+	    "mousedev %lx diagdev %lx\n", stdindev, stdoutdev, kbddev,
+	    mousedev, diagdev);
 }
 
 #if !defined(__x86)
@@ -1477,7 +1485,10 @@ consconfig_init_input(cons_state_t *sp)
 		 */
 		consconfig_setup_polledio(sp, sp->cons_wc_vp->v_rdev);
 	} else {
-		consconfig_setup_polledio(sp, cons_final_dev);
+		if (diagdev != NODEV)
+			consconfig_setup_polledio(sp, diagdev);
+		else
+			consconfig_setup_polledio(sp, cons_final_dev);
 	}
 
 	kadb_uses_kernel();
@@ -1495,6 +1506,7 @@ dynamic_console_config(void)
 	mousedev = NODEV;
 	kbddev = NODEV;
 	fbdev = NODEV;
+	diagdev = NODEV;
 	fbvp = NULL;
 	fbdip = NULL;
 	wsconsvp = NULL;

@@ -13,15 +13,15 @@
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 #
 
-include $(SRC)/Makefile.master
+COMDIR=		$(SRC)/common/crypto
+MACHINE=	$(MACH64)
+ASFLAGS=	-m64
 
-MACHINE=	$(MACH)
+all:		libcrypto.a
 
-all install: lib
+include ../Makefile.com
 
-include ../Makefile.inc
+CFLAGS +=	-m64
+CLEANFILES +=	machine x86
 
-CFLAGS += -m32 -march=i386 -mpreferred-stack-boundary=2
-CFLAGS += -fno-reorder-functions
-
-FRC:
+$(OBJS): machine x86

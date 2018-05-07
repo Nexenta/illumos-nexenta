@@ -36,6 +36,7 @@
 #include <sys/multiboot2.h>
 #include <sys/multiboot2_impl.h>
 #include <sys/sysmacros.h>
+#include <sys/framebuffer.h>
 #include <sys/sha1.h>
 #include <util/string.h>
 #include <util/strtolctype.h>
@@ -137,6 +138,8 @@ multiboot_tag_mmap_t *mb2_mmap_tagp;
 int num_entries;			/* mmap entry count */
 boolean_t num_entries_set;		/* is mmap entry count set */
 uintptr_t load_addr;
+static boot_framebuffer_t framebuffer[2];
+static boot_framebuffer_t *fb;
 
 /* can not be automatic variables because of alignment */
 static efi_guid_t smbios3 = SMBIOS3_TABLE_GUID;
@@ -164,6 +167,7 @@ int largepage_support = 0;
 int pae_support = 0;
 int pge_support = 0;
 int NX_support = 0;
+int PAT_support = 0;
 
 /*
  * Low 32 bits of kernel entry address passed back to assembler.
@@ -973,16 +977,17 @@ init_mem_alloc(void)
 static void
 dboot_multiboot1_xboot_consinfo(void)
 {
-	bi->bi_framebuffer = NULL;
+	fb->framebuffer = 0;
 }
 
 static void
 dboot_multiboot2_xboot_consinfo(void)
 {
-	multiboot_tag_framebuffer_t *fb;
-	fb = dboot_multiboot2_find_tag(mb2_info,
+	multiboot_tag_framebuffer_t *fbtag;
+	fbtag = dboot_multiboot2_find_tag(mb2_info,
 	    MULTIBOOT_TAG_TYPE_FRAMEBUFFER);
-	bi->bi_framebuffer = (native_ptr_t)(uintptr_t)fb;
+	fb->framebuffer = (uint64_t)(uintptr_t)fbtag;
+	fb->boot_fb_virt = 0;
 }
 
 static int
@@ -1059,42 +1064,48 @@ dboot_multiboot_modcmdline(int index)
 }
 
 /*
- * Find the environment module for console setup.
+ * Find the modules used by console setup.
  * Since we need the console to print early boot messages, the console is set up
- * before anything else and therefore we need to pick up the environment module
- * early too.
+ * before anything else and therefore we need to pick up the needed modules.
  *
- * Note, we just will search for and if found, will pass the env
- * module to console setup, the proper module list processing will happen later.
+ * Note, we just will search for and if found, will pass the modules
+ * to console setup, the proper module list processing will happen later.
+ * Currenly used modules are boot environment and consoler font.
  */
 static void
-dboot_find_env(void)
+dboot_find_console_modules(void)
 {
 	int i, modcount;
 	uint32_t mod_start, mod_end;
 	char *cmdline;
 
 	modcount = dboot_multiboot_modcount();
-
+	bi->bi_module_cnt = 0;
 	for (i = 0; i < modcount; ++i) {
 		cmdline = dboot_multiboot_modcmdline(i);
 		if (cmdline == NULL)
 			continue;
 
-		if (strstr(cmdline, "type=environment") == NULL)
+		if (strstr(cmdline, "type=console-font") != NULL)
+			modules[bi->bi_module_cnt].bm_type = BMT_FONT;
+		else if (strstr(cmdline, "type=environment") != NULL)
+			modules[bi->bi_module_cnt].bm_type = BMT_ENV;
+		else
 			continue;
 
 		mod_start = dboot_multiboot_modstart(i);
 		mod_end = dboot_multiboot_modend(i);
-		modules[0].bm_addr = (native_ptr_t)(uintptr_t)mod_start;
-		modules[0].bm_size = mod_end - mod_start;
-		modules[0].bm_name = (native_ptr_t)(uintptr_t)NULL;
-		modules[0].bm_hash = (native_ptr_t)(uintptr_t)NULL;
-		modules[0].bm_type = BMT_ENV;
-		bi->bi_modules = (native_ptr_t)(uintptr_t)modules;
-		bi->bi_module_cnt = 1;
-		return;
+		modules[bi->bi_module_cnt].bm_addr =
+		    (native_ptr_t)(uintptr_t)mod_start;
+		modules[bi->bi_module_cnt].bm_size = mod_end - mod_start;
+		modules[bi->bi_module_cnt].bm_name =
+		    (native_ptr_t)(uintptr_t)NULL;
+		modules[bi->bi_module_cnt].bm_hash =
+		    (native_ptr_t)(uintptr_t)NULL;
+		bi->bi_module_cnt++;
 	}
+	if (bi->bi_module_cnt != 0)
+		bi->bi_modules = (native_ptr_t)(uintptr_t)modules;
 }
 
 static boolean_t
@@ -1195,6 +1206,8 @@ type_to_str(boot_module_type_t type)
 		return ("hash");
 	case BMT_ENV:
 		return ("environment");
+	case BMT_FONT:
+		return ("console-font");
 	default:
 		return ("unknown");
 	}
@@ -1315,6 +1328,8 @@ process_module(int midx)
 				modules[midx].bm_type = BMT_HASH;
 			} else if (strcmp(q, "environment") == 0) {
 				modules[midx].bm_type = BMT_ENV;
+			} else if (strcmp(q, "console-font") == 0) {
+				modules[midx].bm_type = BMT_FONT;
 			} else if (strcmp(q, "file") != 0) {
 				dboot_printf("\tmodule #%d: unknown module "
 				    "type '%s'; defaulting to 'file'",
@@ -2022,21 +2037,44 @@ build_page_tables(void)
 	 * Map framebuffer memory as PT_NOCACHE as this is memory from a
 	 * device and therefore must not be cached.
 	 */
-	if (bi->bi_framebuffer != NULL) {
-		multiboot_tag_framebuffer_t *fb;
-		fb = (multiboot_tag_framebuffer_t *)(uintptr_t)
-		    bi->bi_framebuffer;
+	if (fb != NULL && fb->framebuffer != 0) {
+		multiboot_tag_framebuffer_t *fb_tagp;
+		fb_tagp = (multiboot_tag_framebuffer_t *)(uintptr_t)
+		    fb->framebuffer;
 
-		start = fb->framebuffer_common.framebuffer_addr;
-		end = start + fb->framebuffer_common.framebuffer_height *
-		    fb->framebuffer_common.framebuffer_pitch;
+		start = fb_tagp->framebuffer_common.framebuffer_addr;
+		end = start + fb_tagp->framebuffer_common.framebuffer_height *
+		    fb_tagp->framebuffer_common.framebuffer_pitch;
 
-		pte_bits |= PT_NOCACHE;
-		while (start < end) {
-			map_pa_at_va(start, start, 0);
-			start += MMU_PAGESIZE;
+		/* VGA text memory is already mapped. */
+		if (fb_tagp->framebuffer_common.framebuffer_type !=
+		    MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) {
+			uint64_t vaddr;
+
+#if defined(_BOOT_TARGET_amd64)
+			vaddr = start;
+#else
+			vaddr = (uintptr_t)mem_alloc(end - start);
+#endif
+			fb->boot_fb_virt = vaddr;
+			if (map_debug) {
+				dboot_printf("FB map pa=%" PRIx64 "..%"
+				    PRIx64 "\n", start, end);
+			}
+
+			pte_bits |= PT_NOCACHE;
+			if (PAT_support != 0)
+				pte_bits |= PT_PAT_4K;
+
+			while (start < end) {
+				map_pa_at_va(start, vaddr, 0);
+				start += MMU_PAGESIZE;
+				vaddr += MMU_PAGESIZE;
+			}
+			pte_bits &= ~PT_NOCACHE;
+			if (PAT_support != 0)
+				pte_bits &= ~PT_PAT_4K;
 		}
-		pte_bits &= ~PT_NOCACHE;
 	}
 #endif /* !__xpv */
 
@@ -2062,6 +2100,14 @@ dboot_init_xboot_consinfo(void)
 	bi = (struct xboot_info *)addr;
 
 #if !defined(__xpv)
+	/*
+	 * fb info must be 16 byte aligned for 64 bit kernel ABI
+	 */
+	addr = (uintptr_t)framebuffer;
+	addr = (addr + 0xf) & ~0xf;
+	fb = (boot_framebuffer_t *)addr;
+	bi->bi_framebuffer = (native_ptr_t)(uintptr_t)fb;
+
 	switch (multiboot_version) {
 	case 1:
 		dboot_multiboot1_xboot_consinfo();
@@ -2078,7 +2124,7 @@ dboot_init_xboot_consinfo(void)
 	 * Lookup environment module for the console. Complete module list
 	 * will be built after console setup.
 	 */
-	dboot_find_env();
+	dboot_find_console_modules();
 #endif
 }
 
@@ -2202,6 +2248,7 @@ startup_kernel(void)
 	physdev_set_iopl_t set_iopl;
 #endif /* __xpv */
 
+	bcons_init(NULL);	/* Set very early console to ttya. */
 	dboot_loader_init();
 	/*
 	 * At this point we are executing in a 32 bit real mode.
@@ -2223,7 +2270,7 @@ startup_kernel(void)
 
 	dboot_init_xboot_consinfo();
 	bi->bi_cmdline = (native_ptr_t)(uintptr_t)cmdline;
-	bcons_init(bi);
+	bcons_init(bi);		/* Now we can set the real console. */
 
 	prom_debug = (find_boot_prop("prom_debug") != NULL);
 	map_debug = (find_boot_prop("map_debug") != NULL);
@@ -2349,6 +2396,16 @@ startup_kernel(void)
 		}
 	}
 
+	/*
+	 * check for PAT support
+	 */
+	{
+		uint32_t eax = 1;
+		uint32_t edx = get_cpuid_edx(&eax);
+
+		if (edx & CPUID_INTC_EDX_PAT)
+			PAT_support = 1;
+	}
 #if !defined(_BOOT_TARGET_amd64)
 
 	/*
@@ -2390,6 +2447,8 @@ startup_kernel(void)
 			pge_support = 1;
 		if (edx & CPUID_INTC_EDX_PAE)
 			pae_support = 1;
+		if (edx & CPUID_INTC_EDX_PAT)
+			PAT_support = 1;
 
 		eax = 0x80000000;
 		edx = get_cpuid_edx(&eax);
@@ -2459,6 +2518,7 @@ startup_kernel(void)
 		top_level = 1;
 	}
 
+	DBG(PAT_support);
 	DBG(pge_support);
 	DBG(NX_support);
 	DBG(largepage_support);
@@ -2556,6 +2616,15 @@ startup_kernel(void)
 #ifndef __xpv
 	if (map_debug)
 		dump_tables();
+#endif
+
+#ifndef __xpv
+	/* Update boot info with FB data */
+	fb->cursor.origin.x = fb_info.cursor.origin.x;
+	fb->cursor.origin.y = fb_info.cursor.origin.y;
+	fb->cursor.pos.x = fb_info.cursor.pos.x;
+	fb->cursor.pos.y = fb_info.cursor.pos.y;
+	fb->cursor.visible = fb_info.cursor.visible;
 #endif
 
 	DBG_MSG("\n\n*** DBOOT DONE -- back to asm to jump to kernel\n\n");

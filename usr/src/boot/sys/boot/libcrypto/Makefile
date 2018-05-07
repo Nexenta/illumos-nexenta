@@ -13,14 +13,22 @@
 # Copyright 2016 Toomas Soome <tsoome@me.com>
 #
 
+.KEEP_STATE:
+
 include $(SRC)/Makefile.master
 
-MACHINE=	$(MACH64)
+SUBDIRS = $(MACH) $(MACH64)
 
-all install: lib
+all	:=	TARGET = all
+clean	:=	TARGET = clean
+clobber	:=	TARGET = clobber
+install	:=	TARGET = install
 
-include ../Makefile.inc
+all clean clobber: $(SUBDIRS)
 
-CFLAGS += -fPIC -m64 -mno-red-zone
+install: all
+
+$(SUBDIRS): FRC
+	@cd $@; pwd; $(MAKE) $(MFLAGS) $(TARGET)
 
 FRC:
