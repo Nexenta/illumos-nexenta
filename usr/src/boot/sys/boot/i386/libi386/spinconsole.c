@@ -1,4 +1,4 @@
-/*
+/*-
  * spinconsole.c
  *
  * Author: Maksym Sobolyev <sobomax@sippysoft.com>
@@ -40,6 +40,13 @@
 #include <stand.h>
 #include <bootstrap.h>
 
+extern void get_pos(int *x, int *y);
+extern void curs_move(int *_x, int *_y, int x, int y);
+#if defined(EFI)
+extern void efi_cons_efiputchar(int c);
+#else
+extern void vidc_biosputchar(int c);
+#endif
 
 static void	spinc_probe(struct console *cp);
 static int	spinc_init(struct console *cp, int arg);
@@ -48,73 +55,66 @@ static int	spinc_getchar(struct console *cp);
 static int	spinc_ischar(struct console *cp);
 
 struct console spinconsole = {
-	.c_name = "spin",
-	.c_desc = "spin port",
-	.c_flags = 0,
-	.c_probe = spinc_probe,
-	.c_init = spinc_init,
-	.c_out = spinc_putchar,
-	.c_in = spinc_getchar,
-	.c_ready = spinc_ischar,
-	.c_ioctl = NULL,
-	.c_private = NULL
+	"spin",
+	"spin port",
+	0,
+	spinc_probe,
+	spinc_init,
+	spinc_putchar,
+	spinc_getchar,
+	spinc_ischar,
+	NULL
 };
 
 static void
 spinc_probe(struct console *cp)
 {
-	int i;
-	struct console *parent;
-
-	if (cp->c_private == NULL) {
-		for (i = 0; consoles[i] != NULL; i++)
-			if (strcmp(consoles[i]->c_name, "text") == 0)
-				break;
-		cp->c_private = consoles[i];
-	}
-
-	parent = cp->c_private;
-	parent->c_probe(cp);
+	cp->c_flags |= (C_PRESENTIN | C_PRESENTOUT);
 }
 
 static int
-spinc_init(struct console *cp, int arg)
+spinc_init(struct console *cp __attribute((unused)),
+    int arg __attribute((unused)))
 {
-	struct console *parent;
-
-	parent = cp->c_private;
-	return (parent->c_init(cp, arg));
+	return(0);
 }
 
 static void
-spinc_putchar(struct console *cp, int c __unused)
+spinc_putchar(struct console *cp __attribute((unused)),
+    int c __attribute((unused)))
 {
+#ifdef TERM_EMU
+	static int curx, cury;
+#endif
 	static unsigned tw_chars = 0x5C2D2F7C;    /* "\-/|" */
-	static time_t lasttime = 0;
-	struct console *parent;
+	static time_t lasttime;
 	time_t now;
 
 	now = time(NULL);
 	if (now < (lasttime + 1))
 		return;
 	lasttime = now;
-	parent = cp->c_private;
-
-	parent->c_out(parent, (char)tw_chars);
-	parent->c_out(parent, '\b');
+#ifdef TERM_EMU
+	get_pos(&curx, &cury);
+	if (curx > 0)
+		curs_move(&curx, &cury, curx - 1, cury);
+#endif
+#if defined(EFI)
+	efi_cons_efiputchar((char)tw_chars);
+#else
+	vidc_biosputchar((char)tw_chars);
+#endif
 	tw_chars = (tw_chars >> 8) | ((tw_chars & (unsigned long)0xFF) << 24);
 }
 
 static int
-spinc_getchar(struct console *cp __unused)
+spinc_getchar(struct console *cp __attribute((unused)))
 {
-
-	return (-1);
+	return(-1);
 }
 
 static int
-spinc_ischar(struct console *cp __unused)
+spinc_ischar(struct console *cp __attribute((unused)))
 {
-
-	return (0);
+	return(0);
 }

@@ -27,7 +27,6 @@
 
 #include "linux.h"
 #include "bootstrap.h"
-#include "vbe.h"
 #include "libi386.h"
 #include "btxv86.h"
 
@@ -98,6 +97,14 @@ linux_loadkernel(char *filename, uint64_t dest, struct preloaded_file **result)
 	int setup_sects, linux_big;
 	unsigned long data, text;
 	vm_offset_t mem;
+	struct relocate_data *rdata;
+
+	/*
+	 * relocater_data is space allocated in relocater_tramp.S
+	 * There is space for 3 instances + terminating zero in case
+	 * all 3 entries are used.
+	 */
+	rdata = (struct relocate_data *)&relocater_data;
 
 	if (filename == NULL)
 		return (EFTYPE);
@@ -238,30 +245,25 @@ linux_loadkernel(char *filename, uint64_t dest, struct preloaded_file **result)
 	fp->f_size = LINUX_SETUP_MOVE_SIZE;
 	linux_text_len = text;
 
-	/*
-	 * relocater_data is space allocated in relocater_tramp.S
-	 * There is space for 3 instances + terminating zero in case
-	 * all 3 entries are used.
-	 */
 	if (linux_big == 0) {
-		relocater_data[0].src = LINUX_BZIMAGE_ADDR;
-		relocater_data[0].dest = LINUX_ZIMAGE_ADDR;
-		relocater_data[0].size = text;
-		relocater_data[1].src = linux_data_tmp_addr;
-		relocater_data[1].dest = linux_data_real_addr;
-		relocater_data[1].size = LINUX_SETUP_MOVE_SIZE;
+		rdata[0].src = LINUX_BZIMAGE_ADDR;
+		rdata[0].dest = LINUX_ZIMAGE_ADDR;
+		rdata[0].size = text;
+		rdata[1].src = linux_data_tmp_addr;
+		rdata[1].dest = linux_data_real_addr;
+		rdata[1].size = LINUX_SETUP_MOVE_SIZE;
 		/* make sure the next entry is zeroed */
-		relocater_data[2].src = 0;
-		relocater_data[2].dest = 0;
-		relocater_data[2].size = 0;
+		rdata[2].src = 0;
+		rdata[2].dest = 0;
+		rdata[2].size = 0;
 	} else {
-		relocater_data[0].src = linux_data_tmp_addr;
-		relocater_data[0].dest = linux_data_real_addr;
-		relocater_data[0].size = LINUX_SETUP_MOVE_SIZE;
+		rdata[0].src = linux_data_tmp_addr;
+		rdata[0].dest = linux_data_real_addr;
+		rdata[0].size = LINUX_SETUP_MOVE_SIZE;
 		/* make sure the next entry is zeroed */
-		relocater_data[1].src = 0;
-		relocater_data[1].dest = 0;
-		relocater_data[1].size = 0;
+		rdata[1].src = 0;
+		rdata[1].dest = 0;
+		rdata[1].size = 0;
 	}
 
 	*result = fp;
@@ -277,6 +279,7 @@ linux_exec(struct preloaded_file *fp)
 	struct linux_kernel_header *lh = (struct linux_kernel_header *)
 	    PTOV(linux_data_tmp_addr);
 	struct preloaded_file *mfp = fp->f_next;
+	struct relocate_data *rdata;
 	char *arg, *vga;
 	char *src, *dst;
 	int linux_big;
@@ -295,6 +298,7 @@ linux_exec(struct preloaded_file *fp)
 	if (rootdev != NULL)
 		relocator_edx = bd_unit2bios(rootdev->d_unit);
 
+	rdata = (struct relocate_data *)&relocater_data;
 	/*
 	 * command line
 	 * if not set in fp, read from boot-args env
@@ -363,22 +367,22 @@ linux_exec(struct preloaded_file *fp)
 
 		/* need to relocate initrd first */
 		if (linux_big == 0) {
-			relocater_data[2].src = relocater_data[1].src;
-			relocater_data[2].dest = relocater_data[1].dest;
-			relocater_data[2].size = relocater_data[1].size;
-			relocater_data[1].src = relocater_data[0].src;
-			relocater_data[1].dest = relocater_data[0].dest;
-			relocater_data[1].size = relocater_data[0].size;
-			relocater_data[0].src = mfp->f_addr;
-			relocater_data[0].dest = moveto;
-			relocater_data[0].size = mfp->f_size;
+			rdata[2].src = rdata[1].src;
+			rdata[2].dest = rdata[1].dest;
+			rdata[2].size = rdata[1].size;
+			rdata[1].src = rdata[0].src;
+			rdata[1].dest = rdata[0].dest;
+			rdata[1].size = rdata[0].size;
+			rdata[0].src = mfp->f_addr;
+			rdata[0].dest = moveto;
+			rdata[0].size = mfp->f_size;
 		} else {
-			relocater_data[1].src = relocater_data[0].src;
-			relocater_data[1].dest = relocater_data[0].dest;
-			relocater_data[1].size = relocater_data[0].size;
-			relocater_data[0].src = mfp->f_addr;
-			relocater_data[0].dest = moveto;
-			relocater_data[0].size = mfp->f_size;
+			rdata[1].src = rdata[0].src;
+			rdata[1].dest = rdata[0].dest;
+			rdata[1].size = rdata[0].size;
+			rdata[0].src = mfp->f_addr;
+			rdata[0].dest = moveto;
+			rdata[0].size = mfp->f_size;
 		}
 		lh->ramdisk_image = moveto;
 		lh->ramdisk_size = mfp->f_size;
@@ -396,8 +400,6 @@ linux_exec(struct preloaded_file *fp)
 	relocator_a20_enabled = 1;
 	i386_copyin(relocater, 0x600, relocater_size);
 
-	/* Set VGA text mode */
-	bios_set_text_mode(3);
 	dev_cleanup();
 
 	__exec((void *)0x600);

@@ -34,43 +34,8 @@
  */
 #include <sys/types.h>
 #include <sys/systm.h>
-#include <sys/tem_impl.h>
 #include <sys/font.h>
 #include <sys/sysmacros.h>
-
-/*
- * To simplify my life, I am "temporarily" collecting the commonly used
- * color bits here. The bits shared between loader, dboot, early boot, tem.
- * This data would need some sort of API, but I am in no condition to figure
- * something out right now.
- */
-
-/* ANSI color to sun color translation. */
-/* BEGIN CSTYLED */
-/*                            Bk  Rd  Gr  Br  Bl  Mg  Cy  Wh */
-const uint8_t dim_xlate[] = {  1,  5,  3,  7,  2,  6,  4,  8 };
-const uint8_t brt_xlate[] = {  9, 13, 11, 15, 10, 14, 12,  0 };
-
-/* The pc color here is actually referring to standard 16 color VGA map. */
-const uint8_t solaris_color_to_pc_color[16] = {
-    15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14
-};
-
-/* 4-bit to 24-bit color translation. */
-const text_cmap_t cmap4_to_24 = {
-/* 0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15
-  Wh+  Bk   Bl   Gr   Cy   Rd   Mg   Br   Wh   Bk+  Bl+  Gr+  Cy+  Rd+  Mg+  Yw */
-  .red = {
- 0xff,0x00,0x00,0x00,0x00,0x80,0x80,0x80,0x80,0x40,0x00,0x00,0x00,0xff,0xff,0xff
-},
-  .green = {
- 0xff,0x00,0x00,0x80,0x80,0x00,0x00,0x80,0x80,0x40,0x00,0xff,0xff,0x00,0x00,0xff
-},
-  .blue = {
- 0xff,0x00,0x80,0x00,0x80,0x00,0x80,0x00,0x80,0x40,0xff,0x00,0xff,0x00,0xff,0x00
-}
-};
-/* END CSTYLED */
 
 /*
  * Fonts are statically linked with this module. At some point an
@@ -84,36 +49,20 @@ const text_cmap_t cmap4_to_24 = {
 /*
  * Must be sorted by font size in descending order
  */
-font_list_t fonts = STAILQ_HEAD_INITIALIZER(fonts);
+struct fontlist fonts[] = {
+	{  &font_data_12x22,	NULL  },
+	{  &font_data_8x16,	NULL  },
+	{  &font_data_7x14,	NULL  },
+	{  &font_data_6x10,	NULL  },
+	{  NULL, NULL  }
+};
 
-bitmap_data_t *
-set_font(short *rows, short *cols, short height, short width)
+void
+set_font(struct font *f, short *rows, short *cols, short height, short width)
 {
-	bitmap_data_t *font = NULL;
+	bitmap_data_t	*font_selected = NULL;
 	struct fontlist	*fl;
-
-	/*
-	 * First check for manually loaded font.
-	 */
-	STAILQ_FOREACH(fl, &fonts, font_next) {
-		if (fl->font_flags == FONT_MANUAL ||
-		    fl->font_flags == FONT_BOOT) {
-			font = fl->font_data;
-			if (font->font == NULL && fl->font_load != NULL &&
-			    fl->font_name != NULL) {
-				font = fl->font_load(fl->font_name);
-			}
-			if (font == NULL || font->font == NULL)
-				font = NULL;
-			break;
-		}
-	}
-
-	if (font != NULL) {
-		*rows = (height - BORDER_PIXELS) / font->height;
-		*cols = (width - BORDER_PIXELS) / font->width;
-		return (font);
-	}
+	int i;
 
 	/*
 	 * Find best font for these dimensions, or use default
@@ -125,107 +74,34 @@ set_font(short *rows, short *cols, short height, short width)
 	 * emulator causes much better font selection for the
 	 * normal range of screen resolutions.
 	 */
-	STAILQ_FOREACH(fl, &fonts, font_next) {
-		font = fl->font_data;
-		if ((((*rows * font->height) + BORDER_PIXELS) <= height) &&
-		    (((*cols * font->width) + BORDER_PIXELS) <= width)) {
-			if (font->font == NULL) {
-				if (fl->font_load != NULL &&
-				    fl->font_name != NULL) {
-					font = fl->font_load(fl->font_name);
-				}
-				if (font == NULL)
-					continue;
-			}
-			*rows = (height - BORDER_PIXELS) / font->height;
-			*cols = (width - BORDER_PIXELS) / font->width;
+	for (fl = fonts; fl->data; fl++) {
+		if ((((*rows * fl->data->height) + BORDER_PIXELS) <= height) &&
+		    (((*cols * fl->data->width) + BORDER_PIXELS) <= width)) {
+			font_selected = fl->data;
 			break;
 		}
-		font = NULL;
 	}
-
-	if (font == NULL) {
-		/*
-		 * We have fonts sorted smallest last, try it before
-		 * falling back to builtin.
-		 */
-		fl = STAILQ_LAST(&fonts, fontlist, font_next);
-		if (fl != NULL && fl->font_load != NULL &&
-		    fl->font_name != NULL) {
-			font = fl->font_load(fl->font_name);
+	/*
+	 * The minus 2 is to make sure we have at least a 1 pixel
+	 * border around the entire screen.
+	 */
+	if (font_selected == NULL) {
+		if (((*rows * DEFAULT_FONT_DATA.height) > height) ||
+		    ((*cols * DEFAULT_FONT_DATA.width) > width)) {
+			*rows = (height - 2) / DEFAULT_FONT_DATA.height;
+			*cols = (width - 2) / DEFAULT_FONT_DATA.width;
 		}
-		if (font == NULL)
-			font = &DEFAULT_FONT_DATA;
-
-		*rows = (height - BORDER_PIXELS) / font->height;
-		*cols = (width - BORDER_PIXELS) / font->width;
+		font_selected = &DEFAULT_FONT_DATA;
 	}
 
-	return (font);
-}
+	f->width = font_selected->width;
+	f->height = font_selected->height;
 
-/* Binary search for the glyph. Return 0 if not found. */
-static uint16_t
-font_bisearch(const struct font_map *map, uint32_t len, uint32_t src)
-{
-	int min, mid, max;
+	for (i = 0; i < ENCODED_CHARS; i++)
+		f->char_ptr[i] = font_selected->encoding[i];
 
-	min = 0;
-	max = len - 1;
+	f->image_data = font_selected->image;
 
-	/* Empty font map. */
-	if (len == 0)
-		return (0);
-	/* Character below minimal entry. */
-	if (src < map[0].font_src)
-		return (0);
-	/* Optimization: ASCII characters occur very often. */
-	if (src <= map[0].font_src + map[0].font_len)
-		return (src - map[0].font_src + map[0].font_dst);
-	/* Character above maximum entry. */
-	if (src > map[max].font_src + map[max].font_len)
-		return (0);
-
-	/* Binary search. */
-        while (max >= min) {
-		mid = (min + max) / 2;
-		if (src < map[mid].font_src)
-			max = mid - 1;
-		else if (src > map[mid].font_src + map[mid].font_len)
-			min = mid + 1;
-		else
-			return (src - map[mid].font_src + map[mid].font_dst);
-	}
-
-	return (0);
-}
-
-/*
- * Return glyph bitmap. If glyph is not found, we will return bitmap
- * for the first (offset 0) glyph.
- */
-const uint8_t *
-font_lookup(const struct font *vf, uint32_t c)
-{
-	uint32_t src;
-	uint16_t dst;
-	size_t stride;
-
-	src = TEM_CHAR(c);
-
-	/* Substitute bold with normal if not found. */
-	if (TEM_CHAR_ATTR(c) & TEM_ATTR_BOLD) {
-		dst = font_bisearch(vf->vf_map[VFNT_MAP_BOLD],
-		    vf->vf_map_count[VFNT_MAP_BOLD], src);
-		if (dst != 0)
-			goto found;
-	}
-	dst = font_bisearch(vf->vf_map[VFNT_MAP_NORMAL],
-	    vf->vf_map_count[VFNT_MAP_NORMAL], src);
-
-found:
-	stride = howmany(vf->vf_width, 8) * vf->vf_height;
-	return (&vf->vf_bytes[dst * stride]);
 }
 
 /*
@@ -242,22 +118,22 @@ void
 font_bit_to_pix4(
     struct font *f,
     uint8_t *dest,
-    uint32_t c,
+    uint8_t c,
     uint8_t fg_color,
     uint8_t bg_color)
 {
 	int	row;
 	int	byte;
 	int	i;
-	const uint8_t *cp;
+	uint8_t	*cp;
 	uint8_t	data;
 	uint8_t	nibblett;
 	int	bytes_wide;
 
-	cp = font_lookup(f, c);
-	bytes_wide = (f->vf_width + 7) / 8;
+	cp = f->char_ptr[c];
+	bytes_wide = (f->width + 7) / 8;
 
-	for (row = 0; row < f->vf_height; row++) {
+	for (row = 0; row < f->height; row++) {
 		for (byte = 0; byte < bytes_wide; byte++) {
 			data = *cp++;
 			for (i = 0; i < 4; i++) {
@@ -295,24 +171,24 @@ void
 font_bit_to_pix8(
     struct font *f,
     uint8_t *dest,
-    uint32_t c,
+    uint8_t c,
     uint8_t fg_color,
     uint8_t bg_color)
 {
 	int	row;
 	int	byte;
 	int	i;
-	const uint8_t *cp;
+	uint8_t	*cp;
 	uint8_t	data;
 	int	bytes_wide;
 	uint8_t	mask;
 	int	bitsleft, nbits;
 
-	cp = font_lookup(f, c);
-	bytes_wide = (f->vf_width + 7) / 8;
+	cp = f->char_ptr[c];
+	bytes_wide = (f->width + 7) / 8;
 
-	for (row = 0; row < f->vf_height; row++) {
-		bitsleft = f->vf_width;
+	for (row = 0; row < f->height; row++) {
+		bitsleft = f->width;
 		for (byte = 0; byte < bytes_wide; byte++) {
 			data = *cp++;
 			mask = 0x80;
@@ -327,117 +203,7 @@ font_bit_to_pix8(
 }
 
 /*
- * bit_to_pix16 is for 16-bit frame buffers.  It will write two output bytes
- * for each bit of input bitmap.  It inverts the input bits before
- * doing the output translation, for reverse video.
- *
- * Assuming foreground is 11111111 11111111
- * and background is 00000000 00000000
- * An input data byte of 0x53 will output the bit pattern
- *
- * 00000000 00000000
- * 11111111 11111111
- * 00000000 00000000
- * 11111111 11111111
- * 00000000 00000000
- * 00000000 00000000
- * 11111111 11111111
- * 11111111 11111111
- *
- */
-
-void
-font_bit_to_pix16(
-    struct font *f,
-    uint16_t *dest,
-    uint32_t c,
-    uint16_t fg_color16,
-    uint16_t bg_color16)
-{
-	int	row;
-	int	byte;
-	int	i;
-	const uint8_t	*cp;
-	uint16_t data, d;
-	int	bytes_wide;
-	int	bitsleft, nbits;
-
-	cp = font_lookup(f, c);
-	bytes_wide = (f->vf_width + 7) / 8;
-
-	for (row = 0; row < f->vf_height; row++) {
-		bitsleft = f->vf_width;
-		for (byte = 0; byte < bytes_wide; byte++) {
-			data = *cp++;
-			nbits = MIN(8, bitsleft);
-			bitsleft -= nbits;
-			for (i = 0; i < nbits; i++) {
-				d = ((data << i) & 0x80 ?
-				    fg_color16 : bg_color16);
-				*dest++ = d;
-			}
-		}
-	}
-}
-
-/*
- * bit_to_pix24 is for 24-bit frame buffers.  It will write three output bytes
- * for each bit of input bitmap.  It inverts the input bits before
- * doing the output translation, for reverse video.
- *
- * Assuming foreground is 11111111 11111111 11111111
- * and background is 00000000 00000000 00000000
- * An input data byte of 0x53 will output the bit pattern
- *
- * 00000000 00000000 00000000
- * 11111111 11111111 11111111
- * 00000000 00000000 00000000
- * 11111111 11111111 11111111
- * 00000000 00000000 00000000
- * 00000000 00000000 00000000
- * 11111111 11111111 11111111
- * 11111111 11111111 11111111
- *
- */
-
-void
-font_bit_to_pix24(
-    struct font *f,
-    uint8_t *dest,
-    uint32_t c,
-    uint32_t fg_color32,
-    uint32_t bg_color32)
-{
-	int	row;
-	int	byte;
-	int	i;
-	const uint8_t	*cp;
-	uint32_t data, d;
-	int	bytes_wide;
-	int	bitsleft, nbits;
-
-	cp = font_lookup(f, c);
-	bytes_wide = (f->vf_width + 7) / 8;
-
-	for (row = 0; row < f->vf_height; row++) {
-		bitsleft = f->vf_width;
-		for (byte = 0; byte < bytes_wide; byte++) {
-			data = *cp++;
-			nbits = MIN(8, bitsleft);
-			bitsleft -= nbits;
-			for (i = 0; i < nbits; i++) {
-				d = ((data << i) & 0x80 ?
-				    fg_color32 : bg_color32);
-				*dest++ = d & 0xff;
-				*dest++ = (d >> 8) & 0xff;
-				*dest++ = (d >> 16) & 0xff;
-			}
-		}
-	}
-}
-
-/*
- * bit_to_pix32 is for 32-bit frame buffers.  It will write four output bytes
+ * bit_to_pix24 is for 24-bit frame buffers.  It will write four output bytes
  * for each bit of input bitmap.  It inverts the input bits before
  * doing the output translation, for reverse video.  Note that each
  * 24-bit RGB value is finally stored in a 32-bit unsigned int, with the
@@ -459,36 +225,28 @@ font_bit_to_pix24(
  */
 
 void
-font_bit_to_pix32(
+font_bit_to_pix24(
     struct font *f,
     uint32_t *dest,
-    uint32_t c,
+    uint8_t c,
     uint32_t fg_color32,
     uint32_t bg_color32)
 {
 	int	row;
 	int	byte;
 	int	i;
-	const uint8_t *cp, *ul;
+	uint8_t	*cp;
 	uint32_t data;
 	int	bytes_wide;
 	int	bitsleft, nbits;
 
-	if (TEM_CHAR_ATTR(c) & TEM_ATTR_UNDERLINE)
-		ul = font_lookup(f, 0x0332);	/* combining low line */
-	else
-		ul = NULL;
+	cp = f->char_ptr[c];
+	bytes_wide = (f->width + 7) / 8;
 
-	cp = font_lookup(f, c);
-	bytes_wide = (f->vf_width + 7) / 8;
-
-	for (row = 0; row < f->vf_height; row++) {
-		bitsleft = f->vf_width;
+	for (row = 0; row < f->height; row++) {
+		bitsleft = f->width;
 		for (byte = 0; byte < bytes_wide; byte++) {
-			if (ul == NULL)
-				data = *cp++;
-			else
-				data = *cp++ | *ul++;
+			data = *cp++;
 			nbits = MIN(8, bitsleft);
 			bitsleft -= nbits;
 			for (i = 0; i < nbits; i++) {

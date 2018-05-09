@@ -11,16 +11,11 @@
 
 #
 # Copyright 2016 Toomas Soome <tsoome@me.com>
-# Copyright 2016 RackTop Systems.
 #
-
-MACHINE=	$(MACH)
-
-all install: libzfsboot.a
 
 include ../Makefile.com
 
-CLEANFILES +=	x86
-CFLAGS +=	-m32
+CFLAGS +=	-march=i386 -m32 -fno-reorder-functions
+CFLAGS +=	-mpreferred-stack-boundary=2
 
-$(OBJS): machine x86
+MACHINE=	$(MACH)

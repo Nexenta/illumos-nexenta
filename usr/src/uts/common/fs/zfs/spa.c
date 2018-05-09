@@ -2931,7 +2931,6 @@ spa_load_impl(spa_t *spa, uint64_t pool_guid, nvlist_t *config,
 		spa_prop_find(spa, ZPOOL_PROP_DELEGATION, &spa->spa_delegation);
 		spa_prop_find(spa, ZPOOL_PROP_FAILUREMODE, &spa->spa_failmode);
 		spa_prop_find(spa, ZPOOL_PROP_AUTOEXPAND, &spa->spa_autoexpand);
-		spa_prop_find(spa, ZPOOL_PROP_BOOTSIZE, &spa->spa_bootsize);
 		spa_prop_find(spa, ZPOOL_PROP_DEDUPDITTO,
 		    &spa->spa_dedup_ditto);
 		spa_prop_find(spa, ZPOOL_PROP_FORCETRIM, &spa->spa_force_trim);
@@ -4984,7 +4983,7 @@ spa_vdev_add(spa_t *spa, nvlist_t *nvroot)
 	 * "spa_last_synced_txg(spa) + 1" is used because:
 	 *   - spa_vdev_exit() calls txg_wait_synced() for "txg"
 	 *   - spa_config_update() calls txg_wait_synced() for
-	 * 	"spa_last_synced_txg(spa) + 1"
+	 *     "spa_last_synced_txg(spa) + 1"
 	 */
 	tx = dmu_tx_create_assigned(spa_get_dsl(spa),
 	    spa_last_synced_txg(spa) + 1);
@@ -5977,8 +5976,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		ASSERT(!locked);
 
 		if (vd != vd->vdev_top)
-			return (spa_vdev_exit(spa, NULL, txg,
-			    SET_ERROR(ENOTSUP)));
+			return (spa_vdev_exit(spa, NULL, txg, SET_ERROR(ENOTSUP)));
 
 		mg = vd->vdev_mg;
 
@@ -6029,8 +6027,7 @@ spa_vdev_remove(spa_t *spa, uint64_t guid, boolean_t unspare)
 		ASSERT(!locked);
 
 		if (vd != vd->vdev_top)
-			return (spa_vdev_exit(spa, NULL, txg,
-			    SET_ERROR(ENOTSUP)));
+			return (spa_vdev_exit(spa, NULL, txg, SET_ERROR(ENOTSUP)));
 
 		error = spa_special_vdev_remove(spa, vd, &txg);
 		if (error == 0) {

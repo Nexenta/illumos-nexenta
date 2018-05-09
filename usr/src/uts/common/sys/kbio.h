@@ -26,6 +26,8 @@
 #ifndef _SYS_KBIO_H
 #define	_SYS_KBIO_H
 
+#pragma ident	"%Z%%M%	%I%	%E% SMI"	/* SunOS4.0 1.23 */
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -144,7 +146,7 @@ struct kiockeymap {
 				/*  SHIFTMASK, CTRLMASK, UPMASK, */
 				/*  ALTGRAPHMASK) */
 	uchar_t	kio_station;	/* Physical keyboard key station (0-127) */
-	unsigned kio_entry;	/* Translation table station's entry */
+	ushort_t kio_entry;	/* Translation table station's entry */
 	char	kio_string[10];	/* Value for STRING entries (null terminated) */
 };
 

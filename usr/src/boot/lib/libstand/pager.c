@@ -49,7 +49,7 @@ pager_open(void)
     char	*cp, *lp;
     
     nlines = 24;		/* sensible default */
-    if ((cp = getenv("screen-#rows")) != NULL) {
+    if ((cp = getenv("LINES")) != NULL) {
 	nlines = strtol(cp, &lp, 0);
     }
 

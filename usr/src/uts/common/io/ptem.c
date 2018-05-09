@@ -28,6 +28,8 @@
  * Use is subject to license terms.
  */
 
+#pragma ident	"%Z%%M%	%I%	%E% SMI" /* from S5R4 1.13 */
+
 /*
  * Description:
  *
@@ -104,8 +106,8 @@ static struct module_info ptem_info = {
 	0xabcd,
 	"ptem",
 	0,
-	_TTY_BUFSIZ,
-	_TTY_BUFSIZ,
+	512,
+	512,
 	128
 };
 
@@ -199,7 +201,7 @@ ptemopen(
 	mop->b_wptr += sizeof (struct stroptions);
 	sop = (struct stroptions *)mop->b_rptr;
 	sop->so_flags = SO_HIWAT | SO_LOWAT | SO_ISTTY;
-	sop->so_hiwat = _TTY_BUFSIZ;
+	sop->so_hiwat = 512;
 	sop->so_lowat = 256;
 
 	/*
@@ -478,12 +480,11 @@ ptemwput(queue_t *q, mblk_t *mp)
 
 		case M_FLUSH:
 			if (*mp->b_rptr & FLUSHW) {
-				if ((ntp->state & IS_PTSTTY) &&
-				    (*mp->b_rptr & FLUSHBAND))
-					flushband(q, *(mp->b_rptr + 1),
-					    FLUSHDATA);
-				else
-					flushq(q, FLUSHDATA);
+			    if ((ntp->state & IS_PTSTTY) &&
+					(*mp->b_rptr & FLUSHBAND))
+				flushband(q, *(mp->b_rptr + 1), FLUSHDATA);
+			    else
+				flushq(q, FLUSHDATA);
 			}
 			putnext(q, mp);
 			break;
@@ -1040,7 +1041,7 @@ ptioc(queue_t *q, mblk_t *mp, int qside)
 		mioc2ack(mp, NULL, 0, 0);
 		qreply(q, mp);
 		return;
-	}
+	    }
 
 	case TIOCREMOTE: {
 		int	onoff;
@@ -1081,7 +1082,7 @@ ptioc(queue_t *q, mblk_t *mp, int qside)
 		else
 			tp->state &= ~REMOTEMODE;
 		return;
-	}
+	    }
 
 	default:
 		putnext(q, mp);

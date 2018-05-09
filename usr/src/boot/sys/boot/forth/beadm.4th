@@ -8,7 +8,7 @@
 \ source.  A copy of the CDDL is also available via the Internet at
 \ http://www.illumos.org/license/CDDL.
 
-\ Copyright 2017 Toomas Soome <tsoome@me.com>
+\ Copyright 2015 Toomas Soome <tsoome@me.com>
 
 \ This module is implementing the beadm user command to support listing
 \ and switching Boot Environments (BE) from command line and
@@ -83,7 +83,7 @@ variable page_remainder
 	O_RDONLY fopen fd !
 	reset_line_reading
 	fd @ -1 = if EOPEN throw then
-	." BE" dup 2 - spaces ." Type    Device" cr
+	." BE" dup 2 - spaces ." bootfs" cr
 	begin
 		end_of_file? 0=
 	while
@@ -95,9 +95,6 @@ variable page_remainder
 		free_buffers
 		read_line
 		get_name_value
-		name_buffer strget type
-		name_buffer strget s" bootfs" compare 0= if 2 spaces then
-		name_buffer strget s" chain" compare 0= if 3 spaces then
 		value_buffer strget type cr
 		free_buffers
 	repeat
@@ -105,14 +102,12 @@ variable page_remainder
 	drop
 ;
 
-\ we are called with strings be_name menu_file, to simplify the stack
-\ management, we open the menu and free the menu_file.
-: beadm_bootfs ( be_addr be_len maddr mlen -- addr len taddr tlen flag | flag )
+: beadm_bootfs ( be_addr be_len menu_addr menu_len -- addr len flag )
 	0 to end_of_file?
-	2dup O_RDONLY fopen fd !
-	drop free-memory
-	fd @ -1 = if EOPEN throw then
+	O_RDONLY fopen fd !
 	reset_line_reading
+	fd @ -1 = if EOPEN throw then
+	2swap
 	begin
 		end_of_file? 0=
 	while
@@ -121,12 +116,11 @@ variable page_remainder
 		get_name_value
 		2dup value_buffer strget compare
 		0= if ( title == be )
-			2drop		\ drop be_name
+			2drop
 			free_buffers
 			read_line
 			get_name_value
-			value_buffer strget strdup
-			name_buffer strget strdup -1
+			value_buffer strget strdup -1
 			free_buffers
 			1 to end_of_file? \ mark end of file to skip the rest
 		else
@@ -136,9 +130,9 @@ variable page_remainder
 	fd @ fclose
 	line_buffer strfree
 	read_buffer strfree
-	dup -1 > if ( be_addr be_len )
+	dup -1 > if ( dev_addr dev_len )
 		2drop
-		0
+		0 0 0
 	then
 ;
 
@@ -185,73 +179,53 @@ variable page_remainder
 ;
 
 \ activate be on device.
-\ if be name was not given, set currdev
-\ otherwize, we query device:/boot/menu.lst for bootfs and
-\ if found, and bootfs type is chain, attempt chainload.
-\ set currdev to bootfs.
-\ if we were able to set currdev, reload the config
+\ in case of zfs, we query device:/boot/menu.lst for bootfs and
+\ use zfs:bootfs: for currdev
+\ in case of ufs we have device name without ':', so we just
+\ set currdev=device: and hope for best - there are no multiple BE's on ufs
 
 : activate-dev ( dev.addr dev.len be.addr be.len -- )
-
-	dup 0= if
-		2drop
-		colon-			\ remove : at the end of the dev name
+	2swap colon-			\ remove : at the end of the dev name
+	2dup [char] : strchr nip
+	0= if ( no ':' in dev name, its ufs )
+		2swap 2drop
 		dup 1+ allocate if ENOMEM throw then
 		dup 2swap 0 -rot strcat
 		colon+
 		s" currdev" setenv	\ setenv currdev = device
 		free-memory
 	else
-		2swap menu.lst
-		beadm_bootfs if ( addr len taddr tlen )
-			2dup s" chain" compare 0= if
-				drop free-memory	\ free type
-				2dup
-				dup 6 + allocate if ENOMEM throw then
-				dup >R
-				0 s" chain " strcat
-				2swap strcat ['] evaluate catch drop
-				\ We are still there?
-				R> free-memory		\ free chain command
-				drop free-memory	\ free addr
-				exit
-			then
-			drop free-memory		\ free type
-			2dup [char] : strchr nip 0= if
-				\ have dataset and need to get zfs:pool/ROOT/be:
-				dup 5 + allocate if ENOMEM throw then
-				0 s" zfs:" strcat
-				2swap strcat
-				colon+
-			then
+		dup 16 + allocate if ENOMEM throw then
+		swap 2dup 2>R	\ copy of new addr len to return stack
+		move 2R>		\ copy dev name and concat file name
+		s" :/boot/menu.lst" strcat 2dup \ leave copy to stack
+		beadm_bootfs if ( dev_addr dev_len addr len )
+			2swap		\ addr len dev_addr dev_len
+			drop
+			free-memory
+				\ have dataset and need to get zfs:pool/ROOT/be:
+			dup 5 + allocate if ENOMEM throw then
+			0 s" zfs:" strcat
+			2swap strcat
+			colon+
 			2dup s" currdev" setenv
 			drop free-memory
 		else
-			." No such BE in menu.lst or menu.lst is missing." cr
-			exit
+			2drop drop free \ free the file name
+			." Failed to process BE/dev" cr abort
 		then
 	then
 
-	\ reset BE menu
-	0 page_count !
 	\ need to do:
 	0 unload drop
 	free-module-options
-	\ unset the env variables with kernel arguments
-	s" acpi-user-options" unsetenv
-	s" boot-args" unsetenv
-	s" boot_ask" unsetenv
-	s" boot_single" unsetenv
-	s" boot_verbose" unsetenv
-	s" boot_kmdb" unsetenv
-	s" boot_debug" unsetenv
-	s" boot_reconfigure" unsetenv
+	\ unset kernel env?
 	start			\ load config, kernel and modules
 	." Current boot device: " s" currdev" getenv type cr
 ;
 
 \ beadm list [device]
-\ beadm activate BE [device] | device
+\ beadm activate BE [device] BE
 \
 \ lists BE's from current or specified device /boot/menu.lst file
 \ activates specified BE by unloading modules, setting currdev and
@@ -261,7 +235,7 @@ variable page_remainder
 
 	dup 0= if
 		." Usage:" cr
-		." beadm activate {beName [device] | device}" cr
+		." beadm activate beName [device]" cr
 		." beadm list [device]" cr
 		." Use lsdev to get device names." cr
 		drop exit
@@ -287,12 +261,12 @@ variable page_remainder
 		then
 		argc 2 = if ( activate be )
 			\ need to set arg list into proper order
-			1+ >R	\ save argc+1 to return stack
+			1 + >R	\ save argc+1 to return stack
 				\ if we have : in name, its device, inject
-				\ empty be name
+				\ dummy be name, as it must be ufs device
 			2dup [char] : strchr nip
 			if ( its : in name )
-				0 0 R>
+				s" ufs" R>
 			else
 				\ add device, swap with be and receive argc
 				current-dev 2swap R>
@@ -366,13 +340,12 @@ builtin: beadm
 	then
 ;
 
-: be-set-page { | entry count n device -- }
+: be-set-page { | entry count n -- }
 	page_count @ 0= if
 		be-pages
 		page_count @ 0= if exit then
 	then
 
-	0 to device
 	s" zfs_be_currpage" getenv dup -1 = if
 		drop s" 1"
 	then
@@ -408,7 +381,7 @@ builtin: beadm
 			n 1+ to n
 		else
 			\ Use reverse loop to display descending order
-			\ for BE list.
+			\ for BE list.
 			0 count 1- do
 				read_line		\ read title line
 				get_name_value
@@ -418,47 +391,25 @@ builtin: beadm
 				value_buffer strget
 				52 i +			\ ascii 4 + i
 				s" bootenvansi_caption[4]" 20 +c! setenv
-
+				s" set_bootenv"
+				52 i +			\ ascii 4 + i
+				s" bootenvmenu_command[4]" 20 +c! setenv
 				free_buffers
 				read_line		\ read value line
 				get_name_value
-
-				\ set menu entry command
-				name_buffer strget s" chain" compare
-				0= if
-					s" set_be_chain"
-				else
-					s" set_bootenv"
-				then
 				52 i +			\ ascii 4 + i
-				s" bootenvmenu_command[4]" 20 +c! setenv
-
-				\ set device name
-				name_buffer strget s" chain" compare
-				0= if
-					\ for chain, use the value as is
-					value_buffer strget
-				else
-					value_buffer strget 2dup
-					[char] : strchr nip
-					0= if
-						\ make zfs device name
-						swap drop
-						5 + allocate if
-							ENOMEM throw
-						then
-						s" zfs:" ( addr addr' len' )
-						2 pick swap move ( addr )
-						dup to device
-						4 value_buffer strget
-						strcat	( addr len )
-						s" :" strcat
-					then
-				then
-
-				52 i +			\ ascii 4 + i
+				value_buffer strget swap drop
+				5 + allocate if ENOMEM throw then
+				s" zfs:"		( N addr addr1 len )
+				2 pick swap move	( N addr )
+				swap over		( addr N addr )
+				4 value_buffer
+				strget		( addr N addr 4 addr1 len )
+				strcat		( addr N addr 4+len )
+				s" :" strcat	( addr N addr 5+len )
+				rot		( addr addr 5+len N )
 				s" bootenv_root[4]" 13 +c! setenv
-				device free-memory 0 to device
+				free-memory
 				free_buffers
 				-1
 			+loop

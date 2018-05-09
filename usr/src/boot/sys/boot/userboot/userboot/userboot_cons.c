@@ -44,15 +44,14 @@ static int userboot_cons_getchar(void);
 static int userboot_cons_poll(void);
 
 struct console userboot_console = {
-	.c_name = "userboot",
-	.c_desc = "userboot",
-	.c_flags = 0,
-	.c_probe = userboot_cons_probe,
-	.c_init = userboot_cons_init,
-	.c_out = userboot_cons_putchar,
-	.c_in = userboot_cons_getchar,
-	.c_ready = userboot_cons_poll,
-	.c_private = NULL
+	"userboot",
+	"userboot",
+	0,
+	userboot_cons_probe,
+	userboot_cons_init,
+	userboot_cons_putchar,
+	userboot_cons_getchar,
+	userboot_cons_poll,
 };
 
 /*

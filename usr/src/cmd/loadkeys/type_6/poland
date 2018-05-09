@@ -21,6 +21,8 @@
 #
 # CDDL HEADER END
 #
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
+#
 # Polish  Type 6 (USB) key layout
 #
 key  49  base '\\' shift | caps '\\' ctrl ^\ altg nop

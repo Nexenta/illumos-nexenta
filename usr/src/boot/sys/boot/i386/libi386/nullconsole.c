@@ -47,16 +47,15 @@ static int	nullc_getchar(struct console *);
 static int	nullc_ischar(struct console *);
 
 struct console nullconsole = {
-	.c_name = "null",
-	.c_desc = "null port",
-	.c_flags = 0,
-	.c_probe = nullc_probe,
-	.c_init = nullc_init,
-	.c_out = nullc_putchar,
-	.c_in = nullc_getchar,
-	.c_ready = nullc_ischar,
-	.c_ioctl = NULL,
-	.c_private = NULL
+	"null",
+	"null port",
+	0,
+	nullc_probe,
+	nullc_init,
+	nullc_putchar,
+	nullc_getchar,
+	nullc_ischar,
+	NULL
 };
 
 static void
@@ -66,24 +65,26 @@ nullc_probe(struct console *cp)
 }
 
 static int
-nullc_init(struct console *cp __unused, int arg __unused)
+nullc_init(struct console *cp __attribute((unused)),
+    int arg __attribute((unused)))
 {
 	return(0);
 }
 
 static void
-nullc_putchar(struct console *cp __unused, int c __unused)
+nullc_putchar(struct console *cp __attribute((unused)),
+    int c __attribute((unused)))
 {
 }
 
 static int
-nullc_getchar(struct console *cp __unused)
+nullc_getchar(struct console *cp __attribute((unused)))
 {
 	return(-1);
 }
 
 static int
-nullc_ischar(struct console *cp __unused)
+nullc_ischar(struct console *cp __attribute((unused)))
 {
 	return(0);
 }

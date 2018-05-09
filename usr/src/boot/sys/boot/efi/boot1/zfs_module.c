@@ -38,74 +38,27 @@
 
 static dev_info_t *devices;
 
-uint64_t
-ldi_get_size(void *priv)
-{
-	dev_info_t *devinfo = priv;
-
-	return (devinfo->dev->Media->BlockSize *
-	    (devinfo->dev->Media->LastBlock + 1));
-}
-
 static int
 vdev_read(vdev_t *vdev, void *priv, off_t off, void *buf, size_t bytes)
 {
 	dev_info_t *devinfo;
 	uint64_t lba;
-	size_t size, remainder, rb_size, blksz;
-	char *bouncebuf = NULL, *rb_buf;
 	EFI_STATUS status;
 
 	devinfo = (dev_info_t *)priv;
 	lba = off / devinfo->dev->Media->BlockSize;
-	remainder = off % devinfo->dev->Media->BlockSize;
 
-	rb_buf = buf;
-	rb_size = bytes;
-
-	/*
-	 * If we have remainder from off, we need to add remainder part.
-	 * Since buffer must be multiple of the BlockSize, round it all up.
-	 */
-	size = roundup2(bytes + remainder, devinfo->dev->Media->BlockSize);
-	blksz = size;
-	if (remainder != 0 || size != bytes) {
-		rb_size = devinfo->dev->Media->BlockSize;
-		bouncebuf = malloc(rb_size);
-		if (bouncebuf == NULL) {
-			printf("vdev_read: out of memory\n");
-			return (-1);
-		}
-		rb_buf = bouncebuf;
-		blksz = rb_size - remainder;
+	status = devinfo->dev->ReadBlocks(devinfo->dev,
+	    devinfo->dev->Media->MediaId, lba, bytes, buf);
+	if (status != EFI_SUCCESS) {
+		DPRINTF("vdev_read: failed dev: %p, id: %u, lba: %ju, size: %zu,"
+                    " status: %lu\n", devinfo->dev,
+                    devinfo->dev->Media->MediaId, (uintmax_t)lba, bytes,
+                    EFI_ERROR_CODE(status));
+		return (-1);
 	}
 
-	while (bytes > 0) {
-		status = devinfo->dev->ReadBlocks(devinfo->dev,
-		    devinfo->dev->Media->MediaId, lba, rb_size, rb_buf);
-		if (status != EFI_SUCCESS)
-			goto error;
-		if (bytes < blksz)
-			blksz = bytes;
-		if (bouncebuf != NULL)
-			memcpy(buf, rb_buf + remainder, blksz);
-		buf = (void *)((uintptr_t)buf + blksz);
-		bytes -= blksz;
-		lba++;
-		remainder = 0;
-		blksz = rb_size;
-	}
-
-	free(bouncebuf);
 	return (0);
-
-error:
-	free(bouncebuf);
-	DPRINTF("vdev_read: failed dev: %p, id: %u, lba: %ju, size: %zu,"
-	    " rb_size: %zu, status: %lu\n", devinfo->dev,
-	    devinfo->dev->Media->MediaId, (uintmax_t)lba, bytes, rb_size,
-	    EFI_ERROR_CODE(status));
-	return (-1);
 }
 
 static EFI_STATUS
@@ -116,7 +69,7 @@ probe(dev_info_t *dev)
 	EFI_STATUS status;
 
 	/* ZFS consumes the dev on success so we need a copy. */
-	if ((status = BS->AllocatePool(EfiLoaderData, sizeof(*dev),
+	if ((status = bs->AllocatePool(EfiLoaderData, sizeof(*dev),
 	    (void**)&tdev)) != EFI_SUCCESS) {
 		DPRINTF("Failed to allocate tdev (%lu)\n",
 		    EFI_ERROR_CODE(status));
@@ -125,7 +78,7 @@ probe(dev_info_t *dev)
 	memcpy(tdev, dev, sizeof(*dev));
 
 	if (vdev_probe(vdev_read, tdev, &spa) != 0) {
-		(void)BS->FreePool(tdev);
+		(void)bs->FreePool(tdev);
 		return (EFI_UNSUPPORTED);
 	}
 
@@ -178,18 +131,17 @@ load(const char *filepath, dev_info_t *devinfo, void **bufp, size_t *bufsize)
 		return (EFI_INVALID_PARAMETER);
 	}
 
-	if ((status = BS->AllocatePool(EfiLoaderData, (UINTN)st.st_size, &buf))
+	if ((status = bs->AllocatePool(EfiLoaderData, (UINTN)st.st_size, &buf))
 	    != EFI_SUCCESS) {
-		printf("Failed to allocate load buffer %zd for pool '%s' "
-		    "for '%s' (%lu)\n", (ssize_t)st.st_size, spa->spa_name,
-		    filepath, EFI_ERROR_CODE(status));
+		printf("Failed to allocate load buffer %zd for pool '%s' for '%s' "
+		    "(%lu)\n", st.st_size, spa->spa_name, filepath, EFI_ERROR_CODE(status));
 		return (EFI_INVALID_PARAMETER);
 	}
 
 	if ((err = dnode_read(spa, &dn, 0, buf, st.st_size)) != 0) {
 		printf("Failed to read node from %s (%d)\n", spa->spa_name,
 		    err);
-		(void)BS->FreePool(buf);
+		(void)bs->FreePool(buf);
 		return (EFI_INVALID_PARAMETER);
 	}
 

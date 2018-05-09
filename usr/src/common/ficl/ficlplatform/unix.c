@@ -39,7 +39,7 @@ ficlCallbackDefaultTextOut(ficlCallback *callback, char *message)
 	FICL_IGNORE(callback);
 
 	if (message != NULL) {
-#ifdef _STANDALONE
+#ifdef STAND
 		while (*message != 0)
 			putchar((unsigned char)*(message++));
 #else

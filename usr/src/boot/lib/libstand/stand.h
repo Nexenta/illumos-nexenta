@@ -168,7 +168,6 @@ struct devdesc
 #define	DEVT_NET	2
 #define	DEVT_CD		3
 #define	DEVT_ZFS	4
-#define	DEVT_FD		5
     int			d_unit;
     void		*d_opendata;
 };
@@ -196,9 +195,6 @@ extern struct open_file files[];
 #define	F_NODEV		0x0008	/* network open - no device */
 #define	F_GZIP		0x0010  /* file is compressed by gzip */
 #define	F_BZIP		0x0020	/* file is compressed by bzip */
-#define	F_MASK		0xFFFF
-/* Mode modifier for strategy() */
-#define	F_NORA		(0x01 << 16)	/* Disable Read-Ahead */
 
 #define isascii(c)	(((c) & ~0x7F) == 0)
 
@@ -262,7 +258,6 @@ extern void	mallocstats(void);
 
 extern int	printf(const char *fmt, ...) __printflike(1, 2);
 extern void	vprintf(const char *fmt, __va_list);
-extern int	asprintf(char **buf, const char *cfmt, ...) __printflike(2, 3);
 extern int	sprintf(char *buf, const char *cfmt, ...) __printflike(2, 3);
 extern int	snprintf(char *buf, size_t size, const char *cfmt, ...) __printflike(3, 4);
 extern void	vsprintf(char *buf, const char *cfmt, __va_list);

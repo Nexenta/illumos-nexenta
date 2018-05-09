@@ -24,6 +24,7 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
+ * $FreeBSD$
  */
 
 #ifndef DOSIO_H
@@ -95,8 +96,6 @@ typedef union {
 
 typedef struct {
     struct open_file *fd;       /* file descriptor */
-    u_char *fatbuf;		/* FAT cache buffer */
-    u_int fatbuf_blknum;	/* number of 128K block in FAT cache buffer */
     u_int links;                /* active links to structure */
     u_int spc;                  /* sectors per cluster */
     u_int bsize;                /* cluster size in bytes */

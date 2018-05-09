@@ -25,6 +25,7 @@
  */
 
 #include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -45,8 +46,8 @@
 static int	ofwn_probe(struct netif *, void *);
 static int	ofwn_match(struct netif *, void *);
 static void	ofwn_init(struct iodesc *, void *);
-static ssize_t	ofwn_get(struct iodesc *, void **, time_t);
-static ssize_t	ofwn_put(struct iodesc *, void *, size_t);
+static int	ofwn_get(struct iodesc *, void *, size_t, time_t);
+static int	ofwn_put(struct iodesc *, void *, size_t);
 static void	ofwn_end(struct netif *);
 
 extern struct netif_stats	ofwn_stats[];
@@ -56,7 +57,7 @@ struct netif_dif ofwn_ifs[] = {
 	{	0,		1,		&ofwn_stats[0],	0,	},
 };
 
-struct netif_stats ofwn_stats[nitems(ofwn_ifs)];
+struct netif_stats ofwn_stats[NENTS(ofwn_ifs)];
 
 struct netif_driver ofwnet = {
 	"net",			/* netif_bname */
@@ -67,7 +68,7 @@ struct netif_driver ofwnet = {
 	ofwn_put,		/* netif_put */
 	ofwn_end,		/* netif_end */
 	ofwn_ifs,		/* netif_ifs */
-	nitems(ofwn_ifs)	/* netif_nifs */
+	NENTS(ofwn_ifs)		/* netif_nifs */
 };
 
 static ihandle_t	netinstance;
@@ -86,7 +87,7 @@ ofwn_probe(struct netif *nif, void *machdep_hint)
 	return 0;
 }
 
-static ssize_t
+static int
 ofwn_put(struct iodesc *desc, void *pkt, size_t len)
 {
 	size_t			sendlen;
@@ -123,32 +124,20 @@ ofwn_put(struct iodesc *desc, void *pkt, size_t len)
 	return rv;
 }
 
-static ssize_t
-ofwn_get(struct iodesc *desc, void **pkt, time_t timeout)
+static int
+ofwn_get(struct iodesc *desc, void *pkt, size_t len, time_t timeout)
 {
 	time_t	t;
-	ssize_t	length;
-	size_t	len;
-	char	*buf, *ptr;
+	int	length;
 
 #if defined(NETIF_DEBUG)
-	printf("netif_get: pkt=%p, timeout=%d\n", pkt, timeout);
+	printf("netif_get: pkt=%p, maxlen=%d, timeout=%d\n", pkt, len,
+	    timeout);
 #endif
-
-	/*
-	 * We should read the "max-frame-size" int property instead,
-	 * but at this time the iodesc does not have mtu, so we will take
-	 * a small shortcut here.
-	 */
-	len = ETHER_MAX_LEN;
-	buf = malloc(len + ETHER_ALIGN);
-	if (buf == NULL)
-		return (-1);
-	ptr = buf + ETHER_ALIGN;
 
 	t = getsecs();
 	do {
-		length = OF_read(netinstance, ptr, len);
+		length = OF_read(netinstance, pkt, len);
 	} while ((length == -2 || length == 0) &&
 		(getsecs() - t < timeout));
 
@@ -156,14 +145,12 @@ ofwn_get(struct iodesc *desc, void **pkt, time_t timeout)
 	printf("netif_get: received length=%d (%x)\n", length, length);
 #endif
 
-	if (length < 12) {
-		free(buf);
-		return (-1);
-	}
+	if (length < 12)
+		return -1;
 
 #if defined(NETIF_VERBOSE_DEBUG)
 	{
-		char *ch = ptr;
+		char *ch = pkt;
 		int i;
 
 		for(i = 0; i < 96; i += 4) {
@@ -176,7 +163,7 @@ ofwn_get(struct iodesc *desc, void **pkt, time_t timeout)
 
 #if defined(NETIF_DEBUG)
 	{
-		struct ether_header *eh = ptr;
+		struct ether_header *eh = pkt;
 
 		printf("dst: %s ", ether_sprintf(eh->ether_dhost));
 		printf("src: %s ", ether_sprintf(eh->ether_shost));
@@ -184,8 +171,7 @@ ofwn_get(struct iodesc *desc, void **pkt, time_t timeout)
 	}
 #endif
 
-	*pkt = buf;
-	return (length);
+	return length;
 }
 
 extern char *strchr();

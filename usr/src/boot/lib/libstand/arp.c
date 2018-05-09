@@ -36,6 +36,7 @@
  */
 
 #include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -64,16 +65,17 @@ int arp_num = 1;
 
 /* Local forwards */
 static	ssize_t arpsend(struct iodesc *, void *, size_t);
-static	ssize_t arprecv(struct iodesc *, void **, void **, time_t);
+static	ssize_t arprecv(struct iodesc *, void *, size_t, time_t);
 
 /* Broadcast an ARP packet, asking who has addr on interface d */
 u_char *
-arpwhohas(struct iodesc *d, struct in_addr addr)
+arpwhohas(d, addr)
+	struct iodesc *d;
+	struct in_addr addr;
 {
 	int i;
 	struct ether_arp *ah;
 	struct arp_list *al;
-	void *pkt;
 	struct {
 		struct ether_header eh;
 		struct {
@@ -81,6 +83,13 @@ arpwhohas(struct iodesc *d, struct in_addr addr)
 			u_char pad[18]; 	/* 60 - sizeof(...) */
 		} data;
 	} wbuf;
+	struct {
+		struct ether_header eh;
+		struct {
+			struct ether_arp arp;
+			u_char pad[24]; 	/* extra space */
+		} data;
+	} rbuf;
 
 	/* Try for cached answer first */
 	for (i = 0, al = arp_list; i < arp_num; ++i, ++al)
@@ -113,36 +122,35 @@ arpwhohas(struct iodesc *d, struct in_addr addr)
 	/* Store ip address in cache (incomplete entry). */
 	al->addr = addr;
 
-	pkt = NULL;
-	ah = NULL;
 	i = sendrecv(d,
 	    arpsend, &wbuf.data, sizeof(wbuf.data),
-	    arprecv, &pkt, (void **)&ah);
+	    arprecv, &rbuf.data, sizeof(rbuf.data));
 	if (i == -1) {
 		panic("arp: no response for %s\n",
 			  inet_ntoa(addr));
 	}
 
 	/* Store ethernet address in cache */
+	ah = &rbuf.data.arp;
 #ifdef ARP_DEBUG
  	if (debug) {
-		struct ether_header *eh;
-
-		eh = (struct ether_header *)((uintptr_t)pkt + ETHER_ALIGN);
 		printf("arp: response from %s\n",
-		    ether_sprintf(eh->ether_shost));
+		    ether_sprintf(rbuf.eh.ether_shost));
 		printf("arp: cacheing %s --> %s\n",
 		    inet_ntoa(addr), ether_sprintf(ah->arp_sha));
 	}
 #endif
 	MACPY(ah->arp_sha, al->ea);
 	++arp_num;
-	free(pkt);
+
 	return (al->ea);
 }
 
 static ssize_t
-arpsend(struct iodesc *d, void *pkt, size_t len)
+arpsend(d, pkt, len)
+	struct iodesc *d;
+	void *pkt;
+	size_t len;
 {
 
 #ifdef ARP_DEBUG
@@ -158,27 +166,28 @@ arpsend(struct iodesc *d, void *pkt, size_t len)
  * else -1 (and errno == 0)
  */
 static ssize_t
-arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
+arprecv(d, pkt, len, tleft)
+	struct iodesc *d;
+	void *pkt;
+	size_t len;
+	time_t tleft;
 {
 	ssize_t n;
 	struct ether_arp *ah;
 	u_int16_t etype;	/* host order */
-	void *ptr;
 
 #ifdef ARP_DEBUG
  	if (debug)
 		printf("arprecv: ");
 #endif
 
-	ptr = NULL;
-	n = readether(d, &ptr, (void **)&ah, tleft, &etype);
+	n = readether(d, pkt, len, tleft, &etype);
 	errno = 0;	/* XXX */
 	if (n == -1 || n < sizeof(struct ether_arp)) {
 #ifdef ARP_DEBUG
 		if (debug)
 			printf("bad len=%d\n", n);
 #endif
-		free(ptr);
 		return (-1);
 	}
 
@@ -187,11 +196,12 @@ arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
 		if (debug)
 			printf("not arp type=%d\n", etype);
 #endif
-		free(ptr);
 		return (-1);
 	}
 
 	/* Ethernet address now checked in readether() */
+
+	ah = (struct ether_arp *)pkt;
 	if (ah->arp_hrd != htons(ARPHRD_ETHER) ||
 	    ah->arp_pro != htons(ETHERTYPE_IP) ||
 	    ah->arp_hln != sizeof(ah->arp_sha) ||
@@ -201,7 +211,6 @@ arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
 		if (debug)
 			printf("bad hrd/pro/hln/pln\n");
 #endif
-		free(ptr);
 		return (-1);
 	}
 
@@ -211,7 +220,6 @@ arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
 			printf("is request\n");
 #endif
 		arp_reply(d, ah);
-		free(ptr);
 		return (-1);
 	}
 
@@ -220,7 +228,6 @@ arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
 		if (debug)
 			printf("not ARP reply\n");
 #endif
-		free(ptr);
 		return (-1);
 	}
 
@@ -232,7 +239,6 @@ arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
 		if (debug)
 			printf("unwanted address\n");
 #endif
-		free(ptr);
 		return (-1);
 	}
 	/* We don't care who the reply was sent to. */
@@ -242,8 +248,6 @@ arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
  	if (debug)
 		printf("got it\n");
 #endif
-	*pkt = ptr;
-	*payload = ah;
 	return (n);
 }
 
@@ -252,7 +256,9 @@ arprecv(struct iodesc *d, void **pkt, void **payload, time_t tleft)
  * Notes:  Re-uses buffer.  Pad to length = 46.
  */
 void
-arp_reply(struct iodesc *d, void *pkt)
+arp_reply(d, pkt)
+	struct iodesc *d;
+	void *pkt;		/* the request */
 {
 	struct ether_arp *arp = pkt;
 

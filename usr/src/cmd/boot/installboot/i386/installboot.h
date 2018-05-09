@@ -68,8 +68,7 @@ typedef struct _ib_device {
 	char		*path;			/* whole disk */
 	int		fd;			/* whole disk fd */
 	enum ig_devtype_t devtype;
-	struct stage_part stage;		/* location of bios bootblock */
-	struct stage_part system;		/* system partition */
+	struct stage_part stage;		/* location of boot block */
 	struct stage_part target;		/* target file system */
 	char		mbr[SECTOR_SIZE];
 } ib_device_t;
@@ -89,8 +88,7 @@ typedef struct _ib_bootblock {
 typedef struct _ib_data {
 	unsigned char	stage1[SECTOR_SIZE];	/* partition boot block */
 	ib_device_t	device;			/* boot device */
-	ib_bootblock_t	bootblock;		/* bios stage 2 */
-	ib_bootblock_t	efiblock;		/* UEFI boot program */
+	ib_bootblock_t	bootblock;		/* stage 2 */
 } ib_data_t;
 
 #define	BBLK_BLKLIST_OFF	50	/* vtoc/disk boot offset */

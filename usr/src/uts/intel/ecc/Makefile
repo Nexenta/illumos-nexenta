@@ -19,8 +19,6 @@
 # CDDL HEADER END
 #
 #
-# Copyright 2014 Garrett D'Amore <garrett@damore.org>
-#
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
@@ -49,6 +47,9 @@ ROOTMODULE	= $(ROOT_CRYPTO_DIR)/$(MODULE)
 #	Include common rules.
 #
 include $(UTSBASE)/intel/Makefile.intel
+
+#	set signing mode
+ELFSIGN_MOD	= $(ELFSIGN_CRYPTO)
 
 #
 #	Define targets

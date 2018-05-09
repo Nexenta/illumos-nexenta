@@ -150,7 +150,6 @@ stor_strategy(void *devdata, int rw, daddr_t blk, size_t size, char *buf,
 	daddr_t bcount;
 	int err;
 
-	rw &= F_MASK;
 	if (rw != F_READ) {
 		stor_printf("write attempt, operation not supported!\n");
 		return (EROFS);

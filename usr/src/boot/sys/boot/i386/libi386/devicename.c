@@ -1,4 +1,4 @@
-/*
+/*-
  * Copyright (c) 1998 Michael Smith <msmith@freebsd.org>
  * All rights reserved.
  *
@@ -25,45 +25,46 @@
  */
 
 #include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <stand.h>
 #include <string.h>
-#include <sys/param.h>
 #include "bootstrap.h"
 #include "disk.h"
 #include "libi386.h"
 #include "../zfs/libzfs.h"
 
-static int i386_parsedev(struct i386_devdesc **, const char *, const char **);
+static int	i386_parsedev(struct i386_devdesc **dev, const char *devspec, const char **path);
 
-/*
- * Point dev at an allocated device specifier for the device matching the
- * path in devspec. If it contains an explicit device specification,
+/* 
+ * Point (dev) at an allocated device specifier for the device matching the
+ * path in (devspec). If it contains an explicit device specification,
  * use that.  If not, use the default device.
  */
 int
 i386_getdev(void **vdev, const char *devspec, const char **path)
 {
-	struct i386_devdesc **dev = (struct i386_devdesc **)vdev;
-	int rv;
+    struct i386_devdesc **dev = (struct i386_devdesc **)vdev;
+    int				rv;
+    
+    /*
+     * If it looks like this is just a path and no
+     * device, go with the current device.
+     */
+    if ((devspec == NULL) || 
+	(devspec[0] == '/') || 
+	(strchr(devspec, ':') == NULL)) {
 
-	/*
-	 * If it looks like this is just a path and no
-	 * device, go with the current device.
-	 */
-	if ((devspec == NULL) ||
-	    (devspec[0] == '/') || (strchr(devspec, ':') == NULL)) {
-
-		rv = i386_parsedev(dev, getenv("currdev"), NULL);
-		if (rv == 0 && path != NULL)
-			*path = devspec;
-		return (rv);
-	}
-
-	/*
-	 * Try to parse the device name off the beginning of the devspec
-	 */
-	return (i386_parsedev(dev, devspec, path));
+	if (((rv = i386_parsedev(dev, getenv("currdev"), NULL)) == 0) &&
+	    (path != NULL))
+		*path = devspec;
+	return(rv);
+    }
+    
+    /*
+     * Try to parse the device name off the beginning of the devspec
+     */
+    return(i386_parsedev(dev, devspec, path));
 }
 
 /*
@@ -78,123 +79,113 @@ i386_getdev(void **vdev, const char *devspec, const char **path)
  * For disk-type devices, the syntax is:
  *
  * disk<unit>[s<slice>][<partition>]:
- *
+ * 
  */
 static int
 i386_parsedev(struct i386_devdesc **dev, const char *devspec, const char **path)
 {
-	struct i386_devdesc *idev;
-	struct devsw *dv;
-	int i, unit, err;
-	char *cp;
-	const char *np;
+    struct i386_devdesc *idev;
+    struct devsw	*dv;
+    int			i, unit, err;
+    char		*cp;
+    const char		*np;
 
-	/* minimum length check */
-	if (strlen(devspec) < 2)
-		return (EINVAL);
+    /* minimum length check */
+    if (strlen(devspec) < 2)
+	return(EINVAL);
 
-	/* look for a device that matches */
-	for (i = 0, dv = NULL; devsw[i] != NULL; i++) {
-		dv = devsw[i];
-		if (strncmp(devspec, dv->dv_name, strlen(dv->dv_name)) == 0)
-			break;
+    /* look for a device that matches */
+    for (i = 0, dv = NULL; devsw[i] != NULL; i++) {
+	if (!strncmp(devspec, devsw[i]->dv_name, strlen(devsw[i]->dv_name))) {
+	    dv = devsw[i];
+	    break;
 	}
-	if (devsw[i] == NULL)
-		return (ENOENT);
+    }
+    if (dv == NULL)
+	return(ENOENT);
+    idev = malloc(sizeof(struct i386_devdesc));
+    err = 0;
+    np = (devspec + strlen(dv->dv_name));
+        
+    switch(dv->dv_type) {
+    case DEVT_NONE:			/* XXX what to do here?  Do we care? */
+	break;
 
-	np = devspec + strlen(dv->dv_name);
-	idev = NULL;
-	err = 0;
+    case DEVT_DISK:
+	err = disk_parsedev((struct disk_devdesc *)idev, np, path);
+	if (err != 0)
+	    goto fail;
+	break;
 
-	switch (dv->dv_type) {
-	case DEVT_NONE:
-		break;
+    case DEVT_CD:
+    case DEVT_NET:
+	unit = 0;
 
-	case DEVT_DISK:
-		idev = malloc(sizeof (struct i386_devdesc));
-		if (idev == NULL)
-			return (ENOMEM);
-
-		err = disk_parsedev((struct disk_devdesc *)idev, np, path);
-		if (err != 0)
-			goto fail;
-		break;
-
-	case DEVT_ZFS:
-		idev = malloc(sizeof (struct zfs_devdesc));
-		if (idev == NULL)
-			return (ENOMEM);
-
-		err = zfs_parsedev((struct zfs_devdesc *)idev, np, path);
-		if (err != 0)
-			goto fail;
-		break;
-
-	default:
-		idev = malloc(sizeof (struct devdesc));
-		if (idev == NULL)
-			return (ENOMEM);
-
-		unit = 0;
+	if (*np && (*np != ':')) {
+	    unit = strtol(np, &cp, 0);	/* get unit number if present */
+	    if (cp == np) {
+		err = EUNIT;
+		goto fail;
+	    }
+	} else {
 		cp = (char *)np;
-
-		if (*np && (*np != ':')) {
-			/* get unit number if present */
-			unit = strtol(np, &cp, 0);
-			if (cp == np) {
-				err = EUNIT;
-				goto fail;
-			}
-		}
-		if (*cp && (*cp != ':')) {
-			err = EINVAL;
-			goto fail;
-		}
-
-		idev->d_unit = unit;
-		if (path != NULL)
-			*path = (*cp == '\0') ? cp : cp + 1;
-		break;
+	}
+	if (*cp && (*cp != ':')) {
+	    err = EINVAL;
+	    goto fail;
 	}
 
-	idev->d_dev = dv;
-	idev->d_type = dv->dv_type;
-
-	if (dev != NULL)
-		*dev = idev;
-	else
-		free(idev);
-	return (0);
-
-fail:
+	idev->d_unit = unit;
+	if (path != NULL)
+	    *path = (*cp == 0) ? cp : cp + 1;
+	break;
+    case DEVT_ZFS:
+	err = zfs_parsedev((struct zfs_devdesc *)idev, np, path);
+	if (err != 0)
+	    goto fail;
+	break;
+    default:
+	err = EINVAL;
+	goto fail;
+    }
+    idev->d_dev = dv;
+    idev->d_type = dv->dv_type;
+    if (dev == NULL) {
 	free(idev);
-	return (err);
+    } else {
+	*dev = idev;
+    }
+    return(0);
+
+ fail:
+    free(idev);
+    return(err);
 }
 
 
 char *
 i386_fmtdev(void *vdev)
 {
-	struct i386_devdesc *dev = (struct i386_devdesc *)vdev;
-	static char buf[SPECNAMELEN + 1];
+    struct i386_devdesc	*dev = (struct i386_devdesc *)vdev;
+    static char		buf[128];	/* XXX device length constant? */
 
-	switch (dev->d_type) {
-	case DEVT_NONE:
-		strlcpy(buf, "(no device)", sizeof (buf));
-		break;
+    switch(dev->d_type) {
+    case DEVT_NONE:
+	strcpy(buf, "(no device)");
+	break;
 
-	case DEVT_DISK:
-		return (disk_fmtdev(vdev));
+    case DEVT_CD:
+    case DEVT_NET:
+	sprintf(buf, "%s%d:", dev->d_dev->dv_name, dev->d_unit);
+	break;
 
-	case DEVT_ZFS:
-		return (zfs_fmtdev(vdev));
+    case DEVT_DISK:
+	return (disk_fmtdev(vdev));
 
-	default:
-		snprintf(buf, sizeof (buf), "%s%d:", dev->d_dev->dv_name,
-		    dev->d_unit);
-		break;
-	}
-	return (buf);
+    case DEVT_ZFS:
+	return(zfs_fmtdev(vdev));
+    }
+    return(buf);
 }
 
 
@@ -204,13 +195,12 @@ i386_fmtdev(void *vdev)
 int
 i386_setcurrdev(struct env_var *ev, int flags, const void *value)
 {
-	struct i386_devdesc *ncurr;
-	int rv;
+    struct i386_devdesc	*ncurr;
+    int			rv;
 
-	if ((rv = i386_parsedev(&ncurr, value, NULL)) != 0)
-		return (rv);
-
-	free(ncurr);
-	env_setenv(ev->ev_name, flags | EV_NOHOOK, value, NULL, NULL);
-	return (0);
+    if ((rv = i386_parsedev(&ncurr, value, NULL)) != 0)
+	return(rv);
+    free(ncurr);
+    env_setenv(ev->ev_name, flags | EV_NOHOOK, value, NULL, NULL);
+    return(0);
 }

@@ -60,15 +60,14 @@ uint32_t dcons_paddr;
 static char dcons_buffer[DCONS_BUF_SIZE + PAGE_SIZE];
 
 struct console dconsole = {
-	.c_name = "dcons",
-	.c_desc = "dumb console port",
-	.c_flags = 0,
-	.c_probe = dconsole_probe,
-	.c_init = dconsole_init,
-	.c_out = dconsole_putchar,
-	.c_in = dconsole_getchar,
-	.c_ready = dconsole_ischar,
-	.c_private = NULL
+    "dcons",
+    "dumb console port",
+    0,
+    dconsole_probe,
+    dconsole_init,
+    dconsole_putchar,
+    dconsole_getchar,
+    dconsole_ischar
 };
 
 #define DCONSOLE_AS_MULTI_CONSOLE	1

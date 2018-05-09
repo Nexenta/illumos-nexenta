@@ -33,14 +33,9 @@
 #include <sys/systm.h>
 #include <sys/mach_mmu.h>
 #include <sys/multiboot.h>
-#include <sys/multiboot2.h>
-#include <sys/multiboot2_impl.h>
-#include <sys/sysmacros.h>
-#include <sys/framebuffer.h>
 #include <sys/sha1.h>
 #include <util/string.h>
 #include <util/strtolctype.h>
-#include <sys/efi.h>
 
 #if defined(__xpv)
 
@@ -51,7 +46,6 @@ pfn_t *mfn_to_pfn_mapping;
 #else /* !__xpv */
 
 extern multiboot_header_t mb_header;
-extern uint32_t mb2_load_addr;
 extern int have_cpuid(void);
 
 #endif /* !__xpv */
@@ -129,23 +123,8 @@ start_info_t *xen_info;
 /*
  * If on the metal, then we have a multiboot loader.
  */
-uint32_t mb_magic;			/* magic from boot loader */
-uint32_t mb_addr;			/* multiboot info package from loader */
-int multiboot_version;
 multiboot_info_t *mb_info;
-multiboot2_info_header_t *mb2_info;
-multiboot_tag_mmap_t *mb2_mmap_tagp;
-int num_entries;			/* mmap entry count */
-boolean_t num_entries_set;		/* is mmap entry count set */
-uintptr_t load_addr;
-static boot_framebuffer_t framebuffer[2];
-static boot_framebuffer_t *fb;
 
-/* can not be automatic variables because of alignment */
-static efi_guid_t smbios3 = SMBIOS3_TABLE_GUID;
-static efi_guid_t smbios = SMBIOS_TABLE_GUID;
-static efi_guid_t acpi2 = EFI_ACPI_TABLE_GUID;
-static efi_guid_t acpi1 = ACPI_10_TABLE_GUID;
 #endif	/* __xpv */
 
 /*
@@ -167,7 +146,6 @@ int largepage_support = 0;
 int pae_support = 0;
 int pge_support = 0;
 int NX_support = 0;
-int PAT_support = 0;
 
 /*
  * Low 32 bits of kernel entry address passed back to assembler.
@@ -193,30 +171,6 @@ uint_t rsvdmemlists_used = 0;
  */
 struct boot_modules modules[MAX_BOOT_MODULES];
 uint_t modules_used = 0;
-
-#ifdef __xpv
-/*
- * Xen strips the size field out of the mb_memory_map_t, see struct e820entry
- * definition in Xen source.
- */
-typedef struct {
-	uint32_t	base_addr_low;
-	uint32_t	base_addr_high;
-	uint32_t	length_low;
-	uint32_t	length_high;
-	uint32_t	type;
-} mmap_t;
-
-/*
- * There is 512KB of scratch area after the boot stack page.
- * We'll use that for everything except the kernel nucleus pages which are too
- * big to fit there and are allocated last anyway.
- */
-#define	MAXMAPS	100
-static mmap_t map_buffer[MAXMAPS];
-#else
-typedef mb_memory_map_t mmap_t;
-#endif
 
 /*
  * Debugging macros
@@ -653,182 +607,29 @@ exclude_from_pci(uint64_t start, uint64_t end)
 }
 
 /*
- * During memory allocation, find the highest address not used yet.
+ * Xen strips the size field out of the mb_memory_map_t, see struct e820entry
+ * definition in Xen source.
  */
-static void
-check_higher(paddr_t a)
-{
-	if (a < next_avail_addr)
-		return;
-	next_avail_addr = RNDUP(a + 1, MMU_PAGESIZE);
-	DBG(next_avail_addr);
-}
-
-static int
-dboot_loader_mmap_entries(void)
-{
-#if !defined(__xpv)
-	if (num_entries_set == B_TRUE)
-		return (num_entries);
-
-	switch (multiboot_version) {
-	case 1:
-		DBG(mb_info->flags);
-		if (mb_info->flags & 0x40) {
-			mb_memory_map_t *mmap;
-
-			DBG(mb_info->mmap_addr);
-			DBG(mb_info->mmap_length);
-			check_higher(mb_info->mmap_addr + mb_info->mmap_length);
-
-			for (mmap = (mb_memory_map_t *)mb_info->mmap_addr;
-			    (uint32_t)mmap < mb_info->mmap_addr +
-			    mb_info->mmap_length;
-			    mmap = (mb_memory_map_t *)((uint32_t)mmap +
-			    mmap->size + sizeof (mmap->size)))
-				++num_entries;
-
-			num_entries_set = B_TRUE;
-		}
-		break;
-	case 2:
-		num_entries_set = B_TRUE;
-		num_entries = dboot_multiboot2_mmap_nentries(mb2_info,
-		    mb2_mmap_tagp);
-		break;
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (num_entries);
+#ifdef __xpv
+typedef struct {
+	uint32_t	base_addr_low;
+	uint32_t	base_addr_high;
+	uint32_t	length_low;
+	uint32_t	length_high;
+	uint32_t	type;
+} mmap_t;
 #else
-	return (MAXMAPS);
+typedef mb_memory_map_t mmap_t;
 #endif
-}
-
-static uint32_t
-dboot_loader_mmap_get_type(int index)
-{
-#if !defined(__xpv)
-	mb_memory_map_t *mp, *mpend;
-	int i;
-
-	switch (multiboot_version) {
-	case 1:
-		mp = (mb_memory_map_t *)mb_info->mmap_addr;
-		mpend = (mb_memory_map_t *)
-		    (mb_info->mmap_addr + mb_info->mmap_length);
-
-		for (i = 0; mp < mpend && i != index; i++)
-			mp = (mb_memory_map_t *)((uint32_t)mp + mp->size +
-			    sizeof (mp->size));
-		if (mp >= mpend) {
-			dboot_panic("dboot_loader_mmap_get_type(): index "
-			    "out of bounds: %d\n", index);
-		}
-		return (mp->type);
-
-	case 2:
-		return (dboot_multiboot2_mmap_get_type(mb2_info,
-		    mb2_mmap_tagp, index));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (0);
-#else
-	return (map_buffer[index].type);
-#endif
-}
-
-static uint64_t
-dboot_loader_mmap_get_base(int index)
-{
-#if !defined(__xpv)
-	mb_memory_map_t *mp, *mpend;
-	int i;
-
-	switch (multiboot_version) {
-	case 1:
-		mp = (mb_memory_map_t *)mb_info->mmap_addr;
-		mpend = (mb_memory_map_t *)
-		    (mb_info->mmap_addr + mb_info->mmap_length);
-
-		for (i = 0; mp < mpend && i != index; i++)
-			mp = (mb_memory_map_t *)((uint32_t)mp + mp->size +
-			    sizeof (mp->size));
-		if (mp >= mpend) {
-			dboot_panic("dboot_loader_mmap_get_base(): index "
-			    "out of bounds: %d\n", index);
-		}
-		return (((uint64_t)mp->base_addr_high << 32) +
-		    (uint64_t)mp->base_addr_low);
-
-	case 2:
-		return (dboot_multiboot2_mmap_get_base(mb2_info,
-		    mb2_mmap_tagp, index));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (0);
-#else
-	return (((uint64_t)map_buffer[index].base_addr_high << 32) +
-	    (uint64_t)map_buffer[index].base_addr_low);
-#endif
-}
-
-static uint64_t
-dboot_loader_mmap_get_length(int index)
-{
-#if !defined(__xpv)
-	mb_memory_map_t *mp, *mpend;
-	int i;
-
-	switch (multiboot_version) {
-	case 1:
-		mp = (mb_memory_map_t *)mb_info->mmap_addr;
-		mpend = (mb_memory_map_t *)
-		    (mb_info->mmap_addr + mb_info->mmap_length);
-
-		for (i = 0; mp < mpend && i != index; i++)
-			mp = (mb_memory_map_t *)((uint32_t)mp + mp->size +
-			    sizeof (mp->size));
-		if (mp >= mpend) {
-			dboot_panic("dboot_loader_mmap_get_length(): index "
-			    "out of bounds: %d\n", index);
-		}
-		return (((uint64_t)mp->length_high << 32) +
-		    (uint64_t)mp->length_low);
-
-	case 2:
-		return (dboot_multiboot2_mmap_get_length(mb2_info,
-		    mb2_mmap_tagp, index));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (0);
-#else
-	return (((uint64_t)map_buffer[index].length_high << 32) +
-	    (uint64_t)map_buffer[index].length_low);
-#endif
-}
 
 static void
-build_pcimemlists(void)
+build_pcimemlists(mmap_t *mem, int num)
 {
+	mmap_t *mmap;
 	uint64_t page_offset = MMU_PAGEOFFSET;	/* needs to be 64 bits */
 	uint64_t start;
 	uint64_t end;
-	int i, num;
+	int i;
 
 	/*
 	 * initialize
@@ -837,18 +638,18 @@ build_pcimemlists(void)
 	pcimemlists[0].size = pci_hi_limit - pci_lo_limit;
 	pcimemlists_used = 1;
 
-	num = dboot_loader_mmap_entries();
 	/*
 	 * Fill in PCI memlists.
 	 */
-	for (i = 0; i < num; ++i) {
-		start = dboot_loader_mmap_get_base(i);
-		end = start + dboot_loader_mmap_get_length(i);
+	for (mmap = mem, i = 0; i < num; ++i, ++mmap) {
+		start = ((uint64_t)mmap->base_addr_high << 32) +
+		    mmap->base_addr_low;
+		end = start + ((uint64_t)mmap->length_high << 32) +
+		    mmap->length_low;
 
 		if (prom_debug)
 			dboot_printf("\ttype: %d %" PRIx64 "..%"
-			    PRIx64 "\n", dboot_loader_mmap_get_type(i),
-			    start, end);
+			    PRIx64 "\n", mmap->type, start, end);
 
 		/*
 		 * page align start and end
@@ -887,7 +688,13 @@ build_pcimemlists(void)
 #if defined(__xpv)
 /*
  * Initialize memory allocator stuff from hypervisor-supplied start info.
+ *
+ * There is 512KB of scratch area after the boot stack page.
+ * We'll use that for everything except the kernel nucleus pages which are too
+ * big to fit there and are allocated last anyway.
  */
+#define	MAXMAPS	100
+static mmap_t map_buffer[MAXMAPS];
 static void
 init_mem_alloc(void)
 {
@@ -922,14 +729,13 @@ init_mem_alloc(void)
 	DBG(xen_info->mod_len);
 	if (xen_info->mod_len > 0) {
 		DBG(xen_info->mod_start);
-		modules[0].bm_addr =
-		    (native_ptr_t)(uintptr_t)xen_info->mod_start;
+		modules[0].bm_addr = xen_info->mod_start;
 		modules[0].bm_size = xen_info->mod_len;
 		bi->bi_module_cnt = 1;
-		bi->bi_modules = (native_ptr_t)(uintptr_t)modules;
+		bi->bi_modules = (native_ptr_t)modules;
 	} else {
 		bi->bi_module_cnt = 0;
-		bi->bi_modules = (native_ptr_t)(uintptr_t)NULL;
+		bi->bi_modules = NULL;
 	}
 	DBG(bi->bi_module_cnt);
 	DBG(bi->bi_modules);
@@ -968,170 +774,11 @@ init_mem_alloc(void)
 		set_xen_guest_handle(map.buffer, map_buffer);
 		if (HYPERVISOR_memory_op(XENMEM_machine_memory_map, &map) != 0)
 			dboot_panic("getting XENMEM_machine_memory_map failed");
-		build_pcimemlists();
+		build_pcimemlists(map_buffer, map.nr_entries);
 	}
 }
 
 #else	/* !__xpv */
-
-static void
-dboot_multiboot1_xboot_consinfo(void)
-{
-	fb->framebuffer = 0;
-}
-
-static void
-dboot_multiboot2_xboot_consinfo(void)
-{
-	multiboot_tag_framebuffer_t *fbtag;
-	fbtag = dboot_multiboot2_find_tag(mb2_info,
-	    MULTIBOOT_TAG_TYPE_FRAMEBUFFER);
-	fb->framebuffer = (uint64_t)(uintptr_t)fbtag;
-	fb->boot_fb_virt = 0;
-}
-
-static int
-dboot_multiboot_modcount(void)
-{
-	switch (multiboot_version) {
-	case 1:
-		return (mb_info->mods_count);
-
-	case 2:
-		return (dboot_multiboot2_modcount(mb2_info));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (0);
-}
-
-static uint32_t
-dboot_multiboot_modstart(int index)
-{
-	switch (multiboot_version) {
-	case 1:
-		return (((mb_module_t *)mb_info->mods_addr)[index].mod_start);
-
-	case 2:
-		return (dboot_multiboot2_modstart(mb2_info, index));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (0);
-}
-
-static uint32_t
-dboot_multiboot_modend(int index)
-{
-	switch (multiboot_version) {
-	case 1:
-		return (((mb_module_t *)mb_info->mods_addr)[index].mod_end);
-
-	case 2:
-		return (dboot_multiboot2_modend(mb2_info, index));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (0);
-}
-
-static char *
-dboot_multiboot_modcmdline(int index)
-{
-	switch (multiboot_version) {
-	case 1:
-		return ((char *)((mb_module_t *)
-		    mb_info->mods_addr)[index].mod_name);
-
-	case 2:
-		return (dboot_multiboot2_modcmdline(mb2_info, index));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (0);
-}
-
-/*
- * Find the modules used by console setup.
- * Since we need the console to print early boot messages, the console is set up
- * before anything else and therefore we need to pick up the needed modules.
- *
- * Note, we just will search for and if found, will pass the modules
- * to console setup, the proper module list processing will happen later.
- * Currenly used modules are boot environment and consoler font.
- */
-static void
-dboot_find_console_modules(void)
-{
-	int i, modcount;
-	uint32_t mod_start, mod_end;
-	char *cmdline;
-
-	modcount = dboot_multiboot_modcount();
-	bi->bi_module_cnt = 0;
-	for (i = 0; i < modcount; ++i) {
-		cmdline = dboot_multiboot_modcmdline(i);
-		if (cmdline == NULL)
-			continue;
-
-		if (strstr(cmdline, "type=console-font") != NULL)
-			modules[bi->bi_module_cnt].bm_type = BMT_FONT;
-		else if (strstr(cmdline, "type=environment") != NULL)
-			modules[bi->bi_module_cnt].bm_type = BMT_ENV;
-		else
-			continue;
-
-		mod_start = dboot_multiboot_modstart(i);
-		mod_end = dboot_multiboot_modend(i);
-		modules[bi->bi_module_cnt].bm_addr =
-		    (native_ptr_t)(uintptr_t)mod_start;
-		modules[bi->bi_module_cnt].bm_size = mod_end - mod_start;
-		modules[bi->bi_module_cnt].bm_name =
-		    (native_ptr_t)(uintptr_t)NULL;
-		modules[bi->bi_module_cnt].bm_hash =
-		    (native_ptr_t)(uintptr_t)NULL;
-		bi->bi_module_cnt++;
-	}
-	if (bi->bi_module_cnt != 0)
-		bi->bi_modules = (native_ptr_t)(uintptr_t)modules;
-}
-
-static boolean_t
-dboot_multiboot_basicmeminfo(uint32_t *lower, uint32_t *upper)
-{
-	boolean_t rv = B_FALSE;
-
-	switch (multiboot_version) {
-	case 1:
-		if (mb_info->flags & 0x01) {
-			*lower = mb_info->mem_lower;
-			*upper = mb_info->mem_upper;
-			rv = B_TRUE;
-		}
-		break;
-
-	case 2:
-		return (dboot_multiboot2_basicmeminfo(mb2_info, lower, upper));
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	return (rv);
-}
 
 static uint8_t
 dboot_a2h(char v)
@@ -1204,10 +851,6 @@ type_to_str(boot_module_type_t type)
 		return ("file");
 	case BMT_HASH:
 		return ("hash");
-	case BMT_ENV:
-		return ("environment");
-	case BMT_FONT:
-		return ("console-font");
 	default:
 		return ("unknown");
 	}
@@ -1230,7 +873,7 @@ check_images(void)
 		}
 
 		if (modules[i].bm_type == BMT_HASH ||
-		    modules[i].bm_hash == (native_ptr_t)(uintptr_t)NULL) {
+		    modules[i].bm_hash == NULL) {
 			DBG_MSG("module has no hash; skipping check\n");
 			continue;
 		}
@@ -1256,23 +899,21 @@ check_images(void)
  * hashes which are checked prior to transferring control to the kernel.
  */
 static void
-process_module(int midx)
+process_module(mb_module_t *mod)
 {
-	uint32_t mod_start = dboot_multiboot_modstart(midx);
-	uint32_t mod_end = dboot_multiboot_modend(midx);
-	char *cmdline = dboot_multiboot_modcmdline(midx);
+	int midx = modules_used++;
 	char *p, *q;
 
-	check_higher(mod_end);
 	if (prom_debug) {
 		dboot_printf("\tmodule #%d: '%s' at 0x%lx, end 0x%lx\n",
-		    midx, cmdline, (ulong_t)mod_start, (ulong_t)mod_end);
+		    midx, (char *)(mod->mod_name),
+		    (ulong_t)mod->mod_start, (ulong_t)mod->mod_end);
 	}
 
-	if (mod_start > mod_end) {
+	if (mod->mod_start > mod->mod_end) {
 		dboot_panic("module #%d: module start address 0x%lx greater "
 		    "than end address 0x%lx", midx,
-		    (ulong_t)mod_start, (ulong_t)mod_end);
+		    (ulong_t)mod->mod_start, (ulong_t)mod->mod_end);
 	}
 
 	/*
@@ -1293,18 +934,18 @@ process_module(int midx)
 	 * correct number of bytes in each module, achieving exactly this.
 	 */
 
-	modules[midx].bm_addr = (native_ptr_t)(uintptr_t)mod_start;
-	modules[midx].bm_size = mod_end - mod_start;
-	modules[midx].bm_name = (native_ptr_t)(uintptr_t)cmdline;
-	modules[midx].bm_hash = (native_ptr_t)(uintptr_t)NULL;
+	modules[midx].bm_addr = mod->mod_start;
+	modules[midx].bm_size = mod->mod_end - mod->mod_start;
+	modules[midx].bm_name = mod->mod_name;
+	modules[midx].bm_hash = NULL;
 	modules[midx].bm_type = BMT_FILE;
 
-	if (cmdline == NULL) {
+	if (mod->mod_name == NULL) {
 		modules[midx].bm_name = (native_ptr_t)(uintptr_t)noname;
 		return;
 	}
 
-	p = cmdline;
+	p = (char *)(uintptr_t)mod->mod_name;
 	modules[midx].bm_name =
 	    (native_ptr_t)(uintptr_t)strsep(&p, " \t\f\n\r");
 
@@ -1326,10 +967,6 @@ process_module(int midx)
 				modules[midx].bm_type = BMT_ROOTFS;
 			} else if (strcmp(q, "hash") == 0) {
 				modules[midx].bm_type = BMT_HASH;
-			} else if (strcmp(q, "environment") == 0) {
-				modules[midx].bm_type = BMT_ENV;
-			} else if (strcmp(q, "console-font") == 0) {
-				modules[midx].bm_type = BMT_FONT;
 			} else if (strcmp(q, "file") != 0) {
 				dboot_printf("\tmodule #%d: unknown module "
 				    "type '%s'; defaulting to 'file'",
@@ -1370,9 +1007,8 @@ fixup_modules(void)
 		return;
 	}
 
-	if (modules[0].bm_hash != (native_ptr_t)(uintptr_t)NULL ||
-	    modules_used > 1 &&
-	    modules[1].bm_hash != (native_ptr_t)(uintptr_t)NULL) {
+	if (modules[0].bm_hash != NULL ||
+	    modules_used > 1 && modules[1].bm_hash != NULL) {
 		return;
 	}
 
@@ -1396,7 +1032,7 @@ assign_module_hashes(void)
 
 	for (i = 0; i < modules_used; i++) {
 		if (modules[i].bm_type == BMT_HASH ||
-		    modules[i].bm_hash != (native_ptr_t)(uintptr_t)NULL) {
+		    modules[i].bm_hash != NULL) {
 			continue;
 		}
 
@@ -1420,69 +1056,89 @@ assign_module_hashes(void)
 }
 
 /*
- * Walk through the module information finding the last used address.
- * The first available address will become the top level page table.
+ * During memory allocation, find the highest address not used yet.
  */
 static void
-dboot_process_modules(void)
+check_higher(paddr_t a)
 {
-	int i, modcount;
-	extern char _end[];
+	if (a < next_avail_addr)
+		return;
+	next_avail_addr = RNDUP(a + 1, MMU_PAGESIZE);
+	DBG(next_avail_addr);
+}
 
-	DBG_MSG("\nFinding Modules\n");
-	modcount = dboot_multiboot_modcount();
-	if (modcount > MAX_BOOT_MODULES) {
+/*
+ * Walk through the module information finding the last used address.
+ * The first available address will become the top level page table.
+ *
+ * We then build the phys_install memlist from the multiboot information.
+ */
+static void
+init_mem_alloc(void)
+{
+	mb_memory_map_t *mmap;
+	mb_module_t *mod;
+	uint64_t start;
+	uint64_t end;
+	uint64_t page_offset = MMU_PAGEOFFSET;	/* needs to be 64 bits */
+	extern char _end[];
+	int i;
+
+	DBG_MSG("Entered init_mem_alloc()\n");
+	DBG((uintptr_t)mb_info);
+
+	if (mb_info->mods_count > MAX_BOOT_MODULES) {
 		dboot_panic("Too many modules (%d) -- the maximum is %d.",
-		    modcount, MAX_BOOT_MODULES);
+		    mb_info->mods_count, MAX_BOOT_MODULES);
 	}
 	/*
 	 * search the modules to find the last used address
 	 * we'll build the module list while we're walking through here
 	 */
+	DBG_MSG("\nFinding Modules\n");
 	check_higher((paddr_t)(uintptr_t)&_end);
-	for (i = 0; i < modcount; ++i) {
-		process_module(i);
-		modules_used++;
+	for (mod = (mb_module_t *)(mb_info->mods_addr), i = 0;
+	    i < mb_info->mods_count;
+	    ++mod, ++i) {
+		process_module(mod);
+		check_higher(mod->mod_end);
 	}
 	bi->bi_modules = (native_ptr_t)(uintptr_t)modules;
 	DBG(bi->bi_modules);
-	bi->bi_module_cnt = modcount;
+	bi->bi_module_cnt = mb_info->mods_count;
 	DBG(bi->bi_module_cnt);
 
 	fixup_modules();
 	assign_module_hashes();
 	check_images();
-}
-
-/*
- * We then build the phys_install memlist from the multiboot information.
- */
-static void
-dboot_process_mmap(void)
-{
-	uint64_t start;
-	uint64_t end;
-	uint64_t page_offset = MMU_PAGEOFFSET;	/* needs to be 64 bits */
-	uint32_t lower, upper;
-	int i, mmap_entries;
 
 	/*
 	 * Walk through the memory map from multiboot and build our memlist
 	 * structures. Note these will have native format pointers.
 	 */
 	DBG_MSG("\nFinding Memory Map\n");
-	num_entries = 0;
-	num_entries_set = B_FALSE;
+	DBG(mb_info->flags);
 	max_mem = 0;
-	if ((mmap_entries = dboot_loader_mmap_entries()) > 0) {
-		for (i = 0; i < mmap_entries; i++) {
-			uint32_t type = dboot_loader_mmap_get_type(i);
-			start = dboot_loader_mmap_get_base(i);
-			end = start + dboot_loader_mmap_get_length(i);
+	if (mb_info->flags & 0x40) {
+		int cnt = 0;
+
+		DBG(mb_info->mmap_addr);
+		DBG(mb_info->mmap_length);
+		check_higher(mb_info->mmap_addr + mb_info->mmap_length);
+
+		for (mmap = (mb_memory_map_t *)mb_info->mmap_addr;
+		    (uint32_t)mmap < mb_info->mmap_addr + mb_info->mmap_length;
+		    mmap = (mb_memory_map_t *)((uint32_t)mmap + mmap->size
+		    + sizeof (mmap->size))) {
+			++cnt;
+			start = ((uint64_t)mmap->base_addr_high << 32) +
+			    mmap->base_addr_low;
+			end = start + ((uint64_t)mmap->length_high << 32) +
+			    mmap->length_low;
 
 			if (prom_debug)
 				dboot_printf("\ttype: %d %" PRIx64 "..%"
-				    PRIx64 "\n", type, start, end);
+				    PRIx64 "\n", mmap->type, start, end);
 
 			/*
 			 * page align start and end
@@ -1495,7 +1151,7 @@ dboot_process_mmap(void)
 			/*
 			 * only type 1 is usable RAM
 			 */
-			switch (type) {
+			switch (mmap->type) {
 			case 1:
 				if (end > max_mem)
 					max_mem = end;
@@ -1517,21 +1173,22 @@ dboot_process_mmap(void)
 				continue;
 			}
 		}
-		build_pcimemlists();
-	} else if (dboot_multiboot_basicmeminfo(&lower, &upper)) {
-		DBG(lower);
+		build_pcimemlists((mb_memory_map_t *)mb_info->mmap_addr, cnt);
+	} else if (mb_info->flags & 0x01) {
+		DBG(mb_info->mem_lower);
 		memlists[memlists_used].addr = 0;
-		memlists[memlists_used].size = lower * 1024;
+		memlists[memlists_used].size = mb_info->mem_lower * 1024;
 		++memlists_used;
-		DBG(upper);
+		DBG(mb_info->mem_upper);
 		memlists[memlists_used].addr = 1024 * 1024;
-		memlists[memlists_used].size = upper * 1024;
+		memlists[memlists_used].size = mb_info->mem_upper * 1024;
 		++memlists_used;
 
 		/*
 		 * Old platform - assume I/O space at the end of memory.
 		 */
-		pcimemlists[0].addr = (upper * 1024) + (1024 * 1024);
+		pcimemlists[0].addr =
+		    (mb_info->mem_upper * 1024) + (1024 * 1024);
 		pcimemlists[0].size = pci_hi_limit - pcimemlists[0].addr;
 		pcimemlists[0].next = 0;
 		pcimemlists[0].prev = 0;
@@ -1540,6 +1197,8 @@ dboot_process_mmap(void)
 	} else {
 		dboot_panic("No memory info from boot loader!!!");
 	}
+
+	check_higher(bi->bi_cmdline);
 
 	/*
 	 * finish processing the physinstall list
@@ -1550,310 +1209,6 @@ dboot_process_mmap(void)
 	 * build bios reserved mem lists
 	 */
 	build_rsvdmemlists();
-}
-
-/*
- * The highest address is used as the starting point for dboot's simple
- * memory allocator.
- *
- * Finding the highest address in case of Multiboot 1 protocol is
- * quite painful in the sense that some information provided by
- * the multiboot info structure points to BIOS data, and some to RAM.
- *
- * The module list was processed and checked already by dboot_process_modules(),
- * so we will check the command line string and the memory map.
- *
- * This list of to be checked items is based on our current knowledge of
- * allocations made by grub1 and will need to be reviewed if there
- * are updates about the information provided by Multiboot 1.
- *
- * In the case of the Multiboot 2, our life is much simpler, as the MB2
- * information tag list is one contiguous chunk of memory.
- */
-static paddr_t
-dboot_multiboot1_highest_addr(void)
-{
-	paddr_t addr = (paddr_t)(uintptr_t)NULL;
-	char *cmdl = (char *)mb_info->cmdline;
-
-	if (mb_info->flags & MB_INFO_CMDLINE)
-		addr = ((paddr_t)((uintptr_t)cmdl + strlen(cmdl) + 1));
-
-	if (mb_info->flags & MB_INFO_MEM_MAP)
-		addr = MAX(addr,
-		    ((paddr_t)(mb_info->mmap_addr + mb_info->mmap_length)));
-	return (addr);
-}
-
-static void
-dboot_multiboot_highest_addr(void)
-{
-	paddr_t addr;
-
-	switch (multiboot_version) {
-	case 1:
-		addr = dboot_multiboot1_highest_addr();
-		if (addr != (paddr_t)(uintptr_t)NULL)
-			check_higher(addr);
-		break;
-	case 2:
-		addr = dboot_multiboot2_highest_addr(mb2_info);
-		if (addr != (paddr_t)(uintptr_t)NULL)
-			check_higher(addr);
-		break;
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-}
-
-/*
- * Walk the boot loader provided information and find the highest free address.
- */
-static void
-init_mem_alloc(void)
-{
-	DBG_MSG("Entered init_mem_alloc()\n");
-	dboot_process_modules();
-	dboot_process_mmap();
-	dboot_multiboot_highest_addr();
-}
-
-static int
-dboot_same_guids(efi_guid_t *g1, efi_guid_t *g2)
-{
-	int i;
-
-	if (g1->time_low != g2->time_low)
-		return (0);
-	if (g1->time_mid != g2->time_mid)
-		return (0);
-	if (g1->time_hi_and_version != g2->time_hi_and_version)
-		return (0);
-	if (g1->clock_seq_hi_and_reserved != g2->clock_seq_hi_and_reserved)
-		return (0);
-	if (g1->clock_seq_low != g2->clock_seq_low)
-		return (0);
-
-	for (i = 0; i < 6; i++) {
-		if (g1->node_addr[i] != g2->node_addr[i])
-			return (0);
-	}
-	return (1);
-}
-
-static void
-process_efi32(EFI_SYSTEM_TABLE32 *efi)
-{
-	uint32_t entries;
-	EFI_CONFIGURATION_TABLE32 *config;
-	int i;
-
-	entries = efi->NumberOfTableEntries;
-	config = (EFI_CONFIGURATION_TABLE32 *)(uintptr_t)
-	    efi->ConfigurationTable;
-
-	for (i = 0; i < entries; i++) {
-		if (dboot_same_guids(&config[i].VendorGuid, &smbios3)) {
-			bi->bi_smbios = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-		if (bi->bi_smbios == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &smbios)) {
-			bi->bi_smbios = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-		if (dboot_same_guids(&config[i].VendorGuid, &acpi2)) {
-			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-		if (bi->bi_acpi_rsdp == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &acpi1)) {
-			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-	}
-}
-
-static void
-process_efi64(EFI_SYSTEM_TABLE64 *efi)
-{
-	uint64_t entries;
-	EFI_CONFIGURATION_TABLE64 *config;
-	int i;
-
-	entries = efi->NumberOfTableEntries;
-	config = (EFI_CONFIGURATION_TABLE64 *)(uintptr_t)
-	    efi->ConfigurationTable;
-
-	for (i = 0; i < entries; i++) {
-		if (dboot_same_guids(&config[i].VendorGuid, &smbios3)) {
-			bi->bi_smbios = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-		if (bi->bi_smbios == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &smbios)) {
-			bi->bi_smbios = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-		/* Prefer acpi v2+ over v1. */
-		if (dboot_same_guids(&config[i].VendorGuid, &acpi2)) {
-			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-		if (bi->bi_acpi_rsdp == NULL &&
-		    dboot_same_guids(&config[i].VendorGuid, &acpi1)) {
-			bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
-			    config[i].VendorTable;
-		}
-	}
-}
-
-static void
-dboot_multiboot_get_fwtables(void)
-{
-	multiboot_tag_new_acpi_t *nacpitagp;
-	multiboot_tag_old_acpi_t *oacpitagp;
-	multiboot_tag_efi64_t *efi64tagp = NULL;
-	multiboot_tag_efi32_t *efi32tagp = NULL;
-
-	/* no fw tables from multiboot 1 */
-	if (multiboot_version != 2)
-		return;
-
-	efi64tagp = (multiboot_tag_efi64_t *)
-	    dboot_multiboot2_find_tag(mb2_info, MULTIBOOT_TAG_TYPE_EFI64);
-	if (efi64tagp != NULL) {
-		bi->bi_uefi_arch = XBI_UEFI_ARCH_64;
-		bi->bi_uefi_systab = (native_ptr_t)(uintptr_t)
-		    efi64tagp->mb_pointer;
-		process_efi64((EFI_SYSTEM_TABLE64 *)(uintptr_t)
-		    efi64tagp->mb_pointer);
-	} else {
-		efi32tagp = (multiboot_tag_efi32_t *)
-		    dboot_multiboot2_find_tag(mb2_info,
-		    MULTIBOOT_TAG_TYPE_EFI32);
-		if (efi32tagp != NULL) {
-			bi->bi_uefi_arch = XBI_UEFI_ARCH_32;
-			bi->bi_uefi_systab = (native_ptr_t)(uintptr_t)
-			    efi32tagp->mb_pointer;
-			process_efi32((EFI_SYSTEM_TABLE32 *)(uintptr_t)
-			    efi32tagp->mb_pointer);
-		}
-	}
-
-	/*
-	 * The ACPI RSDP can be found by scanning the BIOS memory areas or
-	 * from the EFI system table. The boot loader may pass in the address
-	 * it found the ACPI tables at.
-	 */
-	nacpitagp = (multiboot_tag_new_acpi_t *)
-	    dboot_multiboot2_find_tag(mb2_info,
-	    MULTIBOOT_TAG_TYPE_ACPI_NEW);
-	oacpitagp = (multiboot_tag_old_acpi_t *)
-	    dboot_multiboot2_find_tag(mb2_info,
-	    MULTIBOOT_TAG_TYPE_ACPI_OLD);
-
-	if (nacpitagp != NULL) {
-		bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
-		    &nacpitagp->mb_rsdp[0];
-	} else if (oacpitagp != NULL) {
-		bi->bi_acpi_rsdp = (native_ptr_t)(uintptr_t)
-		    &oacpitagp->mb_rsdp[0];
-	}
-}
-
-/* print out EFI version string with newline */
-static void
-dboot_print_efi_version(uint32_t ver)
-{
-	int rev;
-
-	dboot_printf("%d.", EFI_REV_MAJOR(ver));
-
-	rev = EFI_REV_MINOR(ver);
-	if ((rev % 10) != 0) {
-		dboot_printf("%d.%d\n", rev / 10, rev % 10);
-	} else {
-		dboot_printf("%d\n", rev / 10);
-	}
-}
-
-static void
-print_efi32(EFI_SYSTEM_TABLE32 *efi)
-{
-	uint16_t *data;
-	EFI_CONFIGURATION_TABLE32 *conf;
-	int i;
-
-	dboot_printf("EFI32 signature: %llx\n",
-	    (unsigned long long)efi->Hdr.Signature);
-	dboot_printf("EFI system version: ");
-	dboot_print_efi_version(efi->Hdr.Revision);
-	dboot_printf("EFI system vendor: ");
-	data = (uint16_t *)(uintptr_t)efi->FirmwareVendor;
-	for (i = 0; data[i] != 0; i++)
-		dboot_printf("%c", (char)data[i]);
-	dboot_printf("\nEFI firmware revision: ");
-	dboot_print_efi_version(efi->FirmwareRevision);
-	dboot_printf("EFI system table number of entries: %d\n",
-	    efi->NumberOfTableEntries);
-	conf = (EFI_CONFIGURATION_TABLE32 *)(uintptr_t)
-	    efi->ConfigurationTable;
-	for (i = 0; i < (int)efi->NumberOfTableEntries; i++) {
-		dboot_printf("%d: 0x%x 0x%x 0x%x 0x%x 0x%x", i,
-		    conf[i].VendorGuid.time_low,
-		    conf[i].VendorGuid.time_mid,
-		    conf[i].VendorGuid.time_hi_and_version,
-		    conf[i].VendorGuid.clock_seq_hi_and_reserved,
-		    conf[i].VendorGuid.clock_seq_low);
-		dboot_printf(" 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\n",
-		    conf[i].VendorGuid.node_addr[0],
-		    conf[i].VendorGuid.node_addr[1],
-		    conf[i].VendorGuid.node_addr[2],
-		    conf[i].VendorGuid.node_addr[3],
-		    conf[i].VendorGuid.node_addr[4],
-		    conf[i].VendorGuid.node_addr[5]);
-	}
-}
-
-static void
-print_efi64(EFI_SYSTEM_TABLE64 *efi)
-{
-	uint16_t *data;
-	EFI_CONFIGURATION_TABLE64 *conf;
-	int i;
-
-	dboot_printf("EFI64 signature: %llx\n",
-	    (unsigned long long)efi->Hdr.Signature);
-	dboot_printf("EFI system version: ");
-	dboot_print_efi_version(efi->Hdr.Revision);
-	dboot_printf("EFI system vendor: ");
-	data = (uint16_t *)(uintptr_t)efi->FirmwareVendor;
-	for (i = 0; data[i] != 0; i++)
-		dboot_printf("%c", (char)data[i]);
-	dboot_printf("\nEFI firmware revision: ");
-	dboot_print_efi_version(efi->FirmwareRevision);
-	dboot_printf("EFI system table number of entries: %lld\n",
-	    efi->NumberOfTableEntries);
-	conf = (EFI_CONFIGURATION_TABLE64 *)(uintptr_t)
-	    efi->ConfigurationTable;
-	for (i = 0; i < (int)efi->NumberOfTableEntries; i++) {
-		dboot_printf("%d: 0x%x 0x%x 0x%x 0x%x 0x%x", i,
-		    conf[i].VendorGuid.time_low,
-		    conf[i].VendorGuid.time_mid,
-		    conf[i].VendorGuid.time_hi_and_version,
-		    conf[i].VendorGuid.clock_seq_hi_and_reserved,
-		    conf[i].VendorGuid.clock_seq_low);
-		dboot_printf(" 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\n",
-		    conf[i].VendorGuid.node_addr[0],
-		    conf[i].VendorGuid.node_addr[1],
-		    conf[i].VendorGuid.node_addr[2],
-		    conf[i].VendorGuid.node_addr[3],
-		    conf[i].VendorGuid.node_addr[4],
-		    conf[i].VendorGuid.node_addr[5]);
-	}
 }
 #endif /* !__xpv */
 
@@ -1977,10 +1332,10 @@ build_page_tables(void)
 	/*
 	 * The kernel will need a 1 page window to work with page tables
 	 */
-	bi->bi_pt_window = (native_ptr_t)(uintptr_t)mem_alloc(MMU_PAGESIZE);
+	bi->bi_pt_window = (uintptr_t)mem_alloc(MMU_PAGESIZE);
 	DBG(bi->bi_pt_window);
 	bi->bi_pte_to_pt_window =
-	    (native_ptr_t)(uintptr_t)find_pte(bi->bi_pt_window, NULL, 0, 0);
+	    (uintptr_t)find_pte(bi->bi_pt_window, NULL, 0, 0);
 	DBG(bi->bi_pte_to_pt_window);
 
 #if defined(__xpv)
@@ -2017,9 +1372,9 @@ build_page_tables(void)
 	}
 
 #if !defined(__xpv)
-
 	for (i = 0; i < memlists_used; ++i) {
 		start = memlists[i].addr;
+
 		end = start + memlists[i].size;
 
 		if (map_debug)
@@ -2028,52 +1383,6 @@ build_page_tables(void)
 		while (start < end && start < next_avail_addr) {
 			map_pa_at_va(start, start, 0);
 			start += MMU_PAGESIZE;
-		}
-		if (start >= next_avail_addr)
-			break;
-	}
-
-	/*
-	 * Map framebuffer memory as PT_NOCACHE as this is memory from a
-	 * device and therefore must not be cached.
-	 */
-	if (fb != NULL && fb->framebuffer != 0) {
-		multiboot_tag_framebuffer_t *fb_tagp;
-		fb_tagp = (multiboot_tag_framebuffer_t *)(uintptr_t)
-		    fb->framebuffer;
-
-		start = fb_tagp->framebuffer_common.framebuffer_addr;
-		end = start + fb_tagp->framebuffer_common.framebuffer_height *
-		    fb_tagp->framebuffer_common.framebuffer_pitch;
-
-		/* VGA text memory is already mapped. */
-		if (fb_tagp->framebuffer_common.framebuffer_type !=
-		    MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT) {
-			uint64_t vaddr;
-
-#if defined(_BOOT_TARGET_amd64)
-			vaddr = start;
-#else
-			vaddr = (uintptr_t)mem_alloc(end - start);
-#endif
-			fb->boot_fb_virt = vaddr;
-			if (map_debug) {
-				dboot_printf("FB map pa=%" PRIx64 "..%"
-				    PRIx64 "\n", start, end);
-			}
-
-			pte_bits |= PT_NOCACHE;
-			if (PAT_support != 0)
-				pte_bits |= PT_PAT_4K;
-
-			while (start < end) {
-				map_pa_at_va(start, vaddr, 0);
-				start += MMU_PAGESIZE;
-				vaddr += MMU_PAGESIZE;
-			}
-			pte_bits &= ~PT_NOCACHE;
-			if (PAT_support != 0)
-				pte_bits &= ~PT_PAT_4K;
 		}
 	}
 #endif /* !__xpv */
@@ -2088,149 +1397,6 @@ kernel$ /platform/i86pc/kernel/$ISADIR/unix\n\
 module$ /platform/i86pc/$ISADIR/boot_archive\n\
 See http://illumos.org/msg/SUNOS-8000-AK for details.\n"
 
-static void
-dboot_init_xboot_consinfo(void)
-{
-	uintptr_t addr;
-	/*
-	 * boot info must be 16 byte aligned for 64 bit kernel ABI
-	 */
-	addr = (uintptr_t)boot_info;
-	addr = (addr + 0xf) & ~0xf;
-	bi = (struct xboot_info *)addr;
-
-#if !defined(__xpv)
-	/*
-	 * fb info must be 16 byte aligned for 64 bit kernel ABI
-	 */
-	addr = (uintptr_t)framebuffer;
-	addr = (addr + 0xf) & ~0xf;
-	fb = (boot_framebuffer_t *)addr;
-	bi->bi_framebuffer = (native_ptr_t)(uintptr_t)fb;
-
-	switch (multiboot_version) {
-	case 1:
-		dboot_multiboot1_xboot_consinfo();
-		break;
-	case 2:
-		dboot_multiboot2_xboot_consinfo();
-		break;
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-	/*
-	 * Lookup environment module for the console. Complete module list
-	 * will be built after console setup.
-	 */
-	dboot_find_console_modules();
-#endif
-}
-
-/*
- * Set up basic data from the boot loader.
- * The load_addr is part of AOUT kludge setup in dboot_grub.s, to support
- * 32-bit dboot code setup used to set up and start 64-bit kernel.
- * AOUT kludge does allow 32-bit boot loader, such as grub1, to load and
- * start 64-bit illumos kernel.
- */
-static void
-dboot_loader_init(void)
-{
-#if !defined(__xpv)
-	mb_info = NULL;
-	mb2_info = NULL;
-
-	switch (mb_magic) {
-	case MB_BOOTLOADER_MAGIC:
-		multiboot_version = 1;
-		mb_info = (multiboot_info_t *)(uintptr_t)mb_addr;
-#if defined(_BOOT_TARGET_amd64)
-		load_addr = mb_header.load_addr;
-#endif
-		break;
-
-	case MULTIBOOT2_BOOTLOADER_MAGIC:
-		multiboot_version = 2;
-		mb2_info = (multiboot2_info_header_t *)(uintptr_t)mb_addr;
-		mb2_mmap_tagp = dboot_multiboot2_get_mmap_tagp(mb2_info);
-#if defined(_BOOT_TARGET_amd64)
-		load_addr = mb2_load_addr;
-#endif
-		break;
-
-	default:
-		dboot_panic("Unknown bootloader magic: 0x%x\n", mb_magic);
-		break;
-	}
-#endif	/* !defined(__xpv) */
-}
-
-/* Extract the kernel command line from [multi]boot information. */
-static char *
-dboot_loader_cmdline(void)
-{
-	char *line = NULL;
-
-#if defined(__xpv)
-	line = (char *)xen_info->cmd_line;
-#else /* __xpv */
-
-	switch (multiboot_version) {
-	case 1:
-		if (mb_info->flags & MB_INFO_CMDLINE)
-			line = (char *)mb_info->cmdline;
-		break;
-
-	case 2:
-		line = dboot_multiboot2_cmdline(mb2_info);
-		break;
-
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-
-#endif /* __xpv */
-
-	/*
-	 * Make sure we have valid pointer so the string operations
-	 * will not crash us.
-	 */
-	if (line == NULL)
-		line = "";
-
-	return (line);
-}
-
-static char *
-dboot_loader_name(void)
-{
-#if defined(__xpv)
-	return (NULL);
-#else /* __xpv */
-	multiboot_tag_string_t *tag;
-
-	switch (multiboot_version) {
-	case 1:
-		return ((char *)mb_info->boot_loader_name);
-
-	case 2:
-		tag = dboot_multiboot2_find_tag(mb2_info,
-		    MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME);
-		return (tag->mb_string);
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
-
-	return (NULL);
-#endif /* __xpv */
-}
-
 /*
  * startup_kernel has a pretty simple job. It builds pagetables which reflect
  * 1:1 mappings for all memory in use. It then also adds mappings for
@@ -2243,19 +1409,22 @@ void
 startup_kernel(void)
 {
 	char *cmdline;
-	char *bootloader;
+	uintptr_t addr;
 #if defined(__xpv)
 	physdev_set_iopl_t set_iopl;
 #endif /* __xpv */
 
-	bcons_init(NULL);	/* Set very early console to ttya. */
-	dboot_loader_init();
 	/*
 	 * At this point we are executing in a 32 bit real mode.
 	 */
+#if defined(__xpv)
+	cmdline = (char *)xen_info->cmd_line;
+#else /* __xpv */
+	cmdline = (char *)mb_info->cmdline;
+#endif /* __xpv */
 
-	bootloader = dboot_loader_name();
-	cmdline = dboot_loader_cmdline();
+	prom_debug = (strstr(cmdline, "prom_debug") != NULL);
+	map_debug = (strstr(cmdline, "map_debug") != NULL);
 
 #if defined(__xpv)
 	/*
@@ -2268,53 +1437,23 @@ startup_kernel(void)
 	}
 #endif /* __xpv */
 
-	dboot_init_xboot_consinfo();
-	bi->bi_cmdline = (native_ptr_t)(uintptr_t)cmdline;
-	bcons_init(bi);		/* Now we can set the real console. */
-
-	prom_debug = (find_boot_prop("prom_debug") != NULL);
-	map_debug = (find_boot_prop("map_debug") != NULL);
-
-#if !defined(__xpv)
-	dboot_multiboot_get_fwtables();
-#endif
-	DBG_MSG("\n\nillumos prekernel set: ");
+	bcons_init(cmdline);
+	DBG_MSG("\n\nSolaris prekernel set: ");
 	DBG_MSG(cmdline);
 	DBG_MSG("\n");
-
-	if (bootloader != NULL && prom_debug) {
-		dboot_printf("Kernel loaded by: %s\n", bootloader);
-#if !defined(__xpv)
-		dboot_printf("Using multiboot %d boot protocol.\n",
-		    multiboot_version);
-#endif
-	}
 
 	if (strstr(cmdline, "multiboot") != NULL) {
 		dboot_panic(NO_MULTIBOOT);
 	}
 
+	/*
+	 * boot info must be 16 byte aligned for 64 bit kernel ABI
+	 */
+	addr = (uintptr_t)boot_info;
+	addr = (addr + 0xf) & ~0xf;
+	bi = (struct xboot_info *)addr;
 	DBG((uintptr_t)bi);
-#if !defined(__xpv)
-	DBG((uintptr_t)mb_info);
-	DBG((uintptr_t)mb2_info);
-	if (mb2_info != NULL)
-		DBG(mb2_info->mbi_total_size);
-	DBG(bi->bi_acpi_rsdp);
-	DBG(bi->bi_smbios);
-	DBG(bi->bi_uefi_arch);
-	DBG(bi->bi_uefi_systab);
-
-	if (bi->bi_uefi_systab && prom_debug) {
-		if (bi->bi_uefi_arch == XBI_UEFI_ARCH_64) {
-			print_efi64((EFI_SYSTEM_TABLE64 *)(uintptr_t)
-			    bi->bi_uefi_systab);
-		} else {
-			print_efi32((EFI_SYSTEM_TABLE32 *)(uintptr_t)
-			    bi->bi_uefi_systab);
-		}
-	}
-#endif
+	bi->bi_cmdline = (native_ptr_t)(uintptr_t)cmdline;
 
 	/*
 	 * Need correct target_kernel_text value
@@ -2396,16 +1535,6 @@ startup_kernel(void)
 		}
 	}
 
-	/*
-	 * check for PAT support
-	 */
-	{
-		uint32_t eax = 1;
-		uint32_t edx = get_cpuid_edx(&eax);
-
-		if (edx & CPUID_INTC_EDX_PAT)
-			PAT_support = 1;
-	}
 #if !defined(_BOOT_TARGET_amd64)
 
 	/*
@@ -2447,8 +1576,6 @@ startup_kernel(void)
 			pge_support = 1;
 		if (edx & CPUID_INTC_EDX_PAE)
 			pae_support = 1;
-		if (edx & CPUID_INTC_EDX_PAT)
-			PAT_support = 1;
 
 		eax = 0x80000000;
 		edx = get_cpuid_edx(&eax);
@@ -2518,7 +1645,6 @@ startup_kernel(void)
 		top_level = 1;
 	}
 
-	DBG(PAT_support);
 	DBG(pge_support);
 	DBG(NX_support);
 	DBG(largepage_support);
@@ -2540,11 +1666,9 @@ startup_kernel(void)
 	 */
 	DBG_MSG("\nAllocating nucleus pages.\n");
 	ktext_phys = (uintptr_t)do_mem_alloc(ksize, FOUR_MEG);
-
 	if (ktext_phys == 0)
 		dboot_panic("failed to allocate aligned kernel memory");
-	DBG(load_addr);
-	if (dboot_elfload64(load_addr) != 0)
+	if (dboot_elfload64(mb_header.load_addr) != 0)
 		dboot_panic("failed to parse kernel ELF image, rebooting");
 #endif
 
@@ -2569,7 +1693,7 @@ startup_kernel(void)
 
 	bi->bi_next_paddr = next_avail_addr - mfn_base;
 	DBG(bi->bi_next_paddr);
-	bi->bi_next_vaddr = (native_ptr_t)(uintptr_t)next_avail_addr;
+	bi->bi_next_vaddr = (native_ptr_t)next_avail_addr;
 	DBG(bi->bi_next_vaddr);
 
 	/*
@@ -2581,7 +1705,7 @@ startup_kernel(void)
 		next_avail_addr += MMU_PAGESIZE;
 	}
 
-	bi->bi_xen_start_info = (native_ptr_t)(uintptr_t)xen_info;
+	bi->bi_xen_start_info = (uintptr_t)xen_info;
 	DBG((uintptr_t)HYPERVISOR_shared_info);
 	bi->bi_shared_info = (native_ptr_t)HYPERVISOR_shared_info;
 	bi->bi_top_page_table = (uintptr_t)top_page_table - mfn_base;
@@ -2590,22 +1714,9 @@ startup_kernel(void)
 
 	bi->bi_next_paddr = next_avail_addr;
 	DBG(bi->bi_next_paddr);
-	bi->bi_next_vaddr = (native_ptr_t)(uintptr_t)next_avail_addr;
+	bi->bi_next_vaddr = (uintptr_t)next_avail_addr;
 	DBG(bi->bi_next_vaddr);
-	bi->bi_mb_version = multiboot_version;
-
-	switch (multiboot_version) {
-	case 1:
-		bi->bi_mb_info = (native_ptr_t)(uintptr_t)mb_info;
-		break;
-	case 2:
-		bi->bi_mb_info = (native_ptr_t)(uintptr_t)mb2_info;
-		break;
-	default:
-		dboot_panic("Unknown multiboot version: %d\n",
-		    multiboot_version);
-		break;
-	}
+	bi->bi_mb_info = (uintptr_t)mb_info;
 	bi->bi_top_page_table = (uintptr_t)top_page_table;
 
 #endif /* __xpv */
@@ -2616,15 +1727,6 @@ startup_kernel(void)
 #ifndef __xpv
 	if (map_debug)
 		dump_tables();
-#endif
-
-#ifndef __xpv
-	/* Update boot info with FB data */
-	fb->cursor.origin.x = fb_info.cursor.origin.x;
-	fb->cursor.origin.y = fb_info.cursor.origin.y;
-	fb->cursor.pos.x = fb_info.cursor.pos.x;
-	fb->cursor.pos.y = fb_info.cursor.pos.y;
-	fb->cursor.visible = fb_info.cursor.visible;
 #endif
 
 	DBG_MSG("\n\n*** DBOOT DONE -- back to asm to jump to kernel\n\n");

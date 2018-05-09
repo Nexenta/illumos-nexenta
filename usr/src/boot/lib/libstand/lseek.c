@@ -61,6 +61,8 @@
  */
 
 #include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
+
 #include "stand.h"
 
 off_t
@@ -85,6 +87,7 @@ lseek(int fd, off_t offset, int where)
 	case SEEK_CUR:
 	    f->f_offset += offset;
 	    break;
+	case SEEK_END:
 	default:
 	    errno = EOFFSET;
 	    return (-1);

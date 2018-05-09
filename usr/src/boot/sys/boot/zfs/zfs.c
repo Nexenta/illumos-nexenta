@@ -1,4 +1,4 @@
-/*
+/*-
  * Copyright (c) 2007 Doug Rabson
  * All rights reserved.
  *
@@ -22,6 +22,8 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
+ *
+ *	$FreeBSD$
  */
 
 #include <sys/cdefs.h>
@@ -367,61 +369,17 @@ zfs_readdir(struct open_file *f, struct dirent *d)
 }
 
 static int
-vdev_read(vdev_t *vdev, void *priv, off_t offset, void *buf, size_t bytes)
+vdev_read(vdev_t *vdev, void *priv, off_t offset, void *buf, size_t size)
 {
-	int fd, ret;
-	size_t res, size, remainder, rb_size, blksz;
-	unsigned secsz;
-	off_t off;
-	char *bouncebuf, *rb_buf;
+	int fd;
 
 	fd = (uintptr_t) priv;
-	bouncebuf = NULL;
-
-	ret = ioctl(fd, DIOCGSECTORSIZE, &secsz);
-	if (ret != 0)
-		return (ret);
-
-	off = offset / secsz;
-	remainder = offset % secsz;
-	if (lseek(fd, off * secsz, SEEK_SET) == -1)
-		return (errno);
-
-	rb_buf = buf;
-	rb_size = bytes;
-	size = roundup2(bytes + remainder, secsz);
-	blksz = size;
-	if (remainder != 0 || size != bytes) {
-		bouncebuf = zfs_alloc(secsz);
-		if (bouncebuf == NULL) {
-			printf("vdev_read: out of memory\n");
-			return (ENOMEM);
-		}
-		rb_buf = bouncebuf;
-		blksz = rb_size - remainder;
+	lseek(fd, offset, SEEK_SET);
+	if (read(fd, buf, size) == size) {
+		return 0;
+	} else {
+		return (EIO);
 	}
-
-	while (bytes > 0) {
-		res = read(fd, rb_buf, rb_size);
-		if (res != rb_size) {
-			ret = EIO;
-			goto error;
-		}
-		if (bytes < blksz)
-			blksz = bytes;
-		if (bouncebuf != NULL)
-			memcpy(buf, rb_buf + remainder, blksz);
-		buf = (void *)((uintptr_t)buf + blksz);
-		bytes -= blksz;
-		remainder = 0;
-		blksz = rb_size;
-	}
-
-	ret = 0;
-error:
-	if (bouncebuf != NULL)
-		zfs_free(bouncebuf, secsz);
-	return (ret);
 }
 
 static int
@@ -497,7 +455,7 @@ zfs_probe_partition(void *arg, const char *partname,
 	case PART_VTOC_SWAP:
 		return (ret);
 	default:
-		break;
+		break;;
 	}
 	ppa = (struct zfs_probe_args *)arg;
 	strncpy(devname, ppa->devname, strlen(ppa->devname) - 1);
@@ -516,8 +474,7 @@ zfs_probe_partition(void *arg, const char *partname,
 		table = ptable_open(&pa, part->end - part->start + 1,
 		    ppa->secsz, zfs_diskread);
 		if (table != NULL) {
-			if (ptable_gettype(table) == PTABLE_VTOC8)
-				ptable_iterate(table, &pa, zfs_probe_partition);
+			ptable_iterate(table, &pa, zfs_probe_partition);
 			ptable_close(table);
 		}
 	}
@@ -530,11 +487,9 @@ zfs_probe_dev(const char *devname, uint64_t *pool_guid)
 {
 	struct ptable *table;
 	struct zfs_probe_args pa;
-	uint64_t mediasz;
+	off_t mediasz;
 	int ret;
 
-	if (pool_guid)
-		*pool_guid = 0;
 	pa.fd = open(devname, O_RDONLY);
 	if (pa.fd == -1)
 		return (ENXIO);
@@ -542,7 +497,6 @@ zfs_probe_dev(const char *devname, uint64_t *pool_guid)
 	ret = zfs_probe(pa.fd, pool_guid);
 	if (ret == 0)
 		return (0);
-
 	/* Probe each partition */
 	ret = ioctl(pa.fd, DIOCGMEDIASIZE, &mediasz);
 	if (ret == 0)
@@ -558,8 +512,6 @@ zfs_probe_dev(const char *devname, uint64_t *pool_guid)
 		}
 	}
 	close(pa.fd);
-	if (pool_guid && *pool_guid == 0)
-		ret = ENXIO;
 	return (ret);
 }
 

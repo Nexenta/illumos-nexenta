@@ -718,6 +718,15 @@ stubs_base:
 #endif
 
 /*
+ * Stubs for kb (only needed for 'win')
+ */
+#ifndef KB_MODULE
+	MODULE(kb,strmod);
+	STUB(kb, strsetwithdecimal,	0);
+	END_MODULE(kb);
+#endif
+
+/*
  * Stubs for swapgeneric
  */
 #ifndef SWAPGENERIC_MODULE

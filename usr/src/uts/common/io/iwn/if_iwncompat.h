@@ -145,6 +145,7 @@
 #define	PCI_PRODUCT_INTEL_WIFI_LINK_6000_3X3_2	0x4238
 
 #define	__inline	inline
+#define	__packed	__attribute__((packed))
 #define	__arraycount(x)	ARRAY_SIZE(x)
 #define	abs(x)		ABS(x)
 

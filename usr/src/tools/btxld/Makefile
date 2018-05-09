@@ -23,22 +23,20 @@ UTILS_SRC=	$(COMMON_SRC)/boot_utils.c
 EXTRA_SRC=	$(COMMON_SRC)/mboot_extra.c
 
 PROG=		btxld
-MAN1ONBLDFILES=	btxld.1onbld
+MAN=		btxld.8
 SRCS=		btxld.c elfh.c version.c $(UTILS_SRC) $(EINFO_SRC) $(EXTRA_SRC)
 OBJS=		btxld.o elfh.o version.o bblk_einfo.o mboot_extra.o boot_utils.o
 LDLIBS +=	-lmd5
 C99MODE=	$(C99_ENABLE)
 CPPFLAGS +=	-I$(SRC)/uts/common -I$(COMMON_SRC)
 
-$(ROOTONBLDMAN1ONBLDFILES)	:= FILEMODE=	644
-
-all: $(PROG) $(MAN1ONBLDFILES)
+all: $(PROG)
 
 $(PROG): $(OBJS)
 	$(LINK.c) -o $@ $(OBJS) $(LDLIBS)
 	$(POST_PROCESS)
 
-install: all .WAIT $(ROOTONBLDMACHPROG) $(ROOTONBLDMAN1ONBLDFILES)
+install: all .WAIT $(ROOTONBLDMACHPROG)
 
 clean:
 	$(RM) $(OBJS)

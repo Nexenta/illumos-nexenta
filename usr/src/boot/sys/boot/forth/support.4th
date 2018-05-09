@@ -1151,8 +1151,10 @@ string current_file_name_ref	\ used to print the file name
 
 : scan_conf_dir ( -- addr len -1 | 0 )
   s" currdev" getenv -1 <> if
-    3				\ we only need first 3 chars
-    s" net" compare 0= if
+    dup 3			\ we only need first 3 chars
+    s" pxe" compare 0=
+    swap 3
+    s" net" compare 0= or if
 	s" boot.tftproot.server" getenv? if
 	    0 exit		\ readdir does not work on tftp
 	then
@@ -1553,6 +1555,17 @@ also builtins
 
 \ Parse filename from a semicolon-separated list
 
+\ replacement, not working yet
+: newparse-; { addr len | a1 -- a' len-x addr x }
+  addr len [char] ; strchr dup if	( a1 len1 )
+    swap to a1	( store address )
+    1 - a1 @ 1 + swap ( remove match )
+    addr a1 addr -
+  else
+    0 0 addr len
+  then
+;
+
 : parse-; ( addr len -- addr' len-x addr x )
   over 0 2swap			( addr 0 addr len )
   begin
@@ -1583,19 +1596,11 @@ also builtins
       dup 2 = if ." Flags      : " >r 2over type r> cr then
     then
     \ if it's xen, the xen kernel is loaded, unix needs to be loaded as module
-    s" xen_kernel" getenv -1 <> if
-      drop			\ drop address from getenv
-      >r			\ argument count to R
-      s" kernel" s" -t "	\ push 2 strings into the stack
-      r> 2 +			\ increment argument count
-    then
-
-    1 ['] load catch dup if
-      ( addr0 len0 addr1 len1 ... args 1 error )
-      >r			\ error code to R
-      drop			\ drop 1
-      0 do 2drop loop		\ drop addr len pairs
-      r>			\ set flag for while
+    s" xen_kernel" getenv -1 = if
+      1 load				\ normal kernel
+    else
+      drop
+      >r s" kernel" s" -t " r> 2 + 1 load
     then
   while
     dup 0=

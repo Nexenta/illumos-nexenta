@@ -78,14 +78,12 @@ kctl_ddi_prop_read(char *pname, char *prop_buf, int buf_len)
  * query and thus have guilty knowledge of the properties that the
  * debugger wants to see.
  *
- * Here actually we only support eight console properties:
- *     input-device, output-device, tty[a-d]-mode, screen-#rows, screen-#cols.
+ * Here actually we only support six console properties:
+ *     input-device, output-device, tty[a-d]-mode.
  */
 #define	KCTL_PROPNV_NIODEV	2
 #define	KCTL_PROPNV_NTTYMD	4
-#define	KCTL_PROPNV_NSCREEN	2
-#define	KCTL_PROPNV_NENT	(KCTL_PROPNV_NIODEV + KCTL_PROPNV_NTTYMD + \
-	KCTL_PROPNV_NSCREEN)
+#define	KCTL_PROPNV_NENT	(KCTL_PROPNV_NIODEV + KCTL_PROPNV_NTTYMD)
 
 static kmdb_auxv_nv_t *
 kctl_pcache_create(int *nprops)
@@ -94,7 +92,7 @@ kctl_pcache_create(int *nprops)
 	kmdb_auxv_nv_t *pnv;
 	size_t psz = sizeof (kmdb_auxv_nv_t) * KCTL_PROPNV_NENT;
 	char *inputdev, *outputdev;
-	int i, j;
+	int i;
 	char ttymode[] = "ttyX-mode";
 
 	if (kctl.kctl_boot_loaded) {
@@ -121,8 +119,7 @@ kctl_pcache_create(int *nprops)
 	 * fallback on the old "input-device" property.
 	 */
 	(void) strcpy(inputdev, "text");	/* default to screen */
-	if (!preader("diag-device", inputdev, sizeof ((&pnv[0])->kanv_val)) &&
-	    !preader("console", inputdev, sizeof ((&pnv[0])->kanv_val)))
+	if (!preader("console", inputdev, sizeof ((&pnv[0])->kanv_val)))
 		(void) preader("input-device", inputdev,
 		    sizeof ((&pnv[0])->kanv_val));
 
@@ -137,21 +134,11 @@ kctl_pcache_create(int *nprops)
 	}
 
 	/* Set tty modes or defaults. */
-	j = KCTL_PROPNV_NIODEV + KCTL_PROPNV_NTTYMD;
-	for (i = KCTL_PROPNV_NIODEV; i < j; i++) {
+	for (i = KCTL_PROPNV_NIODEV; i < KCTL_PROPNV_NENT; i++) {
 		if (!preader((&pnv[i])->kanv_name, (&pnv[i])->kanv_val,
 		    sizeof ((&pnv[0])->kanv_val)))
 			(void) strcpy((&pnv[i])->kanv_val, "9600,8,n,1,-");
 	}
-
-	(void) strcpy((&pnv[j])->kanv_name, "screen-#rows");
-	(void) strcpy((&pnv[j + 1])->kanv_name, "screen-#cols");
-	(void) strcpy((&pnv[j])->kanv_val, "0");
-	(void) strcpy((&pnv[j + 1])->kanv_val, "0");
-	(void) preader((&pnv[j])->kanv_name, (&pnv[j])->kanv_val,
-	    sizeof ((&pnv[j])->kanv_val));
-	(void) preader((&pnv[j + 1])->kanv_name, (&pnv[j + 1])->kanv_val,
-	    sizeof ((&pnv[j + 1])->kanv_val));
 
 	*nprops = KCTL_PROPNV_NENT;
 	return (pnv);

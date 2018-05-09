@@ -63,6 +63,8 @@
 
 #define _NOTE(s)
 
+typedef enum { B_FALSE, B_TRUE } boolean_t;
+
 /* CRC64 table */
 #define	ZFS_CRC64_POLY	0xC96C5795D7870F42ULL	/* ECMA-182, reflected form */
 
@@ -858,19 +860,10 @@ struct uberblock {
 /*
  * Derived constants.
  */
-#define	DNODE_MIN_SIZE		(1 << DNODE_SHIFT)
-#define	DNODE_MAX_SIZE		(1 << DNODE_BLOCK_SHIFT)
-#define	DNODE_BLOCK_SIZE	(1 << DNODE_BLOCK_SHIFT)
-#define	DNODE_MIN_SLOTS		(DNODE_MIN_SIZE >> DNODE_SHIFT)
-#define	DNODE_MAX_SLOTS		(DNODE_MAX_SIZE >> DNODE_SHIFT)
-#define	DN_BONUS_SIZE(dnsize)	((dnsize) - DNODE_CORE_SIZE - \
-	(1 << SPA_BLKPTRSHIFT))
-#define	DN_SLOTS_TO_BONUSLEN(slots)	DN_BONUS_SIZE((slots) << DNODE_SHIFT)
-#define	DN_OLD_MAX_BONUSLEN		(DN_BONUS_SIZE(DNODE_MIN_SIZE))
-#define	DN_MAX_NBLKPTR		((DNODE_MIN_SIZE - DNODE_CORE_SIZE) >> \
-	SPA_BLKPTRSHIFT)
-#define	DN_MAX_OBJECT		(1ULL << DN_MAX_OBJECT_SHIFT)
-#define	DN_ZERO_BONUSLEN	(DN_BONUS_SIZE(DNODE_MAX_SIZE) + 1)
+#define	DNODE_SIZE	(1 << DNODE_SHIFT)
+#define	DN_MAX_NBLKPTR	((DNODE_SIZE - DNODE_CORE_SIZE) >> SPA_BLKPTRSHIFT)
+#define	DN_MAX_BONUSLEN	(DNODE_SIZE - DNODE_CORE_SIZE - (1 << SPA_BLKPTRSHIFT))
+#define	DN_MAX_OBJECT	(1ULL << DN_MAX_OBJECT_SHIFT)
 
 #define	DNODES_PER_BLOCK_SHIFT	(DNODE_BLOCK_SHIFT - DNODE_SHIFT)
 #define	DNODES_PER_BLOCK	(1ULL << DNODES_PER_BLOCK_SHIFT)
@@ -906,8 +899,7 @@ typedef struct dnode_phys {
 	uint8_t dn_flags;		/* DNODE_FLAG_* */
 	uint16_t dn_datablkszsec;	/* data block size in 512b sectors */
 	uint16_t dn_bonuslen;		/* length of dn_bonus */
-	uint8_t dn_extra_slots;		/* # of subsequent slots consumed */
-	uint8_t dn_pad2[3];
+	uint8_t dn_pad2[4];
 
 	/* accounting is protected by dn_dirty_mtx */
 	uint64_t dn_maxblkid;		/* largest allocated block ID */
@@ -915,39 +907,10 @@ typedef struct dnode_phys {
 
 	uint64_t dn_pad3[4];
 
-	/*
-	 * The tail region is 448 bytes for a 512 byte dnode, and
-	 * correspondingly larger for larger dnode sizes. The spill
-	 * block pointer, when present, is always at the end of the tail
-	 * region. There are three ways this space may be used, using
-	 * a 512 byte dnode for this diagram:
-	 *
-	 * 0       64      128     192     256     320     384     448 (offset)
-	 * +---------------+---------------+---------------+-------+
-	 * | dn_blkptr[0]  | dn_blkptr[1]  | dn_blkptr[2]  | /     |
-	 * +---------------+---------------+---------------+-------+
-	 * | dn_blkptr[0]  | dn_bonus[0..319]                      |
-	 * +---------------+-----------------------+---------------+
-	 * | dn_blkptr[0]  | dn_bonus[0..191]      | dn_spill      |
-	 * +---------------+-----------------------+---------------+
-	 */
-	union {
-		blkptr_t dn_blkptr[1+DN_OLD_MAX_BONUSLEN/sizeof (blkptr_t)];
-		struct {
-			blkptr_t __dn_ignore1;
-			uint8_t dn_bonus[DN_OLD_MAX_BONUSLEN];
-		};
-		struct {
-			blkptr_t __dn_ignore2;
-			uint8_t __dn_ignore3[DN_OLD_MAX_BONUSLEN -
-			    sizeof (blkptr_t)];
-			blkptr_t dn_spill;
-		};
-	};
+	blkptr_t dn_blkptr[1];
+	uint8_t dn_bonus[DN_MAX_BONUSLEN - sizeof (blkptr_t)];
+	blkptr_t dn_spill;
 } dnode_phys_t;
-
-#define	DN_SPILL_BLKPTR(dnp)	(blkptr_t *)((char *)(dnp) + \
-	(((dnp)->dn_extra_slots + 1) << DNODE_SHIFT) - (1 << SPA_BLKPTRSHIFT))
 
 typedef enum dmu_object_byteswap {
 	DMU_BSWAP_UINT8,
@@ -1118,7 +1081,6 @@ typedef struct sa_hdr_phys {
 #define	SA_UID_OFFSET		24
 #define	SA_GID_OFFSET		32
 #define	SA_PARENT_OFFSET	40
-#define	SA_SYMLINK_OFFSET	160
 
 /*
  * Intent log header - this on disk structure holds fields to manage
@@ -1206,7 +1168,6 @@ typedef struct dsl_dataset_phys {
 #define	DMU_POOL_DEFLATE		"deflate"
 #define	DMU_POOL_HISTORY		"history"
 #define	DMU_POOL_PROPS			"pool_props"
-#define	DMU_POOL_CHECKSUM_SALT		"org.illumos:checksum_salt"
 
 #define	ZAP_MAGIC 0x2F52AB2ABULL
 
@@ -1512,7 +1473,6 @@ typedef struct znode_phys {
  * In-core vdev representation.
  */
 struct vdev;
-struct spa;
 typedef int vdev_phys_read_t(struct vdev *vdev, void *priv,
     off_t offset, void *buf, size_t bytes);
 typedef int vdev_read_t(struct vdev *vdev, const blkptr_t *bp,
@@ -1537,7 +1497,6 @@ typedef struct vdev {
 	vdev_phys_read_t *v_phys_read;	/* read from raw leaf vdev */
 	vdev_read_t	*v_read;	/* read from vdev */
 	void		*v_read_priv;	/* private data for read function */
-	struct spa	*spa;		/* link to spa */
 } vdev_t;
 
 /*
@@ -1553,8 +1512,6 @@ typedef struct spa {
 	struct uberblock spa_uberblock;	/* best uberblock so far */
 	vdev_list_t	spa_vdevs;	/* list of all toplevel vdevs */
 	objset_phys_t	spa_mos;	/* MOS for this pool */
-	zio_cksum_salt_t spa_cksum_salt;	/* secret salt for cksum */
-	void		*spa_cksum_tmpls[ZIO_CHECKSUM_FUNCTIONS];
 	int		spa_inited;	/* initialized */
 } spa_t;
 

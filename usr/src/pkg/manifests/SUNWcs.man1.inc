@@ -201,7 +201,6 @@ file path=usr/share/man/man1/uname.1
 file path=usr/share/man/man1/uniq.1
 file path=usr/share/man/man1/uptime.1
 file path=usr/share/man/man1/uuidgen.1
-file path=usr/share/man/man1/vtfontcvt.1
 file path=usr/share/man/man1/w.1
 file path=usr/share/man/man1/wait.1
 file path=usr/share/man/man1/wc.1

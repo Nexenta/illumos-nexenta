@@ -36,6 +36,7 @@
  */
 
 #include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -53,7 +54,12 @@
 
 /* Caller must leave room for ethernet header in front!! */
 ssize_t
-sendether(struct iodesc *d, void *pkt, size_t len, uint8_t *dea, int etype)
+sendether(d, pkt, len, dea, etype)
+	struct iodesc *d;
+	void *pkt;
+	size_t len;
+	u_char *dea;
+	int etype;
 {
 	ssize_t n;
 	struct ether_header *eh;
@@ -80,31 +86,32 @@ sendether(struct iodesc *d, void *pkt, size_t len, uint8_t *dea, int etype)
 
 /*
  * Get a packet of any Ethernet type, with our address or
- * the broadcast address.  Save the Ether type in etype.
- * Unless there is an error, we pass the whole packet and the unencapsulated
- * data.
+ * the broadcast address.  Save the Ether type in arg 5.
+ * NOTE: Caller must leave room for the Ether header.
  */
 ssize_t
-readether(struct iodesc *d, void **pkt, void **payload, time_t tleft,
-    uint16_t *etype)
+readether(d, pkt, len, tleft, etype)
+	struct iodesc *d;
+	void *pkt;
+	size_t len;
+	time_t tleft;
+	u_int16_t *etype;
 {
 	ssize_t n;
 	struct ether_header *eh;
-	void *ptr;
 
 #ifdef ETHER_DEBUG
  	if (debug)
 		printf("readether: called\n");
 #endif
 
-	ptr = NULL;
-	n = netif_get(d, &ptr, tleft);
-	if (n == -1 || n < sizeof(*eh)) {
-		free(ptr);
-		return (-1);
-	}
+	eh = (struct ether_header *)pkt - 1;
+	len += sizeof(*eh);
 
-	eh = (struct ether_header *)((uintptr_t)ptr + ETHER_ALIGN);
+	n = netif_get(d, eh, len, tleft);
+	if (n == -1 || n < sizeof(*eh))
+		return (-1);
+
 	/* Validate Ethernet address. */
 	if (bcmp(d->myea, eh->ether_dhost, 6) != 0 &&
 	    bcmp(bcea, eh->ether_dhost, 6) != 0) {
@@ -113,12 +120,8 @@ readether(struct iodesc *d, void **pkt, void **payload, time_t tleft,
 			printf("readether: not ours (ea=%s)\n",
 			    ether_sprintf(eh->ether_dhost));
 #endif
-		free(ptr);
 		return (-1);
 	}
-
-	*pkt = ptr;
-	*payload = (void *)((uintptr_t)eh + sizeof(*eh));
 	*etype = ntohs(eh->ether_type);
 
 	n -= sizeof(*eh);
