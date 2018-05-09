@@ -23,7 +23,7 @@
 #include <sys/disk.h>
 #include <sys/reboot.h>
 #include <sys/queue.h>
-#include <sys/multiboot.h>
+#include <multiboot.h>
 
 #include <machine/bootinfo.h>
 #include <machine/elf.h>
@@ -196,7 +196,7 @@ main(void)
 	env_nounset);
 
     /* Process configuration file */
-    setenv("screen-#rows", "24", 1);
+    setenv("LINES", "24", 1);
     auto_boot = 1;
 
     fd = open(PATH_CONFIG, O_RDONLY);
@@ -613,18 +613,11 @@ probe_partition(void *arg, const char *partname,
 		table = ptable_open(&pa, part->end - part->start + 1,
 		    ppa->secsz, parttblread);
 		if (table != NULL) {
-			enum ptable_type pt = ptable_gettype(table);
-
-			if (pt == PTABLE_VTOC8 || pt == PTABLE_VTOC) {
-				ret = ptable_iterate(table, &pa,
-				    probe_partition);
-				ptable_close(table);
-				close(pa.fd);
-				return (ret);
-			}
+			ret = ptable_iterate(table, &pa, probe_partition);
 			ptable_close(table);
 		}
 		close(pa.fd);
+		return (ret);
 	}
 
 	if (ppa->offset + part->start == start_sector) {
@@ -713,8 +706,6 @@ i386_zfs_probe(void)
 	for (unit = 0; unit < MAXBDDEV; unit++) {
 		if (bd_unit2bios(unit) == -1)
 			break;
-		if (bd_unit2bios(unit) < 0x80)
-			continue;
 
 		sprintf(devname, "disk%d:", unit);
 		/* If this is not boot disk, use generic probe. */

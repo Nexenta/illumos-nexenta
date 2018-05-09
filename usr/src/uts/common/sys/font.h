@@ -27,92 +27,53 @@
 #ifndef _SYS_FONT_H
 #define	_SYS_FONT_H
 
-#include <sys/queue.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-enum vfnt_map {
-	VFNT_MAP_NORMAL = 0,	/* Normal font. */
-	VFNT_MAP_NORMAL_RH,	/* Normal font right hand. */
-	VFNT_MAP_BOLD,		/* Bold font. */
-	VFNT_MAP_BOLD_RH,	/* Bold font right hand. */
-	VFNT_MAPS		/* Number of maps. */
-};
+/*
+ * Number of chars encoded in font data. Bundled fonts are generated
+ * from bdf files and this constant depends on the data in the bdf file.
+ * If more entries are added to the bdf files, then this number must be
+ * increased.
+ */
+#define	ENCODED_CHARS	256
 
-struct font_map {
-	uint32_t font_src;	/* Source glyph. */
-	uint16_t font_dst;	/* Target glyph. */
-	uint16_t font_len;	/* The number of glyphs in sequence. */
-};
-
-/* Any unknown glyph is mapped as first (offset 0) glyph in bitmap. */
 struct font {
-	struct font_map	*vf_map[VFNT_MAPS];	/* Mapping tables. */
-	uint8_t		*vf_bytes;		/* Font bitmap data. */
-	uint32_t	vf_width;		/* Glyph width. */
-	uint32_t	vf_height;		/* Glyph height. */
-	uint32_t	vf_map_count[VFNT_MAPS];	/* Entries in map */
+	short	width;
+	short	height;
+	uchar_t	*char_ptr[ENCODED_CHARS];
+	void	*image_data;
 };
 
 typedef	struct  bitmap_data {
 	short		width;
 	short		height;
-	uint32_t	compressed_size;
-	uint32_t	uncompressed_size;
-	uint8_t		*compressed_data;
-	struct font	*font;
+	unsigned char	*image;
+	unsigned char	**encoding;
 } bitmap_data_t;
 
-typedef	bitmap_data_t   *font_load_cb_t(char *);
-typedef enum {
-	FONT_AUTO,
-	FONT_MANUAL,
-	FONT_BOOT
-} FONT_FLAGS;
-
 struct fontlist {
-	char		*font_name;
-	FONT_FLAGS	font_flags;
-	bitmap_data_t	*font_data;
-	font_load_cb_t	*font_load;
-	STAILQ_ENTRY(fontlist) font_next;
+	bitmap_data_t	*data;
+	bitmap_data_t   *(*fontload)(char *);
 };
 
-#define	FONT_HEADER_MAGIC	"VFNT0002"
-struct font_header {
-	uint8_t		fh_magic[8];
-	uint8_t		fh_width;
-	uint8_t		fh_height;
-	uint16_t	fh_pad;
-	uint32_t	fh_glyph_count;
-	uint32_t	fh_map_count[4];
-} __attribute__((__packed__));
+extern struct fontlist fonts[];
 
-typedef STAILQ_HEAD(font_list, fontlist) font_list_t;
-extern font_list_t fonts;
-
-/*
- * Built in fonts. We are using Gallant as default on sparc to keep
- * smooth transition from prom and 8x16 on x86, for vga text mode.
- */
-#ifdef sparc
 #define	DEFAULT_FONT_DATA	font_data_12x22
-extern bitmap_data_t font_data_12x22;
-#else
-#define	DEFAULT_FONT_DATA	font_data_8x16
-extern bitmap_data_t font_data_8x16;
-#endif
 #define	BORDER_PIXELS		10	/* space from screen border */
+/*
+ * Built in fonts.
+ */
+extern bitmap_data_t font_data_12x22;
+extern bitmap_data_t font_data_8x16;
+extern bitmap_data_t font_data_7x14;
+extern bitmap_data_t font_data_6x10;
 
-bitmap_data_t *set_font(short *, short *, short, short);
-const uint8_t *font_lookup(const struct font *, uint32_t);
-void font_bit_to_pix4(struct font *, uint8_t *, uint32_t, uint8_t, uint8_t);
-void font_bit_to_pix8(struct font *, uint8_t *, uint32_t, uint8_t, uint8_t);
-void font_bit_to_pix16(struct font *, uint16_t *, uint32_t, uint16_t, uint16_t);
-void font_bit_to_pix24(struct font *, uint8_t *, uint32_t, uint32_t, uint32_t);
-void font_bit_to_pix32(struct font *, uint32_t *, uint32_t, uint32_t, uint32_t);
+void set_font(struct font *, short *, short *, short, short);
+void font_bit_to_pix4(struct font *, uint8_t *, uchar_t, uint8_t, uint8_t);
+void font_bit_to_pix8(struct font *, uint8_t *, uchar_t, uint8_t, uint8_t);
+void font_bit_to_pix24(struct font *, uint32_t *, uchar_t, uint32_t, uint32_t);
 
 #ifdef __cplusplus
 }

@@ -30,7 +30,7 @@
  */
 
 /* determine where we can get bcopy/bzero declarations */
-#if defined(_KERNEL) || defined(_STANDALONE)
+#ifdef	_KERNEL
 #include <sys/systm.h>
 #else
 #include <strings.h>

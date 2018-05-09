@@ -16,10 +16,9 @@
 
 include $(SRC)/Makefile.master
 
-CFLAGS= -Os
-CPPFLAGS= -nostdinc -I../../../../include -I../../..
-CPPFLAGS += -I../../../../lib/libz
-CPPFLAGS += -D_STANDALONE -DLOADER_ZFS_SUPPORT
+CFLAGS= -O2 -I../../../../include -I../../..
+CFLAGS += -DLOADER_ZFS_SUPPORT
+CPPFLAGS=	-DSTAND
 
 all: libi386.a
 
@@ -41,20 +40,14 @@ SRCS=	biosacpi.c bioscd.c biosdisk.c biosmem.c biospnp.c \
 	elf64_freebsd.c multiboot.c multiboot_tramp.S \
 	i386_copy.c i386_module.c nullconsole.c pxe.c pxetramp.s \
 	smbios.c time.c vidconsole.c amd64_tramp.S spinconsole.c linux.c \
-	relocater_tramp.S vgasubr.c vbe.c
+	relocater_tramp.S
 OBJS=	biosacpi.o bioscd.o biosdisk.o biosmem.o biospnp.o \
 	biospci.o biossmap.o bootinfo.o bootinfo32.o bootinfo64.o \
 	comconsole.o devicename.o elf32_freebsd.o \
 	elf64_freebsd.o multiboot.o multiboot_tramp.o \
 	i386_copy.o i386_module.o nullconsole.o pxe.o pxetramp.o \
 	smbios.o time.o vidconsole.o amd64_tramp.o spinconsole.o linux.o \
-	relocater_tramp.o vgasubr.o vbe.o
-
-COMMON=  ../../common
-PNGLITE=$(SRC)/common/pnglite
-CPPFLAGS += -I$(PNGLITE)
-SRCS +=	$(COMMON)/gfx_fb.c $(PNGLITE)/pnglite.c
-OBJS +=	gfx_fb.o pnglite.o
+	relocater_tramp.o
 
 LIBZFS=  ../../zfs
 SRCS +=	$(LIBZFS)/devicename_stubs.c
@@ -76,10 +69,13 @@ CFLAGS += -DSMBIOS_LITTLE_ENDIAN_UUID
 # Use network-endian UUID format for backward compatibility.
 #CFLAGS += -DSMBIOS_NETWORK_ENDIAN_UUID
 
+# Include simple terminal emulation (cons25-compatible)
+CFLAGS += -DTERM_EMU
+
 # XXX: make alloca() useable
 CFLAGS += -Dalloca=__builtin_alloca
 
-CFLAGS +=	-I$(SRC)/common/ficl -I../../libficl \
+CFLAGS +=	-I$(SRC)/common/ficl -I../../ficl \
 		-I../../common -I../common \
 		-I../btx/lib \
 		-I$(SRC)/uts/intel/sys/acpi \
@@ -100,9 +96,6 @@ CLEANFILES +=	machine x86
 
 include ../Makefile.inc
 
-# For multiboot2.h, must be last, to avoid conflicts
-CPPFLAGS +=	-I$(SRC)/uts/common
-
 machine:
 	$(RM) machine
 	$(SYMLINK) ../../../i386/include machine
@@ -117,10 +110,4 @@ libi386.a: $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
 
 %.o:	$(LIBZFS)/%.c
-	$(COMPILE.c) -o $@ $<
-
-%.o:	$(COMMON)/%.c
-	$(COMPILE.c) -o $@ $<
-
-%.o:	$(PNGLITE)/%.c
 	$(COMPILE.c) -o $@ $<

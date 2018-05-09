@@ -20,7 +20,7 @@ ROOT_BOOT = $(ROOT)/boot
 CC=	$(GCC_ROOT)/bin/gcc
 LD=	$(GNU_ROOT)/bin/gld
 DD=	/usr/bin/dd
-CFLAGS= -Os -I../../..
+CFLAGS= -O2 -I../../..
 CCASFLAGS= -Wa,--divide
 
 include ../Makefile.inc

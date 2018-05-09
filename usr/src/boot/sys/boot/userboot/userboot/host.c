@@ -1,4 +1,4 @@
-/*
+/*-
  * Copyright (c) 2011 Google, Inc.
  * All rights reserved.
  *
@@ -25,6 +25,7 @@
  */
 
 #include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 /*
  * Read from the host filesystem
@@ -71,6 +72,16 @@ host_read(struct open_file *f, void *start, size_t size, size_t *resid)
 {
 
 	return (CALLBACK(read, f->f_fsdata, start, size, resid));
+}
+
+/*
+ * Don't be silly - the bootstrap has no business writing anything.
+ */
+static int
+host_write(struct open_file *f, void *start, size_t size, size_t *resid)
+{
+
+	return (EROFS);
 }
 
 static off_t
@@ -172,7 +183,7 @@ struct fs_ops host_fsops = {
 	host_open,
 	host_close,
 	host_read,
-	null_write,
+	host_write,
 	host_seek,
 	host_stat,
 	host_readdir

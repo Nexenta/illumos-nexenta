@@ -11,28 +11,20 @@
 
 #
 # Copyright 2016 Toomas Soome <tsoome@me.com>
-# Copyright 2016 RackTop Systems.
 #
-
-MACHINE=	$(MACH64)
-LIBRARY=	libstand.a
-
-all install:    $(LIBRARY)
 
 include ../Makefile.com
 
-CFLAGS +=	-m64 -mno-red-zone
-ASFLAGS +=	-m64
+MACHINE=	$(MACH64)
 
-CLEANFILES += x86
+CFLAGS +=	-m64 -fPIC -mno-red-zone
+ASFLAGS =	-m64 -fPIC
 
 # _setjmp/_longjmp
 SRCS += $(LIBSTAND_SRC)/amd64/_setjmp.S
 OBJS += _setjmp.o
 
 $(LIBRARY): $(SRCS) $(OBJS)
-
-$(OBJS): machine x86
 
 %.o: $(LIBSTAND_SRC)/amd64/%.S
 	$(COMPILE.S) $<

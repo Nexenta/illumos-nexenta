@@ -85,9 +85,10 @@ static const char cinfo[] =
 static const char oinfo[] =
     "output: fmt=%s size=%x text=%x data=%x org=%x entry=%x\n";
 
-/* BTX loader and kernel is only provided from command line */
-static const char *lname = NULL;
-static const char *bname = NULL;
+static const char *lname =
+    BTX_PATH "/btxldr/btxldr";	/* BTX loader */
+static const char *bname =
+    BTX_PATH "/btx/btx";	/* BTX kernel */
 static const char *oname =
     "a.out";			/* Output filename */
 
@@ -176,8 +177,7 @@ main(int argc, char *argv[])
     if (argc != 1)
 	usage();
     atexit(cleanup);
-    if (lname != NULL && bname != NULL)
-	btxld(*argv);
+    btxld(*argv);
     if (version != NULL)
 	add_version(oname, version);
     return 0;
@@ -190,7 +190,7 @@ static void
 cleanup(void)
 {
     if (tname)
-	(void) remove(tname);
+	remove(tname);
 }
 
 /*
@@ -288,7 +288,6 @@ btxld(const char *iname)
 	err(2, "%s", tname);
     if (rename(tname, oname))
 	err(2, "%s: Can't rename to %s", tname, oname);
-    free((void *)(intptr_t)tname);
     tname = NULL;
     if (verbose) {
 	printf(binfo, btx.btx_majver, btx.btx_minver, btx.btx_textsz,

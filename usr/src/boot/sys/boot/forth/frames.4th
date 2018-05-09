@@ -46,32 +46,32 @@ variable fill
  43 constant ascii_plus
 
 \ Single frames
-$2500 constant sh_el
-$2502 constant sv_el
-$250c constant slt_el
-$2514 constant slb_el
-$2510 constant srt_el
-$2518 constant srb_el
+196 constant sh_el
+179 constant sv_el
+218 constant slt_el
+192 constant slb_el
+191 constant srt_el
+217 constant srb_el
 \ Double frames
-$2550 constant dh_el
-$2551 constant dv_el
-$2554 constant dlt_el
-$255a constant dlb_el
-$2557 constant drt_el
-$255d constant drb_el
+205 constant dh_el
+186 constant dv_el
+201 constant dlt_el
+200 constant dlb_el
+187 constant drt_el
+188 constant drb_el
 \ Fillings
 0 constant fill_none
 32 constant fill_blank
-$2591 constant fill_dark
-$2592 constant fill_med
-$2593 constant fill_bright
+176 constant fill_dark
+177 constant fill_med
+178 constant fill_bright
 
 only forth definitions also frame-drawing
 
 : hline	( len x y -- )	\ Draw horizontal single line
 	at-xy		\ move cursor
 	0 do
-		h_el @ xemit
+		h_el @ emit
 	loop
 ;
 
@@ -112,7 +112,7 @@ only forth definitions also frame-drawing
 	2dup 4 pick
 	0 do
 		at-xy
-		v_el @ xemit
+		v_el @ emit
 		1+
 		2dup
 	loop
@@ -120,19 +120,6 @@ only forth definitions also frame-drawing
 ;
 
 : box	( w h x y -- )	\ Draw a box
-	\ Do we have frame buffer?
-	s" screen-height" getenv
-	dup -1 <> if
-		2drop
-		rot		( w x y h )
-		over + >R	( w x y -- R: y+h )
-		swap rot	( y x w -- R: y+h )
-		over + >R	( y x -- R: y+h x+w )
-		swap R> R> term-drawrect
-		exit
-	else
-		drop
-	then
 	2dup 1+ 4 pick 1- -rot
 	vline		\ Draw left vert line
 	2dup 1+ swap 5 pick + swap 4 pick 1- -rot
@@ -141,10 +128,10 @@ only forth definitions also frame-drawing
 	hline		\ Draw top horiz line
 	2dup swap 1+ swap 4 pick + 5 pick 1- -rot
 	hline		\ Draw bottom horiz line
-	2dup at-xy lt_el @ xemit	\ Draw left-top corner
-	2dup 4 pick + at-xy lb_el @ xemit	\ Draw left bottom corner
-	2dup swap 5 pick + swap at-xy rt_el @ xemit	\ Draw right top corner
-	2 pick + swap 3 pick + swap at-xy rb_el @ xemit
+	2dup at-xy lt_el @ emit	\ Draw left-top corner
+	2dup 4 pick + at-xy lb_el @ emit	\ Draw left bottom corner
+	2dup swap 5 pick + swap at-xy rt_el @ emit	\ Draw right top corner
+	2 pick + swap 3 pick + swap at-xy rb_el @ emit
 	2drop
 ;
 

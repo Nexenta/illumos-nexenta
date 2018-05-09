@@ -87,12 +87,6 @@ ptblread(void *d, void *buf, size_t blocks, uint64_t offset)
 	od = (struct open_disk *)dev->d_opendata;
 
 	/*
-	 * The strategy function assumes the offset is in units of 512 byte
-	 * sectors. For larger sector sizes, we need to adjust the offset to
-	 * match the actual sector size.
-	 */
-	offset *= (od->sectorsize / 512);
-	/*
 	 * As the GPT backup partition is located at the end of the disk,
 	 * to avoid reading past disk end, flag bcache not to use RA.
 	 */
@@ -131,23 +125,16 @@ ptable_print(void *arg, const char *pname, const struct ptable_entry *part)
 		dev.d_partition = -1;
 		if (disk_open(&dev, part->end - part->start + 1,
 		    od->sectorsize) == 0) {
-			enum ptable_type pt = PTABLE_NONE;
-
 			table = ptable_open(&dev, part->end - part->start + 1,
 			    od->sectorsize, ptblread);
-			if (table != NULL)
-				pt = ptable_gettype(table);
-
-			if (pt == PTABLE_BSD ||
-			    pt == PTABLE_VTOC8 ||
-			    pt == PTABLE_VTOC) {
+			if (table != NULL) {
 				sprintf(line, "  %s%s", pa->prefix, pname);
 				bsd.dev = &dev;
 				bsd.prefix = line;
 				bsd.verbose = pa->verbose;
 				ret = ptable_iterate(table, &bsd, ptable_print);
+				ptable_close(table);
 			}
-			ptable_close(table);
 			disk_close(&dev);
 		}
 	}
@@ -262,7 +249,9 @@ disk_open(struct disk_devdesc *dev, uint64_t mediasize, u_int sectorsize)
 		rc = ENXIO;
 		goto out;
 	}
-	od->mediasize = mediasize;
+	if (mediasize > od->mediasize) {
+		od->mediasize = mediasize;
+	}
 
 	if (ptable_gettype(od->table) == PTABLE_BSD &&
 	    partition >= 0) {

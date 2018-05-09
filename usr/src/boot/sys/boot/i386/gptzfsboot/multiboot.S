@@ -10,22 +10,18 @@
  */
 
 /*
- * Copyright 2018 Toomas Soome <tsoome@me.com>
+ * Copyright 2015 Toomas Soome <tsoome@me.com>
  */
 
 	.file	"multiboot.s"
 
 /*
  * Provide fake multiboot header to support versioning and partition
- * start. The fake MB header is used by versioning code located in
- * usr/src/cmd/boot/common. Since the BIOS bootblock is stored on raw disk,
- * this fake header is used to store the location of the version info block.
- * Additionally we use it to store partition start_sector, so we can identify
- * our root file system partition. Note we are using LBA64 here.
+ * start.
  */
 
 #define	ASM_FILE
-#include <sys/multiboot.h>
+#include <multiboot.h>
 
 		.globl mb_header, start_sector
 		.text

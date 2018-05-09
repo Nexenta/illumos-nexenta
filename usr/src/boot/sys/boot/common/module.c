@@ -37,9 +37,6 @@
 #include <sys/module.h>
 #include <sys/queue.h>
 #include <sys/stdint.h>
-#include <sys/tem_impl.h>
-#include <sys/font.h>
-#include <sys/sha1.h>
 
 #include "bootstrap.h"
 
@@ -258,19 +255,15 @@ command_lsmod(int argc, char *argv[])
     struct kernel_module	*mp;
     struct file_metadata	*md;
     char			lbuf[80];
-    int				ch, verbose, hash, ret = 0;
+    int				ch, verbose, ret = 0;
 
     verbose = 0;
-    hash = 0;
     optind = 1;
     optreset = 1;
-    while ((ch = getopt(argc, argv, "vs")) != -1) {
+    while ((ch = getopt(argc, argv, "v")) != -1) {
 	switch(ch) {
 	case 'v':
 	    verbose = 1;
-	    break;
-	case 's':
-	    hash = 1;
 	    break;
 	case '?':
 	default:
@@ -293,15 +286,6 @@ command_lsmod(int argc, char *argv[])
 	    if (pager_output("\n"))
 		break;
 	}
-
-	if (hash == 1) {
-		sha1(fp->f_addr, fp->f_size - 1, (uint8_t *)lbuf);
-		for (int i = 0; i < SHA1_DIGEST_LENGTH; i++)
-			printf("%02x", (int)(lbuf[i] & 0xff));
-		if (pager_output("\n"))
-			break;
-	}
-
 	if (fp->f_modules) {
 	    pager_output("  modules: ");
 	    for (mp = fp->f_modules; mp; mp = mp->m_next) {
@@ -439,22 +423,6 @@ env_get_size(void)
 	return (size);
 }
 
-static void
-module_hash(struct preloaded_file *fp, vm_offset_t addr, size_t size)
-{
-	uint8_t hash[SHA1_DIGEST_LENGTH];
-	char ascii[2 * SHA1_DIGEST_LENGTH + 1];
-	int i;
-
-	sha1(addr, size, hash);
-	for (i = 0; i < SHA1_DIGEST_LENGTH; i++) {
-		snprintf(ascii + 2 * i, sizeof (ascii) - 2 * i, "%02x",
-		    hash[i] & 0xff);
-	}
-	/* Out of memory here is not fatal issue. */
-	asprintf(&fp->f_args, "hash=%s", ascii);
-}
-
 /*
  * Create virtual module for environment variables.
  * This module should be created as late as possible before executing
@@ -475,7 +443,6 @@ build_environment_module(void)
 		return;
 	}
 
-	tem_save_state();	/* Ask tem to save it's state in env. */
 	size = env_get_size();
 
 	fp = file_alloc();
@@ -504,131 +471,8 @@ build_environment_module(void)
 	}
 
 	laddr = bi_copyenv(loadaddr);
-	/* Looks OK so far; populate control structure */
-	module_hash(fp, loadaddr, laddr - loadaddr);
-	fp->f_loader = -1;
-	fp->f_addr = loadaddr;
-	fp->f_size = laddr - loadaddr;
-
-	/* recognise space consumption */
-	loadaddr = laddr;
-
-	file_insert_tail(fp);
-}
-
-/*
- * If the custom console font was loaded, pass it for kernel as an module.
- * We do not just load the font file, as the font file needs to be processed,
- * and the early boot has very little resources. So we just set up the
- * needed structures and make an copy of the byte arrays.
- *
- * Note we can not copy the structures one to one due to the pointer size,
- * so we record the data by using fixed size structure.
- */
-struct font_info {
-	int32_t fi_checksum;
-	uint32_t fi_width;
-	uint32_t fi_height;
-	uint32_t fi_bitmap_size;
-	uint32_t fi_map_count[VFNT_MAPS];
-};
-
-void
-build_font_module(void)
-{
-	bitmap_data_t *bd;
-	struct font *fd;
-	struct preloaded_file *fp;
-	size_t size;
-	uint32_t checksum;
-	int i;
-	char *name = "console-font";
-	vm_offset_t laddr;
-	struct font_info fi;
-	struct fontlist *fl;
-
-	if (STAILQ_EMPTY(&fonts))
-		return;
-
-	/* We can't load first */
-	if ((file_findfile(NULL, NULL)) == NULL) {
-		printf("Can not load font module: %s\n",
-		    "the kernel is not loaded");
-		return;
-	}
-
-	/* helper pointers */
-	bd = NULL;
-	STAILQ_FOREACH(fl, &fonts, font_next) {
-		if (fl->font_data->font != NULL) {
-			bd = fl->font_data;
-			break;
-		}
-	}
-	if (bd == NULL)
-		return;
-	fd = bd->font;
-
-	fi.fi_width = fd->vf_width;
-	checksum = fi.fi_width;
-	fi.fi_height = fd->vf_height;
-	checksum += fi.fi_height;
-	fi.fi_bitmap_size = bd->uncompressed_size;
-	checksum += fi.fi_bitmap_size;
-
-	size = roundup2(sizeof (struct font_info), 8);
-	for (i = 0; i < VFNT_MAPS; i++) {
-		fi.fi_map_count[i] = fd->vf_map_count[i];
-		checksum += fi.fi_map_count[i];
-		size += fd->vf_map_count[i] * sizeof (struct font_map);
-		size += roundup2(size, 8);
-	}
-	size += bd->uncompressed_size;
-
-	fi.fi_checksum = -checksum;
-
-	fp = file_alloc();
-	if (fp != NULL) {
-		fp->f_name = strdup(name);
-		fp->f_type = strdup(name);
-	}
-
-	if (fp == NULL || fp->f_name == NULL || fp->f_type == NULL) {
-		printf("Can not load font module: %s\n",
-		    "out of memory");
-		if (fp != NULL)
-			file_discard(fp);
-		return;
-	}
-
-	if (archsw.arch_loadaddr != NULL)
-		loadaddr = archsw.arch_loadaddr(LOAD_MEM, &size, loadaddr);
-
-	if (loadaddr == 0) {
-		printf("Can not load font module: %s\n",
-		    "out of memory");
-		file_discard(fp);
-		return;
-	}
-
-	laddr = loadaddr;
-	laddr += archsw.arch_copyin(&fi, laddr, sizeof (struct font_info));
-	laddr = roundup2(laddr, 8);
-
-	/* Copy maps. */
-	for (i = 0; i < VFNT_MAPS; i++) {
-		if (fd->vf_map_count[i] != 0) {
-			laddr += archsw.arch_copyin(fd->vf_map[i], laddr,
-			    fd->vf_map_count[i] * sizeof (struct font_map));
-			laddr = roundup2(laddr, 8);
-		}
-	}
-
-	/* Copy the bitmap. */
-	laddr += archsw.arch_copyin(fd->vf_bytes, laddr, fi.fi_bitmap_size);
 
 	/* Looks OK so far; populate control structure */
-	module_hash(fp, loadaddr, laddr - loadaddr);
 	fp->f_loader = -1;
 	fp->f_addr = loadaddr;
 	fp->f_size = laddr - loadaddr;

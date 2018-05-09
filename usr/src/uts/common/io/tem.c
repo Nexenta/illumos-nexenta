@@ -121,7 +121,7 @@ static struct modlmisc	modlmisc = {
 };
 
 static struct modlinkage modlinkage = {
-	MODREV_1, { (void *)&modlmisc, NULL }
+	MODREV_1, (void *)&modlmisc, NULL
 };
 
 int
@@ -209,10 +209,12 @@ static void
 tem_internal_init(struct tem_vt_state *ptem, cred_t *credp,
     boolean_t init_color, boolean_t clear_screen)
 {
-	unsigned i, j, width, height;
-	text_attr_t attr;
+	int i, j;
+	int width, height;
+	int total;
 	text_color_t fg;
 	text_color_t bg;
+	size_t	tc_size = sizeof (text_color_t);
 
 	ASSERT(MUTEX_HELD(&tems.ts_lock) && MUTEX_HELD(&ptem->tvs_lock));
 
@@ -222,19 +224,20 @@ tem_internal_init(struct tem_vt_state *ptem, cred_t *credp,
 		    kmem_alloc(ptem->tvs_pix_data_size, KM_SLEEP);
 	}
 
-	ptem->tvs_outbuf_size = tems.ts_c_dimension.width *
-	    sizeof (*ptem->tvs_outbuf);
-	ptem->tvs_outbuf = kmem_alloc(ptem->tvs_outbuf_size, KM_SLEEP);
+	ptem->tvs_outbuf_size = tems.ts_c_dimension.width;
+	ptem->tvs_outbuf =
+	    (unsigned char *)kmem_alloc(ptem->tvs_outbuf_size, KM_SLEEP);
 
 	width = tems.ts_c_dimension.width;
 	height = tems.ts_c_dimension.height;
-	ptem->tvs_screen_history_size = height;
+	ptem->tvs_screen_buf_size = width * height;
+	ptem->tvs_screen_buf =
+	    (unsigned char *)kmem_alloc(width * height, KM_SLEEP);
 
-	ptem->tvs_screen_buf_size = width * ptem->tvs_screen_history_size *
-	    sizeof (*ptem->tvs_screen_buf);
-	ptem->tvs_screen_buf = kmem_alloc(ptem->tvs_screen_buf_size, KM_SLEEP);
-	ptem->tvs_screen_rows = kmem_alloc(ptem->tvs_screen_history_size *
-	    sizeof (term_char_t *), KM_SLEEP);
+	total = width * height * tc_size;
+	ptem->tvs_fg_buf = (text_color_t *)kmem_alloc(total, KM_SLEEP);
+	ptem->tvs_bg_buf = (text_color_t *)kmem_alloc(total, KM_SLEEP);
+	ptem->tvs_color_buf_size = total;
 
 	tem_safe_reset_display(ptem, credp, CALLED_FROM_NORMAL,
 	    clear_screen, init_color);
@@ -242,21 +245,16 @@ tem_internal_init(struct tem_vt_state *ptem, cred_t *credp,
 	ptem->tvs_utf8_left = 0;
 	ptem->tvs_utf8_partial = 0;
 
-	/* Get default attributes and fill up the screen buffer. */
-	tem_safe_get_attr(ptem, &fg, &bg, &attr, TEM_ATTR_SCREEN_REVERSE);
-	for (i = 0; i < ptem->tvs_screen_history_size; i++) {
-		ptem->tvs_screen_rows[i] = &ptem->tvs_screen_buf[i * width];
-
+	tem_safe_get_color(ptem, &fg, &bg, TEM_ATTR_SCREEN_REVERSE);
+	for (i = 0; i < height; i++)
 		for (j = 0; j < width; j++) {
-			ptem->tvs_screen_rows[i][j].tc_fg_color = fg;
-			ptem->tvs_screen_rows[i][j].tc_bg_color = bg;
-			ptem->tvs_screen_rows[i][j].tc_char =
-			    TEM_ATTR(attr) | ' ';
+			ptem->tvs_screen_buf[i * width + j] = ' ';
+			ptem->tvs_fg_buf[(i * width +j) * tc_size] = fg;
+			ptem->tvs_bg_buf[(i * width +j) * tc_size] = bg;
 
 		}
-	}
 
-	ptem->tvs_initialized = B_TRUE;
+	ptem->tvs_initialized  = 1;
 }
 
 int
@@ -266,7 +264,7 @@ tem_initialized(tem_vt_state_t tem_arg)
 	int ret;
 
 	mutex_enter(&ptem->tvs_lock);
-	ret = ptem->tvs_initialized == B_TRUE? 1 : 0;
+	ret = ptem->tvs_initialized;
 	mutex_exit(&ptem->tvs_lock);
 
 	return (ret);
@@ -290,7 +288,7 @@ tem_init(cred_t *credp)
 	 * A tem is regarded as initialized only after tem_internal_init(),
 	 * will be set at the end of tem_internal_init().
 	 */
-	ptem->tvs_initialized = B_FALSE;
+	ptem->tvs_initialized = 0;
 
 
 	if (!tems.ts_initialized) {
@@ -337,10 +335,10 @@ tem_free_buf(struct tem_vt_state *tem)
 		kmem_free(tem->tvs_pix_data, tem->tvs_pix_data_size);
 	if (tem->tvs_screen_buf != NULL)
 		kmem_free(tem->tvs_screen_buf, tem->tvs_screen_buf_size);
-	if (tem->tvs_screen_rows != NULL) {
-		kmem_free(tem->tvs_screen_rows, tem->tvs_screen_history_size *
-		    sizeof (term_char_t *));
-	}
+	if (tem->tvs_fg_buf != NULL)
+		kmem_free(tem->tvs_fg_buf, tem->tvs_color_buf_size);
+	if (tem->tvs_bg_buf != NULL)
+		kmem_free(tem->tvs_bg_buf, tem->tvs_color_buf_size);
 }
 
 void
@@ -460,7 +458,6 @@ tem_info_init(char *pathname, cred_t *credp)
 
 	/* other sanity checks */
 	if (!((temargs.depth == 4) || (temargs.depth == 8) ||
-	    (temargs.depth == 15) || (temargs.depth == 16) ||
 	    (temargs.depth == 24) || (temargs.depth == 32))) {
 		cmn_err(CE_WARN, "terminal emulator: unsupported depth");
 		ret = tems_failed(credp, B_TRUE);
@@ -528,17 +525,14 @@ tems_check_videomode(struct vis_devinit *tp)
 static void
 tems_setup_terminal(struct vis_devinit *tp, size_t height, size_t width)
 {
-	bitmap_data_t *font_data;
 	int i;
-	int old_blank_buf_size = tems.ts_c_dimension.width *
-	    sizeof (*tems.ts_blank_line);
+	int old_blank_buf_size = tems.ts_c_dimension.width;
 
 	ASSERT(MUTEX_HELD(&tems.ts_lock));
 
 	tems.ts_pdepth = tp->depth;
 	tems.ts_linebytes = tp->linebytes;
 	tems.ts_display_mode = tp->mode;
-	tems.ts_color_map = tp->color_map;
 
 	switch (tp->mode) {
 	case VIS_TEXT:
@@ -574,28 +568,19 @@ tems_setup_terminal(struct vis_devinit *tp, size_t height, size_t width)
 		 * default builtin font and adjust the rows and columns
 		 * to fit on the screen.
 		 */
-		font_data = set_font(&tems.ts_c_dimension.height,
+		set_font(&tems.ts_font,
+		    &tems.ts_c_dimension.height,
 		    &tems.ts_c_dimension.width,
 		    tems.ts_p_dimension.height,
 		    tems.ts_p_dimension.width);
 
-		for (i = 0; i < VFNT_MAPS; i++) {
-			tems.ts_font.vf_map[i] =
-			    font_data->font->vf_map[i];
-			tems.ts_font.vf_map_count[i] =
-			    font_data->font->vf_map_count[i];
-		}
-		tems.ts_font.vf_bytes = font_data->font->vf_bytes;
-		tems.ts_font.vf_width = font_data->font->vf_width;
-		tems.ts_font.vf_height = font_data->font->vf_height;
-
 		tems.ts_p_offset.y = (tems.ts_p_dimension.height -
-		    (tems.ts_c_dimension.height * tems.ts_font.vf_height)) / 2;
+		    (tems.ts_c_dimension.height * tems.ts_font.height)) / 2;
 		tems.ts_p_offset.x = (tems.ts_p_dimension.width -
-		    (tems.ts_c_dimension.width * tems.ts_font.vf_width)) / 2;
+		    (tems.ts_c_dimension.width * tems.ts_font.width)) / 2;
 
 		tems.ts_pix_data_size =
-		    tems.ts_font.vf_width * tems.ts_font.vf_height;
+		    tems.ts_font.width * tems.ts_font.height;
 
 		tems.ts_pix_data_size *= 4;
 
@@ -608,8 +593,10 @@ tems_setup_terminal(struct vis_devinit *tp, size_t height, size_t width)
 	if (tems.ts_blank_line)
 		kmem_free(tems.ts_blank_line, old_blank_buf_size);
 
-	tems.ts_blank_line = kmem_alloc(tems.ts_c_dimension.width *
-	    sizeof (*tems.ts_blank_line), KM_SLEEP);
+	tems.ts_blank_line = (unsigned char *)
+	    kmem_alloc(tems.ts_c_dimension.width, KM_SLEEP);
+	for (i = 0; i < tems.ts_c_dimension.width; i++)
+		tems.ts_blank_line[i] = ' ';
 }
 
 /*
@@ -692,28 +679,14 @@ tems_modechange_callback(struct vis_modechg_arg *arg,
 }
 
 /*
- * This function is used to clear entire screen via the underlying framebuffer
- * driver.
- */
-int
-tems_cls_layered(struct vis_consclear *pda,
-    cred_t *credp)
-{
-	int rval;
-
-	(void) ldi_ioctl(tems.ts_hdl, VIS_CONSCLEAR,
-	    (intptr_t)pda, FKIOCTL, credp, &rval);
-	return (rval);
-}
-
-/*
  * This function is used to display a rectangular blit of data
  * of a given size and location via the underlying framebuffer driver.
  * The blit can be as small as a pixel or as large as the screen.
  */
 void
-tems_display_layered(struct vis_consdisplay *pda,
-    cred_t *credp)
+tems_display_layered(
+	struct vis_consdisplay *pda,
+	cred_t *credp)
 {
 	int rval;
 
@@ -728,8 +701,9 @@ tems_display_layered(struct vis_consdisplay *pda,
  * such as from vi when deleting characters and words.
  */
 void
-tems_copy_layered(struct vis_conscopy *pma,
-    cred_t *credp)
+tems_copy_layered(
+	struct vis_conscopy *pma,
+	cred_t *credp)
 {
 	int rval;
 
@@ -742,8 +716,9 @@ tems_copy_layered(struct vis_conscopy *pma,
  * pixel inverting, text block cursor via the underlying framebuffer.
  */
 void
-tems_cursor_layered(struct vis_conscursor *pca,
-    cred_t *credp)
+tems_cursor_layered(
+	struct vis_conscursor *pca,
+	cred_t *credp)
 {
 	int rval;
 
@@ -774,12 +749,9 @@ tems_reset_colormap(cred_t *credp, enum called_from called_from)
 	case 8:
 		cm.index = 0;
 		cm.count = 16;
-		/* 8-bits (1/3 of TrueColor 24) */
-		cm.red   = (uint8_t *)cmap4_to_24.red;
-		/* 8-bits (1/3 of TrueColor 24) */
-		cm.blue  = (uint8_t *)cmap4_to_24.blue;
-		/* 8-bits (1/3 of TrueColor 24) */
-		cm.green = (uint8_t *)cmap4_to_24.green;
+		cm.red   = cmap4_to_24.red;   /* 8-bits (1/3 of TrueColor 24) */
+		cm.blue  = cmap4_to_24.blue;  /* 8-bits (1/3 of TrueColor 24) */
+		cm.green = cmap4_to_24.green; /* 8-bits (1/3 of TrueColor 24) */
 		(void) ldi_ioctl(tems.ts_hdl, VIS_PUTCMAP, (intptr_t)&cm,
 		    FKIOCTL, credp, &rval);
 		break;
@@ -820,7 +792,7 @@ tem_prom_scroll_up(struct tem_vt_state *tem, int nrows, cred_t *credp,
 	int	ncols, width;
 
 	/* copy */
-	ma.s_row = nrows * tems.ts_font.vf_height;
+	ma.s_row = nrows * tems.ts_font.height;
 	ma.e_row = tems.ts_p_dimension.height - 1;
 	ma.t_row = 0;
 
@@ -831,7 +803,7 @@ tem_prom_scroll_up(struct tem_vt_state *tem, int nrows, cred_t *credp,
 	tems_safe_copy(&ma, credp, called_from);
 
 	/* clear */
-	width = tems.ts_font.vf_width;
+	width = tems.ts_font.width;
 	ncols = (tems.ts_p_dimension.width + (width - 1))/ width;
 
 	tem_safe_pix_cls_range(tem, 0, nrows, tems.ts_p_offset.y,
@@ -863,8 +835,8 @@ tem_adjust_row(struct tem_vt_state *tem, int prom_row, cred_t *credp,
 
 	tem_y = (prom_row + 1) * prom_charheight + prom_window_top -
 	    tems.ts_p_offset.y;
-	tem_row = (tem_y + tems.ts_font.vf_height - 1) /
-	    tems.ts_font.vf_height - 1;
+	tem_row = (tem_y + tems.ts_font.height - 1) /
+	    tems.ts_font.height - 1;
 
 	if (tem_row < 0) {
 		tem_row = 0;
@@ -942,32 +914,31 @@ tems_get_initial_color(tem_color_t *pcolor)
 
 	pcolor->fg_color = DEFAULT_ANSI_FOREGROUND;
 	pcolor->bg_color = DEFAULT_ANSI_BACKGROUND;
-#ifndef _HAVE_TEM_FIRMWARE
-	plat_tem_get_colors(&pcolor->fg_color, &pcolor->bg_color);
-#endif
 
-	tems_get_inverses(&inverse, &inverse_screen);
-	if (inverse)
-		flags |= TEM_ATTR_REVERSE;
-	if (inverse_screen)
-		flags |= TEM_ATTR_SCREEN_REVERSE;
+	if (plat_stdout_is_framebuffer()) {
+		tems_get_inverses(&inverse, &inverse_screen);
+		if (inverse)
+			flags |= TEM_ATTR_REVERSE;
+		if (inverse_screen)
+			flags |= TEM_ATTR_SCREEN_REVERSE;
 
-	if (flags != 0) {
-		/*
-		 * If either reverse flag is set, the screen is in
-		 * white-on-black mode.  We set the bold flag to
-		 * improve readability.
-		 */
-		flags |= TEM_ATTR_BOLD;
-	} else {
-		/*
-		 * Otherwise, the screen is in black-on-white mode.
-		 * The SPARC PROM console, which starts in this mode,
-		 * uses the bright white background colour so we
-		 * match it here.
-		 */
-		if (pcolor->bg_color == ANSI_COLOR_WHITE)
-			flags |= TEM_ATTR_BRIGHT_BG;
+		if (flags != 0) {
+			/*
+			 * If either reverse flag is set, the screen is in
+			 * white-on-black mode.  We set the bold flag to
+			 * improve readability.
+			 */
+			flags |= TEM_ATTR_BOLD;
+		} else {
+			/*
+			 * Otherwise, the screen is in black-on-white mode.
+			 * The SPARC PROM console, which starts in this mode,
+			 * uses the bright white background colour so we
+			 * match it here.
+			 */
+			if (pcolor->bg_color == ANSI_COLOR_WHITE)
+				flags |= TEM_ATTR_BRIGHT_BG;
+		}
 	}
 
 	pcolor->a_flags = flags;

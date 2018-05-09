@@ -61,12 +61,16 @@
  */
 
 #include <sys/cdefs.h>
+__FBSDID("$FreeBSD$");
 
 #include <sys/param.h>
 #include "stand.h"
 
 ssize_t
-write(int fd, const void *dest, size_t bcount)
+write(fd, dest, bcount)
+	int fd;
+	void *dest;
+	size_t bcount;
 {
 	struct open_file *f = &files[fd];
 	size_t resid;
@@ -78,8 +82,7 @@ write(int fd, const void *dest, size_t bcount)
 	if (f->f_flags & F_RAW) {
 		twiddle(4);
 		errno = (f->f_dev->dv_strategy)(f->f_devdata, F_WRITE,
-		    btodb(f->f_offset), bcount, __DECONST(void *, dest),
-		    &resid);
+			btodb(f->f_offset), bcount, dest, &resid);
 		if (errno)
 			return (-1);
 		f->f_offset += resid;

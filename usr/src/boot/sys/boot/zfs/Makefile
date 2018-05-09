@@ -10,12 +10,12 @@
 #
 
 #
-# Copyright 2016 Toomas Soome <tsoome@me.com>
+# Copyright 2015 Toomas Soome <tsoome@me.com>
 #
 
 include $(SRC)/Makefile.master
 
-SUBDIRS=	$(MACH) $(MACH64)
+SUBDIRS=	i386 amd64
 
 all:=		TARGET= all
 install:=	TARGET= install

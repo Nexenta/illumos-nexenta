@@ -26,6 +26,8 @@
 #ifndef _BOOT_VGA_H
 #define	_BOOT_VGA_H
 
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
+
 /*
  * Interface to the bootstrap's internal VGA driver.
  */
@@ -34,13 +36,19 @@
 extern "C" {
 #endif
 
-#define	VGA_REG_ADDR	0x3C0 /* vga io register */
 #define	VGA_IO_WMR	0x3C8 /* vga io DAC write mode register */
 #define	VGA_IO_DR	0x3C9 /* vga io DAC data register */
 #define	VGA_IO_IS	0x3DA /* vga io input status register */
 
 #define	VGA_TEXT_COLS		80
 #define	VGA_TEXT_ROWS		25
+
+extern void vga_setpos(int, int);
+extern void vga_getpos(int *, int *);
+extern void vga_clear(int);
+extern void vga_scroll(int);
+extern void vga_drawc(int, int);
+extern void vga_cursor_display(void);
 
 #ifdef __cplusplus
 }

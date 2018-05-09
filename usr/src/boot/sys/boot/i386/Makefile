@@ -10,7 +10,7 @@
 #
 
 #
-# Copyright 2017 Toomas Soome <tsoome@me.com>
+# Copyright 2015 Toomas Soome <tsoome@me.com>
 #
 
 include $(SRC)/Makefile.master
@@ -19,7 +19,7 @@ include $(SRC)/Makefile.master
 # likely targets for removal, keeping around just in case...
 # SUBDIRS=	boot0 boot0sio kgzldr libfirewire 
 # current targets
-SUBDIRS=	libi386 pmbr btx cdboot gptzfsboot loader pxeldr
+SUBDIRS=	pmbr btx cdboot gptzfsboot libi386 loader pxeldr
 INSTDIRS=	pmbr cdboot gptzfsboot loader pxeldr
 
 all:=		TARGET= all
@@ -29,11 +29,9 @@ clobber:=	TARGET= clobber
 
 .KEEP_STATE:
 
-pxeldr: loader
-
 all clean clobber: $(SUBDIRS)
 
-install: all .WAIT $(INSTDIRS)
+install: all $(INSTDIRS)
 
 FRC:
 

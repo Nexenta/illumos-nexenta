@@ -68,7 +68,6 @@ extern dev_t	stdindev;	/* default standard input device */
 extern dev_t	fbdev;		/* default framebuffer device */
 extern struct vnode *fbvp;	/* pointer to vnode for that device */
 extern dev_info_t *fbdip;	/* pointer to dev_info for fbdev (optional) */
-extern dev_t	diagdev;	/* default diag device (optional) */
 
 extern int	consmode;	/* CONS_FW or CONS_KFB */
 extern int	cons_tem_disable;

@@ -31,7 +31,7 @@ LDLIBS= -lumem
 
 CPPFLAGS += -I.. -I$(SRC)/common/ficl
 
-all install: softcore.c
+all: softcore.c
 
 softcore.c: $(PROG) $(SOURCES)
 	./$(PROG) $(SOURCES)

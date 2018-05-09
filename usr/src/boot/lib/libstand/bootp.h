@@ -1,3 +1,5 @@
+/*	$NetBSD: bootp.h,v 1.4 1997/09/06 13:55:57 drochner Exp $	*/
+
 /*
  * Bootstrap Protocol (BOOTP).  RFC951 and RFC1048.
  *
@@ -106,7 +108,6 @@ struct bootp {
 #define TAG_T2			((unsigned char)  59)
 #define TAG_CLASSID		((unsigned char)  60)
 #define TAG_CLIENTID		((unsigned char)  61)
-#define TAG_USER_CLASS		((unsigned char)  77)
 #endif
 
 #define TAG_END			((unsigned char) 255)
@@ -120,6 +121,12 @@ struct bootp {
 #define DHCPNAK 6
 #define DHCPRELEASE 7
 #endif
+
+/*
+ * bootp flags
+ */
+#define	BOOTP_NONE		0x0000		/* No flags */
+#define	BOOTP_PXE		0x0001		/* Booting from PXE. */
 
 /*
  * "vendor" data permitted for CMU bootp clients.
@@ -143,5 +150,7 @@ struct cmu_vend {
 /* cached bootp response/dhcp ack */
 extern struct bootp *bootp_response;
 extern size_t bootp_response_size;
+
+int	dhcp_try_rfc1048(uint8_t *cp, size_t len);
 
 #endif /* _BOOTP_H_ */

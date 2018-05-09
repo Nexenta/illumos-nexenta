@@ -38,7 +38,6 @@
 #include <efi.h>
 #include <efilib.h>
 #include <efiprot.h>
-#include <efichar.h>
 #include <disk.h>
 
 static EFI_GUID blkio_guid = BLOCK_IO_PROTOCOL;
@@ -106,33 +105,16 @@ static pdinfo_list_t hdinfo;
 static EFI_HANDLE *efipart_handles = NULL;
 static UINTN efipart_nhandles = 0;
 
-pdinfo_list_t *
-efiblk_get_pdinfo_list(struct devsw *dev)
+static pdinfo_t *
+efiblk_get_pdinfo(pdinfo_list_t *pdi, int unit)
 {
-	if (dev->dv_type == DEVT_DISK)
-		return (&hdinfo);
-	if (dev->dv_type == DEVT_CD)
-		return (&cdinfo);
-	if (dev->dv_type == DEVT_FD)
-		return (&fdinfo);
-	return (NULL);
-}
-
-pdinfo_t *
-efiblk_get_pdinfo(struct devdesc *dev)
-{
-	pdinfo_list_t *pdi;
-	pdinfo_t *pd = NULL;
-
-	pdi = efiblk_get_pdinfo_list(dev->d_dev);
-	if (pdi == NULL)
-		return (pd);
+	pdinfo_t *pd;
 
 	STAILQ_FOREACH(pd, pdi, pd_link) {
-		if (pd->pd_unit == dev->d_unit)
+		if (pd->pd_unit == unit)
 			return (pd);
 	}
-	return (pd);
+	return (NULL);
 }
 
 static int
@@ -193,82 +175,6 @@ efipart_floppy(EFI_DEVICE_PATH *node)
 		}
 	}
 	return (NULL);
-}
-
-/*
- * Determine if the provided device path is hdd.
- *
- * There really is no simple fool proof way to classify the devices.
- * Since we do build three lists of devices - floppy, cd and hdd, we
- * will try to see  if the device is floppy or cd, and list anything else
- * as hdd.
- */
-static bool
-efipart_hdd(EFI_DEVICE_PATH *dp)
-{
-	unsigned i, nin;
-	EFI_DEVICE_PATH *devpath, *node;
-	EFI_BLOCK_IO *blkio;
-	EFI_STATUS status;
-
-	if (dp == NULL)
-		return (false);
-
-	if ((node = efi_devpath_last_node(dp)) == NULL)
-		return (false);
-
-	if (efipart_floppy(node) != NULL)
-		return (false);
-
-	/*
-	 * Test every EFI BLOCK IO handle to make sure dp is not device path
-	 * for CD/DVD.
-	 */
-	nin = efipart_nhandles / sizeof (*efipart_handles);
-	for (i = 0; i < nin; i++) {
-		devpath = efi_lookup_devpath(efipart_handles[i]);
-		if (devpath == NULL)
-			return (false);
-
-		/* Only continue testing when dp is prefix in devpath. */
-		if (!efi_devpath_is_prefix(dp, devpath))
-			continue;
-
-		/*
-		 * The device path has to have last node describing the
-		 *  device, or we can not test the type.
-		 */
-		if ((node = efi_devpath_last_node(devpath)) == NULL)
-			return (false);
-
-		if (DevicePathType(node) == MEDIA_DEVICE_PATH &&
-		    DevicePathSubType(node) == MEDIA_CDROM_DP) {
-			return (false);
-		}
-
-		/* Make sure we do have the media. */
-		status = BS->HandleProtocol(efipart_handles[i],
-		    &blkio_guid, (void **)&blkio);
-		if (EFI_ERROR(status))
-			return (false);
-
-		/* USB or SATA cd without the media. */
-		if (blkio->Media->RemovableMedia &&
-		    !blkio->Media->MediaPresent) {
-			return (false);
-		}
-
-		/*
-		 * We assume the block size 512 or greater power of 2.
-		 * iPXE is known to insert stub BLOCK IO device with
-		 * BlockSize 1.
-		 */
-		if (blkio->Media->BlockSize < 512 ||
-		    !powerof2(blkio->Media->BlockSize)) {
-			return (false);
-		}
-	}
-	return (true);
 }
 
 /*
@@ -384,11 +290,7 @@ efipart_updatecd(void)
 
 		if ((node = efi_devpath_last_node(devpath)) == NULL)
 			continue;
-
 		if (efipart_floppy(node) != NULL)
-			continue;
-
-		if (efipart_hdd(devpath))
 			continue;
 
 		status = BS->HandleProtocol(efipart_handles[i],
@@ -460,21 +362,13 @@ efipart_hdinfo_add(EFI_HANDLE disk_handle, EFI_HANDLE part_handle)
 	pdinfo_t *hd, *pd, *last;
 
 	disk_devpath = efi_lookup_devpath(disk_handle);
-	if (disk_devpath == NULL)
+	part_devpath = efi_lookup_devpath(part_handle);
+	if (disk_devpath == NULL || part_devpath == NULL) {
 		return (ENOENT);
-
-	if (part_handle != NULL) {
-		part_devpath = efi_lookup_devpath(part_handle);
-		if (part_devpath == NULL)
-			return (ENOENT);
-		node = (HARDDRIVE_DEVICE_PATH *)
-		    efi_devpath_last_node(part_devpath);
-		if (node == NULL)
-			return (ENOENT);	/* This should not happen. */
-	} else {
-		part_devpath = NULL;
-		node = NULL;
 	}
+	node = (HARDDRIVE_DEVICE_PATH *)efi_devpath_last_node(part_devpath);
+	if (node == NULL)
+		return (ENOENT);	/* This should not happen. */
 
 	pd = calloc(1, sizeof(pdinfo_t));
 	if (pd == NULL) {
@@ -485,9 +379,6 @@ efipart_hdinfo_add(EFI_HANDLE disk_handle, EFI_HANDLE part_handle)
 
 	STAILQ_FOREACH(hd, &hdinfo, pd_link) {
 		if (efi_devpath_match(hd->pd_devpath, disk_devpath) == true) {
-			if (part_devpath == NULL)
-				return (0);
-
 			/* Add the partition. */
 			pd->pd_handle = part_handle;
 			pd->pd_unit = node->PartitionNumber;
@@ -509,9 +400,6 @@ efipart_hdinfo_add(EFI_HANDLE disk_handle, EFI_HANDLE part_handle)
 	hd->pd_unit = unit;
 	hd->pd_devpath = disk_devpath;
 	STAILQ_INSERT_TAIL(&hdinfo, hd, pd_link);
-
-	if (part_devpath == NULL)
-		return (0);
 
 	pd = calloc(1, sizeof(pdinfo_t));
 	if (pd == NULL) {
@@ -564,7 +452,8 @@ efipart_hdinfo_add_filepath(EFI_HANDLE disk_handle)
 		unit = 0;
 
 	/* FILEPATH_DEVICE_PATH has 0 terminated string */
-	len = ucs2len(node->PathName);
+	for (len = 0; node->PathName[len] != 0; len++)
+		;
 	if ((pathname = malloc(len + 1)) == NULL) {
 		printf("Failed to add disk, out of memory\n");
 		free(pd);
@@ -634,20 +523,13 @@ efipart_updatehd(void)
 
 		if ((node = efi_devpath_last_node(devpath)) == NULL)
 			continue;
-
-		if (!efipart_hdd(devpath))
+		if (efipart_floppy(node) != NULL)
 			continue;
 
 		status = BS->HandleProtocol(efipart_handles[i],
 		    &blkio_guid, (void **)&blkio);
 		if (EFI_ERROR(status))
 			continue;
-
-		if (DevicePathType(node) == MEDIA_DEVICE_PATH &&
-		    DevicePathSubType(node) == MEDIA_FILEPATH_DP) {
-			efipart_hdinfo_add_filepath(efipart_handles[i]);
-			continue;
-		}
 
 		if (DevicePathType(node) == MEDIA_DEVICE_PATH &&
 		    DevicePathSubType(node) == MEDIA_HARDDRIVE_DP) {
@@ -668,16 +550,18 @@ efipart_updatehd(void)
 				continue;
 			if ((node = efi_devpath_last_node(devpathcpy)) == NULL)
 				continue;
-
 			if (DevicePathType(node) == MEDIA_DEVICE_PATH &&
 			    DevicePathSubType(node) == MEDIA_HARDDRIVE_DP)
 				continue;
-
 			efipart_hdinfo_add(handle, efipart_handles[i]);
 			continue;
 		}
 
-		efipart_hdinfo_add(efipart_handles[i], NULL);
+		if (DevicePathType(node) == MEDIA_DEVICE_PATH &&
+		    DevicePathSubType(node) == MEDIA_FILEPATH_DP) {
+			efipart_hdinfo_add_filepath(efipart_handles[i]);
+			continue;
+		}
 	}
 }
 
@@ -794,11 +678,24 @@ efipart_printhd(int verbose)
 	return (efipart_print_common(&efipart_hddev, &hdinfo, verbose));
 }
 
+pdinfo_list_t *
+efiblk_get_pdinfo_list(struct devsw *dev)
+{
+	if (dev->dv_type == DEVT_DISK)
+		return (&hdinfo);
+	if (dev->dv_type == DEVT_CD)
+		return (&cdinfo);
+	if (dev->dv_type == DEVT_FD)
+		return (&fdinfo);
+	return (NULL);
+}
+
 static int
 efipart_open(struct open_file *f, ...)
 {
 	va_list args;
 	struct disk_devdesc *dev;
+	pdinfo_list_t *pdi;
 	pdinfo_t *pd;
 	EFI_BLOCK_IO *blkio;
 	EFI_STATUS status;
@@ -809,9 +706,13 @@ efipart_open(struct open_file *f, ...)
 	if (dev == NULL)
 		return (EINVAL);
 
-	pd = efiblk_get_pdinfo((struct devdesc *)dev);
-	if (pd == NULL)
+	pdi = efiblk_get_pdinfo_list(dev->d_dev);
+	if (pdi == NULL)
 		return (EINVAL);
+
+	pd = efiblk_get_pdinfo(pdi, dev->d_unit);
+	if (pd == NULL)
+		return (EIO);
 
 	if (pd->pd_blkio == NULL) {
 		status = BS->HandleProtocol(pd->pd_handle, &blkio_guid,
@@ -851,13 +752,17 @@ static int
 efipart_close(struct open_file *f)
 {
 	struct disk_devdesc *dev;
+	pdinfo_list_t *pdi;
 	pdinfo_t *pd;
 
 	dev = (struct disk_devdesc *)(f->f_devdata);
 	if (dev == NULL)
 		return (EINVAL);
+	pdi = efiblk_get_pdinfo_list(dev->d_dev);
+	if (pdi == NULL)
+		return (EINVAL);
 
-	pd = efiblk_get_pdinfo((struct devdesc *)dev);
+	pd = efiblk_get_pdinfo(pdi, dev->d_unit);
 	if (pd == NULL)
 		return (EINVAL);
 
@@ -876,14 +781,18 @@ static int
 efipart_ioctl(struct open_file *f, u_long cmd, void *data)
 {
 	struct disk_devdesc *dev;
+	pdinfo_list_t *pdi;
 	pdinfo_t *pd;
 	int rc;
 
 	dev = (struct disk_devdesc *)(f->f_devdata);
 	if (dev == NULL)
 		return (EINVAL);
+	pdi = efiblk_get_pdinfo_list(dev->d_dev);
+	if (pdi == NULL)
+		return (EINVAL);
 
-	pd = efiblk_get_pdinfo((struct devdesc *)dev);
+	pd = efiblk_get_pdinfo(pdi, dev->d_unit);
 	if (pd == NULL)
 		return (EINVAL);
 
@@ -956,13 +865,17 @@ efipart_strategy(void *devdata, int rw, daddr_t blk, size_t size,
 {
 	struct bcache_devdata bcd;
 	struct disk_devdesc *dev;
+	pdinfo_list_t *pdi;
 	pdinfo_t *pd;
 
 	dev = (struct disk_devdesc *)devdata;
 	if (dev == NULL)
 		return (EINVAL);
+	pdi = efiblk_get_pdinfo_list(dev->d_dev);
+	if (pdi == NULL)
+		return (EINVAL);
 
-	pd = efiblk_get_pdinfo((struct devdesc *)dev);
+	pd = efiblk_get_pdinfo(pdi, dev->d_unit);
 	if (pd == NULL)
 		return (EINVAL);
 
@@ -975,11 +888,7 @@ efipart_strategy(void *devdata, int rw, daddr_t blk, size_t size,
 	bcd.dv_cache = pd->pd_bcache;
 
 	if (dev->d_dev->dv_type == DEVT_DISK) {
-		daddr_t offset;
-
-		offset = dev->d_offset * pd->pd_blkio->Media->BlockSize;
-		offset /= 512;
-		return (bcache_strategy(&bcd, rw, blk + offset,
+		return (bcache_strategy(&bcd, rw, blk + dev->d_offset,
 		    size, buf, rsize));
 	}
 	return (bcache_strategy(&bcd, rw, blk, size, buf, rsize));
@@ -990,6 +899,7 @@ efipart_realstrategy(void *devdata, int rw, daddr_t blk, size_t size,
     char *buf, size_t *rsize)
 {
 	struct disk_devdesc *dev = (struct disk_devdesc *)devdata;
+	pdinfo_list_t *pdi;
 	pdinfo_t *pd;
 	EFI_BLOCK_IO *blkio;
 	uint64_t off, disk_blocks, d_offset = 0;
@@ -1001,7 +911,11 @@ efipart_realstrategy(void *devdata, int rw, daddr_t blk, size_t size,
 	if (dev == NULL || blk < 0)
 		return (EINVAL);
 
-	pd = efiblk_get_pdinfo((struct devdesc *)dev);
+	pdi = efiblk_get_pdinfo_list(dev->d_dev);
+	if (pdi == NULL)
+		return (EINVAL);
+
+	pd = efiblk_get_pdinfo(pdi, dev->d_unit);
 	if (pd == NULL)
 		return (EINVAL);
 

@@ -27,6 +27,8 @@
 #ifndef _SYS_VISUAL_IO_H
 #define	_SYS_VISUAL_IO_H
 
+#pragma ident	"%Z%%M%	%I%	%E% SMI"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -138,7 +140,7 @@ struct vis_cmap {
 };
 
 
-#if defined(_KERNEL) || defined(_BOOT)
+#ifdef _KERNEL
 /*
  * The following ioctls are used for communication between the layered
  * device and the framebuffer.  The layered driver calls the framebuffer
@@ -165,7 +167,6 @@ typedef union {
 	unsigned char  mono;   /* one-bit */
 	unsigned char  four;   /* four bit */
 	unsigned char  eight;  /* eight bit */
-	unsigned char  sixteen[2];  /* 16 bit */
 	unsigned char  twentyfour[3];  /* 24 bit */
 } color_t;
 
@@ -178,7 +179,7 @@ typedef union {
  * ioctl(fd, VIS_DEVINIT, struct vis_devinit *)
  */
 #define	VIS_DEVINIT	(VIOC|1)
-#define	VIS_CONS_REV		4 /* Console IO interface version */
+#define	VIS_CONS_REV		3 /* Console IO interface version */
 /* Modes */
 #define	VIS_TEXT		0 /* Use text mode when displaying data */
 #define	VIS_PIXEL		1 /* Use pixel mode when displaying data */
@@ -227,18 +228,6 @@ typedef union {
  * ioctl(fd, VIS_CONSCOPY, struct vis_conscopy *)
  */
 #define	VIS_CONSCOPY		(VIOC|7)
-
-/*
- * VIS_CONSCLEAR:
- * Clear the screen using provided color. Used on VIS_PIXEL mode.
- *
- * ioctl(fd, VIS_CONSCLEAR, struct vis_consclear *)
- */
-#define	VIS_CONSCLEAR		(VIOC|8)
-
-struct vis_consclear {
-	unsigned char	bg_color; /* Background color */
-};
 
 struct vis_consdisplay {
 	screen_pos_t	row; /* Row to display data at */
@@ -295,8 +284,6 @@ struct vis_devinit; /* forward decl. for typedef */
 typedef void (*vis_modechg_cb_t)(struct vis_modechg_arg *,
     struct vis_devinit *);
 
-typedef uint32_t (*color_map_fn_t)(uint8_t color);
-
 struct vis_devinit {
 	/*
 	 * This set of fields are used as parameters passed from the
@@ -307,7 +294,6 @@ struct vis_devinit {
 	screen_size_t	height;		/* Height of the device */
 	screen_size_t	linebytes;	/* Bytes per scan line */
 	int		depth;		/* Device depth */
-	color_map_fn_t	color_map;	/* Color map tem -> fb */
 	short		mode;		/* Mode to use when displaying data */
 	struct vis_polledio *polledio;	/* Polled output routines */
 
@@ -319,7 +305,7 @@ struct vis_devinit {
 	struct vis_modechg_arg *modechg_arg; /* Mode change cb arg */
 };
 
-#endif	/* _KERNEL || _BOOT */
+#endif	/* _KERNEL */
 
 #ifdef __cplusplus
 }

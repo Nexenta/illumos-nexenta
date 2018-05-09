@@ -1,16 +1,13 @@
+# $FreeBSD$
 
-SRCS +=	multiboot_tramp.S \
-	start.S \
-	bootinfo64.c
+SRCS+=	start.S \
+	efimd.c \
+	elf32_freebsd.c \
+	exec.c
 
-OBJS +=	multiboot_tramp.o \
-	start.o \
-	bootinfo64.o
-
-SRCS +=	nullconsole.c \
-	spinconsole.c \
+.PATH:	${.CURDIR}/../../i386/libi386
+SRCS+=	nullconsole.c \
 	comconsole.c
 
-OBJS +=	nullconsole.o \
-	spinconsole.o \
-	comconsole.o
+CFLAGS+=	-fPIC
+LDFLAGS+=	-Wl,-znocombreloc

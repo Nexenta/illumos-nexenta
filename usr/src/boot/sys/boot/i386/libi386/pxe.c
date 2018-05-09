@@ -424,13 +424,11 @@ pxe_netif_init(struct iodesc *desc, void *machdep_hint)
 static int
 pxe_netif_receive(void **pkt)
 {
-	t_PXENV_UNDI_ISR *isr;
+	t_PXENV_UNDI_ISR *isr = (t_PXENV_UNDI_ISR *)scratch_buffer;
 	char *buf, *ptr, *frame;
 	size_t size, rsize;
 
-	isr = (t_PXENV_UNDI_ISR *)scratch_buffer;
 	bzero(isr, sizeof(*isr));
-
 	isr->FuncFlag = PXENV_UNDI_ISR_IN_START;
 	pxe_call(PXENV_UNDI_ISR);
 	if (isr->Status != 0)
@@ -441,6 +439,18 @@ pxe_netif_receive(void **pkt)
 	pxe_call(PXENV_UNDI_ISR);
 	if (isr->Status != 0)
 		return (-1);
+
+	while (isr->FuncFlag == PXENV_UNDI_ISR_OUT_TRANSMIT) {
+		/*
+		 * Wait till transmit is done.
+		 */
+		bzero(isr, sizeof(*isr));
+		isr->FuncFlag = PXENV_UNDI_ISR_IN_GET_NEXT;
+		pxe_call(PXENV_UNDI_ISR);
+		if (isr->Status != 0 ||
+		    isr->FuncFlag == PXENV_UNDI_ISR_OUT_DONE)
+			return (-1);
+	}
 
 	while (isr->FuncFlag != PXENV_UNDI_ISR_OUT_RECEIVE) {
 		if (isr->Status != 0 ||
@@ -508,19 +518,13 @@ pxe_netif_put(struct iodesc *desc, void *pkt, size_t len)
 	t_PXENV_UNDI_TRANSMIT *trans_p;
 	t_PXENV_UNDI_TBD *tbd_p;
 	char *data;
-	size_t datasz;
 
-	trans_p = (t_PXENV_UNDI_TRANSMIT *)(scratch_buffer + datasz);
-	datasz = sizeof(*trans_p);
-	tbd_p = (t_PXENV_UNDI_TBD *)(scratch_buffer + datasz);
-	datasz += sizeof(*tbd_p);
-	bzero(scratch_buffer, datasz);
+	trans_p = (t_PXENV_UNDI_TRANSMIT *)scratch_buffer;
+	bzero(trans_p, sizeof(*trans_p));
+	tbd_p = (t_PXENV_UNDI_TBD *)(scratch_buffer + sizeof(*trans_p));
+	bzero(tbd_p, sizeof(*tbd_p));
 
-	data = scratch_buffer + datasz;
-	datasz = sizeof(scratch_buffer) - datasz;
-
-	if (len > datasz)
-		return (-1);
+	data = scratch_buffer + sizeof(*trans_p) + sizeof(*tbd_p);
 
 	trans_p->TBD.segment = VTOPSEG(tbd_p);
 	trans_p->TBD.offset  = VTOPOFF(tbd_p);
@@ -531,8 +535,9 @@ pxe_netif_put(struct iodesc *desc, void *pkt, size_t len)
 	bcopy(pkt, data, len);
 
 	pxe_call(PXENV_UNDI_TRANSMIT);
-	if (trans_p->Status != 0)
+	if (trans_p->Status != 0) {
 		return (-1);
+	}
 
 	return (len);
 }
