@@ -50,7 +50,6 @@ $(i386_ONLY)file path=boot/defaults/loader.conf group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/beadm.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/beastie.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/brand-illumos.4th group=sys mode=0444
-$(i386_ONLY)file path=boot/forth/brand-nexenta.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/brand.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/check-password.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/color.4th group=sys mode=0444
@@ -62,7 +61,6 @@ $(i386_ONLY)file path=boot/forth/logo-beastie.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-beastiebw.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-fbsdbw.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-illumos.4th group=sys mode=0444
-$(i386_ONLY)file path=boot/forth/logo-nexenta.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-orb.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/logo-orbbw.4th group=sys mode=0444
 $(i386_ONLY)file path=boot/forth/menu-commands.4th group=sys mode=0444
@@ -80,7 +78,6 @@ $(i386_ONLY)file path=boot/loader.help group=sys mode=0444
 $(i386_ONLY)file path=boot/loader.rc group=sys mode=0444
 $(i386_ONLY)file path=boot/loader32.efi group=sys mode=0555
 $(i386_ONLY)file path=boot/loader64.efi group=sys mode=0555
-$(i386_ONLY)file path=boot/nexenta.png group=sys mode=0444
 $(i386_ONLY)file path=boot/pmbr group=sys mode=0444
 $(i386_ONLY)file path=boot/pxeboot group=sys mode=0444
 $(i386_ONLY)file path=boot/zfsloader group=sys mode=0444
