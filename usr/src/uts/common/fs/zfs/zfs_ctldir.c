@@ -22,6 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2012, 2015 by Delphix. All rights reserved.
  * Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -77,6 +78,7 @@
 #include <sys/dsl_deleg.h>
 #include <sys/mount.h>
 #include <sys/sunddi.h>
+#include <sys/autosnap.h>
 
 #include "zfs_namecheck.h"
 
@@ -741,7 +743,8 @@ zfsctl_snapdir_mkdir(vnode_t *dvp, char *dirname, vattr_t *vap, vnode_t  **vpp,
 	static enum symfollow follow = NO_FOLLOW;
 	static enum uio_seg seg = UIO_SYSSPACE;
 
-	if (zfs_component_namecheck(dirname, NULL, NULL) != 0)
+	if (zfs_component_namecheck(dirname, NULL, NULL) != 0 ||
+	    autosnap_check_name(dirname))
 		return (SET_ERROR(EILSEQ));
 
 	dmu_objset_name(zfsvfs->z_os, name);
@@ -870,6 +873,13 @@ zfsctl_snapdir_lookup(vnode_t *dvp, char *nm, vnode_t **vpp, pathname_t *pnp,
 		 */
 		return (err == EILSEQ ? ENOENT : err);
 	}
+
+	if (autosnap_check_name(strchr(snapname, '@'))) {
+		mutex_exit(&sdp->sd_lock);
+		ZFS_EXIT(zfsvfs);
+		return (SET_ERROR(ENOENT));
+	}
+
 	if (dmu_objset_hold(snapname, FTAG, &snap) != 0) {
 		mutex_exit(&sdp->sd_lock);
 		ZFS_EXIT(zfsvfs);
@@ -987,8 +997,10 @@ zfsctl_snapdir_readdir_cb(vnode_t *vp, void *dp, int *eofp,
 
 	cookie = *offp;
 	dsl_pool_config_enter(dmu_objset_pool(zfsvfs->z_os), FTAG);
-	error = dmu_snapshot_list_next(zfsvfs->z_os,
-	    sizeof (snapname), snapname, &id, &cookie, &case_conflict);
+	do {
+		error = dmu_snapshot_list_next(zfsvfs->z_os,
+		    sizeof (snapname), snapname, &id, &cookie, &case_conflict);
+	} while (error == 0 && autosnap_check_name(snapname));
 	dsl_pool_config_exit(dmu_objset_pool(zfsvfs->z_os), FTAG);
 	if (error) {
 		ZFS_EXIT(zfsvfs);
