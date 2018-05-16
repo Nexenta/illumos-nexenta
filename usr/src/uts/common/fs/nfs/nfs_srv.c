@@ -797,6 +797,8 @@ rfs_read(struct nfsreadargs *ra, struct nfsrdresult *rr,
 
 	/* check if a monitor detected a delegation conflict */
 	if (error == EAGAIN && (ct.cc_flags & CC_WOULDBLOCK)) {
+		if (in_crit)
+			nbl_end_crit(vp);
 		VN_RELE(vp);
 		/* mark as wouldblock so response is dropped */
 		curthread->t_flag |= T_WOULDBLOCK;
@@ -1122,10 +1124,7 @@ rfs_write_sync(struct nfswriteargs *wa, struct nfsattrstat *ns,
 
 	/* check if a monitor detected a delegation conflict */
 	if (error == EAGAIN && (ct.cc_flags & CC_WOULDBLOCK)) {
-		VN_RELE(vp);
-		/* mark as wouldblock so response is dropped */
-		curthread->t_flag |= T_WOULDBLOCK;
-		return;
+		goto out;
 	}
 
 	if (wa->wa_data || wa->wa_rlist) {
