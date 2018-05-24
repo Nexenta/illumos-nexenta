@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -164,6 +164,7 @@ static smb_cfg_param_t smb_cfg_table[] =
  */
 static struct str_val
 smb_versions[] = {
+	{ "3.02",	SMB_VERS_3_02 },
 	{ "3.0",	SMB_VERS_3_0 },
 	{ "2.1",	SMB_VERS_2_1 },
 	{ "2.002",	SMB_VERS_2_002 },
