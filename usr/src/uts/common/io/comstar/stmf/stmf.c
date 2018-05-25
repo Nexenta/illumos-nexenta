@@ -125,7 +125,6 @@ void stmf_delete_all_ppds();
 void stmf_trace_clear();
 void stmf_worker_init();
 stmf_status_t stmf_worker_fini();
-void stmf_worker_mgmt();
 void stmf_worker_task(void *arg);
 static void stmf_task_lu_free(scsi_task_t *task, stmf_i_scsi_session_t *iss);
 static stmf_status_t stmf_ic_lu_reg(stmf_ic_reg_dereg_lun_msg_t *msg,
@@ -198,10 +197,8 @@ volatile int	stmf_default_task_timeout = 75;
  */
 volatile int	stmf_allow_modunload = 0;
 
-volatile int stmf_max_nworkers = 1024;
-volatile int stmf_min_nworkers = 32;
-volatile int stmf_worker_scale_down_delay = 3600;
-uint8_t stmf_enable_scaledown = 0;
+volatile int stmf_nworkers = 512;
+volatile int stmf_worker_warn = 0;
 
 /* === [ Debugging and fault injection ] === */
 #ifdef	DEBUG
@@ -228,20 +225,12 @@ static enum {
 	STMF_WORKERS_ENABLING,
 	STMF_WORKERS_ENABLED
 } stmf_workers_state = STMF_WORKERS_DISABLED;
-static int stmf_i_max_nworkers;
-static int stmf_i_min_nworkers;
-static int stmf_nworkers_cur;		/* # of workers currently running */
-static int stmf_nworkers_needed;	/* # of workers need to be running */
+volatile uint32_t stmf_nworkers_cur = 0; /* # of workers currently running */
 static int stmf_worker_sel_counter = 0;
 static uint32_t stmf_cur_ntasks = 0;
 static clock_t stmf_wm_next = 0;
-/*
- * This is equal to stmf_nworkers_cur while we are increasing # workers and
- * stmf_nworkers_needed while we are decreasing the worker count.
- */
 static int stmf_nworkers_accepting_cmds;
 static stmf_worker_t *stmf_workers = NULL;
-static clock_t stmf_worker_mgmt_delay = 2;
 static clock_t stmf_worker_scale_down_timer = 0;
 static int stmf_worker_scale_down_qd = 0;
 
@@ -4860,7 +4849,7 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 	int nv;
 	uint32_t new;
 	uint32_t ct;
-	stmf_worker_t *w, *w1;
+	stmf_worker_t *w;
 	uint8_t tm;
 
 	if (task->task_max_nbufs > 4)
@@ -4870,56 +4859,23 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 	ct = atomic_inc_32_nv(&stmf_cur_ntasks);
 
 	/* Select the next worker using round robin */
-	nv = (int)atomic_inc_32_nv((uint32_t *)&stmf_worker_sel_counter);
-	if (nv >= stmf_nworkers_accepting_cmds) {
-		int s = nv;
-		do {
-			nv -= stmf_nworkers_accepting_cmds;
-		} while (nv >= stmf_nworkers_accepting_cmds);
-		if (nv < 0)
-			nv = 0;
-		/* Its ok if this cas fails */
-		(void) atomic_cas_32((uint32_t *)&stmf_worker_sel_counter,
-		    s, nv);
-	}
-	w = &stmf_workers[nv];
+	atomic_inc_32((uint32_t *)&stmf_worker_sel_counter);
+	(void) atomic_cas_32((uint32_t *)&stmf_worker_sel_counter,
+	    stmf_nworkers, 0);
+	nv = stmf_worker_sel_counter;
 
-	/*
-	 * A worker can be pinned by interrupt. So select the next one
-	 * if it has lower load.
-	 */
-	if ((nv + 1) >= stmf_nworkers_accepting_cmds) {
-		w1 = stmf_workers;
-	} else {
-		w1 = &stmf_workers[nv + 1];
+	/* if the selected worker is not idle then bump to the next worker */
+	if (stmf_workers[nv].worker_queue_depth > 0) {
+		atomic_inc_32((uint32_t *)&stmf_worker_sel_counter);
+		(void) atomic_cas_32((uint32_t *)&stmf_worker_sel_counter,
+		    stmf_nworkers, 0);
+		nv = stmf_worker_sel_counter;
 	}
-	if (w1->worker_queue_depth < w->worker_queue_depth)
-		w = w1;
+
+	w = &stmf_workers[nv];
 
 	mutex_enter(&itask->itask_mutex);
 	mutex_enter(&w->worker_lock);
-	if (((w->worker_flags & STMF_WORKER_STARTED) == 0) ||
-	    (w->worker_flags & STMF_WORKER_TERMINATE)) {
-		/*
-		 * Maybe we are in the middle of a change. Just go to
-		 * the 1st worker.
-		 */
-		mutex_exit(&w->worker_lock);
-		w = stmf_workers;
-		mutex_enter(&w->worker_lock);
-	}
-
-	/*
-	 * if this command is a write_same or unmap just use worker 0
-	 * to limit starvation.
-	 */
-	if (task->task_cdb[0] == SCMD_WRITE_SAME_G4 ||
-	    task->task_cdb[0] == SCMD_WRITE_SAME_G1 ||
-	    task->task_cdb[0] == SCMD_UNMAP) {
-		mutex_exit(&w->worker_lock);
-		w = &stmf_workers[0];
-		mutex_enter(&w->worker_lock);
-	}
 
 	itask->itask_worker = w;
 
@@ -6539,34 +6495,46 @@ void
 stmf_worker_init()
 {
 	uint32_t i;
+	stmf_worker_t *w;
 
 	/* Make local copy of global tunables */
-	stmf_i_max_nworkers = stmf_max_nworkers;
-	stmf_i_min_nworkers = stmf_min_nworkers;
 
+	/*
+	 * Allow workers to be scaled down to a very low number for cases
+	 * where the load is light.  If the number of threads gets below
+	 * 4 assume it is a mistake and force the threads back to a
+	 * reasonable number.  The low limit of 4 is simply legacy and
+	 * may be too low.
+	 */
 	ASSERT(stmf_workers == NULL);
-	if (stmf_i_min_nworkers < 4) {
-		stmf_i_min_nworkers = 4;
+	if (stmf_nworkers < 4) {
+		stmf_nworkers = 64;
 	}
-	if (stmf_i_max_nworkers < stmf_i_min_nworkers) {
-		stmf_i_max_nworkers = stmf_i_min_nworkers;
-	}
+
 	stmf_workers = (stmf_worker_t *)kmem_zalloc(
-	    sizeof (stmf_worker_t) * stmf_i_max_nworkers, KM_SLEEP);
-	for (i = 0; i < stmf_i_max_nworkers; i++) {
+	    sizeof (stmf_worker_t) * stmf_nworkers, KM_SLEEP);
+	for (i = 0; i < stmf_nworkers; i++) {
 		stmf_worker_t *w = &stmf_workers[i];
 		mutex_init(&w->worker_lock, NULL, MUTEX_DRIVER, NULL);
 		cv_init(&w->worker_cv, NULL, CV_DRIVER, NULL);
 	}
-	stmf_worker_mgmt_delay = drv_usectohz(20 * 1000);
 	stmf_workers_state = STMF_WORKERS_ENABLED;
 
-	/* Workers will be started by stmf_worker_mgmt() */
+	/* Check if we are starting */
+	if (stmf_nworkers_cur < stmf_nworkers - 1) {
+		for (i = stmf_nworkers_cur; i < stmf_nworkers; i++) {
+			w = &stmf_workers[i];
+			w->worker_tid = thread_create(NULL, 0, stmf_worker_task,
+			    (void *)&stmf_workers[i], 0, &p0, TS_RUN,
+			    minclsyspri);
+			stmf_nworkers_accepting_cmds++;
+		}
+		return;
+	}
 
 	/* Lets wait for atleast one worker to start */
 	while (stmf_nworkers_cur == 0)
 		delay(drv_usectohz(20 * 1000));
-	stmf_worker_mgmt_delay = drv_usectohz(3 * 1000 * 1000);
 }
 
 stmf_status_t
@@ -6579,7 +6547,6 @@ stmf_worker_fini()
 		return (STMF_SUCCESS);
 	ASSERT(stmf_workers);
 	stmf_workers_state = STMF_WORKERS_DISABLED;
-	stmf_worker_mgmt_delay = drv_usectohz(20 * 1000);
 	cv_signal(&stmf_state.stmf_cv);
 
 	sb = ddi_get_lbolt() + drv_usectohz(10 * 1000 * 1000);
@@ -6591,12 +6558,12 @@ stmf_worker_fini()
 		}
 		delay(drv_usectohz(100 * 1000));
 	}
-	for (i = 0; i < stmf_i_max_nworkers; i++) {
+	for (i = 0; i < stmf_nworkers; i++) {
 		stmf_worker_t *w = &stmf_workers[i];
 		mutex_destroy(&w->worker_lock);
 		cv_destroy(&w->worker_cv);
 	}
-	kmem_free(stmf_workers, sizeof (stmf_worker_t) * stmf_i_max_nworkers);
+	kmem_free(stmf_workers, sizeof (stmf_worker_t) * stmf_nworkers);
 	stmf_workers = NULL;
 
 	return (STMF_SUCCESS);
@@ -6624,6 +6591,8 @@ stmf_worker_task(void *arg)
 	DTRACE_PROBE1(worker__create, stmf_worker_t, w);
 	mutex_enter(&w->worker_lock);
 	w->worker_flags |= STMF_WORKER_STARTED | STMF_WORKER_ACTIVE;
+	atomic_inc_32(&stmf_nworkers_cur);
+
 stmf_worker_loop:
 	if ((w->worker_ref_count == 0) &&
 	    (w->worker_flags & STMF_WORKER_TERMINATE)) {
@@ -6632,8 +6601,10 @@ stmf_worker_loop:
 		w->worker_tid = NULL;
 		mutex_exit(&w->worker_lock);
 		DTRACE_PROBE1(worker__destroy, stmf_worker_t, w);
+		atomic_dec_32(&stmf_nworkers_cur);
 		thread_exit();
 	}
+
 	/* CONSTCOND */
 	while (1) {
 		/* worker lock is held at this point */
@@ -6658,6 +6629,7 @@ stmf_worker_loop:
 		STMF_DEQUEUE_ITASK(w, itask);
 		if (itask == NULL)
 			break;
+
 		ASSERT((itask->itask_flags & ITASK_IN_FREE_LIST) == 0);
 		task = itask->itask_task;
 		DTRACE_PROBE2(worker__active, stmf_worker_t, w,
@@ -6827,136 +6799,6 @@ out_itask_flag_loop:
 	DTRACE_PROBE1(worker__wakeup, stmf_worker_t, w);
 	w->worker_flags |= STMF_WORKER_ACTIVE;
 	goto stmf_worker_loop;
-}
-
-void
-stmf_worker_mgmt()
-{
-	int i;
-	int workers_needed;
-	uint32_t qd = 0, cur_max_ntasks = 0;
-	stmf_worker_t *w;
-
-	/* Check if we are trying to increase the # of threads */
-	for (i = stmf_nworkers_cur; i < stmf_nworkers_needed; i++) {
-		if (stmf_workers[i].worker_flags & STMF_WORKER_STARTED) {
-			stmf_nworkers_cur++;
-			stmf_nworkers_accepting_cmds++;
-		} else {
-			/* Wait for transition to complete */
-			return;
-		}
-	}
-	/* Check if we are trying to decrease the # of workers */
-	for (i = (stmf_nworkers_cur - 1); i >= stmf_nworkers_needed; i--) {
-		if ((stmf_workers[i].worker_flags & STMF_WORKER_STARTED) == 0) {
-			stmf_nworkers_cur--;
-			/*
-			 * stmf_nworkers_accepting_cmds has already been
-			 * updated by the request to reduce the # of workers.
-			 */
-		} else {
-			/* Wait for transition to complete */
-			return;
-		}
-	}
-	/* Check if we are being asked to quit */
-	if (stmf_workers_state != STMF_WORKERS_ENABLED) {
-		if (stmf_nworkers_cur) {
-			workers_needed = 0;
-			goto worker_mgmt_trigger_change;
-		}
-		return;
-	}
-	/* Check if we are starting */
-	if (stmf_nworkers_cur < stmf_i_min_nworkers) {
-		workers_needed = stmf_i_min_nworkers;
-		goto worker_mgmt_trigger_change;
-	}
-
-	/* Check if we're still ramping up */
-	if (stmf_wm_next > ddi_get_lbolt()) {
-		return;
-	}
-	/* Get maximum queue depth since the last time we checked */
-	for (i = 0; i < stmf_nworkers_accepting_cmds; i++) {
-		w = &stmf_workers[i];
-		mutex_enter(&w->worker_lock);
-		if (w->worker_max_sys_qdepth_pu > cur_max_ntasks) {
-			cur_max_ntasks = w->worker_max_sys_qdepth_pu;
-		}
-		qd += w->worker_max_qdepth_pu;
-		w->worker_max_sys_qdepth_pu = 0;
-		w->worker_max_qdepth_pu = 0;
-		mutex_exit(&w->worker_lock);
-	}
-	stmf_wm_next = ddi_get_lbolt() + drv_usectohz(1 * 1000 * 1000);
-
-	/* max qdepth cannot be more than max tasks */
-	if (qd > cur_max_ntasks)
-		qd = cur_max_ntasks;
-	/* qdepth should also be within worker limits */
-	if (qd > stmf_i_max_nworkers)
-		qd = stmf_i_max_nworkers;
-	if (qd < stmf_i_min_nworkers)
-		qd = stmf_i_min_nworkers;
-
-	/* See if we have more workers */
-	if (qd < stmf_nworkers_accepting_cmds) {
-		/*
-		 * Since we dont reduce the worker count right away, monitor
-		 * the highest load during the scale_down_delay.
-		 */
-		if (qd > stmf_worker_scale_down_qd)
-			stmf_worker_scale_down_qd = qd;
-		if (stmf_worker_scale_down_timer == 0) {
-			stmf_worker_scale_down_timer = ddi_get_lbolt() +
-			    drv_usectohz(stmf_worker_scale_down_delay *
-			    1000 * 1000);
-			return;
-		}
-		if (ddi_get_lbolt() < stmf_worker_scale_down_timer) {
-			return;
-		}
-		workers_needed = stmf_worker_scale_down_qd;
-		stmf_worker_scale_down_qd = 0;
-		goto worker_mgmt_trigger_change;
-	}
-
-	stmf_worker_scale_down_qd = 0;
-	stmf_worker_scale_down_timer = 0;
-	workers_needed = qd;
-	if (workers_needed == stmf_nworkers_cur) {
-		return;
-	}
-
-worker_mgmt_trigger_change:
-	ASSERT(workers_needed != stmf_nworkers_cur);
-	if (workers_needed > stmf_nworkers_cur) {
-		stmf_nworkers_needed = workers_needed;
-		for (i = stmf_nworkers_cur; i < workers_needed; i++) {
-			w = &stmf_workers[i];
-			w->worker_tid = thread_create(NULL, 0, stmf_worker_task,
-			    (void *)&stmf_workers[i], 0, &p0, TS_RUN,
-			    minclsyspri);
-		}
-		return;
-	}
-	/* At this point we know that we are decreasing the # of workers */
-	if (stmf_enable_scaledown == 0)
-		return;
-	stmf_nworkers_accepting_cmds = workers_needed;
-	stmf_nworkers_needed = workers_needed;
-	/* Signal the workers that its time to quit */
-	for (i = (stmf_nworkers_cur - 1); i >= stmf_nworkers_needed; i--) {
-		w = &stmf_workers[i];
-		ASSERT(w && (w->worker_flags & STMF_WORKER_STARTED));
-		mutex_enter(&w->worker_lock);
-		w->worker_flags |= STMF_WORKER_TERMINATE;
-		if ((w->worker_flags & STMF_WORKER_ACTIVE) == 0)
-			cv_signal(&w->worker_cv);
-		mutex_exit(&w->worker_lock);
-	}
 }
 
 /*
@@ -7884,13 +7726,6 @@ stmf_svc_timeout(struct stmf_svc_clocks *clks)
 
 		if (!list_is_empty(&stmf_state.stmf_svc_list))
 			return;
-	}
-
-	/* Check if we need to run worker_mgmt */
-	if (ddi_get_lbolt() > clks->worker_delay) {
-		stmf_worker_mgmt();
-		clks->worker_delay = ddi_get_lbolt() +
-		    stmf_worker_mgmt_delay;
 	}
 
 	/* Check if any active session got its 1st LUN */
