@@ -21,6 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 /*
  * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
@@ -192,6 +193,8 @@ typedef struct queue {
 #define	_QASSOCIATED	0x10000000	/* queue is associated with a device */
 #define	_QDIRECT	0x20000000	/* Private; transport module uses */
 					/* direct interface to/from sockfs */
+#define	_QSINGLE_INSTANCE	0x40000000	/* Private; module may only */
+						/* be pushed once */
 
 /* queue sqflags (protected by SQLOCK). */
 #define	Q_SQQUEUED	0x01		/* Queue is in the syncq list */
