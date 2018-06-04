@@ -26,6 +26,7 @@ set name=info.classification value=org.opensolaris.category.2008:System/Core
 set name=variant.arch value=$(ARCH)
 dir path=etc group=sys
 dir path=etc/system.d group=sys
+file path=etc/system.d/genunix group=sys
 file path=etc/system.d/nfs group=sys
 file path=etc/system.d/security group=sys
 file path=etc/system.d/zfs group=sys

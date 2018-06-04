@@ -13,7 +13,7 @@
 # Copyright 2018 Nexenta Systems, Inc. All rights reserved.
 #
 
-SYSTEMFILES=	nfs security zfs
+SYSTEMFILES=	genunix nfs security zfs
 
 include ../../cmd/Makefile.cmd
 
