@@ -33,6 +33,7 @@
 #include <strings.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <unistd.h>
 
 #include <sys/fs/smbfs_mount.h>
