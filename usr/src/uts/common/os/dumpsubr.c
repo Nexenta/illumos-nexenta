@@ -500,8 +500,8 @@ dumpbuf_resize(void)
 
 /*
  * dump_update_clevel is called when dumpadm configures the dump device.
- * 	Calculate number of helpers and buffers.
- * 	Allocate the minimum configuration for now.
+ *	Calculate number of helpers and buffers.
+ *	Allocate the minimum configuration for now.
  *
  * When the dump file is configured we reserve a minimum amount of
  * memory for use at crash time. But we reserve VA for all the memory
@@ -521,15 +521,15 @@ dumpbuf_resize(void)
  * The actual values are defined via DUMP_PLAT_*_MINCPU macros.
  *
  * Architecture		Threshold	Algorithm
- * sun4u       		<  51		parallel lzjb
- * sun4u       		>= 51		parallel bzip2(*)
- * sun4u OPL   		<  8		parallel lzjb
- * sun4u OPL   		>= 8		parallel bzip2(*)
- * sun4v       		<  128		parallel lzjb
- * sun4v       		>= 128		parallel bzip2(*)
+ * sun4u		<  51		parallel lzjb
+ * sun4u		>= 51		parallel bzip2(*)
+ * sun4u OPL		<  8		parallel lzjb
+ * sun4u OPL		>= 8		parallel bzip2(*)
+ * sun4v		<  128		parallel lzjb
+ * sun4v		>= 128		parallel bzip2(*)
  * x86			< 11		parallel lzjb
  * x86			>= 11		parallel bzip2(*)
- * 32-bit      		N/A		single-threaded lzjb
+ * 32-bit		N/A		single-threaded lzjb
  *
  * (*) bzip2 is only chosen if there is sufficient available
  * memory for buffers at dump time. See dumpsys_get_maxmem().
@@ -2323,7 +2323,7 @@ dumpsys_main_task(void *arg)
 			}
 
 			if ((!dumpserial) ||
-			    (gethrtime() - (hrtstart >= hrtmax))) {
+			    ((gethrtime() - hrtstart) >= hrtmax)) {
 				break;
 			}
 
@@ -2592,7 +2592,7 @@ dumpsys_metrics(dumpsync_t *ds, char *buf, size_t size)
 	P("Compression level,%d\n", cfg->clevel);
 	P("Compression type,%s %s", cfg->clevel == 0 ? "serial" : "parallel",
 	    cfg->clevel >= DUMP_CLEVEL_BZIP2 ? "bzip2" : "lzjb");
-	if (dumpcfg.clevel >= DUMP_CLEVEL_BZIP2)
+	if (cfg->clevel >= DUMP_CLEVEL_BZIP2)
 		P(" (level %d)\n", dump_bzip2_level);
 	else
 		P("\n");
