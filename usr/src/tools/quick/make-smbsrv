@@ -224,16 +224,19 @@ do
 	$make $1 KMDB_LINKTEST_ENABLE= )
   (cd $SRC/cmd/mdb/$x/$a/smbsrv &&
 	$make $1 KMDB_LINKTEST_ENABLE= )
-  (cd $SRC/cmd/mdb/$x/$a/libfksmbsrv &&
-	$make $1 KMDB_LINKTEST_ENABLE= )
+done
 
-# We build these libraries (to the proto area), so we need to
-# build the mdb modules too so mdb will load them.
-  (cd $SRC/cmd/mdb/$x/$a/libcmdutils &&
-	$make $1 )
-  (cd $SRC/cmd/mdb/$x/$a/libavl &&
-	$make $1 )
+# mdb_arch is both 32-bit & 64-bit
+for a in $mdb_arch
+do
+  # We build these libraries (to the proto area), so we need to
+  # build the mdb modules for all dependent libraries too.
 
+  for lib in libfksmbsrv libmlsvc libcmdutils libavl
+  do
+    (cd $SRC/cmd/mdb/$x/$a/$lib && $make $1 )
+
+  done
 done
 }
 
@@ -281,6 +284,7 @@ usr/lib/fs/smb/libshare_smb.so.1
 usr/lib/libsmbfs.so.1
 usr/lib/mdb/kvm/$arch64/smbsrv.so
 usr/lib/mdb/kvm/smbsrv.so
+usr/lib/mdb/proc/libmlsvc.so
 usr/lib/reparse/libreparse_smb.so.1
 usr/lib/security/pam_smb_passwd.so.1
 usr/lib/smbsrv/dtrace

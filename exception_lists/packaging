@@ -24,8 +24,9 @@
 # Copyright 2012 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
-# Copyright 2016 Nexenta Systems, Inc.
 # Copyright 2017 Toomas Soome <tsoome@me.com>
+# Copyright 2017 RackTop Systems.
+# Copyright 2018 Nexenta Systems, Inc.
 #
 
 #
@@ -731,6 +732,7 @@ usr/lib/sparcv9/libfakekernel.so.1		sparc
 usr/lib/mdb/proc/libfksmbsrv.so
 usr/lib/mdb/proc/amd64/libfksmbsrv.so		i386
 usr/lib/mdb/proc/sparcv9/libfksmbsrv.so		sparc
+usr/lib/mdb/proc/amd64/libmlsvc.so		i386
 usr/lib/reparse/llib-lreparse_smb
 usr/lib/reparse/llib-lreparse_smb.ln
 usr/lib/smbsrv/bind-helper
@@ -986,10 +988,10 @@ usr/include/sys/ipmi.h	sparc
 #
 # libsaveargs is private
 #
-usr/include/saveargs.h            	i386
-usr/lib/amd64/libsaveargs.so      	i386
+usr/include/saveargs.h			i386
+usr/lib/amd64/libsaveargs.so		i386
 usr/lib/amd64/libstandsaveargs.so	i386
-usr/lib/amd64/llib-lsaveargs.ln   	i386
+usr/lib/amd64/llib-lsaveargs.ln		i386
 
 #
 # libpcidb is private
