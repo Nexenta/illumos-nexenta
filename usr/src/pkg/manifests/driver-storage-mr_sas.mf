@@ -38,6 +38,7 @@ set name=pkg.summary value="LSI MegaRAID SAS2.0 HBA Driver"
 set name=info.classification \
     value=org.opensolaris.category.2008:Drivers/Storage
 set name=variant.arch value=$(ARCH)
+set name=variant.mr_sas value=illumos
 dir path=kernel group=sys
 dir path=kernel/drv group=sys
 dir path=kernel/drv/$(ARCH64) group=sys
