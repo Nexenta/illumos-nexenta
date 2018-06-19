@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2012, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  * Copyright (c) 2013, Joyent, Inc. All rights reserved.
@@ -549,8 +549,24 @@ dbuf_evict_thread(void *unused)
 
 /*
  * Wake up the dbuf eviction thread if the dbuf cache is at its max size.
- * If the dbuf cache is at its high water mark, then evict a dbuf from the
- * dbuf cache using the callers context.
+ *
+ * Direct eviction (dbuf_evict_one()) is not called here, because
+ * the function doesn't care about the selected dbuf, so the following
+ * case is possible which will cause a deadlock-panic:
+ *
+ * Thread A is evicting dbufs that are related to dnodeA
+ * dnode_evict_dbufs(dnoneA) enters dn_dbufs_mtx and after that walks
+ * its own AVL of dbufs and calls dbuf_destroy():
+ * dbuf_destroy() ->...-> dbuf_evict_notify() -> dbuf_evict_one() ->
+ *  -> select a dbuf from cache -> dbuf_destroy() ->
+ *   -> mutex_enter(dn_dbufs_mtx of dnoneB)
+ *
+ * Thread B is evicting dbufs that are related to dnodeB
+ * dnode_evict_dbufs(dnoneB) enters dn_dbufs_mtx and after that walks
+ * its own AVL of dbufs and calls dbuf_destroy():
+ * dbuf_destroy() ->...-> dbuf_evict_notify() -> dbuf_evict_one() ->
+ *  -> select a dbuf from cache -> dbuf_destroy() ->
+ *   -> mutex_enter(dn_dbufs_mtx of dnoneA)
  */
 static void
 dbuf_evict_notify(void)
@@ -578,14 +594,7 @@ dbuf_evict_notify(void)
 	if (tsd_get(zfs_dbuf_evict_key) != NULL)
 		return;
 
-	/*
-	 * We check if we should evict without holding the dbuf_evict_lock,
-	 * because it's OK to occasionally make the wrong decision here,
-	 * and grabbing the lock results in massive lock contention.
-	 */
 	if (refcount_count(&dbuf_cache_size) > dbuf_cache_max_bytes) {
-		if (dbuf_cache_above_hiwater())
-			dbuf_evict_one();
 		cv_signal(&dbuf_evict_cv);
 	}
 }
