@@ -24,11 +24,13 @@
  */
 
 /*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
+/*
  * Implementation of "scsi_vhci_f_sym" symmetric failover_ops.
  *
- * This file was historically meant for only symmetric implementation.  It has
- * been extended to manage SUN "supported" symmetric controllers. The supported
- * VID/PID shall be listed in the symmetric_dev_table.
+ * Currently this module accepts all DTYPE_DIRECT devices.
  */
 
 #include <sys/conf.h>
@@ -38,35 +40,7 @@
 #include <sys/scsi/scsi.h>
 #include <sys/scsi/adapters/scsi_vhci.h>
 
-/* Supported device table entries.  */
-char *symmetric_dev_table[] = {
-/*	"                  111111" */
-/*	"012345670123456789012345" */
-/*	"|-VID--||-----PID------|" */
-				/* disks */
-	"IBM     DDYFT",
-	"IBM     IC",
-	"SEAGATE ST",
-				/* enclosures */
-	"SUN     SENA",			/* SES device */
-	"SUN     SESS01",		/* VICOM SVE box */
-	"SUNW    SUNWGS",		/* Daktari enclosure */
-				/* arrays */
-	"HITACHI OPEN",			/* Hitachi storage */
-	"SUN     PSX1000",		/* Pirus Matterhorn */
-	"SUN     SE6920",		/* Pirus */
-	"SUN     SE6940",		/* DSP - Nauset */
-	"SUN     StorEdge 3510",	/* Minnow FC */
-	"SUN     StorEdge 3511",	/* Minnow SATA RAID */
-	"SUN     StorageTek 6920",	/* DSP */
-	"SUN     StorageTek 6940",	/* DSP - Nauset */
-	"SUN     StorageTek NAS",	/* StorageTek NAS */
-	"SUN     MRA300_R",		/* Shamrock - Controller */
-	"SUN     MRA300_E",		/* Shamrock - Expansion */
-	"STEC    ZeusIOPs",		/* Zeus SAS SSD */
-
-	NULL
-};
+char *symmetric_dev_table[] = { NULL };
 
 /* Failover module plumbing. */
 SCSI_FAILOVER_OP(SFO_NAME_SYM, symmetric);
@@ -74,35 +48,11 @@ SCSI_FAILOVER_OP(SFO_NAME_SYM, symmetric);
 /* ARGSUSED */
 static int
 symmetric_device_probe(struct scsi_device *sd, struct scsi_inquiry *stdinq,
-void **ctpriv)
+    void **ctpriv)
 {
-	char	**dt;
-
-	VHCI_DEBUG(6, (CE_NOTE, NULL, "!inq str: %s\n", stdinq->inq_vid));
-	for (dt = symmetric_dev_table; *dt; dt++)
-		if (strncmp(stdinq->inq_vid, *dt, strlen(*dt)) == 0)
+	if (stdinq->inq_dtype == DTYPE_DIRECT)
 			return (SFO_DEVICE_PROBE_VHCI);
 
-	/*
-	 * No match, check for generic Sun supported disks:
-	 *
-	 *	"|-VID--||-----PID------|"
-	 *	"012345670123456789012345"
-	 *	".................SUN..G."
-	 *	".................SUN..T."
-	 *	".................SUN...G"
-	 *	".................SUN...T"
-	 */
-	if (bcmp(&stdinq->inq_pid[9], "SUN", 3) == 0) {
-		if ((stdinq->inq_pid[14] == 'G' || stdinq->inq_pid[15] == 'G' ||
-		    stdinq->inq_pid[14] == 'T' || stdinq->inq_pid[15] == 'T') &&
-		    (stdinq->inq_dtype == DTYPE_DIRECT)) {
-			return (SFO_DEVICE_PROBE_VHCI);
-		}
-	}
-	if (bcmp(&stdinq->inq_vid[0], "ATA     ", 8) == 0) {
-		return (SFO_DEVICE_PROBE_VHCI);
-	}
 	return (SFO_DEVICE_PROBE_PHCI);
 }
 
@@ -124,8 +74,7 @@ symmetric_path_activate(struct scsi_device *sd, char *pathclass, void *ctpriv)
 
 /* ARGSUSED */
 static int
-symmetric_path_deactivate(struct scsi_device *sd, char *pathclass,
-void *ctpriv)
+symmetric_path_deactivate(struct scsi_device *sd, char *pathclass, void *ctpriv)
 {
 	return (0);
 }
@@ -133,7 +82,7 @@ void *ctpriv)
 /* ARGSUSED */
 static int
 symmetric_path_get_opinfo(struct scsi_device *sd,
-struct scsi_path_opinfo *opinfo, void *ctpriv)
+    struct scsi_path_opinfo *opinfo, void *ctpriv)
 {
 	opinfo->opinfo_rev = OPINFO_REV;
 	(void) strcpy(opinfo->opinfo_path_attr, "primary");
@@ -156,8 +105,7 @@ symmetric_path_ping(struct scsi_device *sd, void *ctpriv)
 
 /* ARGSUSED */
 static int
-symmetric_analyze_sense(struct scsi_device *sd,
-uint8_t *sense, void *ctpriv)
+symmetric_analyze_sense(struct scsi_device *sd, uint8_t *sense, void *ctpriv)
 {
 	return (SCSI_SENSE_NOFAILOVER);
 }
