@@ -28,6 +28,7 @@ typedef struct _func_list_ {
 	boolean_t	(*func)(pqi_state_t);
 } func_list_t;
 
+/* BEGIN CSTYLED */
 #define	FORWARD_DECLS() \
 	item(pqi_calculate_io_resources) \
 	item(pqi_check_alloc) \
@@ -54,6 +55,7 @@ typedef struct _func_list_ {
 #define	item(a) static boolean_t a(pqi_state_t);
 FORWARD_DECLS()
 #undef item
+/* END CSTYLED */
 
 #define	STARTUP_FUNCS \
     item(sis_wait_for_ctrl_ready) \
@@ -91,33 +93,32 @@ func_list_t startup_funcs[] =
 };
 
 /* ---- Forward declarations for utility functions ---- */
-static void bcopy_fromregs(pqi_state_t s, uint8_t *iomem,
-	uint8_t *dst, uint32_t len);
+static void bcopy_fromregs(pqi_state_t s, uint8_t *iomem, uint8_t *dst,
+    uint32_t len);
 static boolean_t submit_admin_rqst_sync(pqi_state_t s,
-	pqi_general_admin_request_t *rqst, pqi_general_admin_response_t *rsp);
+    pqi_general_admin_request_t *rqst, pqi_general_admin_response_t *rsp);
 static boolean_t create_event_queue(pqi_state_t s);
 static boolean_t create_queue_group(pqi_state_t s, int idx);
-static boolean_t submit_raid_rqst_sync(pqi_state_t s,
-	pqi_iu_header_t *rqst, pqi_raid_error_info_t e_info);
+static boolean_t submit_raid_rqst_sync(pqi_state_t s, pqi_iu_header_t *rqst,
+    pqi_raid_error_info_t e_info);
 static boolean_t identify_controller(pqi_state_t s,
-	bmic_identify_controller_t *ident);
-static boolean_t write_host_wellness(pqi_state_t s, void *buf,
-	size_t len);
-static boolean_t get_device_list(pqi_state_t s,
-	report_phys_lun_extended_t **pl, report_log_lun_extended_t **ll);
-static boolean_t build_raid_path_request(pqi_raid_path_request_t *rqst,
-	int cmd, caddr_t lun, uint32_t len, int vpd_page);
-static boolean_t identify_physical_device(pqi_state_t s,
-	pqi_device_t devp, bmic_identify_physical_device_t *buf);
+    bmic_identify_controller_t *ident);
+static boolean_t write_host_wellness(pqi_state_t s, void *buf, size_t len);
+static boolean_t get_device_list(pqi_state_t s, report_phys_lun_extended_t **pl,
+    report_log_lun_extended_t **ll);
+static boolean_t build_raid_path_request(pqi_raid_path_request_t *rqst, int cmd,
+    caddr_t lun, uint32_t len, int vpd_page);
+static boolean_t identify_physical_device(pqi_state_t s, pqi_device_t devp,
+    bmic_identify_physical_device_t *buf);
 static pqi_device_t create_phys_dev(pqi_state_t s,
-	report_phys_lun_extended_entry_t *e);
+    report_phys_lun_extended_entry_t *e);
 static pqi_device_t create_logical_dev(pqi_state_t s,
-	report_log_lun_extended_entry_t *e);
+    report_log_lun_extended_entry_t *e);
 static boolean_t is_new_dev(pqi_state_t s, pqi_device_t new_dev);
 static boolean_t revert_to_sis(pqi_state_t s);
 static void save_ctrl_mode(pqi_state_t s, int mode);
 static boolean_t scsi_common(pqi_state_t s, pqi_raid_path_request_t *rqst,
-	caddr_t buf, int len);
+    caddr_t buf, int len);
 static void update_time(void *v);
 
 static int reset_devices = 1;
@@ -163,14 +164,14 @@ pqi_prep_full(pqi_state_t s)
 static boolean_t
 pqi_calculate_io_resources(pqi_state_t s)
 {
-	uint32_t	max_xfer_size,
-	max_sg_entries;
+	uint32_t	max_xfer_size;
+	uint32_t	max_sg_entries;
 
 	s->s_max_io_slots = min(PQI_MAX_OUTSTANDING_REQUESTS,
 	    s->s_max_outstanding_requests);
 
 	max_xfer_size = min(s->s_max_xfer_size, PQI_MAX_TRANSFER_SIZE);
-	
+
 	/* ---- add 1 when buf is not page aligned ---- */
 	max_sg_entries = max_xfer_size / PAGESIZE + 1;
 	max_sg_entries = min(max_sg_entries, s->s_max_sg_entries);
@@ -263,14 +264,14 @@ pqi_process_config_table(pqi_state_t s)
 		section = (pqi_config_table_section_header_t *)
 		    ((caddr_t)c_table + section_offset);
 		switch (section->section_id) {
-			case PQI_CONFIG_TABLE_SECTION_HEARTBEAT:
-				/* LINTED E_BAD_PTR_CAST_ALIGN */
-				s->s_heartbeat_counter = (uint32_t *)
-				    ((caddr_t)s->s_reg +
-				    s->s_config_table_offset + section_offset +
-				    offsetof(struct pqi_config_table_heartbeat,
-				    heartbeat_counter));
-				break;
+		case PQI_CONFIG_TABLE_SECTION_HEARTBEAT:
+			/* LINTED E_BAD_PTR_CAST_ALIGN */
+			s->s_heartbeat_counter = (uint32_t *)
+			    ((caddr_t)s->s_reg +
+			    s->s_config_table_offset + section_offset +
+			    offsetof(struct pqi_config_table_heartbeat,
+			    heartbeat_counter));
+			break;
 		}
 		section_offset = section->next_section_offset;
 	}
@@ -319,9 +320,9 @@ static boolean_t
 pqi_create_admin_queues(pqi_state_t s)
 {
 	pqi_admin_queues_t *aq = &s->s_admin_queues;
-	int	val,
-		status,
-		countdown = 1000;
+	int			val;
+	int			status;
+	int			countdown = 1000;
 
 	S64(s, pqi_registers.admin_iq_element_array_addr,
 	    aq->iq_element_array_bus_addr);
@@ -356,13 +357,13 @@ pqi_create_admin_queues(pqi_state_t s)
 	    PQI_DEVICE_REGISTERS_OFFSET +
 	    G64(s, pqi_registers.admin_iq_pi_offset));
 	ASSERT((G64(s, pqi_registers.admin_iq_pi_offset) +
-		PQI_DEVICE_REGISTERS_OFFSET) < 0x8000);
+	    PQI_DEVICE_REGISTERS_OFFSET) < 0x8000);
 
 	aq->oq_ci = (void *)(intptr_t)((intptr_t)s->s_reg +
 	    PQI_DEVICE_REGISTERS_OFFSET +
 	    G64(s, pqi_registers.admin_oq_ci_offset));
 	ASSERT((G64(s, pqi_registers.admin_oq_ci_offset) +
-		PQI_DEVICE_REGISTERS_OFFSET) < 0x8000);
+	    PQI_DEVICE_REGISTERS_OFFSET) < 0x8000);
 
 	return (B_TRUE);
 }
@@ -440,10 +441,10 @@ pqi_valid_device_capability(pqi_state_t s)
 static boolean_t
 pqi_calculate_queue_resources(pqi_state_t s)
 {
-	int	max_queue_groups,
-		num_queue_groups,
-		num_elements_per_iq,
-		num_elements_per_oq;
+	int	max_queue_groups;
+	int	num_queue_groups;
+	int	num_elements_per_iq;
+	int	num_elements_per_oq;
 
 	if (reset_devices) {
 		num_queue_groups = 1;
@@ -451,7 +452,7 @@ pqi_calculate_queue_resources(pqi_state_t s)
 		max_queue_groups = min(s->s_max_inbound_queues / 2,
 		    s->s_max_outbound_queues - 1);
 		max_queue_groups = min(max_queue_groups, PQI_MAX_QUEUE_GROUPS);
-		
+
 		num_queue_groups = min(ncpus, s->s_intr_cnt);
 		num_queue_groups = min(num_queue_groups, max_queue_groups);
 	}
@@ -497,7 +498,6 @@ pqi_alloc_io_resource(pqi_state_t s)
 	sg_chain_len = s->s_sg_chain_buf_length;
 	io = s->s_io_rqst_pool;
 	for (i = 0; i < s->s_max_io_slots; i++) {
-
 		io->io_iu = PQI_ZALLOC(s->s_max_inbound_iu_length, KM_SLEEP);
 
 		/*
@@ -538,13 +538,13 @@ error_out:
 static boolean_t
 pqi_alloc_operation_queues(pqi_state_t s)
 {
-	uint32_t	niq = s->s_num_queue_groups * 2,
-			noq = s->s_num_queue_groups,
-			queue_idx = (s->s_num_queue_groups * 3) + 1,
-			i;
-	size_t		array_len_iq,
-			array_len_oq,
-			alloc_len;
+	uint32_t	niq = s->s_num_queue_groups * 2;
+	uint32_t	noq = s->s_num_queue_groups;
+	uint32_t	queue_idx = (s->s_num_queue_groups * 3) + 1;
+	uint32_t	i;
+	size_t		array_len_iq;
+	size_t		array_len_oq;
+	size_t		alloc_len;
 	caddr_t		aligned_pointer = NULL;
 	pqi_queue_group_t	*qg;
 
@@ -685,8 +685,8 @@ static boolean_t
 pqi_init_operational_queues(pqi_state_t s)
 {
 	int		i;
-	uint16_t	iq_id = PQI_MIN_OPERATIONAL_QUEUE_ID,
-			oq_id = PQI_MIN_OPERATIONAL_QUEUE_ID;
+	uint16_t	iq_id = PQI_MIN_OPERATIONAL_QUEUE_ID;
+	uint16_t	oq_id = PQI_MIN_OPERATIONAL_QUEUE_ID;
 
 	for (i = 0; i < s->s_num_queue_groups; i++) {
 		s->s_queue_groups[i].qg_softc = s;
@@ -877,9 +877,9 @@ pqi_scan_scsi_devices(pqi_state_t s)
 	report_phys_lun_extended_t	*phys_list	= NULL;
 	report_log_lun_extended_t	*logical_list	= NULL;
 	boolean_t			rval		= B_FALSE;
-	int				num_phys	= 0,
-					num_logical	= 0,
-					i;
+	int				num_phys	= 0;
+	int				num_logical	= 0;
+	int				i;
 	pqi_device_t			dev;
 
 	if (get_device_list(s, &phys_list, &logical_list) == B_FALSE)
@@ -1044,10 +1044,10 @@ static boolean_t
 poll_for_admin_response(pqi_state_t s, pqi_general_admin_response_t *r)
 {
 	pqi_admin_queues_t	*aq;
-	pqi_index_t		oq_pi,
-				oq_ci;
-	int			countdown = 10 * MICROSEC,	// 10 seconds
-				pause_time = 10 * MILLISEC;	// 10ms
+	pqi_index_t		oq_pi;
+	pqi_index_t		oq_ci;
+	int			countdown = 10 * MICROSEC;	/* 10 seconds */
+	int			pause_time = 10 * MILLISEC;	/* 10ms */
 
 	countdown /= pause_time;
 	aq = &s->s_admin_queues;
@@ -1189,7 +1189,7 @@ create_queue_group(pqi_state_t s, int idx)
 	rqst.data.create_operational_iq.element_array_addr =
 	    qg->iq_element_array_bus_addr[AIO_PATH];
 	rqst.data.create_operational_iq.ci_addr =
-	    qg->iq_ci_bus_addr[AIO_PATH],
+	    qg->iq_ci_bus_addr[AIO_PATH];
 	rqst.data.create_operational_iq.num_elements =
 	    s->s_num_elements_per_iq;
 	rqst.data.create_operational_iq.element_length =
@@ -1277,7 +1277,7 @@ submit_raid_sync_with_io(pqi_state_t s, pqi_io_request_t *io)
 	s->s_sync_io = NULL;
 	if (io->io_status != PQI_DATA_IN_OUT_GOOD) {
 		dev_err(s->s_dip, CE_NOTE, "io(%p)->io_status=%d\n", io,
-			io->io_status);
+		    io->io_status);
 	}
 	return (io->io_status == PQI_DATA_IN_OUT_GOOD ? B_TRUE : B_FALSE);
 }
@@ -1326,71 +1326,71 @@ build_raid_path_request(pqi_raid_path_request_t *rqst,
 
 	cdb = rqst->rp_cdb;
 	switch (cmd) {
-		case SCMD_READ_CAPACITY:
-			rqst->rp_data_dir = (uint8_t)SOP_READ_FLAG;
-			cdb[0] = (uint8_t)cmd;
-			break;
+	case SCMD_READ_CAPACITY:
+		rqst->rp_data_dir = (uint8_t)SOP_READ_FLAG;
+		cdb[0] = (uint8_t)cmd;
+		break;
 
-		case SCMD_READ:
-			rqst->rp_data_dir = (uint8_t)SOP_READ_FLAG;
-			cdb[0] = (uint8_t)cmd;
-			cdb[2] = (uint8_t)vpd_page >> 8;
-			cdb[3] = (uint8_t)vpd_page;
-			cdb[4] = len >> 9;
-			break;
+	case SCMD_READ:
+		rqst->rp_data_dir = (uint8_t)SOP_READ_FLAG;
+		cdb[0] = (uint8_t)cmd;
+		cdb[2] = (uint8_t)vpd_page >> 8;
+		cdb[3] = (uint8_t)vpd_page;
+		cdb[4] = len >> 9;
+		break;
 
-		case SCMD_MODE_SENSE:
-			rqst->rp_data_dir = (uint8_t)SOP_READ_FLAG;
-			cdb[0] = (uint8_t)cmd;
-			cdb[1] = 0;
+	case SCMD_MODE_SENSE:
+		rqst->rp_data_dir = (uint8_t)SOP_READ_FLAG;
+		cdb[0] = (uint8_t)cmd;
+		cdb[1] = 0;
+		cdb[2] = (uint8_t)vpd_page;
+		cdb[4] = (uint8_t)len;
+		break;
+
+	case SCMD_INQUIRY:
+		rqst->rp_data_dir = SOP_READ_FLAG;
+		cdb[0] = (uint8_t)cmd;
+		if (vpd_page & VPD_PAGE) {
+			cdb[1] = 0x1;
 			cdb[2] = (uint8_t)vpd_page;
-			cdb[4] = (uint8_t)len;
-			break;
+		}
+		cdb[4] = (uint8_t)len;
+		break;
 
-		case SCMD_INQUIRY:
-			rqst->rp_data_dir = SOP_READ_FLAG;
-			cdb[0] = (uint8_t)cmd;
-			if (vpd_page & VPD_PAGE) {
-				cdb[1] = 0x1;
-				cdb[2] = (uint8_t)vpd_page;
-			}
-			cdb[4] = (uint8_t)len;
-			break;
+	case BMIC_IDENTIFY_PHYSICAL_DEVICE:
+	case BMIC_IDENTIFY_CONTROLLER:
+		rqst->rp_data_dir = SOP_READ_FLAG;
+		cdb[0] = BMIC_READ;
+		cdb[6] = (uint8_t)cmd;
+		cdb[7] = (uint8_t)(len >> 8);
+		cdb[8] = (uint8_t)len;
+		break;
 
-		case BMIC_IDENTIFY_PHYSICAL_DEVICE:
-		case BMIC_IDENTIFY_CONTROLLER:
-			rqst->rp_data_dir = SOP_READ_FLAG;
-			cdb[0] = BMIC_READ;
-			cdb[6] = (uint8_t)cmd;
-			cdb[7] = (uint8_t)(len >> 8);
-			cdb[8] = (uint8_t)len;
-			break;
+	case BMIC_WRITE_HOST_WELLNESS:
+		rqst->rp_data_dir = SOP_WRITE_FLAG;
+		cdb[0] = BMIC_WRITE;
+		cdb[6] = (uint8_t)cmd;
+		cdb[7] = (uint8_t)(len >> 8);
+		cdb[8] = (uint8_t)len;
+		break;
 
-		case BMIC_WRITE_HOST_WELLNESS:
-			rqst->rp_data_dir = SOP_WRITE_FLAG;
-			cdb[0] = BMIC_WRITE;
-			cdb[6] = (uint8_t)cmd;
-			cdb[7] = (uint8_t)(len >> 8);
-			cdb[8] = (uint8_t)len;
-			break;
+	case CISS_REPORT_LOG:
+	case CISS_REPORT_PHYS:
+		rqst->rp_data_dir = SOP_READ_FLAG;
+		cdb[0] = (uint8_t)cmd;
+		if (cmd == CISS_REPORT_PHYS)
+			cdb[1] = CISS_REPORT_PHYS_EXTENDED;
+		else
+			cdb[1] = CISS_REPORT_LOG_EXTENDED;
+		cdb[6] = (uint8_t)(len >> 24);
+		cdb[7] = (uint8_t)(len >> 16);
+		cdb[8] = (uint8_t)(len >> 8);
+		cdb[9] = (uint8_t)len;
+		break;
 
-		case CISS_REPORT_LOG:
-		case CISS_REPORT_PHYS:
-			rqst->rp_data_dir = SOP_READ_FLAG;
-			cdb[0] = (uint8_t)cmd;
-			if (cmd == CISS_REPORT_PHYS)
-				cdb[1] = CISS_REPORT_PHYS_EXTENDED;
-			else
-				cdb[1] = CISS_REPORT_LOG_EXTENDED;
-			cdb[6] = (uint8_t)(len >> 24);
-			cdb[7] = (uint8_t)(len >> 16);
-			cdb[8] = (uint8_t)(len >> 8);
-			cdb[9] = (uint8_t)len;
-			break;
-
-		default:
-			ASSERT(0);
-			break;
+	default:
+		ASSERT(0);
+		break;
 	}
 
 	return (B_TRUE);
@@ -1517,10 +1517,10 @@ static boolean_t
 report_luns_by_cmd(pqi_state_t s, int cmd, void **buf)
 {
 	void		*data		= NULL;
-	size_t		data_len	= 0,
-			new_data_len;
-	uint32_t	new_list_len	= 0,
-			list_len	= 0;
+	size_t		data_len	= 0;
+	size_t		new_data_len;
+	uint32_t	new_list_len	= 0;
+	uint32_t	list_len	= 0;
 	boolean_t	rval		= B_FALSE;
 
 	new_data_len = sizeof (report_lun_header_t);
@@ -1565,10 +1565,10 @@ static boolean_t
 get_device_list(pqi_state_t s, report_phys_lun_extended_t **pl,
     report_log_lun_extended_t **ll)
 {
-	report_log_lun_extended_t	*log_data,
-					*internal_log;
-	size_t				list_len,
-					data_len;
+	report_log_lun_extended_t	*log_data;
+	report_log_lun_extended_t	*internal_log;
+	size_t				list_len;
+	size_t				data_len;
 	report_lun_header_t		header;
 
 	if (report_phys_luns(s, (void **)pl) == B_FALSE)
@@ -1624,7 +1624,7 @@ get_device_info(pqi_state_t s, pqi_device_t dev)
 	(void) memcpy(dev->pd_vendor, inq->inq_vid, sizeof (dev->pd_vendor));
 	(void) memcpy(dev->pd_model, inq->inq_pid, sizeof (dev->pd_model));
 
-	// TODO Handle logical devices
+	/* TODO Handle logical devices */
 	rval = B_TRUE;
 out:
 	PQI_FREE(inq, sizeof (*inq));
@@ -1637,16 +1637,17 @@ is_supported_dev(pqi_device_t dev)
 	boolean_t	rval = B_FALSE;
 
 	switch (dev->pd_devtype) {
-		case DTYPE_DIRECT:
-		case TYPE_ZBC:
-		case DTYPE_SEQUENTIAL:
+	case DTYPE_DIRECT:
+	case TYPE_ZBC:
+	case DTYPE_SEQUENTIAL:
+		rval = B_TRUE;
+		break;
+	case DTYPE_ESI:
+	case DTYPE_ARRAY_CTRL:
+		if (strncmp(dev->pd_scsi3addr, RAID_CTLR_LUNID,
+		    sizeof (dev->pd_scsi3addr)) == 0)
 			rval = B_TRUE;
-			break;
-		case DTYPE_ESI:
-		case DTYPE_ARRAY_CTRL:
-			if (strncmp(dev->pd_scsi3addr, RAID_CTLR_LUNID,
-				    sizeof (dev->pd_scsi3addr)) == 0)
-				rval = B_TRUE;
+		break;
 	}
 	return (rval);
 }
@@ -1690,31 +1691,31 @@ create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 		goto out;
 
 	switch (dev->pd_devtype) {
-		case DTYPE_ESI:
-			dev->pd_sas_address = ntohll(dev->pd_wwid);
-			break;
+	case DTYPE_ESI:
+		dev->pd_sas_address = ntohll(dev->pd_wwid);
+		break;
 
-		case DTYPE_DIRECT:
-		case TYPE_ZBC:
-			id_phys = PQI_ZALLOC(sizeof (*id_phys), KM_SLEEP);
-			if ((e->device_flags &
-			    REPORT_PHYS_LUN_DEV_FLAG_AIO_ENABLED) &&
-			    e->aio_handle) {
+	case DTYPE_DIRECT:
+	case TYPE_ZBC:
+		id_phys = PQI_ZALLOC(sizeof (*id_phys), KM_SLEEP);
+		if ((e->device_flags &
+		    REPORT_PHYS_LUN_DEV_FLAG_AIO_ENABLED) &&
+		    e->aio_handle) {
 
-				/*
-				 * XXX Until I figure out what's wrong with
-				 * using AIO I'll disable this for now.
-				 */
-				dev->pd_aio_enabled = 0;
-				dev->pd_aio_handle = e->aio_handle;
-				if (identify_physical_device(s, dev,
-				    id_phys) == B_FALSE)
-					goto out;
-			}
-			dev->pd_sas_address = ntohll(dev->pd_wwid);
-			get_phys_disk_info(s, dev, id_phys);
-			PQI_FREE(id_phys, sizeof (*id_phys));
-			break;
+			/*
+			 * XXX Until I figure out what's wrong with
+			 * using AIO I'll disable this for now.
+			 */
+			dev->pd_aio_enabled = 0;
+			dev->pd_aio_handle = e->aio_handle;
+			if (identify_physical_device(s, dev,
+			    id_phys) == B_FALSE)
+				goto out;
+		}
+		dev->pd_sas_address = ntohll(dev->pd_wwid);
+		get_phys_disk_info(s, dev, id_phys);
+		PQI_FREE(id_phys, sizeof (*id_phys));
+		break;
 	}
 
 	return (dev);
@@ -1811,7 +1812,7 @@ update_time(void *v)
 	bmic_host_wellness_time_t	*ht;
 	struct timeval			curtime;
 	todinfo_t			tod;
-	
+
 	ht = PQI_ZALLOC(sizeof (*ht), KM_SLEEP);
 	ht->start_tag[0] = '<';
 	ht->start_tag[1] = 'H';
@@ -1820,12 +1821,12 @@ update_time(void *v)
 	ht->time_tag[0] = 'T';
 	ht->time_tag[1] = 'D';
 	ht->time_length = sizeof (ht->time);
-	
+
 	uniqtime(&curtime);
 	mutex_enter(&tod_lock);
 	tod = utc_to_tod(curtime.tv_sec);
 	mutex_exit(&tod_lock);
-	
+
 	ht->time[0] = BIN2BCD(tod.tod_hour);		/* Hour */
 	ht->time[1] = BIN2BCD(tod.tod_min);		/* Minute */
 	ht->time[2] = BIN2BCD(tod.tod_sec);		/* Second */
@@ -1833,14 +1834,15 @@ update_time(void *v)
 	ht->time[4] = BIN2BCD(tod.tod_month);		/* Month */
 	ht->time[5] = BIN2BCD(tod.tod_day);		/* Day */
 	ht->time[6] = BIN2BCD(20);			/* Century */
-	ht->time[7] = BIN2BCD(tod.tod_year - 70);	/* Year within century */
-	
+	ht->time[7] = BIN2BCD(tod.tod_year - 70);	/* Year w/in century */
+
 	ht->dont_write_tag[0] = 'D';
 	ht->dont_write_tag[1] = 'W';
 	ht->end_tag[0] = 'Z';
 	ht->end_tag[1] = 'Z';
-	
+
 	(void) write_host_wellness(s, ht, sizeof (*ht));
 	PQI_FREE(ht, sizeof (*ht));
-	s->s_time_of_day = timeout(update_time, s, DAY * drv_usectohz(MICROSEC));
+	s->s_time_of_day = timeout(update_time, s,
+	    DAY * drv_usectohz(MICROSEC));
 }

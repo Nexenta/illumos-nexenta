@@ -14,7 +14,7 @@
  */
 
 #ifndef _SMARTPQI_H
-#define _SMARTPQI_H
+#define	_SMARTPQI_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -45,11 +45,7 @@ extern "C" {
 /* ---- Hint for ddi_soft_state_init() on amount of structs to alloc ---- */
 #define	SMARTPQI_INITIAL_SOFT_SPACE	1
 
-#ifdef DEBUG
-#define	SMARTQPI_MOD_STRING	"smartpqi " __DATE__ "--" __TIME__
-#else
-#define	SMARTQPI_MOD_STRING	"smartpqi 1.0"
-#endif
+#define	SMARTPQI_MOD_STRING	"smartpqi 20180525"
 
 /* ---- Handy constants ---- */
 #define	UNDEFINED				-1
@@ -58,7 +54,7 @@ extern "C" {
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
 
-#define PQI_MIN_MSIX_VECTORS			1
+#define	PQI_MIN_MSIX_VECTORS			1
 #define	PQI_MAX_MSIX_VECTORS			16
 #define	PQI_DEFAULT_QUEUE_GROUP			0
 #define	PQI_MAX_QUEUE_GROUPS			PQI_MAX_MSIX_VECTORS
@@ -66,48 +62,48 @@ extern "C" {
 
 /* ---- macros to return various addresses ---- */
 #define	ADDR2TRAN(ap)	((ap)->a_hba_tran)
-#define TRAN2PQI(hba)	((pqi_state_t)(hba)->tran_hba_private)
+#define	TRAN2PQI(hba)	((pqi_state_t)(hba)->tran_hba_private)
 #define	ADDR2PQI(ap)	(TRAN2PQI(ADDR2TRAN(ap)))
 #define	PKT2CMD(pkt)	((pqi_cmd_t)(pkt)->pkt_ha_private)
 #define	CMD2PKT(cmd)	((struct scsi_pkt *)(cmd)->pc_pkt)
 
 /* ---- PQI configuration ---- */
 #define	PQI_MAX_OUTSTANDING_REQUESTS		32
-#define PQI_ERROR_BUFFER_ELEMENT_LENGTH sizeof(struct pqi_raid_error_info)
-#define PQI_CREATE_ADMIN_QUEUE_PAIR     	1
-#define PQI_DELETE_ADMIN_QUEUE_PAIR     	2
-#define PQI_MAX_TRANSFER_SIZE			(4 * 1024U * 1024U)
+#define	PQI_ERROR_BUFFER_ELEMENT_LENGTH sizeof (struct pqi_raid_error_info)
+#define	PQI_CREATE_ADMIN_QUEUE_PAIR		1
+#define	PQI_DELETE_ADMIN_QUEUE_PAIR		2
+#define	PQI_MAX_TRANSFER_SIZE			(4 * 1024U * 1024U)
 #define	PQI_MAX_RESET_XFER_SIZE			(512 * 1024)
 #define	PQI_NUM_SUPPORTED_EVENTS		7
-#define PQI_RESERVED_IO_SLOTS_LUN_RESET		1
-#define PQI_RESERVED_IO_SLOTS_EVENT_ACK	PQI_NUM_SUPPORTED_EVENTS
-#define PQI_RESERVED_IO_SLOTS_SYNCHRONOUS_REQUESTS	3
-#define PQI_RESERVED_IO_SLOTS                           \
-    (PQI_RESERVED_IO_SLOTS_LUN_RESET + PQI_RESERVED_IO_SLOTS_EVENT_ACK + \
-    PQI_RESERVED_IO_SLOTS_SYNCHRONOUS_REQUESTS)
+#define	PQI_RESERVED_IO_SLOTS_LUN_RESET		1
+#define	PQI_RESERVED_IO_SLOTS_EVENT_ACK	PQI_NUM_SUPPORTED_EVENTS
+#define	PQI_RESERVED_IO_SLOTS_SYNCHRONOUS_REQUESTS	3
+#define	PQI_RESERVED_IO_SLOTS \
+	(PQI_RESERVED_IO_SLOTS_LUN_RESET + PQI_RESERVED_IO_SLOTS_EVENT_ACK + \
+	PQI_RESERVED_IO_SLOTS_SYNCHRONOUS_REQUESTS)
 
 /* ---- SIS constants ---- */
 #define	SIS_BASE_STRUCT_ALIGNMENT		16
 
 /* ---- Once every 10 seconds ---- */
-#define WATCHDOG (10 * MICROSEC)
+#define	WATCHDOG (10 * MICROSEC)
 
 /* ---- Update HBA time of day clock once a day ---- */
 #define	MINUTE		60
-#define HOUR		(60 * MINUTE)
-#define DAY		(24 * HOUR)
+#define	HOUR		(60 * MINUTE)
+#define	DAY		(24 * HOUR)
 
 #define	HBA_IS_QUIESCED(s)	(((s)->s_flags & PQI_HBA_QUIESCED) != 0)
 #define	HBA_QUIESCED_PENDING(s)	\
 	(((s)->s_flags & PQI_HBA_QUIESCED_PENDING) != 0 && \
 	((s)->s_cmd_queue_len == 0))
-#define PQIALIGN_TYPED(addr, align, type) \
-       (type)(((uintptr_t)(addr) + align - 1) & ~(align - 1))
+#define	PQIALIGN_TYPED(addr, align, type) \
+	(type)(((uintptr_t)(addr) + align - 1) & ~(align - 1))
 
 /* ---- Handy macros to get/set device registers ---- */
-#define G8(state, __reg__) \
+#define	G8(state, __reg__) \
     ddi_get8(state->s_datap, &state->s_reg->__reg__)
-#define G16(state, __reg__) \
+#define	G16(state, __reg__) \
     ddi_get16(state->s_datap, &state->s_reg->__reg__)
 #define	G32(state, __reg__) \
     ddi_get32(state->s_datap, &state->s_reg->__reg__)
@@ -115,9 +111,9 @@ extern "C" {
     ddi_put8(state->s_datap, &state->s_reg->__reg__, val)
 #define	S32(state, __reg__, val) \
     ddi_put32(state->s_datap, &state->s_reg->__reg__, val)
-#define S64(state, __reg__, val) \
+#define	S64(state, __reg__, val) \
     ddi_put64(state->s_datap, &state->s_reg->__reg__, val)
-#define G64(state, __reg__) \
+#define	G64(state, __reg__) \
     ddi_get64(state->s_datap, &state->s_reg->__reg__)
 
 typedef enum pqi_io_path {
@@ -165,12 +161,12 @@ typedef struct pqi_event_queue {
 } pqi_event_queue_t;
 
 typedef struct pqi_queue_group {
-	struct pqi_state	*qg_softc;      /* backpointer */
+	struct pqi_state	*qg_softc;	/* backpointer */
 	uint16_t		iq_id[2];
 	uint16_t		oq_id;
 	uint16_t		int_msg_num;
 	caddr_t			iq_element_array[2];
-	caddr_t 		oq_element_array;
+	caddr_t			oq_element_array;
 	uint64_t		iq_element_array_bus_addr[2];
 	uint64_t		oq_element_array_bus_addr;
 	pqi_index_t		iq_pi_copy[2];
@@ -182,7 +178,7 @@ typedef struct pqi_queue_group {
 	/* ---- In s_queue_dma space ---- */
 	pqi_index_t		*iq_ci[2];
 	pqi_index_t		*oq_pi;
-	
+
 	uint64_t		iq_ci_bus_addr[2];
 	uint64_t		oq_pi_bus_addr;
 
@@ -221,14 +217,14 @@ typedef struct pqi_event {
 #define	PQI_HBA_DRIVER_SHUTDOWN			0x0001
 #define	PQI_HBA_QUIESCED			0x0002
 #define	PQI_HBA_QUIESCED_PENDING		0x0004
-#define PQI_HBA_AUTO_REQUEST_SENSE		0x0008
+#define	PQI_HBA_AUTO_REQUEST_SENSE		0x0008
 #define	PQI_HBA_LUN_RESET_CAP			0x0010
 
 /* ---- Debug flags, example debug=0x10; in .conf file ---- */
-#define DBG_LVL_CDB				0x0001
-#define DBG_LVL_RQST				0x0002
-#define DBG_LVL_STATE				0x0004
-#define DBG_LVL_RAW_RQST			0x0008
+#define	DBG_LVL_CDB				0x0001
+#define	DBG_LVL_RQST				0x0002
+#define	DBG_LVL_STATE				0x0004
+#define	DBG_LVL_RAW_RQST			0x0008
 
 typedef struct pqi_state {
 	int			s_instance;
@@ -246,19 +242,19 @@ typedef struct pqi_state {
 	ddi_taskq_t		*s_taskq;
 	int			s_next_lun;
 	timeout_id_t		s_time_of_day;
-	
+
 	/* ---- Debug related state ---- */
 	int			s_debug_level;
 	list_t			s_mem_check;
 	kmutex_t		s_mem_mutex;
 	timeout_id_t		s_mem_timeo;
-	
+
 	/* ---- State for watchdog ---- */
 	timeout_id_t		s_watchdog;
 	uint32_t		s_last_intr_count;
 	uint32_t		s_last_heartbeat_count;
 	uint32_t		s_intr_count;
-	
+
 	/* ---- Interrupt related fields ---- */
 	int			s_intr_type;	/* Type of interrupt used */
 	int			s_intr_cnt;	/* # of interrupts */
@@ -266,18 +262,18 @@ typedef struct pqi_state {
 	int			s_intr_cap;	/* Interrupt capabilities */
 	int			s_intr_size;	/* Size of s_htable */
 	ddi_intr_handle_t	*s_itable;	/* Interrupt table */
-	
+
 	scsi_hba_tran_t		*s_tran;
 	ddi_dma_attr_t		s_msg_dma_attr;	/* Used for message frames */
-	
+
 	/* ---- list of reset notification requests ---- */
 	struct scsi_reset_notify_entry	*s_reset_notify_listf;
-	
+
 	pqi_ctrl_regs_t		*s_reg;
 	ddi_device_acc_attr_t	s_reg_acc_attr;
 	/* ---- operating regs data access handle ---- */
 	ddi_acc_handle_t	s_datap;
-	
+
 	list_t			s_devnodes;
 	volatile uint32_t	s_cmd_queue_len;
 
@@ -287,7 +283,7 @@ typedef struct pqi_state {
 	uint32_t		s_max_outstanding_requests;
 	uint32_t		s_config_table_offset;
 	uint32_t		s_config_table_len;
-	
+
 	/* ---- PQI capabilities from controller ---- */
 	uint32_t		*s_heartbeat_counter;
 	uint16_t		s_max_inbound_queues;
@@ -301,7 +297,7 @@ typedef struct pqi_state {
 				s_outbound_spanning_supported:1,
 				s_pqi_mode_enabled : 1;
 	char			s_firmware_version[11];
-	
+
 	/* ---- Computed values from config ---- */
 	uint32_t		s_max_sg_per_iu;
 	uint32_t		s_num_elements_per_iq;
@@ -341,11 +337,11 @@ typedef struct pqi_state {
 #else
 #define	MEM_CHECK_ON_DMA	0
 #define	MEM_CHECK_SIG		0xdeadcafe
-#define PQI_ALLOC(len, flag) kmem_alloc(len, flag)
+#define	PQI_ALLOC(len, flag) kmem_alloc(len, flag)
 #define	PQI_ZALLOC(len, flag) kmem_zalloc(len, flag)
 #define	PQI_FREE(v, len) kmem_free(v, len)
 #endif
-	
+
 typedef struct mem_check {
 	list_node_t		m_node;
 	uint32_t		m_sig;
@@ -373,7 +369,7 @@ typedef struct pqi_device {
 	uint64_t		pd_sas_address;
 	uint8_t			pd_volume_id[16];
 	char			pd_vendor[8];	/* From INQUIRY */
-	char			pd_model[16];	/*     ""       */
+	char			pd_model[16];	/* From INQUIRY */
 } *pqi_device_t;
 
 /* ---- Flags used in pqi_cmd_t ---- */
@@ -382,11 +378,11 @@ typedef struct pqi_device {
 #define	PQI_FLAG_RESET		0x0004
 #define	PQI_FLAG_IO_IOPB	0x0040
 #define	PQI_FLAG_DMA_VALID	0x0100
-#define PQI_FLAG_CDB_EXT	0x0200
-#define PQI_FLAG_SCB_EXT	0x0400
-#define PQI_FLAG_PRIV_EXT	0x0800
+#define	PQI_FLAG_CDB_EXT	0x0200
+#define	PQI_FLAG_SCB_EXT	0x0400
+#define	PQI_FLAG_PRIV_EXT	0x0800
 #define	PQI_FLAG_IO_READ	0x1000
-#define PQI_FLAG_IO_BOUNCE	0x2000
+#define	PQI_FLAG_IO_BOUNCE	0x2000
 
 typedef enum pqi_cmd_state {
 	PQI_CMD_UNINIT		= 0,
@@ -399,7 +395,7 @@ typedef enum pqi_cmd_state {
 	PQI_CMD_DESTRUCT
 } pqi_cmd_state_t;
 
-#define PQI_FLAGS_PERSISTENT	\
+#define	PQI_FLAGS_PERSISTENT	\
 	(PQI_FLAG_DMA_VALID	|\
 	PQI_FLAG_IO_IOPB)
 
@@ -419,7 +415,7 @@ typedef struct pqi_cmd {
 	ksema_t			*pc_poll;
 	uint8_t			pc_cdb[SCSI_CDB_SIZE];
 	struct scsi_arq_status	pc_cmd_scb;
-	
+
 	uint64_t		pc_tgt_priv[2];
 	int			pc_dma_count;	/* bytes to transfer */
 	int			pc_flags;
@@ -427,16 +423,16 @@ typedef struct pqi_cmd {
 	int			pc_statuslen;
 	int			pc_cmd_rqslen;
 	int			pc_cmdlen;
-	
+
 	/* ---- For partial DMA transfers ---- */
 	uint_t			pc_nwin;
 	uint_t			pc_winidx;
 	off_t			pc_dma_offset;
 	size_t			pc_dma_len;
-	
+
 	/* ---- Valid after call to pqi_transport_command ---- */
 	pqi_io_request_t	*pc_io_rqst;
-	
+
 	ddi_dma_handle_t	pc_dmahdl;
 	ddi_dma_cookie_t	pc_dmac;
 	uint_t			pc_dmaccount;	/* cookie count */
@@ -445,33 +441,33 @@ typedef struct pqi_cmd {
 } *pqi_cmd_t;
 
 /* ---- configuration table section IDs ---- */
-#define PQI_CONFIG_TABLE_SECTION_GENERAL_INFO           0
-#define PQI_CONFIG_TABLE_SECTION_FIRMWARE_FEATURES      1
-#define PQI_CONFIG_TABLE_SECTION_FIRMWARE_ERRATA        2
-#define PQI_CONFIG_TABLE_SECTION_DEBUG                  3
-#define PQI_CONFIG_TABLE_SECTION_HEARTBEAT              4
+#define	PQI_CONFIG_TABLE_SECTION_GENERAL_INFO		0
+#define	PQI_CONFIG_TABLE_SECTION_FIRMWARE_FEATURES	1
+#define	PQI_CONFIG_TABLE_SECTION_FIRMWARE_ERRATA	2
+#define	PQI_CONFIG_TABLE_SECTION_DEBUG			3
+#define	PQI_CONFIG_TABLE_SECTION_HEARTBEAT		4
 
 /* ---- manifest constants for the flags field of pqi_sg_descriptor ---- */
-#define CISS_SG_NORMAL				0x00000000
-#define CISS_SG_LAST				0x40000000
-#define CISS_SG_CHAIN				0x80000000
+#define	CISS_SG_NORMAL				0x00000000
+#define	CISS_SG_LAST				0x40000000
+#define	CISS_SG_CHAIN				0x80000000
 
 /*
  * According to the PQI spec, the IU header is only the first 4 bytes of our
  * pqi_iu_header structure.
  */
-#define PQI_REQUEST_HEADER_LENGTH       		4
-#define PQI_REQUEST_IU_TASK_MANAGEMENT			0x13
-#define PQI_REQUEST_IU_RAID_PATH_IO			0x14
-#define PQI_REQUEST_IU_AIO_PATH_IO			0x15
-#define PQI_REQUEST_IU_GENERAL_ADMIN			0x60
-#define PQI_REQUEST_IU_REPORT_VENDOR_EVENT_CONFIG	0x72
-#define PQI_REQUEST_IU_SET_VENDOR_EVENT_CONFIG		0x73
-#define PQI_REQUEST_IU_ACKNOWLEDGE_VENDOR_EVENT 	0xf6
+#define	PQI_REQUEST_HEADER_LENGTH			4
+#define	PQI_REQUEST_IU_TASK_MANAGEMENT			0x13
+#define	PQI_REQUEST_IU_RAID_PATH_IO			0x14
+#define	PQI_REQUEST_IU_AIO_PATH_IO			0x15
+#define	PQI_REQUEST_IU_GENERAL_ADMIN			0x60
+#define	PQI_REQUEST_IU_REPORT_VENDOR_EVENT_CONFIG	0x72
+#define	PQI_REQUEST_IU_SET_VENDOR_EVENT_CONFIG		0x73
+#define	PQI_REQUEST_IU_ACKNOWLEDGE_VENDOR_EVENT		0xf6
 
-#define MASKED_DEVICE(lunid)                    ((lunid)[6] & 0xc0)
+#define	MASKED_DEVICE(lunid)				((lunid)[6] & 0xc0)
 
-#define MEMP(args...) (void) snprintf(m.mem + strlen(m.mem), \
+#define	MEMP(args...) (void) snprintf(m.mem + strlen(m.mem), \
 	m.len - strlen(m.mem), args)
 
 typedef struct mem_len_pair {
@@ -480,14 +476,14 @@ typedef struct mem_len_pair {
 } mem_len_pair_t;
 
 /* ---- Defines for PQI mode ---- */
-#define IRQ_MODE_NONE			0x00
-#define VPD_PAGE			(1 << 8)
+#define	IRQ_MODE_NONE			0x00
+#define	VPD_PAGE			(1 << 8)
 
 /* ---- Defines for use in Legacy mode ---- */
 #define	SIS_CTRL_KERNEL_UP		0x080
 #define	SIS_CTRL_KERNEL_PANIC		0x100
 #define	SIS_MODE			0x0
-#define PQI_MODE			0x1
+#define	PQI_MODE			0x1
 
 /* ---- smartpqi_main.c ---- */
 void *pqi_state;

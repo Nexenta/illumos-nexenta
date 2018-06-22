@@ -84,12 +84,12 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
     pqi_io_request_t *io)
 {
 	pqi_iu_header_t	*rqst;
-	size_t		iu_len,
-			copy_to_end;
-	pqi_index_t	iq_pi,
-			iq_ci;
-	uint32_t	elem_needed,
-			elem_to_end;
+	size_t		iu_len;
+	size_t		copy_to_end;
+	pqi_index_t	iq_pi;
+	pqi_index_t	iq_ci;
+	uint32_t	elem_needed;
+	uint32_t	elem_to_end;
 	caddr_t		next_elem;
 	int		sending		= 0;
 
@@ -267,8 +267,8 @@ send_event_ack(pqi_state_t s, pqi_event_acknowledge_request_t *rqst)
 {
 	pqi_queue_group_t	*qg;
 	caddr_t			next_element;
-	pqi_index_t		iq_ci,
-	iq_pi;
+	pqi_index_t		iq_ci;
+	pqi_index_t		iq_pi;
 
 	qg = &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP];
 	rqst->header.iu_id = qg->oq_id;
@@ -501,11 +501,11 @@ static void
 build_aio_sg_list(pqi_state_t s, pqi_aio_path_request_t *rqst,
     pqi_cmd_t cmd, pqi_io_request_t *io)
 {
-	int			i,
-				max_sg_per_iu;
+	int			i;
+	int			max_sg_per_iu;
 	uint16_t		iu_length;
-	uint8_t			chained,
-				num_sg_in_iu	= 0;
+	uint8_t			chained;
+	uint8_t			num_sg_in_iu	= 0;
 	ddi_dma_cookie_t	*cookies;
 	pqi_sg_entry_t		*sg;
 
@@ -557,9 +557,9 @@ static void
 build_raid_sg_list(pqi_state_t s, pqi_raid_path_request_t *rqst,
     pqi_cmd_t cmd, pqi_io_request_t *io)
 {
-	int			i		= 0,
-				max_sg_per_iu,
-				num_sg_in_iu	= 0;
+	int			i		= 0;
+	int			max_sg_per_iu;
+	int			num_sg_in_iu	= 0;
 	uint16_t		iu_length;
 	uint8_t			chained		= 0;
 	ddi_dma_cookie_t	*cookies;

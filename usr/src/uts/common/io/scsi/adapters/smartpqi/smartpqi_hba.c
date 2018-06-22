@@ -258,14 +258,14 @@ pqi_scsi_getcap(struct scsi_address *ap, char *cap, int tgtonly)
 	if (cap == NULL)
 		return (-1);
 	switch (scsi_hba_lookup_capstr(cap)) {
-		case SCSI_CAP_LUN_RESET:
-			return ((s->s_flags & PQI_HBA_LUN_RESET_CAP) != 0);
-		case SCSI_CAP_ARQ:
-			return ((s->s_flags & PQI_HBA_AUTO_REQUEST_SENSE) != 0);
-		case SCSI_CAP_UNTAGGED_QING:
-			return (1);
-		default:
-			return (-1);
+	case SCSI_CAP_LUN_RESET:
+		return ((s->s_flags & PQI_HBA_LUN_RESET_CAP) != 0);
+	case SCSI_CAP_ARQ:
+		return ((s->s_flags & PQI_HBA_AUTO_REQUEST_SENSE) != 0);
+	case SCSI_CAP_UNTAGGED_QING:
+		return (1);
+	default:
+		return (-1);
 	}
 }
 
@@ -283,23 +283,23 @@ pqi_scsi_setcap(struct scsi_address *ap, char *cap, int value, int tgtonly)
 		return (-1);
 
 	switch (scsi_hba_lookup_capstr(cap)) {
-		case SCSI_CAP_ARQ:
-			if (value)
-				s->s_flags |= PQI_HBA_AUTO_REQUEST_SENSE;
-			else
-				s->s_flags &= ~PQI_HBA_AUTO_REQUEST_SENSE;
-			rval = 1;
-			break;
+	case SCSI_CAP_ARQ:
+		if (value)
+			s->s_flags |= PQI_HBA_AUTO_REQUEST_SENSE;
+		else
+			s->s_flags &= ~PQI_HBA_AUTO_REQUEST_SENSE;
+		rval = 1;
+		break;
 
-		case SCSI_CAP_LUN_RESET:
-			if (value)
-				s->s_flags |= PQI_HBA_LUN_RESET_CAP;
-			else
-				s->s_flags &= ~PQI_HBA_LUN_RESET_CAP;
-			break;
+	case SCSI_CAP_LUN_RESET:
+		if (value)
+			s->s_flags |= PQI_HBA_LUN_RESET_CAP;
+		else
+			s->s_flags &= ~PQI_HBA_LUN_RESET_CAP;
+		break;
 
-		default:
-			break;
+	default:
+		break;
 	}
 
 	return (rval);
@@ -357,8 +357,8 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 	pqi_state_t	s;
 	int		kf = (callback == SLEEP_FUNC) ? KM_SLEEP : KM_NOSLEEP;
 	boolean_t	is_new = B_FALSE;
-	int		rc,
-			i;
+	int		rc;
+	int		i;
 	pqi_device_t	devp;
 
 	s = ap->a_hba_tran->tran_hba_private;
@@ -455,17 +455,17 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 			    &cmd->pc_dmac, &cmd->pc_dmaccount);
 		} else if (rc != 0 && rc != DDI_DMA_MAPPED) {
 			switch (rc) {
-				case DDI_DMA_NORESOURCES:
-					bioerror(bp, 0);
-					break;
-				case DDI_DMA_BADATTR:
-				case DDI_DMA_NOMAPPING:
-					bioerror(bp, EFAULT);
-					break;
-				case DDI_DMA_TOOBIG:
-				default:
-					bioerror(bp, EINVAL);
-					break;
+			case DDI_DMA_NORESOURCES:
+				bioerror(bp, 0);
+				break;
+			case DDI_DMA_BADATTR:
+			case DDI_DMA_NOMAPPING:
+				bioerror(bp, EFAULT);
+				break;
+			case DDI_DMA_TOOBIG:
+			default:
+				bioerror(bp, EINVAL);
+				break;
 			}
 			goto out;
 		}
@@ -477,7 +477,7 @@ handle_dma_cookies:
 		    sizeof (ddi_dma_cookie_t))) {
 			dev_err(s->s_dip, CE_WARN,
 			    "invalid cookie count: %d", cmd->pc_dmaccount);
-			    goto out;
+			goto out;
 		}
 		if (cmd->pc_dmaccount >
 		    (s->s_sg_chain_buf_length / sizeof (pqi_sg_entry_t))) {
@@ -633,8 +633,8 @@ pqi_bus_config(dev_info_t *pdip, uint_t flag,
 {
 	scsi_hba_tran_t	*tran;
 	pqi_state_t	s;
-	int		circ,
-			ret = NDI_FAILURE;
+	int		circ;
+	int		ret = NDI_FAILURE;
 	long		target;
 	char		*p;
 	pqi_device_t	d;
@@ -646,22 +646,21 @@ pqi_bus_config(dev_info_t *pdip, uint_t flag,
 
 	ndi_devi_enter(pdip, &circ);
 	switch (op) {
-		case BUS_CONFIG_ONE:
-			if ((p = strrchr((char *)arg, '@')) != NULL &&
-			    ddi_strtol(p + 1, NULL, 16, &target) == 0) {
-				d = pqi_find_target_dev(s, target);
-				if (d != NULL) {
-					ret = config_one(pdip, s, d, childp);
-				}
-			}
-			break;
+	case BUS_CONFIG_ONE:
+		if ((p = strrchr((char *)arg, '@')) != NULL &&
+		    ddi_strtol(p + 1, NULL, 16, &target) == 0) {
+			d = pqi_find_target_dev(s, target);
+			if (d != NULL)
+				ret = config_one(pdip, s, d, childp);
+		}
+		break;
 
-		case BUS_CONFIG_DRIVER:
-		case BUS_CONFIG_ALL:
-			ret = pqi_config_all(pdip, s);
-			break;
-		default:
-			ret = NDI_FAILURE;
+	case BUS_CONFIG_DRIVER:
+	case BUS_CONFIG_ALL:
+		ret = pqi_config_all(pdip, s);
+		break;
+	default:
+		ret = NDI_FAILURE;
 	}
 	if (ret == NDI_SUCCESS)
 		ret = ndi_busop_bus_config(pdip, flag, op, arg, childp, 0);
@@ -734,8 +733,8 @@ static int
 config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
     dev_info_t **childp)
 {
-	char			**compatible	= NULL,
-				*nodename	= NULL;
+	char			**compatible	= NULL;
+	char			*nodename	= NULL;
 	dev_info_t		*dip;
 	int			ncompatible	= 0;
 	struct scsi_inquiry	inq;
@@ -788,17 +787,16 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 	d->pd_pdip = dip;
 	d->pd_parent = pdip;
 
-	if (ndi_prop_update_string(DDI_DEV_T_NONE, dip, "device-tpye",
-		"scsi") != DDI_PROP_SUCCESS ||
+	if (ndi_prop_update_string(DDI_DEV_T_NONE, dip, "device-type",
+	    "scsi") != DDI_PROP_SUCCESS ||
 	    ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-		"target", d->pd_target) != DDI_PROP_SUCCESS ||
+	    "target", d->pd_target) != DDI_PROP_SUCCESS ||
 	    ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-		"lun", 0) != DDI_PROP_SUCCESS ||
+	    "lun", 0) != DDI_PROP_SUCCESS ||
 	    ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-		"pm_capable", 1) != DDI_PROP_SUCCESS ||
+	    "pm_capable", 1) != DDI_PROP_SUCCESS ||
 	    ndi_prop_update_string_array(DDI_DEV_T_NONE, dip,
-		"compatible", compatible, ncompatible) != DDI_PROP_SUCCESS) {
-
+	    "compatible", compatible, ncompatible) != DDI_PROP_SUCCESS) {
 		dev_err(s->s_dip, CE_WARN,
 		    "failed to update props for target %d", d->pd_target);
 		goto free_devi;

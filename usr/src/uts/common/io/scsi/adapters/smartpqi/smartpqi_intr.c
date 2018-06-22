@@ -37,7 +37,8 @@ smartpqi_register_intrs(pqi_state_t s)
 	/* ---- Get supported interrupt types ---- */
 	if (ddi_intr_get_supported_types(s->s_dip, &intr_types) !=
 	    DDI_SUCCESS) {
-		dev_err(s->s_dip, CE_NOTE, "failed to get supported intr types");
+		dev_err(s->s_dip, CE_NOTE,
+		    "failed to get supported intr types");
 		return (FALSE);
 	}
 
@@ -102,14 +103,11 @@ static int
 add_intrs(pqi_state_t s, int type)
 {
 	dev_info_t	*dip	= s->s_dip;
-	int		avail,
-			actual,
-			count	= 0,
-			instance,
-			i,
-			ret;
-
-	instance = ddi_get_instance(dip);
+	int		avail;
+	int		actual;
+	int		count	= 0;
+	int		i;
+	int		ret;
 
 	/* ---- Get number of interrupts ---- */
 	ret = ddi_intr_get_nintrs(dip, type, &count);
@@ -136,13 +134,14 @@ add_intrs(pqi_state_t s, int type)
 	    DDI_INTR_ALLOC_NORMAL);
 	if (ret != DDI_SUCCESS || actual == 0) {
 		dev_err(s->s_dip, CE_NOTE, "ddi_intr_alloc failed, ret=%d",
-		    instance);
+		    ret);
 		return (FALSE);
 	}
 
 	/* ---- Use count return or abort? Make note of at least---- */
 	if (actual < count) {
-		dev_err(s->s_dip, CE_NOTE, "Interrupts: request=%d, received=%d",
+		dev_err(s->s_dip, CE_NOTE,
+		    "interrupts: requested=%d, received=%d",
 		    count, actual);
 	}
 	s->s_intr_cnt = actual;
@@ -150,7 +149,7 @@ add_intrs(pqi_state_t s, int type)
 	/* ---- Get priority for first intr, assume rest are the same ---- */
 	if ((ret = ddi_intr_get_pri(s->s_itable[0], &s->s_intr_pri)) !=
 	    DDI_SUCCESS) {
-		dev_err(s->s_dip, CE_NOTE, "ddi_intr_get_pri failed %d",
+		dev_err(s->s_dip, CE_NOTE, "ddi_intr_get_pri failed, ret=%d",
 		    ret);
 		goto failure;
 	}
@@ -166,7 +165,7 @@ add_intrs(pqi_state_t s, int type)
 		if ((ret = ddi_intr_add_handler(s->s_itable[i], intr_handler,
 		    (caddr_t)s, (caddr_t)(uintptr_t)i)) != DDI_SUCCESS) {
 			dev_err(s->s_dip, CE_NOTE,
-			    "ddi_intr_add_handler failed; index %d, ret %d",
+			    "ddi_intr_add_handler failed, index=%d, ret=%d",
 			    i, ret);
 			goto failure;
 		}
@@ -174,7 +173,7 @@ add_intrs(pqi_state_t s, int type)
 
 	if ((ret = ddi_intr_get_cap(s->s_itable[0], &s->s_intr_cap))
 	    != DDI_SUCCESS) {
-		dev_err(s->s_dip, CE_NOTE, "ddi_intr_get_cap failed %d",
+		dev_err(s->s_dip, CE_NOTE, "ddi_intr_get_cap failed, ret=%d",
 		    ret);
 		goto failure;
 	}
@@ -214,19 +213,19 @@ process_raid_io_error(pqi_io_request_t *io)
 {
 	pqi_raid_error_info_t	ei;
 	pqi_cmd_t		cmd;
-	int			xfer_count = 0,
-				sense_len;
+	int			xfer_count = 0;
+	int			sense_len;
 
 	if ((ei = io->io_error_info) != NULL) {
 		switch (ei->data_out_result) {
-			case PQI_DATA_IN_OUT_GOOD:
-				break;
-			case PQI_DATA_IN_OUT_UNDERFLOW:
-				xfer_count = ei->data_out_transferred;
-				io->io_status = ei->data_out_result;
-				break;
-			default:
-				break;
+		case PQI_DATA_IN_OUT_GOOD:
+			break;
+		case PQI_DATA_IN_OUT_UNDERFLOW:
+			xfer_count = ei->data_out_transferred;
+			io->io_status = ei->data_out_result;
+			break;
+		default:
+			break;
 		}
 		cmd = io->io_cmd;
 		if (cmd != NULL) {
@@ -266,13 +265,13 @@ sync_error(pqi_state_t s, pqi_io_request_t *io, pqi_io_response_t *rsp)
 static void
 process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 {
-	pqi_index_t		oq_pi,
-				oq_ci;
+	pqi_index_t		oq_pi;
+	pqi_index_t		oq_ci;
 	pqi_io_request_t	*io;
 	pqi_io_response_t	*rsp;
 	uint16_t		rqst_id;
-	int			response_cnt = 0,
-				qnotify;
+	int			response_cnt = 0;
+	int			qnotify;
 
 	oq_ci = qg->oq_ci_copy;
 	atomic_inc_32(&s->s_intr_count);
@@ -299,29 +298,29 @@ process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 		ASSERT(io->io_refcount == 1);
 
 		switch (rsp->header.iu_type) {
-			case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS:
-			case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS:
-			case PQI_RESPONSE_IU_GENERAL_MANAGEMENT:
-				io->io_status = PQI_DATA_IN_OUT_GOOD;
-				break;
-			case PQI_RESPONSE_IU_RAID_PATH_IO_ERROR:
-				io->io_status = PQI_DATA_IN_OUT_ERROR;
-				sync_error(s, io, rsp);
-				process_raid_io_error(io);
-				break;
-			case PQI_RESPONSE_IU_AIO_PATH_IO_ERROR:
-				io->io_status = PQI_DATA_IN_OUT_ERROR;
-				sync_error(s, io, rsp);
-				process_aio_io_error(io);
-				break;
-			case PQI_RESPONSE_IU_AIO_PATH_DISABLED:
-				io->io_status = PQI_DATA_IN_OUT_PROTOCOL_ERROR;
-				disable_aio_path(io);
-				break;
+		case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS:
+		case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS:
+		case PQI_RESPONSE_IU_GENERAL_MANAGEMENT:
+			io->io_status = PQI_DATA_IN_OUT_GOOD;
+			break;
+		case PQI_RESPONSE_IU_RAID_PATH_IO_ERROR:
+			io->io_status = PQI_DATA_IN_OUT_ERROR;
+			sync_error(s, io, rsp);
+			process_raid_io_error(io);
+			break;
+		case PQI_RESPONSE_IU_AIO_PATH_IO_ERROR:
+			io->io_status = PQI_DATA_IN_OUT_ERROR;
+			sync_error(s, io, rsp);
+			process_aio_io_error(io);
+			break;
+		case PQI_RESPONSE_IU_AIO_PATH_DISABLED:
+			io->io_status = PQI_DATA_IN_OUT_PROTOCOL_ERROR;
+			disable_aio_path(io);
+			break;
 
-			default:
-				ASSERT(0);
-				break;
+		default:
+			ASSERT(0);
+			break;
 		}
 		io->io_cb(io, io->io_context);
 		response_cnt++;
@@ -347,11 +346,11 @@ process_event_intr(pqi_state_t s)
 {
 	pqi_event_queue_t	*q = &s->s_event_queue;
 	pqi_event_response_t	*rsp;
-	int			idx,
-				num_events	= 0;
+	int			idx;
+	int			num_events	= 0;
 	pqi_event_t		e;
-	pqi_index_t		oq_ci,
-				oq_pi;
+	pqi_index_t		oq_ci;
+	pqi_index_t		oq_pi;
 
 	oq_ci = q->oq_ci_copy;
 
@@ -364,7 +363,7 @@ process_event_intr(pqi_state_t s)
 
 		if (oq_pi == oq_ci)
 			break;
-		
+
 		num_events++;
 		(void) ddi_dma_sync(s->s_queue_dma->handle,
 		    (uintptr_t)q->oq_element_array +

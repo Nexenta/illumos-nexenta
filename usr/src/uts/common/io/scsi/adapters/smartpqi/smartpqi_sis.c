@@ -119,8 +119,8 @@ boolean_t
 sis_get_ctrl_props(pqi_state_t s)
 {
 	sis_sync_cmd_params_t	p;
-	uint32_t		property,
-				extended_property;
+	uint32_t		property;
+	uint32_t		extended_property;
 
 	(void) memset(&p, 0, sizeof (p));
 	if (sis_send_sync_cmd(s, SIS_CMD_GET_ADAPTER_PROPERTIES, &p) == B_FALSE)
@@ -203,9 +203,9 @@ static boolean_t
 sis_send_sync_cmd(pqi_state_t s, uint32_t cmd,
     sis_sync_cmd_params_t *params)
 {
-	uint32_t	i,
-			doorbell,
-			cmd_status;
+	uint32_t	i;
+	uint32_t	doorbell;
+	uint32_t	cmd_status;
 
 	/* Write the command to mailbox 0. */
 	S32(s, sis_mailbox[0], cmd);

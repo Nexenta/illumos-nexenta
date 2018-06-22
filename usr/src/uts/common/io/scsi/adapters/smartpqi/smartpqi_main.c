@@ -71,7 +71,7 @@ static struct dev_ops smartpqi_ops = {
 
 static struct modldrv modldrv = {
 	&mod_driverops,
-	SMARTQPI_MOD_STRING,
+	SMARTPQI_MOD_STRING,
 	&smartpqi_ops,
 };
 
@@ -161,19 +161,19 @@ static int smartpqi_getinfo(dev_info_t *dip, ddi_info_cmd_t cmd, void *arg,
 	pqi_state_t	s;
 
 	switch (cmd) {
-		case DDI_INFO_DEVT2DEVINFO:
-			if ((s = ddi_get_soft_state(pqi_state, 0)) == NULL)
-				break;
-			*result = s->s_dip;
+	case DDI_INFO_DEVT2DEVINFO:
+		if ((s = ddi_get_soft_state(pqi_state, 0)) == NULL)
 			break;
+		*result = s->s_dip;
+		break;
 
-		case DDI_INFO_DEVT2INSTANCE:
-			*result = 0;
-			rc = DDI_SUCCESS;
-			break;
+	case DDI_INFO_DEVT2INSTANCE:
+		*result = 0;
+		rc = DDI_SUCCESS;
+		break;
 
-		default:
-			break;
+	default:
+		break;
 	}
 	return (rc);
 }
@@ -225,13 +225,13 @@ smartpqi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	cv_init(&s->s_quiescedvar, NULL, CV_DRIVER, NULL);
 	cv_init(&s->s_io_condvar, NULL, CV_DRIVER, NULL);
 	sema_init(&s->s_sync_rqst, 1, NULL, SEMA_DRIVER, NULL);
-	
+
 	m = pqi_alloc_mem_len(256);
 	(void) snprintf(m.mem, m.len, "smartpqi_cache%d", instance);
 	s->s_cmd_cache = kmem_cache_create(m.mem, sizeof (struct pqi_cmd), 0,
 	    pqi_cache_constructor, pqi_cache_destructor, NULL, s, NULL, 0);
 	pqi_free_mem_len(&m);
-	
+
 	s->s_taskq = ddi_taskq_create(s->s_dip, "smartpqi_taskq", 1,
 	    TASKQ_DEFAULTPRI, 0);
 	s->s_debug_level = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
@@ -286,7 +286,7 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			(void) untimeout(s->s_watchdog);
 			s->s_watchdog = 0;
 		}
-		
+
 		if (s->s_error_dma != NULL) {
 			pqi_free_single(s, s->s_error_dma);
 			s->s_error_dma = NULL;
@@ -337,7 +337,7 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			mutex_exit(&s->s_mem_mutex);
 			mutex_destroy(&s->s_mem_mutex);
 		}
-		
+
 		if (s->s_time_of_day != 0) {
 			(void) untimeout(s->s_time_of_day);
 			s->s_time_of_day = 0;

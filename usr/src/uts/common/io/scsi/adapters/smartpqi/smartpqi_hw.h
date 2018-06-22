@@ -14,7 +14,7 @@
  */
 
 #ifndef _SMARTPQI_HW_H
-#define _SMARTPQI_HW_H
+#define	_SMARTPQI_HW_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,98 +24,98 @@ extern "C" {
 #include <sys/ccompile.h>
 
 /* ---- SOP data direction flags ---- */
-#define SOP_NO_DIRECTION_FLAG	0
-#define SOP_WRITE_FLAG		1	/* host writes data to Data-Out */
+#define	SOP_NO_DIRECTION_FLAG	0
+#define	SOP_WRITE_FLAG		1	/* host writes data to Data-Out */
 					/* buffer */
-#define SOP_READ_FLAG		2	/* host receives data from Data-In */
+#define	SOP_READ_FLAG		2	/* host receives data from Data-In */
 					/* buffer */
-#define SOP_BIDIRECTIONAL	3	/* data is transferred from the */
+#define	SOP_BIDIRECTIONAL	3	/* data is transferred from the */
 					/* Data-Out buffer and data is */
 					/* transferred to the Data-In buffer */
 
-#define SOP_TASK_ATTRIBUTE_SIMPLE               0
-#define SOP_TASK_ATTRIBUTE_HEAD_OF_QUEUE        1
-#define SOP_TASK_ATTRIBUTE_ORDERED              2
-#define SOP_TASK_ATTRIBUTE_ACA                  4
+#define	SOP_TASK_ATTRIBUTE_SIMPLE		0
+#define	SOP_TASK_ATTRIBUTE_HEAD_OF_QUEUE	1
+#define	SOP_TASK_ATTRIBUTE_ORDERED		2
+#define	SOP_TASK_ATTRIBUTE_ACA			4
 
-#define SOP_TMF_COMPLETE                0x0
-#define SOP_TMF_FUNCTION_SUCCEEDED      0x8
+#define	SOP_TMF_COMPLETE		0x0
+#define	SOP_TMF_FUNCTION_SUCCEEDED	0x8
 
 /* ---- CISS commands ---- */
-#define CISS_READ					0xc0
-#define CISS_REPORT_LOG				0xc2
-#define CISS_REPORT_PHYS				0xc3
-#define CISS_GET_RAID_MAP				0xc8
+#define	CISS_READ				0xc0
+#define	CISS_REPORT_LOG				0xc2
+#define	CISS_REPORT_PHYS			0xc3
+#define	CISS_GET_RAID_MAP			0xc8
 
 /* constants for CISS_REPORT_LOG/CISS_REPORT_PHYS commands */
-#define CISS_REPORT_LOG_EXTENDED                0x1
-#define CISS_REPORT_PHYS_EXTENDED               0x2
+#define	CISS_REPORT_LOG_EXTENDED		0x1
+#define	CISS_REPORT_PHYS_EXTENDED		0x2
 
 /* BMIC commands */
-#define BMIC_IDENTIFY_CONTROLLER                0x11
-#define BMIC_IDENTIFY_PHYSICAL_DEVICE           0x15
-#define BMIC_READ                               0x26
-#define BMIC_WRITE                              0x27
-#define BMIC_SENSE_CONTROLLER_PARAMETERS        0x64
-#define BMIC_SENSE_SUBSYSTEM_INFORMATION        0x66
-#define BMIC_WRITE_HOST_WELLNESS                0xa5
-#define BMIC_CACHE_FLUSH                        0xc2
+#define	BMIC_IDENTIFY_CONTROLLER		0x11
+#define	BMIC_IDENTIFY_PHYSICAL_DEVICE		0x15
+#define	BMIC_READ				0x26
+#define	BMIC_WRITE				0x27
+#define	BMIC_SENSE_CONTROLLER_PARAMETERS	0x64
+#define	BMIC_SENSE_SUBSYSTEM_INFORMATION	0x66
+#define	BMIC_WRITE_HOST_WELLNESS		0xa5
+#define	BMIC_CACHE_FLUSH			0xc2
 
-#define PQI_DATA_IN_OUT_GOOD                                    0x0
-#define PQI_DATA_IN_OUT_UNDERFLOW                               0x1
-#define PQI_DATA_IN_OUT_BUFFER_ERROR                            0x40
-#define PQI_DATA_IN_OUT_BUFFER_OVERFLOW                         0x41
-#define PQI_DATA_IN_OUT_BUFFER_OVERFLOW_DESCRIPTOR_AREA         0x42
-#define PQI_DATA_IN_OUT_BUFFER_OVERFLOW_BRIDGE                  0x43
-#define PQI_DATA_IN_OUT_PCIE_FABRIC_ERROR                       0x60
-#define PQI_DATA_IN_OUT_PCIE_COMPLETION_TIMEOUT                 0x61
-#define PQI_DATA_IN_OUT_PCIE_COMPLETER_ABORT_RECEIVED           0x62
-#define PQI_DATA_IN_OUT_PCIE_UNSUPPORTED_REQUEST_RECEIVED       0x63
-#define PQI_DATA_IN_OUT_PCIE_ECRC_CHECK_FAILED                  0x64
-#define PQI_DATA_IN_OUT_PCIE_UNSUPPORTED_REQUEST                0x65
-#define PQI_DATA_IN_OUT_PCIE_ACS_VIOLATION                      0x66
-#define PQI_DATA_IN_OUT_PCIE_TLP_PREFIX_BLOCKED                 0x67
-#define PQI_DATA_IN_OUT_PCIE_POISONED_MEMORY_READ               0x6F
-#define PQI_DATA_IN_OUT_ERROR                                   0xf0
-#define PQI_DATA_IN_OUT_PROTOCOL_ERROR                          0xf1
-#define PQI_DATA_IN_OUT_HARDWARE_ERROR                          0xf2
-#define PQI_DATA_IN_OUT_UNSOLICITED_ABORT                       0xf3
-#define PQI_DATA_IN_OUT_ABORTED                                 0xf4
-#define PQI_DATA_IN_OUT_TIMEOUT                                 0xf5
+#define	PQI_DATA_IN_OUT_GOOD					0x0
+#define	PQI_DATA_IN_OUT_UNDERFLOW				0x1
+#define	PQI_DATA_IN_OUT_BUFFER_ERROR				0x40
+#define	PQI_DATA_IN_OUT_BUFFER_OVERFLOW				0x41
+#define	PQI_DATA_IN_OUT_BUFFER_OVERFLOW_DESCRIPTOR_AREA		0x42
+#define	PQI_DATA_IN_OUT_BUFFER_OVERFLOW_BRIDGE			0x43
+#define	PQI_DATA_IN_OUT_PCIE_FABRIC_ERROR			0x60
+#define	PQI_DATA_IN_OUT_PCIE_COMPLETION_TIMEOUT			0x61
+#define	PQI_DATA_IN_OUT_PCIE_COMPLETER_ABORT_RECEIVED		0x62
+#define	PQI_DATA_IN_OUT_PCIE_UNSUPPORTED_REQUEST_RECEIVED	0x63
+#define	PQI_DATA_IN_OUT_PCIE_ECRC_CHECK_FAILED			0x64
+#define	PQI_DATA_IN_OUT_PCIE_UNSUPPORTED_REQUEST		0x65
+#define	PQI_DATA_IN_OUT_PCIE_ACS_VIOLATION			0x66
+#define	PQI_DATA_IN_OUT_PCIE_TLP_PREFIX_BLOCKED			0x67
+#define	PQI_DATA_IN_OUT_PCIE_POISONED_MEMORY_READ		0x6F
+#define	PQI_DATA_IN_OUT_ERROR					0xf0
+#define	PQI_DATA_IN_OUT_PROTOCOL_ERROR				0xf1
+#define	PQI_DATA_IN_OUT_HARDWARE_ERROR				0xf2
+#define	PQI_DATA_IN_OUT_UNSOLICITED_ABORT			0xf3
+#define	PQI_DATA_IN_OUT_ABORTED					0xf4
+#define	PQI_DATA_IN_OUT_TIMEOUT					0xf5
 
 /* ---- additional CDB bytes usage field codes ---- */
-#define SOP_ADDITIONAL_CDB_BYTES_0      0       /* 16-byte CDB */
-#define SOP_ADDITIONAL_CDB_BYTES_4      1       /* 20-byte CDB */
-#define SOP_ADDITIONAL_CDB_BYTES_8      2       /* 24-byte CDB */
-#define SOP_ADDITIONAL_CDB_BYTES_12     3       /* 28-byte CDB */
-#define SOP_ADDITIONAL_CDB_BYTES_16     4       /* 32-byte CDB */
+#define	SOP_ADDITIONAL_CDB_BYTES_0	0	/* 16-byte CDB */
+#define	SOP_ADDITIONAL_CDB_BYTES_4	1	/* 20-byte CDB */
+#define	SOP_ADDITIONAL_CDB_BYTES_8	2	/* 24-byte CDB */
+#define	SOP_ADDITIONAL_CDB_BYTES_12	3	/* 28-byte CDB */
+#define	SOP_ADDITIONAL_CDB_BYTES_16	4	/* 32-byte CDB */
 
 /* ---- These values are defined by the PQI spec ---- */
-#define PQI_MAX_NUM_ELEMENTS_ADMIN_QUEUE		255
-#define PQI_MAX_NUM_ELEMENTS_OPERATIONAL_QUEUE		65535
-#define PQI_QUEUE_ELEMENT_ARRAY_ALIGNMENT		64
-#define PQI_QUEUE_ELEMENT_LENGTH_ALIGNMENT		16
-#define PQI_ADMIN_INDEX_ALIGNMENT			64
-#define PQI_OPERATIONAL_INDEX_ALIGNMENT			4
+#define	PQI_MAX_NUM_ELEMENTS_ADMIN_QUEUE		255
+#define	PQI_MAX_NUM_ELEMENTS_OPERATIONAL_QUEUE		65535
+#define	PQI_QUEUE_ELEMENT_ARRAY_ALIGNMENT		64
+#define	PQI_QUEUE_ELEMENT_LENGTH_ALIGNMENT		16
+#define	PQI_ADMIN_INDEX_ALIGNMENT			64
+#define	PQI_OPERATIONAL_INDEX_ALIGNMENT			4
 
 /* ---- These values are based on our implementation ---- */
-#define PQI_ADMIN_IQ_NUM_ELEMENTS			8
-#define PQI_ADMIN_OQ_NUM_ELEMENTS			20
-#define PQI_ADMIN_IQ_ELEMENT_LENGTH			64
-#define PQI_ADMIN_OQ_ELEMENT_LENGTH			64
+#define	PQI_ADMIN_IQ_NUM_ELEMENTS			8
+#define	PQI_ADMIN_OQ_NUM_ELEMENTS			20
+#define	PQI_ADMIN_IQ_ELEMENT_LENGTH			64
+#define	PQI_ADMIN_OQ_ELEMENT_LENGTH			64
 
-#define PQI_OPERATIONAL_IQ_ELEMENT_LENGTH		128
-#define PQI_OPERATIONAL_OQ_ELEMENT_LENGTH		16
+#define	PQI_OPERATIONAL_IQ_ELEMENT_LENGTH		128
+#define	PQI_OPERATIONAL_OQ_ELEMENT_LENGTH		16
 
-#define PQI_NUM_EVENT_QUEUE_ELEMENTS			32
-#define PQI_EVENT_OQ_ELEMENT_LENGTH     sizeof(struct pqi_event_response)
+#define	PQI_NUM_EVENT_QUEUE_ELEMENTS			32
+#define	PQI_EVENT_OQ_ELEMENT_LENGTH	sizeof (struct pqi_event_response)
 
-#define PQI_MAX_EMBEDDED_SG_DESCRIPTORS         	4
+#define	PQI_MAX_EMBEDDED_SG_DESCRIPTORS			4
 
-#define PQI_EXTRA_SGL_MEMORY    (12 * sizeof (pqi_sg_entry_t))
+#define	PQI_EXTRA_SGL_MEMORY	(12 * sizeof (pqi_sg_entry_t))
 
 typedef uint32_t	pqi_index_t;
-	
+
 /*
  * The purpose of this structure is to obtain proper alignment of objects in
  * an admin queue pair.
@@ -126,9 +126,11 @@ typedef uint32_t	pqi_index_t;
  */
 typedef struct pqi_admin_queues_aligned {
 	__aligned(PQI_QUEUE_ELEMENT_ARRAY_ALIGNMENT)
-	uint8_t	iq_element_array[PQI_ADMIN_IQ_NUM_ELEMENTS][PQI_ADMIN_IQ_ELEMENT_LENGTH];
+	uint8_t	iq_element_array[PQI_ADMIN_IQ_NUM_ELEMENTS]
+	    [PQI_ADMIN_IQ_ELEMENT_LENGTH];
 	__aligned(PQI_QUEUE_ELEMENT_ARRAY_ALIGNMENT)
-	uint8_t	oq_element_array[PQI_ADMIN_OQ_NUM_ELEMENTS][PQI_ADMIN_OQ_ELEMENT_LENGTH];
+	uint8_t	oq_element_array[PQI_ADMIN_OQ_NUM_ELEMENTS]
+	    [PQI_ADMIN_OQ_ELEMENT_LENGTH];
 	__aligned(PQI_ADMIN_INDEX_ALIGNMENT) pqi_index_t iq_ci;
 	__aligned(PQI_ADMIN_INDEX_ALIGNMENT) pqi_index_t oq_pi;
 } pqi_admin_queues_aligned_t;
@@ -145,9 +147,9 @@ struct pqi_device_registers {
 	uint64_t	function_and_status_code;
 	uint8_t		max_admin_iq_elements;
 	uint8_t		max_admin_oq_elements;
-	uint8_t		admin_iq_element_length;        /* in 16-byte units */
-	uint8_t		admin_oq_element_length;        /* in 16-byte units */
-	uint16_t	max_reset_timeout;              /* in 100-millisecond units */
+	uint8_t		admin_iq_element_length; /* in 16-byte units */
+	uint8_t		admin_oq_element_length; /* in 16-byte units */
+	uint16_t	max_reset_timeout;	/* in 100-millisecond units */
 	uint8_t		reserved1[2];
 	uint32_t	legacy_intx_status;
 	uint32_t	legacy_intx_mask_set;
@@ -191,42 +193,42 @@ struct pqi_device_registers {
  */
 typedef struct pqi_ctrl_registers {
 	uint8_t		reserved[0x20];
-	uint32_t	sis_host_to_ctrl_doorbell;              /* 20h */
-	uint8_t		reserved1[0x34 - (0x20 + sizeof(uint32_t))];
-	uint32_t	sis_interrupt_mask;                     /* 34h */
-	uint8_t		reserved2[0x9c - (0x34 + sizeof(uint32_t))];
-	uint32_t	sis_ctrl_to_host_doorbell;              /* 9Ch */
-	/*	uint8_t      reserved3[0xa0 - (0x9c + sizeof(uint32_t))]; */
-	uint32_t	sis_ctrl_to_host_doorbell_clear;        /* A0h */
-	uint8_t		reserved4[0xb0 - (0xa0 + sizeof(uint32_t))];
-	uint32_t	sis_driver_scratch;                     /* B0h */
-	uint8_t		reserved5[0xbc - (0xb0 + sizeof(uint32_t))];
-	uint32_t	sis_firmware_status;                    /* BCh */
-	uint8_t		reserved6[0x1000 - (0xbc + sizeof(uint32_t))];
-	uint32_t	sis_mailbox[8];                         /* 1000h */
-	uint8_t		reserved7[0x4000 - (0x1000 + (sizeof(uint32_t) * 8))];
-	
+	uint32_t	sis_host_to_ctrl_doorbell;		/* 20h */
+	uint8_t		reserved1[0x34 - (0x20 + sizeof (uint32_t))];
+	uint32_t	sis_interrupt_mask;			/* 34h */
+	uint8_t		reserved2[0x9c - (0x34 + sizeof (uint32_t))];
+	uint32_t	sis_ctrl_to_host_doorbell;		/* 9Ch */
+	/* uint8_t	reserved3[0xa0 - (0x9c + sizeof (uint32_t))]; */
+	uint32_t	sis_ctrl_to_host_doorbell_clear;	/* A0h */
+	uint8_t		reserved4[0xb0 - (0xa0 + sizeof (uint32_t))];
+	uint32_t	sis_driver_scratch;			/* B0h */
+	uint8_t		reserved5[0xbc - (0xb0 + sizeof (uint32_t))];
+	uint32_t	sis_firmware_status;			/* BCh */
+	uint8_t		reserved6[0x1000 - (0xbc + sizeof (uint32_t))];
+	uint32_t	sis_mailbox[8];				/* 1000h */
+	uint8_t		reserved7[0x4000 - (0x1000 + (sizeof (uint32_t) * 8))];
+
 	/*
 	 * The PQI spec states that the PQI registers should be at
 	 * offset 0 from the PCIe BAR 0.  However, we can't map
 	 * them at offset 0 because that would break compatibility
 	 * with the SIS registers.  So we map them at offset 4000h.
 	 */
-	struct pqi_device_registers pqi_registers;      /* 4000h */
+	struct pqi_device_registers pqi_registers;		/* 4000h */
 } pqi_ctrl_regs_t;
-#define PQI_DEVICE_REGISTERS_OFFSET     0x4000
+#define	PQI_DEVICE_REGISTERS_OFFSET	0x4000
 
 typedef struct pqi_iu_header {
 	uint8_t		iu_type;
 	uint8_t		reserved;
-	
+
 	/* in bytes - does not include the length of this header */
 	uint16_t	iu_length;
-	
+
 	/* specifies the OQ where the response IU is to be delivered */
 	uint16_t	iu_id;
-	
-	uint8_t		work_area[2];   /* reserved for driver use */
+
+	uint8_t		work_area[2];	/* reserved for driver use */
 } pqi_iu_header_t;
 
 typedef struct pqi_sg_entry {
@@ -247,7 +249,7 @@ typedef struct pqi_raid_path_request {
 	uint8_t		reserved1 : 4;
 	uint8_t		rp_fence : 1;
 	uint16_t	rp_error_index;
-	uint8_t 	reserved2;
+	uint8_t		reserved2;
 	uint8_t		rp_task_attr : 3;
 	uint8_t		rp_pri : 4;
 	uint8_t		reserved3 : 1;
@@ -277,10 +279,10 @@ typedef struct pqi_aio_path_request {
 	uint32_t	encrypt_tweak_lower;
 	uint32_t	encrypt_tweak_upper;
 	uint8_t		cdb[16];
-	uint16_t 	error_index;
+	uint16_t	error_index;
 	uint8_t		num_sg_descriptors;
 	uint8_t		cdb_length;
-	uint8_t 	lun_number[8];
+	uint8_t		lun_number[8];
 	uint8_t		reserved4[4];
 	pqi_sg_entry_t	ap_sglist[PQI_MAX_EMBEDDED_SG_DESCRIPTORS];
 } pqi_aio_path_request_t;
@@ -305,16 +307,16 @@ typedef struct pqi_raid_error_info {
 	uint8_t		data[256];
 } *pqi_raid_error_info_t;
 
-#define PQI_GENERAL_ADMIN_FUNCTION_REPORT_DEVICE_CAPABILITY     0x0
-#define PQI_GENERAL_ADMIN_FUNCTION_CREATE_IQ                    0x10
-#define PQI_GENERAL_ADMIN_FUNCTION_CREATE_OQ                    0x11
-#define PQI_GENERAL_ADMIN_FUNCTION_DELETE_IQ                    0x12
-#define PQI_GENERAL_ADMIN_FUNCTION_DELETE_OQ                    0x13
-#define PQI_GENERAL_ADMIN_FUNCTION_CHANGE_IQ_PROPERTY           0x14
+#define	PQI_GENERAL_ADMIN_FUNCTION_REPORT_DEVICE_CAPABILITY	0x0
+#define	PQI_GENERAL_ADMIN_FUNCTION_CREATE_IQ			0x10
+#define	PQI_GENERAL_ADMIN_FUNCTION_CREATE_OQ			0x11
+#define	PQI_GENERAL_ADMIN_FUNCTION_DELETE_IQ			0x12
+#define	PQI_GENERAL_ADMIN_FUNCTION_DELETE_OQ			0x13
+#define	PQI_GENERAL_ADMIN_FUNCTION_CHANGE_IQ_PROPERTY		0x14
 
-#define PQI_GENERAL_ADMIN_STATUS_SUCCESS        0x0
-#define PQI_GENERAL_ADMIN_IU_LENGTH             0x3c
-#define PQI_PROTOCOL_SOP                        0x0
+#define	PQI_GENERAL_ADMIN_STATUS_SUCCESS	0x0
+#define	PQI_GENERAL_ADMIN_IU_LENGTH		0x3c
+#define	PQI_PROTOCOL_SOP			0x0
 
 #define	PQI_IQ_PROPERTY_IS_AIO_QUEUE		0x1
 
@@ -335,7 +337,7 @@ typedef struct pqi_device_capability {
 	uint8_t		iq_arbitration_priority_support_bitmask;
 	uint8_t		maximum_aw_a;
 	uint8_t		maximum_aw_b;
-	uint8_t 	maximum_aw_c;
+	uint8_t		maximum_aw_c;
 	uint8_t		max_arbitration_burst : 3;
 	uint8_t		reserved1 : 4;
 	uint8_t		iqa : 1;
@@ -366,7 +368,7 @@ typedef struct pqi_general_management_request {
 			uint32_t	buffer_length;
 			pqi_sg_entry_t	sg_descriptors[3];
 		} report_event_configuration;
-		
+
 		struct {
 			uint16_t	global_event_oq_id;
 			uint32_t	buffer_length;
@@ -375,10 +377,10 @@ typedef struct pqi_general_management_request {
 	} data;
 } pqi_general_mgmt_rqst_t;
 
-#define RAID_CTLR_LUNID         "\0\0\0\0\0\0\0\0"
+#define	RAID_CTLR_LUNID		"\0\0\0\0\0\0\0\0"
 
 typedef struct pqi_config_table {
-	uint8_t		signature[8];           /* "CFGTABLE" */
+	uint8_t		signature[8];		/* "CFGTABLE" */
 	/* offset in bytes from the base address of this table to the */
 	/* first section */
 	uint32_t	first_section_offset;
@@ -388,7 +390,7 @@ typedef struct pqi_config_table_section_header {
 	/* as defined by the PQI_CONFIG_TABLE_SECTION_* manifest */
 	/* constants above */
 	uint16_t	section_id;
-	
+
 	/* offset in bytes from base address of the table of the */
 	/* next section or 0 if last entry */
 	uint16_t	next_section_offset;
@@ -396,16 +398,16 @@ typedef struct pqi_config_table_section_header {
 
 struct pqi_config_table_general_info {
 	pqi_config_table_section_header_t	header;
-	
+
 	/* size of this section in bytes including the section header */
 	uint32_t	section_length;
-	
+
 	/* max. outstanding commands supported by the controller */
 	uint32_t	max_outstanding_requests;
-	
+
 	/* max. transfer size of a single command */
 	uint32_t	max_sg_size;
-	
+
 	/* max. number of scatter-gather entries supported in a single cmd */
 	uint32_t	max_sg_per_request;
 };
@@ -425,7 +427,7 @@ typedef struct pqi_general_admin_request {
 			uint32_t	buffer_length;
 			pqi_sg_entry_t	sg_descriptor;
 		} report_device_capability;
-		
+
 		struct {
 			uint8_t		reserved;
 			uint16_t	queue_id;
@@ -438,7 +440,7 @@ typedef struct pqi_general_admin_request {
 			uint8_t		reserved2[23];
 			uint32_t	vendor_specific;
 		} create_operational_iq;
-		
+
 		struct {
 			uint8_t		reserved;
 			uint16_t	queue_id;
@@ -456,32 +458,32 @@ typedef struct pqi_general_admin_request {
 			uint8_t		reserved3[8];
 			uint32_t	vendor_specific;
 		} create_operational_oq;
-		
+
 		struct {
 			uint8_t		reserved;
 			uint16_t	queue_id;
 			uint8_t		reserved1[50];
 		} delete_operational_queue;
-		
+
 		struct {
 			uint8_t		reserved;
 			uint16_t	queue_id;
 			uint8_t		reserved1[46];
 			uint32_t	vendor_specific;
 		} change_operational_iq_properties;
-		
+
 	} data;
 } pqi_general_admin_request_t;
 
-#define PQI_RESPONSE_IU_GENERAL_MANAGEMENT              0x81
-#define PQI_RESPONSE_IU_TASK_MANAGEMENT                 0x93
-#define PQI_RESPONSE_IU_GENERAL_ADMIN                   0xe0
-#define PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS            0xf0
-#define PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS             0xf1
-#define PQI_RESPONSE_IU_RAID_PATH_IO_ERROR              0xf2
-#define PQI_RESPONSE_IU_AIO_PATH_IO_ERROR               0xf3
-#define PQI_RESPONSE_IU_AIO_PATH_DISABLED               0xf4
-#define PQI_RESPONSE_IU_VENDOR_EVENT                    0xf5
+#define	PQI_RESPONSE_IU_GENERAL_MANAGEMENT		0x81
+#define	PQI_RESPONSE_IU_TASK_MANAGEMENT			0x93
+#define	PQI_RESPONSE_IU_GENERAL_ADMIN			0xe0
+#define	PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS		0xf0
+#define	PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS		0xf1
+#define	PQI_RESPONSE_IU_RAID_PATH_IO_ERROR		0xf2
+#define	PQI_RESPONSE_IU_AIO_PATH_IO_ERROR		0xf3
+#define	PQI_RESPONSE_IU_AIO_PATH_DISABLED		0xf4
+#define	PQI_RESPONSE_IU_VENDOR_EVENT			0xf5
 
 typedef struct pqi_general_admin_response {
 	pqi_iu_header_t header;
@@ -494,7 +496,7 @@ typedef struct pqi_general_admin_response {
 			uint64_t	iq_pi_offset;
 			uint8_t		reserved[40];
 		} create_operational_iq;
-		
+
 		struct {
 			uint8_t		status_descriptor[4];
 			uint64_t	oq_ci_offset;
@@ -504,12 +506,12 @@ typedef struct pqi_general_admin_response {
 } pqi_general_admin_response_t;
 
 /* ---- Support event types ---- */
-#define PQI_EVENT_TYPE_HOTPLUG			0x1
-#define PQI_EVENT_TYPE_HARDWARE			0x2
-#define PQI_EVENT_TYPE_PHYSICAL_DEVICE		0x4
-#define PQI_EVENT_TYPE_LOGICAL_DEVICE 		0x5
-#define PQI_EVENT_TYPE_AIO_STATE_CHANGE		0xfd
-#define PQI_EVENT_TYPE_AIO_CONFIG_CHANGE		0xfe
+#define	PQI_EVENT_TYPE_HOTPLUG			0x1
+#define	PQI_EVENT_TYPE_HARDWARE			0x2
+#define	PQI_EVENT_TYPE_PHYSICAL_DEVICE		0x4
+#define	PQI_EVENT_TYPE_LOGICAL_DEVICE		0x5
+#define	PQI_EVENT_TYPE_AIO_STATE_CHANGE		0xfd
+#define	PQI_EVENT_TYPE_AIO_CONFIG_CHANGE		0xfe
 #define	PQI_EVENT_TYPE_HEARTBEAT			0xff
 
 typedef struct pqi_event_response {
@@ -556,11 +558,11 @@ typedef struct bmic_identify_controller {
 	uint8_t		reserved3[32];
 } bmic_identify_controller_t;
 
-#define CISS_GET_LEVEL_2_BUS(lunid)             ((lunid)[7] & 0x3f)
-#define CISS_GET_LEVEL_2_TARGET(lunid)          ((lunid)[6])
-#define CISS_GET_DRIVE_NUMBER(lunid)            \
-(((CISS_GET_LEVEL_2_BUS((lunid)) - 1) << 8) + \
-CISS_GET_LEVEL_2_TARGET((lunid)))
+#define	CISS_GET_LEVEL_2_BUS(lunid)		((lunid)[7] & 0x3f)
+#define	CISS_GET_LEVEL_2_TARGET(lunid)		((lunid)[6])
+#define	CISS_GET_DRIVE_NUMBER(lunid)		\
+	(((CISS_GET_LEVEL_2_BUS((lunid)) - 1) << 8) + \
+	CISS_GET_LEVEL_2_TARGET((lunid)))
 
 typedef struct bmic_identify_physical_device {
 	uint8_t		scsi_bus;	/* SCSI Bus number on controller */
@@ -580,9 +582,9 @@ typedef struct bmic_identify_physical_device {
 	uint8_t		yet_more_flags;
 	uint8_t		even_more_flags;
 	uint32_t	spi_speed_rules;
-	uint8_t		phys_connector[2];/* connector number on controller */
-	uint8_t		phys_box_on_bus;/* phys enclosure this drive resides */
-	uint8_t		phys_bay_in_box;/* phys drv bay this drive resides */
+	uint8_t		phys_connector[2]; /* connector number on controller */
+	uint8_t		phys_box_on_bus; /* phys enclosure this drive resides */
+	uint8_t		phys_bay_in_box; /* phys drv bay this drive resides */
 	uint32_t	rpm;		/* drive rotational speed in RPM */
 	uint8_t		device_type;	/* type of drive */
 	uint8_t		sata_version;	/* only valid when device_type = */
@@ -659,7 +661,7 @@ typedef struct bmic_host_wellness_time {
 	uint8_t		end_tag[2];
 } bmic_host_wellness_time_t;
 
-#define PQI_MAX_EVENT_DESCRIPTORS       255
+#define	PQI_MAX_EVENT_DESCRIPTORS	255
 
 typedef struct report_lun_header {
 	uint32_t	list_length;
@@ -688,10 +690,10 @@ typedef struct report_phys_lun_extended_entry {
 } report_phys_lun_extended_entry_t;
 
 /* ---- Zoned Block Device ---- */
-#define TYPE_ZBC	0x14
+#define	TYPE_ZBC	0x14
 
 /* for device_flags field of struct report_phys_lun_extended_entry */
-#define REPORT_PHYS_LUN_DEV_FLAG_AIO_ENABLED    0x8
+#define	REPORT_PHYS_LUN_DEV_FLAG_AIO_ENABLED	0x8
 
 typedef struct report_phys_lun_extended {
 	report_lun_header_t			header;

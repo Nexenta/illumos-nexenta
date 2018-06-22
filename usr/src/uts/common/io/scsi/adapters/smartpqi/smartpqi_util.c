@@ -44,8 +44,8 @@ pqi_io_request_t *
 pqi_alloc_io(pqi_state_t s)
 {
 	pqi_io_request_t	*io	= NULL;
-	uint16_t		loop,
-				i;
+	uint16_t		loop;
+	uint16_t		i;
 
 	mutex_enter(&s->s_io_mutex);
 	i = s->s_next_io_slot; /* just a hint */
@@ -136,67 +136,67 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state)
 		    cmd_state_str(new_state));
 	}
 	switch (new_state) {
-		case PQI_CMD_UNINIT:
-			break;
+	case PQI_CMD_UNINIT:
+		break;
 
-		case PQI_CMD_CONSTRUCT:
-			break;
+	case PQI_CMD_CONSTRUCT:
+		break;
 
-		case PQI_CMD_INIT:
-			ASSERT((cmd->pc_cmd_state == PQI_CMD_CONSTRUCT) ||
-			    (cmd->pc_cmd_state == PQI_CMD_CMPLT));
-			break;
+	case PQI_CMD_INIT:
+		ASSERT((cmd->pc_cmd_state == PQI_CMD_CONSTRUCT) ||
+		    (cmd->pc_cmd_state == PQI_CMD_CMPLT));
+		break;
 
-		case PQI_CMD_QUEUED:
-			if (cmd->pc_cmd_state == PQI_CMD_STARTED)
-				break;
-			ASSERT((cmd->pc_cmd_state == PQI_CMD_INIT) ||
-			    (cmd->pc_cmd_state == PQI_CMD_CMPLT));
-			mutex_enter(&devp->pd_mutex);
-			devp->pd_active_cmds++;
-			atomic_inc_32(&cmd->pc_softc->s_cmd_queue_len);
-			list_insert_tail(&devp->pd_cmd_list, cmd);
-			mutex_exit(&devp->pd_mutex);
+	case PQI_CMD_QUEUED:
+		if (cmd->pc_cmd_state == PQI_CMD_STARTED)
 			break;
+		ASSERT((cmd->pc_cmd_state == PQI_CMD_INIT) ||
+		    (cmd->pc_cmd_state == PQI_CMD_CMPLT));
+		mutex_enter(&devp->pd_mutex);
+		devp->pd_active_cmds++;
+		atomic_inc_32(&cmd->pc_softc->s_cmd_queue_len);
+		list_insert_tail(&devp->pd_cmd_list, cmd);
+		mutex_exit(&devp->pd_mutex);
+		break;
 
-		case PQI_CMD_STARTED:
-			ASSERT(cmd->pc_cmd_state == PQI_CMD_QUEUED);
-			if (cmd->pc_softc->s_debug_level &
-			    (DBG_LVL_CDB | DBG_LVL_RQST))
-				pqi_dump_io(cmd->pc_io_rqst);
-			break;
+	case PQI_CMD_STARTED:
+		ASSERT(cmd->pc_cmd_state == PQI_CMD_QUEUED);
+		if (cmd->pc_softc->s_debug_level &
+		    (DBG_LVL_CDB | DBG_LVL_RQST))
+			pqi_dump_io(cmd->pc_io_rqst);
+		break;
 
-		case PQI_CMD_CMPLT:
-			ASSERT(cmd->pc_cmd_state == PQI_CMD_STARTED);
+	case PQI_CMD_CMPLT:
+		ASSERT(cmd->pc_cmd_state == PQI_CMD_STARTED);
+		mutex_enter(&devp->pd_mutex);
+		list_remove(&devp->pd_cmd_list, cmd);
+		devp->pd_active_cmds--;
+		atomic_dec_32(&cmd->pc_softc->s_cmd_queue_len);
+		mutex_exit(&devp->pd_mutex);
+		break;
+
+	case PQI_CMD_FATAL:
+		if ((cmd->pc_cmd_state == PQI_CMD_QUEUED) ||
+		    (cmd->pc_cmd_state == PQI_CMD_STARTED)) {
 			mutex_enter(&devp->pd_mutex);
 			list_remove(&devp->pd_cmd_list, cmd);
 			devp->pd_active_cmds--;
 			atomic_dec_32(&cmd->pc_softc->s_cmd_queue_len);
 			mutex_exit(&devp->pd_mutex);
-			break;
+		}
+		break;
 
-		case PQI_CMD_FATAL:
-			if ((cmd->pc_cmd_state == PQI_CMD_QUEUED) ||
-			    (cmd->pc_cmd_state == PQI_CMD_STARTED)) {
-				mutex_enter(&devp->pd_mutex);
-				list_remove(&devp->pd_cmd_list, cmd);
-				devp->pd_active_cmds--;
-				atomic_dec_32(&cmd->pc_softc->s_cmd_queue_len);
-				mutex_exit(&devp->pd_mutex);
-			}
-			break;
+	case PQI_CMD_DESTRUCT:
+		break;
 
-		case PQI_CMD_DESTRUCT:
-			break;
-
-		default:
-			/*
-			 * Normally a panic or ASSERT(0) would be called
-			 * for here. Except that in this case the 'cmd'
-			 * memory could be coming from the kmem_cache pool
-			 * which during debug gets wiped with 0xbaddcafe
-			 */
-			break;
+	default:
+		/*
+		 * Normally a panic or ASSERT(0) would be called
+		 * for here. Except that in this case the 'cmd'
+		 * memory could be coming from the kmem_cache pool
+		 * which during debug gets wiped with 0xbaddcafe
+		 */
+		break;
 	}
 	cmd->pc_last_state = cmd->pc_cmd_state;
 	cmd->pc_cmd_state = new_state;
@@ -234,17 +234,17 @@ char *
 pqi_event_to_str(uint8_t event)
 {
 	switch (event) {
-		case PQI_EVENT_TYPE_HOTPLUG: return ("Hotplug");
-		case PQI_EVENT_TYPE_HARDWARE: return ("Hardware");
-		case PQI_EVENT_TYPE_PHYSICAL_DEVICE:
-			return ("Physical Device");
-		case PQI_EVENT_TYPE_LOGICAL_DEVICE: return ("logical Device");
-		case PQI_EVENT_TYPE_AIO_STATE_CHANGE:
-			return ("AIO State Change");
-		case PQI_EVENT_TYPE_AIO_CONFIG_CHANGE:
-			return ("AIO Config Change");
-		case PQI_EVENT_TYPE_HEARTBEAT: return ("Heartbeat");
-		default: return ("Unsupported Event Type");
+	case PQI_EVENT_TYPE_HOTPLUG: return ("Hotplug");
+	case PQI_EVENT_TYPE_HARDWARE: return ("Hardware");
+	case PQI_EVENT_TYPE_PHYSICAL_DEVICE:
+		return ("Physical Device");
+	case PQI_EVENT_TYPE_LOGICAL_DEVICE: return ("logical Device");
+	case PQI_EVENT_TYPE_AIO_STATE_CHANGE:
+		return ("AIO State Change");
+	case PQI_EVENT_TYPE_AIO_CONFIG_CHANGE:
+		return ("AIO Config Change");
+	case PQI_EVENT_TYPE_HEARTBEAT: return ("Heartbeat");
+	default: return ("Unsupported Event Type");
 	}
 }
 
@@ -258,11 +258,11 @@ char *
 dtype_to_str(int t)
 {
 	switch (t) {
-		case DTYPE_DIRECT: return ("Direct");
-		case DTYPE_SEQUENTIAL: return ("Sequential");
-		case DTYPE_ESI: return ("ESI");
-		case DTYPE_ARRAY_CTRL: return ("RAID");
-		default: return ("Ughknown");
+	case DTYPE_DIRECT: return ("Direct");
+	case DTYPE_SEQUENTIAL: return ("Sequential");
+	case DTYPE_ESI: return ("ESI");
+	case DTYPE_ARRAY_CTRL: return ("RAID");
+	default: return ("Ughknown");
 	}
 }
 
@@ -334,29 +334,29 @@ pqi_show_dev_state(pqi_state_t s)
 	uint32_t dev_status = G32(s, pqi_registers.device_status);
 
 	switch (dev_status & 0xf) {
-		case 0:
-			cmn_err(CE_NOTE, "Power_On_And_Reset\n");
-			break;
+	case 0:
+		cmn_err(CE_NOTE, "Power_On_And_Reset\n");
+		break;
 
-		case 1:
-			cmn_err(CE_NOTE, "PQI_Status_Available\n");
-			break;
+	case 1:
+		cmn_err(CE_NOTE, "PQI_Status_Available\n");
+		break;
 
-		case 2:
-			cmn_err(CE_NOTE, "All_Registers_Ready\n");
-			break;
+	case 2:
+		cmn_err(CE_NOTE, "All_Registers_Ready\n");
+		break;
 
-		case 3:
-			cmn_err(CE_NOTE,
-			    "Adminstrator_Queue_Pair_Ready\n");
-			break;
+	case 3:
+		cmn_err(CE_NOTE,
+		    "Adminstrator_Queue_Pair_Ready\n");
+		break;
 
-		case 4:
-			cmn_err(CE_NOTE, "Error: %s %s\n",
-			    dev_status & 0x100 ? "(OP OQ Error)" : "",
-			    dev_status & 0x200 ? "(OP IQ Error)" : "");
-			show_error_detail(s);
-			break;
+	case 4:
+		cmn_err(CE_NOTE, "Error: %s %s\n",
+		    dev_status & 0x100 ? "(OP OQ Error)" : "",
+		    dev_status & 0x200 ? "(OP IQ Error)" : "");
+		show_error_detail(s);
+		break;
 	}
 }
 
@@ -364,10 +364,10 @@ void *
 pqi_kmem_zalloc(size_t size, int kmflag, char *file, int line, pqi_state_t s)
 {
 	void *v;
-	
+
 	if ((v = pqi_kmem_alloc(size, kmflag, file, line, s)) != NULL)
 		(void) memset(v, 0, size);
-	
+
 	return (v);
 }
 
@@ -376,30 +376,30 @@ pqi_kmem_alloc(size_t size, int kmflag, char *file, int line, pqi_state_t s)
 {
 	size_t		ht_size;
 	void		*v;
-	mem_check_t	header,
-			tailer;
+	mem_check_t	header;
+	mem_check_t	tailer;
 	size_t		size_adj;
-	
+
 	ht_size = PQIALIGN_TYPED(sizeof (struct mem_check), 64, size_t);
 	size_adj = PQIALIGN_TYPED(size, 64, size_t);
 	v = kmem_alloc(ht_size * 2 + size_adj, kmflag);
 	if (v == NULL)
 		return (NULL);
-	
+
 	header = v;
 	list_link_init(&header->m_node);
 	(void) strncpy(header->m_file, file, sizeof (header->m_file));
 	header->m_line = line;
 	header->m_len = ht_size * 2 + size_adj;
 	header->m_sig = MEM_CHECK_SIG;
-	
+
 	tailer = (mem_check_t)((uintptr_t)v + ht_size + size_adj);
 	list_link_init(&tailer->m_node);
 	(void) strncpy(tailer->m_file, file, sizeof (tailer->m_file));
 	tailer->m_line = line;
 	tailer->m_len = ht_size * 2 + size_adj;
 	tailer->m_sig = MEM_CHECK_SIG;
-	
+
 	mutex_enter(&s->s_mem_mutex);
 	list_insert_tail(&s->s_mem_check, header);
 	list_insert_tail(&s->s_mem_check, tailer);
@@ -413,14 +413,14 @@ pqi_kmem_alloc(size_t size, int kmflag, char *file, int line, pqi_state_t s)
 void
 pqi_kmem_free(void *v, size_t size, pqi_state_t s)
 {
-	mem_check_t	header,
-			tailer;
+	mem_check_t	header;
+	mem_check_t	tailer;
 	size_t		ht_size;
-	
+
 	ht_size = PQIALIGN_TYPED(sizeof (struct mem_check), 64, size_t);
 	header = (mem_check_t)((uintptr_t)v - ht_size);
 	ASSERT(header->m_sig == MEM_CHECK_SIG);
-	
+
 	mutex_enter(&s->s_mem_mutex);
 	tailer = list_next(&s->s_mem_check, header);
 	list_remove(&s->s_mem_check, header);
@@ -447,10 +447,11 @@ pqi_mem_check(void *v)
 		}
 	}
 	ASSERT(s->s_dip != NULL);
-	s->s_mem_timeo = timeout(pqi_mem_check, s, drv_usectohz(5 * 1000 * 1000));
+	s->s_mem_timeo = timeout(pqi_mem_check, s,
+	    drv_usectohz(5 * 1000 * 1000));
 	mutex_exit(&s->s_mem_mutex);
 }
-	     
+
 /*
  * []------------------------------------------------------------------[]
  * | Support/utility functions for main functions above			|
@@ -459,7 +460,7 @@ pqi_mem_check(void *v)
 
 typedef struct qual {
 	int	q_val;
-	char 	*q_str;
+	char	*q_str;
 } qual_t;
 
 typedef struct code_qual {
@@ -504,8 +505,7 @@ static void
 show_error_detail(pqi_state_t s)
 {
 	uint32_t error_reg = G32(s, pqi_registers.device_error);
-	uint8_t		code,
-			qualifier;
+	uint8_t		code, qualifier;
 	qual_t		*p;
 	code_qual_t	*cq;
 
@@ -545,18 +545,18 @@ static char *
 cmd_state_str(pqi_cmd_state_t state)
 {
 	switch (state) {
-		case PQI_CMD_UNINIT: return ("Uninitialized");
-		case PQI_CMD_CONSTRUCT: return ("Construct");
-		case PQI_CMD_INIT: return ("Init");
-		case PQI_CMD_QUEUED: return ("Queued");
-		case PQI_CMD_STARTED: return ("Started");
-		case PQI_CMD_CMPLT: return ("Completed");
-		case PQI_CMD_FATAL: return ("Fatal");
-		case PQI_CMD_DESTRUCT: return ("Destruct");
-		default:
-			(void) snprintf(bad_state_buf, sizeof (bad_state_buf),
-			    "BAD STATE (%x)", state);
-			return (bad_state_buf);
+	case PQI_CMD_UNINIT: return ("Uninitialized");
+	case PQI_CMD_CONSTRUCT: return ("Construct");
+	case PQI_CMD_INIT: return ("Init");
+	case PQI_CMD_QUEUED: return ("Queued");
+	case PQI_CMD_STARTED: return ("Started");
+	case PQI_CMD_CMPLT: return ("Completed");
+	case PQI_CMD_FATAL: return ("Fatal");
+	case PQI_CMD_DESTRUCT: return ("Destruct");
+	default:
+		(void) snprintf(bad_state_buf, sizeof (bad_state_buf),
+		    "BAD STATE (%x)", state);
+		return (bad_state_buf);
 	}
 }
 
@@ -564,22 +564,22 @@ static char *
 cdb_to_str(uint8_t scsi_cmd)
 {
 	switch (scsi_cmd) {
-		case SCMD_INQUIRY: return ("Inquiry");
-		case SCMD_TEST_UNIT_READY: return ("TestUnitReady");
-		case SCMD_READ: return ("Read");
-		case SCMD_READ_G1: return ("Read G1");
-		case SCMD_WRITE: return ("Write");
-		case SCMD_WRITE_G1: return ("Write G1");
-		case SCMD_START_STOP: return ("StartStop");
-		case SCMD_READ_CAPACITY: return ("ReadCap");
-		case SCMD_MODE_SENSE: return ("ModeSense");
-		case SCMD_SVC_ACTION_IN_G4: return ("ActionInG4");
-		case SCMD_MAINTENANCE_IN: return ("MaintenanceIn");
-		case BMIC_READ: return ("BMIC Read");
-		case BMIC_WRITE: return ("BMIC Write");
-		case CISS_REPORT_LOG: return ("CISS Report Logical");
-		case CISS_REPORT_PHYS: return ("CISS Report Physical");
-		default: return ("unmapped");
+	case SCMD_INQUIRY: return ("Inquiry");
+	case SCMD_TEST_UNIT_READY: return ("TestUnitReady");
+	case SCMD_READ: return ("Read");
+	case SCMD_READ_G1: return ("Read G1");
+	case SCMD_WRITE: return ("Write");
+	case SCMD_WRITE_G1: return ("Write G1");
+	case SCMD_START_STOP: return ("StartStop");
+	case SCMD_READ_CAPACITY: return ("ReadCap");
+	case SCMD_MODE_SENSE: return ("ModeSense");
+	case SCMD_SVC_ACTION_IN_G4: return ("ActionInG4");
+	case SCMD_MAINTENANCE_IN: return ("MaintenanceIn");
+	case BMIC_READ: return ("BMIC Read");
+	case BMIC_WRITE: return ("BMIC Write");
+	case CISS_REPORT_LOG: return ("CISS Report Logical");
+	case CISS_REPORT_PHYS: return ("CISS Report Physical");
+	default: return ("unmapped");
 	}
 }
 
@@ -606,40 +606,40 @@ build_cdb_str(uint8_t *cdb)
 	m.mem[0] = '\0';
 
 	switch (cdb[0]) {
-		case SCMD_INQUIRY:
-			MEMP("%s", cdb_to_str(cdb[0]));
-			if ((cdb[1] & 0x1) != 0)
-				MEMP(".vpd=%x", cdb[2]);
-			else if (cdb[2])
-				MEMP("Illegal CDB");
-			MEMP(".len=%x", cdb[3] << 8 | cdb[4]);
-			break;
+	case SCMD_INQUIRY:
+		MEMP("%s", cdb_to_str(cdb[0]));
+		if ((cdb[1] & 0x1) != 0)
+			MEMP(".vpd=%x", cdb[2]);
+		else if (cdb[2])
+			MEMP("Illegal CDB");
+		MEMP(".len=%x", cdb[3] << 8 | cdb[4]);
+		break;
 
-		case SCMD_READ:
-			MEMP("%s.lba=%x.len=%x", cdb_to_str(cdb[0]),
-			    (cdb[1] & 0x1f) << 16 | cdb[2] << 8 | cdb[3],
-			    cdb[4]);
-			break;
+	case SCMD_READ:
+		MEMP("%s.lba=%x.len=%x", cdb_to_str(cdb[0]),
+		    (cdb[1] & 0x1f) << 16 | cdb[2] << 8 | cdb[3],
+		    cdb[4]);
+		break;
 
-		case SCMD_MODE_SENSE:
-			MEMP("%s.dbd=%s.pc=%x.page_code=%x.subpage=%x."
-			    "len=%x", cdb_to_str(cdb[0]),
-			    bool_to_str(cdb[1] & 8), cdb[2] >> 6 & 0x3,
-			    cdb[2] & 0x3f, cdb[3], cdb[4]);
-			break;
+	case SCMD_MODE_SENSE:
+		MEMP("%s.dbd=%s.pc=%x.page_code=%x.subpage=%x."
+		    "len=%x", cdb_to_str(cdb[0]),
+		    bool_to_str(cdb[1] & 8), cdb[2] >> 6 & 0x3,
+		    cdb[2] & 0x3f, cdb[3], cdb[4]);
+		break;
 
-		case SCMD_START_STOP:
-			MEMP("%s.immed=%s.power=%x.start=%s",
-			    cdb_to_str(cdb[0]), bool_to_str(cdb[1] & 1),
-			    (cdb[4] >> 4) & 0xf, bool_to_str(cdb[4] & 1));
-			break;
+	case SCMD_START_STOP:
+		MEMP("%s.immed=%s.power=%x.start=%s",
+		    cdb_to_str(cdb[0]), bool_to_str(cdb[1] & 1),
+		    (cdb[4] >> 4) & 0xf, bool_to_str(cdb[4] & 1));
+		break;
 
-		case SCMD_SVC_ACTION_IN_G4:
-		case SCMD_READ_CAPACITY:
-		case SCMD_TEST_UNIT_READY:
-		default:
-			MEMP("%s (%x)", cdb_to_str(cdb[0]), cdb[0]);
-			break;
+	case SCMD_SVC_ACTION_IN_G4:
+	case SCMD_READ_CAPACITY:
+	case SCMD_TEST_UNIT_READY:
+	default:
+		MEMP("%s (%x)", cdb_to_str(cdb[0]), cdb[0]);
+		break;
 	}
 	return (m);
 }
@@ -676,11 +676,11 @@ static char *
 dir_to_str(int dir)
 {
 	switch (dir) {
-		case SOP_NO_DIRECTION_FLAG: return ("NoDir");
-		case SOP_WRITE_FLAG: return ("Write");
-		case SOP_READ_FLAG: return ("Read");
-		case SOP_BIDIRECTIONAL: return ("RW");
-		default: return ("Oops");
+	case SOP_NO_DIRECTION_FLAG: return ("NoDir");
+	case SOP_WRITE_FLAG: return ("Write");
+	case SOP_READ_FLAG: return ("Read");
+	case SOP_BIDIRECTIONAL: return ("RW");
+	default: return ("Oops");
 	}
 }
 
@@ -688,10 +688,10 @@ static char *
 flags_to_str(uint32_t flag)
 {
 	switch (flag) {
-		case CISS_SG_LAST: return ("Last");
-		case CISS_SG_CHAIN: return ("Chain");
-		case CISS_SG_NORMAL: return ("Norm");
-		default: return ("Ooops");
+	case CISS_SG_LAST: return ("Last");
+	case CISS_SG_CHAIN: return ("Chain");
+	case CISS_SG_NORMAL: return ("Norm");
+	default: return ("Ooops");
 	}
 }
 
@@ -702,8 +702,8 @@ flags_to_str(uint32_t flag)
 static void
 dump_raid(pqi_state_t s, void *v, pqi_index_t idx)
 {
-	int			i,
-				len	= 512;
+	int			i;
+	int			len	= 512;
 	caddr_t			scratch;
 	pqi_raid_path_request_t	*rqst = v;
 	mem_len_pair_t		cdb_data;
@@ -764,9 +764,9 @@ dump_raid(pqi_state_t s, void *v, pqi_index_t idx)
 static void
 dump_aio(void *v)
 {
-	pqi_aio_path_request_t	*rqst = v;
-	int			i,
-				len	= 512;
+	pqi_aio_path_request_t	*rqst	= v;
+	int			i;
+	int			len	= 512;
 	caddr_t			scratch;
 	mem_len_pair_t		cdb_data;
 
