@@ -129,6 +129,7 @@ void
 pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state)
 {
 	pqi_device_t	devp = cmd->pc_device;
+	pqi_state_t	s = cmd->pc_softc;
 
 	if (cmd->pc_softc->s_debug_level & DBG_LVL_STATE) {
 		cmn_err(CE_NOTE, "%s: cmd=%p (%s) -> (%s)\n", __func__,
@@ -143,35 +144,28 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state)
 		break;
 
 	case PQI_CMD_INIT:
-		ASSERT((cmd->pc_cmd_state == PQI_CMD_CONSTRUCT) ||
-		    (cmd->pc_cmd_state == PQI_CMD_CMPLT));
 		break;
 
 	case PQI_CMD_QUEUED:
 		if (cmd->pc_cmd_state == PQI_CMD_STARTED)
 			break;
-		ASSERT((cmd->pc_cmd_state == PQI_CMD_INIT) ||
-		    (cmd->pc_cmd_state == PQI_CMD_CMPLT));
 		mutex_enter(&devp->pd_mutex);
 		devp->pd_active_cmds++;
-		atomic_inc_32(&cmd->pc_softc->s_cmd_queue_len);
+		atomic_inc_32(&s->s_cmd_queue_len);
 		list_insert_tail(&devp->pd_cmd_list, cmd);
 		mutex_exit(&devp->pd_mutex);
 		break;
 
 	case PQI_CMD_STARTED:
-		ASSERT(cmd->pc_cmd_state == PQI_CMD_QUEUED);
-		if (cmd->pc_softc->s_debug_level &
-		    (DBG_LVL_CDB | DBG_LVL_RQST))
+		if (s->s_debug_level & (DBG_LVL_CDB | DBG_LVL_RQST))
 			pqi_dump_io(cmd->pc_io_rqst);
 		break;
 
 	case PQI_CMD_CMPLT:
-		ASSERT(cmd->pc_cmd_state == PQI_CMD_STARTED);
 		mutex_enter(&devp->pd_mutex);
 		list_remove(&devp->pd_cmd_list, cmd);
 		devp->pd_active_cmds--;
-		atomic_dec_32(&cmd->pc_softc->s_cmd_queue_len);
+		atomic_dec_32(&s->s_cmd_queue_len);
 		mutex_exit(&devp->pd_mutex);
 		break;
 
@@ -181,7 +175,7 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state)
 			mutex_enter(&devp->pd_mutex);
 			list_remove(&devp->pd_cmd_list, cmd);
 			devp->pd_active_cmds--;
-			atomic_dec_32(&cmd->pc_softc->s_cmd_queue_len);
+			atomic_dec_32(&s->s_cmd_queue_len);
 			mutex_exit(&devp->pd_mutex);
 		}
 		break;
@@ -573,6 +567,7 @@ cdb_to_str(uint8_t scsi_cmd)
 	case SCMD_START_STOP: return ("StartStop");
 	case SCMD_READ_CAPACITY: return ("ReadCap");
 	case SCMD_MODE_SENSE: return ("ModeSense");
+	case SCMD_MODE_SELECT: return ("ModeSelect");
 	case SCMD_SVC_ACTION_IN_G4: return ("ActionInG4");
 	case SCMD_MAINTENANCE_IN: return ("MaintenanceIn");
 	case BMIC_READ: return ("BMIC Read");

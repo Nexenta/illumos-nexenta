@@ -49,7 +49,12 @@ extern "C" {
 
 /* ---- Handy constants ---- */
 #define	UNDEFINED				-1
+#define	MAX_NAME_PROP_SIZE			256
 #define	LUN_PROP				"lun"
+#define	MDI_GUID				"wwn"
+#define	TARGET_PROP				"target"
+#define	LUN_PROP				"lun"
+#define	COMPAT_PROP				"compatible"
 
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
@@ -237,10 +242,10 @@ typedef struct pqi_state {
 	ksema_t			s_sync_rqst;
 	pqi_io_request_t	*s_sync_io;
 	int			s_intr_ready : 1,
-				s_offline : 1;
+				s_offline : 1,
+				s_enable_mpxio : 1;
 	kmem_cache_t		*s_cmd_cache;
 	ddi_taskq_t		*s_taskq;
-	int			s_next_lun;
 	timeout_id_t		s_time_of_day;
 
 	/* ---- Debug related state ---- */
@@ -357,7 +362,11 @@ typedef struct pqi_device {
 	list_t			pd_cache_list;	/* Protected by pd_mutex */
 	int			pd_active_cmds;
 	int			pd_target;
-	dev_info_t		*pd_pdip;
+
+	/* ---- Only one will be valid, MPxIO uses s_pip ---- */
+	dev_info_t		*pd_dip;
+	mdi_pathinfo_t		*pd_pip;
+
 	dev_info_t		*pd_parent;
 	int			pd_devtype;
 	int			pd_phys_dev : 1;
@@ -366,6 +375,7 @@ typedef struct pqi_device {
 	uint32_t		pd_aio_handle;
 	char			pd_scsi3addr[8];
 	uint64_t		pd_wwid;	/* big endian */
+	char			*pd_guid;
 	uint64_t		pd_sas_address;
 	uint8_t			pd_volume_id[16];
 	char			pd_vendor[8];	/* From INQUIRY */

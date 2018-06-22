@@ -431,9 +431,11 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		    STATE_SENT_CMD | STATE_GOT_STATUS;
 		if (pkt->pkt_resid == cmd->pc_dma_count) {
 			pkt->pkt_reason = CMD_INCOMPLETE;
+			*pkt->pkt_scbp = STATUS_CHECK;
 		} else {
 			pkt->pkt_state |= STATE_XFERRED_DATA;
 			pkt->pkt_reason = CMD_CMPLT;
+			*pkt->pkt_scbp = STATUS_GOOD;
 		}
 		break;
 
@@ -446,8 +448,24 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		pkt->pkt_resid = 0;
 		pkt->pkt_statistics = 0;
 		*pkt->pkt_scbp = STATUS_GOOD;
-
 		break;
+
+	case PQI_DATA_IN_OUT_ERROR:
+		pkt->pkt_state |= STATE_GOT_BUS | STATE_GOT_TARGET |
+		    STATE_SENT_CMD;
+		if (pkt->pkt_resid != cmd->pc_dma_count) {
+			pkt->pkt_state |= STATE_XFERRED_DATA;
+			pkt->pkt_reason = CMD_CMPLT;
+			*pkt->pkt_scbp = STATUS_GOOD;
+		} else {
+			pkt->pkt_reason = CMD_INCOMPLETE;
+			*pkt->pkt_scbp = STATUS_CHECK;
+		}
+		break;
+
+	default:
+		pkt->pkt_reason = CMD_INCOMPLETE;
+		*pkt->pkt_scbp = STATUS_CHECK;
 	}
 
 	pqi_cmd_sm(cmd, PQI_CMD_CMPLT);

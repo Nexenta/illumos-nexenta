@@ -225,6 +225,9 @@ process_raid_io_error(pqi_io_request_t *io)
 			io->io_status = ei->data_out_result;
 			break;
 		default:
+			cmn_err(CE_NOTE, "%s: unknown error result: %d\n",
+			    __func__, ei->data_out_result);
+			io->io_status = PQI_DATA_IN_OUT_PROTOCOL_ERROR;
 			break;
 		}
 		cmd = io->io_cmd;
@@ -242,6 +245,12 @@ process_raid_io_error(pqi_io_request_t *io)
 				    sense_len);
 			}
 		}
+	} else {
+		/*
+		 * sync_error is called before this and sets io_error_info
+		 * which means the value must be non-zero
+		 */
+		ASSERT(0);
 	}
 }
 

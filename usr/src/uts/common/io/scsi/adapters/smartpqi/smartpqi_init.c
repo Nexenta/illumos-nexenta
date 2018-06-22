@@ -871,6 +871,8 @@ pqi_schedule_update_time_worker(pqi_state_t s)
 	return (B_TRUE);
 }
 
+static uint32_t pqi_next_lun;
+
 static boolean_t
 pqi_scan_scsi_devices(pqi_state_t s)
 {
@@ -911,6 +913,13 @@ pqi_scan_scsi_devices(pqi_state_t s)
 				    NULL);
 
 				mutex_enter(&s->s_mutex);
+				/*
+				 * Start at index 0. The first call to
+				 * atomic_inc_32_nv will return 1 so subtract
+				 * 1 from the return value.
+				 */
+				dev->pd_target =
+				    atomic_inc_32_nv(&pqi_next_lun) - 1;
 				list_insert_tail(&s->s_devnodes, dev);
 				mutex_exit(&s->s_mutex);
 			} else {
@@ -1275,11 +1284,13 @@ submit_raid_sync_with_io(pqi_state_t s, pqi_io_request_t *io)
 	    RAID_PATH, io);
 	sema_p(&sema);
 	s->s_sync_io = NULL;
-	if (io->io_status != PQI_DATA_IN_OUT_GOOD) {
-		dev_err(s->s_dip, CE_NOTE, "io(%p)->io_status=%d\n", io,
-		    io->io_status);
+	switch (io->io_status) {
+		case PQI_DATA_IN_OUT_GOOD:
+		case PQI_DATA_IN_OUT_UNDERFLOW:
+			return (B_TRUE);
+		default:
+			return (B_FALSE);
 	}
-	return (io->io_status == PQI_DATA_IN_OUT_GOOD ? B_TRUE : B_FALSE);
 }
 
 /*ARGSUSED*/
@@ -1632,7 +1643,7 @@ out:
 }
 
 static boolean_t
-is_supported_dev(pqi_device_t dev)
+is_supported_dev(pqi_state_t s, pqi_device_t dev)
 {
 	boolean_t	rval = B_FALSE;
 
@@ -1640,13 +1651,17 @@ is_supported_dev(pqi_device_t dev)
 	case DTYPE_DIRECT:
 	case TYPE_ZBC:
 	case DTYPE_SEQUENTIAL:
+	case DTYPE_ESI:
 		rval = B_TRUE;
 		break;
-	case DTYPE_ESI:
 	case DTYPE_ARRAY_CTRL:
 		if (strncmp(dev->pd_scsi3addr, RAID_CTLR_LUNID,
 		    sizeof (dev->pd_scsi3addr)) == 0)
 			rval = B_TRUE;
+		break;
+	default:
+		dev_err(s->s_dip, CE_WARN, "Not supported device: 0x%x\n",
+		    dev->pd_devtype);
 		break;
 	}
 	return (rval);
@@ -1666,6 +1681,40 @@ is_external_raid_addr(char *addr)
 	return (0);
 }
 
+static void
+build_guid(pqi_state_t s, pqi_device_t d)
+{
+	int			len	= 0xff;
+	struct scsi_inquiry	*inq	= NULL;
+	uchar_t			*inq83	= NULL;
+	ddi_devid_t		devid;
+
+	d->pd_guid = NULL;
+	inq = kmem_alloc(sizeof (struct scsi_inquiry), KM_SLEEP);
+	if (pqi_scsi_inquiry(s, d, 0, inq, sizeof (struct scsi_inquiry)) ==
+	    B_FALSE) {
+		goto out;
+	}
+
+	inq83 = kmem_zalloc(len, KM_SLEEP);
+	if (pqi_scsi_inquiry(s, d, VPD_PAGE | 0x83,
+	    (struct scsi_inquiry *)inq83, len) == B_FALSE) {
+		goto out;
+	}
+
+	if (ddi_devid_scsi_encode(DEVID_SCSI_ENCODE_VERSION_LATEST, NULL,
+	    (uchar_t *)inq, sizeof (struct scsi_inquiry), NULL, 0, inq83,
+	    (size_t)len, &devid) == DDI_SUCCESS) {
+		d->pd_guid = ddi_devid_to_guid(devid);
+		ddi_devid_free(devid);
+	}
+out:
+	if (inq != NULL)
+		kmem_free(inq, sizeof (struct scsi_inquiry));
+	if (inq83 != NULL)
+		kmem_free(inq83, len);
+}
+
 static pqi_device_t
 create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 {
@@ -1681,13 +1730,10 @@ create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 	if (skip_device(dev->pd_scsi3addr) == B_TRUE)
 		goto out;
 
-	if (get_device_info(s, dev) == B_FALSE) {
-		dev_err(s->s_dip, CE_NOTE, "INQUIRY failed on device 0x%lx",
-		    (unsigned long int)dev->pd_wwid);
+	if (get_device_info(s, dev) == B_FALSE)
 		goto out;
-	}
 
-	if (!is_supported_dev(dev))
+	if (!is_supported_dev(s, dev))
 		goto out;
 
 	switch (dev->pd_devtype) {
@@ -1697,6 +1743,7 @@ create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 
 	case DTYPE_DIRECT:
 	case TYPE_ZBC:
+		build_guid(s, dev);
 		id_phys = PQI_ZALLOC(sizeof (*id_phys), KM_SLEEP);
 		if ((e->device_flags &
 		    REPORT_PHYS_LUN_DEV_FLAG_AIO_ENABLED) &&
@@ -1735,13 +1782,10 @@ create_logical_dev(pqi_state_t s, report_log_lun_extended_entry_t *e)
 	(void) memcpy(dev->pd_scsi3addr, e->lunid, sizeof (dev->pd_scsi3addr));
 	dev->pd_external_raid = is_external_raid_addr(dev->pd_scsi3addr);
 
-	if (get_device_info(s, dev) == B_FALSE) {
-		dev_err(s->s_dip, CE_NOTE, "INQUIRY failed on device 0x%lx",
-		    (unsigned long int)dev->pd_wwid);
+	if (get_device_info(s, dev) == B_FALSE)
 		goto out;
-	}
 
-	if (!is_supported_dev(dev))
+	if (!is_supported_dev(s, dev))
 		goto out;
 
 	(void) memcpy(dev->pd_volume_id, e->volume_id,

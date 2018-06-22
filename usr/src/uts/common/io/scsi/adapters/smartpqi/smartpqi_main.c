@@ -230,12 +230,18 @@ smartpqi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	(void) snprintf(m.mem, m.len, "smartpqi_cache%d", instance);
 	s->s_cmd_cache = kmem_cache_create(m.mem, sizeof (struct pqi_cmd), 0,
 	    pqi_cache_constructor, pqi_cache_destructor, NULL, s, NULL, 0);
+
+	(void) snprintf(m.mem, m.len, "smartpqi_taskq%d", instance);
+	s->s_taskq = ddi_taskq_create(s->s_dip, m.mem, 1,
+	    TASKQ_DEFAULTPRI, 0);
 	pqi_free_mem_len(&m);
 
-	s->s_taskq = ddi_taskq_create(s->s_dip, "smartpqi_taskq", 1,
-	    TASKQ_DEFAULTPRI, 0);
 	s->s_debug_level = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
 	    DDI_PROP_DONTPASS, "debug", 0);
+	if (ddi_prop_get_int(DDI_DEV_T_ANY, dip, DDI_PROP_DONTPASS,
+	    "enable-mpxio", 0) != 0) {
+		s->s_enable_mpxio = 1;
+	}
 	if (smartpqi_register_intrs(s) == FALSE) {
 		dev_err(s->s_dip, CE_WARN, "unable to register interrupts");
 		goto fail;
@@ -316,6 +322,10 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			/* ---- Better not be any active commands ---- */
 			ASSERT(list_is_empty(&devp->pd_cmd_list));
 
+			if (devp->pd_guid != NULL) {
+				ddi_devid_free_guid(devp->pd_guid);
+				devp->pd_guid = NULL;
+			}
 			list_destroy(&devp->pd_cmd_list);
 			mutex_destroy(&devp->pd_mutex);
 			list_remove(&s->s_devnodes, devp);
@@ -342,6 +352,7 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			(void) untimeout(s->s_time_of_day);
 			s->s_time_of_day = 0;
 		}
+
 		ddi_soft_state_free(pqi_state, instance);
 		ddi_prop_remove_all(dip);
 	}
