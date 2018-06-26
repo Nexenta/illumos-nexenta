@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -124,6 +124,11 @@ smb_shr_load(void *args)
 		shr_load_file(shr_file);
 
 	return (NULL);
+}
+
+void
+smb_shr_load_execinfo()
+{
 }
 
 void

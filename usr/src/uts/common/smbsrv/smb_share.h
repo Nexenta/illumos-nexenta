@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -58,17 +58,17 @@ extern "C" {
  * name			Advertised name of the share
  *
  * ad-container		Active directory container in which the share
- * 			will be published
+ *			will be published
  *
  * abe			Determines whether Access Based Enumeration is applied
  *			to a share
  *
  * csc			Client-side caching (CSC) options applied to this share
- * 	disabled	The client MUST NOT cache any files
- * 	manual		The client should not automatically cache every file
- * 			that it	opens
- * 	auto		The client may cache every file that it opens
- * 	vdo		The client may cache every file that it opens
+ *	disabled	The client MUST NOT cache any files
+ *	manual		The client should not automatically cache every file
+ *			that it	opens
+ *	auto		The client may cache every file that it opens
+ *	vdo		The client may cache every file that it opens
  *			and satisfy file requests from its local cache.
  *
  * catia		CATIA character substitution
@@ -78,10 +78,10 @@ extern "C" {
  * quotas		SMB quotas presented & supported (T/F)
  *
  * encrypt		Controls SMB3 encryption per-share.
- * 	disabled	Server does not tell the client to encrypt requests.
- * 	enabled		Server asks, but does not require, that the client
+ *	disabled	Server does not tell the client to encrypt requests.
+ *	enabled		Server asks, but does not require, that the client
  *			encrypt its requests.
- * 	required	Server denies unencrypted share access.
+ *	required	Server denies unencrypted share access.
  *
  * next three properties use access-list a la NFS
  *
@@ -261,6 +261,7 @@ typedef struct smb_shr_execinfo {
 int smb_shr_start(void);
 void smb_shr_stop(void);
 void *smb_shr_load(void *);
+void smb_shr_load_execinfo(void);
 void smb_shr_unload(void);
 void smb_shr_iterinit(smb_shriter_t *);
 smb_share_t *smb_shr_iterate(smb_shriter_t *);
