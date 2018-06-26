@@ -23,7 +23,7 @@
  * Use is subject to license terms.
  */
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -2273,6 +2273,7 @@ start_retry_loop:
 		if (rpcerr->re_status == RPC_SUCCESS)
 			rpcerr->re_status = RPC_XPRTFAILED;
 		cm_entry->x_connected = FALSE;
+		cm_entry->x_dead = TRUE;
 	} else
 		cm_entry->x_connected = connected;
 
@@ -2391,6 +2392,7 @@ connmgr_wrapconnect(
 			if (rpcerr->re_status == RPC_SUCCESS)
 				rpcerr->re_status = RPC_XPRTFAILED;
 			cm_entry->x_connected = FALSE;
+			cm_entry->x_dead = TRUE;
 		} else
 			cm_entry->x_connected = connected;
 
