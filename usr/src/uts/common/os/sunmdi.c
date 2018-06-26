@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright (c) 2014 Nexenta Systems Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 /*
@@ -6081,21 +6081,61 @@ mdi_pi_kstat_create(mdi_pathinfo_t *pip, char *ksname)
 	kstat_t			*kiosp, *kerrsp;
 	struct pi_errs		*nsp;
 	struct mdi_pi_kstats	*mdi_statp;
+	char			*errkstat_name;
+	size_t			len;
 
-	if (MDI_PI(pip)->pi_kstats != NULL)
+	/*
+	 * If this is an existing pathinfo node it already
+	 * has a reference to the kstats.  No need to do
+	 * anything.
+	 */
+	if (MDI_PI(pip)->pi_kstats != NULL) {
 		return (MDI_SUCCESS);
+	}
+
+	/*
+	 * See if the IO kstat name has already been created.
+	 * If it is in the kstat cache, update this pathinfo
+	 * node with a reference to the IO and ERR kstats.
+	 */
+	len = strlen(ksname) + strlen(",err") + 1;
+	errkstat_name = kmem_alloc(len, KM_SLEEP);
+	(void) snprintf(errkstat_name, len, "%s,err", ksname);
+
+	mdi_statp = kmem_alloc(sizeof (*mdi_statp), KM_SLEEP);
+	mdi_statp->pi_kstat_ref = 1;
+	MDI_PI(pip)->pi_kstats = mdi_statp;
+
+	kiosp = kstat_hold_byname("mdi", 0, ksname, ALL_ZONES);
+	if (kiosp != NULL) {
+		/*
+		 * The kstats for this path already exist but this is a new
+		 * pathinfo node for the path.  Just update the pathinfo
+		 * with a reference to existing kstats. This can happen at
+		 * boot time if the vhci_scsi driver loads and registers
+		 * pathinfo before the kstats are created.
+		 */
+		kerrsp = kstat_hold_byname("mdi", 0, errkstat_name, ALL_ZONES);
+		mdi_statp->pi_kstat_iostats = kiosp;
+		mdi_statp->pi_kstat_errstats = kerrsp;
+		kstat_rele(kiosp);
+		kstat_rele(kerrsp);
+		kmem_free(errkstat_name, len);
+		return (MDI_SUCCESS);
+	}
 
 	if ((kiosp = kstat_create("mdi", 0, ksname, "iopath",
 	    KSTAT_TYPE_IO, 1, KSTAT_FLAG_PERSISTENT)) == NULL) {
+		kmem_free(errkstat_name, len);
 		return (MDI_FAILURE);
 	}
 
-	(void) strcat(ksname, ",err");
-	kerrsp = kstat_create("mdi", 0, ksname, "iopath_errors",
+	kerrsp = kstat_create("mdi", 0, errkstat_name, "iopath_errors",
 	    KSTAT_TYPE_NAMED,
 	    sizeof (struct pi_errs) / sizeof (kstat_named_t), 0);
 	if (kerrsp == NULL) {
 		kstat_delete(kiosp);
+		kmem_free(errkstat_name, len);
 		return (MDI_FAILURE);
 	}
 
@@ -6118,13 +6158,12 @@ mdi_pi_kstat_create(mdi_pathinfo_t *pip, char *ksname)
 	    KSTAT_DATA_UINT32);
 	kstat_named_init(&nsp->pi_failedto, "Failed To", KSTAT_DATA_UINT32);
 
-	mdi_statp = kmem_alloc(sizeof (*mdi_statp), KM_SLEEP);
-	mdi_statp->pi_kstat_ref = 1;
 	mdi_statp->pi_kstat_iostats = kiosp;
 	mdi_statp->pi_kstat_errstats = kerrsp;
 	kstat_install(kiosp);
 	kstat_install(kerrsp);
-	MDI_PI(pip)->pi_kstats = mdi_statp;
+
+	kmem_free(errkstat_name, len);
 	return (MDI_SUCCESS);
 }
 
