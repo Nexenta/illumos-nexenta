@@ -172,7 +172,8 @@ pqi_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 		if ((pip = (mdi_pathinfo_t *)sd->sd_private) == NULL)
 			return (DDI_NOT_WELL_FORMED);
 
-		(void) snprintf(wwid_str, sizeof (wwid_str), "%lx", d->pd_wwid);
+		(void) snprintf(wwid_str, sizeof (wwid_str), "%" PRIx64,
+		    d->pd_wwid);
 		(void) mdi_prop_update_string(pip, SCSI_ADDR_PROP_TARGET_PORT,
 		    wwid_str);
 	}
@@ -889,7 +890,8 @@ create_virt_lun(pqi_state_t s, pqi_device_t d, struct scsi_inquiry *inq,
 	if (d->pd_guid != NULL) {
 		guid_ptr = d->pd_guid;
 	} else {
-		(void) snprintf(wwid_str, sizeof (wwid_str), "%lx", d->pd_wwid);
+		(void) snprintf(wwid_str, sizeof (wwid_str), "%" PRIx64,
+		    d->pd_wwid);
 		guid_ptr = wwid_str;
 	}
 	(void) snprintf(tgt_str, sizeof (tgt_str), "%x", d->pd_target);
