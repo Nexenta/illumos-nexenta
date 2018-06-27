@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _SMB_SHARE_H
@@ -247,6 +247,7 @@ typedef struct smb_shr_execinfo {
 int smb_shr_start(void);
 void smb_shr_stop(void);
 void *smb_shr_load(void *);
+void smb_shr_load_execinfo(void);
 void smb_shr_iterinit(smb_shriter_t *);
 smb_share_t *smb_shr_iterate(smb_shriter_t *);
 void smb_shr_list(int, smb_shrlist_t *);
