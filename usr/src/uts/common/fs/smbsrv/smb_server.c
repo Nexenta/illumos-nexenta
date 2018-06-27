@@ -20,8 +20,8 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2017 by Delphix. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -602,6 +602,7 @@ smb_server_start(smb_ioc_start_t *ioc)
 	int		rc = 0;
 	int		family;
 	smb_server_t	*sv;
+	cred_t		*ucr;
 
 	rc = smb_server_lookup(&sv);
 	if (rc)
@@ -613,6 +614,31 @@ smb_server_start(smb_ioc_start_t *ioc)
 
 		if ((rc = smb_server_fsop_start(sv)) != 0)
 			break;
+
+		/*
+		 * Note: smb_kshare_start needs sv_session.
+		 */
+		sv->sv_session = smb_session_create(NULL, 0, sv, 0);
+		if (sv->sv_session == NULL) {
+			rc = ENOMEM;
+			break;
+		}
+
+		/*
+		 * Create a logon on the server session,
+		 * used when importing CA shares.
+		 */
+		sv->sv_rootuser = smb_user_new(sv->sv_session);
+		ucr = smb_kcred_create();
+		rc = smb_user_logon(sv->sv_rootuser, ucr, "", "root",
+		    SMB_USER_FLAG_ADMIN, 0, 0);
+		crfree(ucr);
+		ucr = NULL;
+		if (rc != 0) {
+			cmn_err(CE_NOTE, "smb_server_start: "
+			    "failed to create root user");
+			break;
+		}
 
 		if ((rc = smb_kshare_start(sv)) != 0)
 			break;
@@ -631,9 +657,8 @@ smb_server_start(smb_ioc_start_t *ioc)
 		    sv->sv_cfg.skc_maxconnections, INT_MAX,
 		    curzone->zone_zsched, TASKQ_DYNAMIC);
 
-		sv->sv_session = smb_session_create(NULL, 0, sv, 0);
-
-		if (sv->sv_worker_pool == NULL || sv->sv_session == NULL) {
+		if (sv->sv_worker_pool == NULL ||
+		    sv->sv_receiver_pool == NULL) {
 			rc = ENOMEM;
 			break;
 		}
@@ -1490,6 +1515,11 @@ smb_server_shutdown(smb_server_t *sv)
 	 * normal sessions, this happens in smb_session_cancel,
 	 * but that's not called for the server session.
 	 */
+	if (sv->sv_rootuser != NULL) {
+		smb_user_logoff(sv->sv_rootuser);
+		smb_user_release(sv->sv_rootuser);
+		sv->sv_rootuser = NULL;
+	}
 	if (sv->sv_session != NULL) {
 		smb_slist_wait_for_empty(&sv->sv_session->s_req_list);
 
@@ -1983,8 +2013,8 @@ smb_server_lookup_ssnid(smb_server_t *sv, uint64_t ssnid)
 	smb_llist_enter(sl, RW_READER);
 
 	for (sess = smb_llist_head(sl);
-	     sess != NULL;
-	     sess = smb_llist_next(sl, sess)) {
+	    sess != NULL;
+	    sess = smb_llist_next(sl, sess)) {
 
 		SMB_SESSION_VALID(sess);
 

@@ -262,7 +262,6 @@ smb2_dh_import_share(void *arg)
 	smb_kshare_t	*shr = sr->arg.tcon.si;
 	smb_node_t	*snode;
 	cred_t		*kcr = zone_kcred();
-	cred_t		*ucr;
 	smb_streaminfo_t *str_info = NULL;
 	uint64_t	id;
 	smb_node_t	*str_node;
@@ -277,19 +276,14 @@ smb2_dh_import_share(void *arg)
 		delay(SEC_TO_TICK(smb2_dh_import_delay));
 
 	/*
-	 * Create a temporary user logon
+	 * Borrow the server's "root" user.
+	 *
+	 * This takes the place of smb_session_lookup_ssnid()
+	 * that would happen in smb2_dispatch for a normal SR.
+	 * As usual, this hold is released in smb_request_free.
 	 */
-	ucr = smb_kcred_create();
-	sr->uid_user = smb_user_new(sr->session);
-	rc = smb_user_logon(sr->uid_user, ucr, "", "root",
-	    SMB_USER_FLAG_ADMIN, 0, 0);
-	crfree(ucr);
-	ucr = NULL;
-	if (rc != 0) {
-		cmn_err(CE_NOTE, "smb2_dh_import_share: "
-		    "failed to setup user");
-		goto out;
-	}
+	sr->uid_user = sr->sr_server->sv_rootuser;
+	smb_user_hold_internal(sr->uid_user);
 	sr->user_cr = sr->uid_user->u_cred;
 
 	/*
@@ -379,10 +373,14 @@ out:
 		kmem_free(str_info, sizeof (smb_streaminfo_t));
 	/* Let smb_request_free clean up sr->sr_request_buf */
 
+	/*
+	 * We did a (temporary, internal) tree connect above,
+	 * which we need to undo before we return.  Note that
+	 * smb_request_free will do the final release of
+	 * sr->tid_tree, sr->uid_user
+	 */
 	if (sr->tid_tree != NULL)
 		smb_tree_disconnect(sr->tid_tree, B_FALSE);
-	if (sr->uid_user != NULL)
-		smb_user_logoff(sr->uid_user);
 
 	/*
 	 * Wake up any waiting tree connect(s).
