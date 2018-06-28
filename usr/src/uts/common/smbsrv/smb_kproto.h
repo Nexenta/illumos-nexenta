@@ -556,14 +556,6 @@ int smb_pathname(smb_request_t *, char *, int, smb_node_t *,
     smb_node_t *, smb_node_t **, smb_node_t **, cred_t *, pathname_t *);
 
 /*
- * smb_vfs functions
- */
-
-int smb_vfs_hold(smb_export_t *, vfs_t *);
-void smb_vfs_rele(smb_export_t *, vfs_t *);
-void smb_vfs_rele_all(smb_export_t *);
-
-/*
  * smb_notify.c
  */
 uint32_t smb_notify_act1(smb_request_t *, uint32_t, uint32_t);
