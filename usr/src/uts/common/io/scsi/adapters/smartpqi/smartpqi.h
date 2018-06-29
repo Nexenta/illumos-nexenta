@@ -51,10 +51,14 @@ extern "C" {
 #define	UNDEFINED				-1
 #define	MAX_NAME_PROP_SIZE			256
 #define	LUN_PROP				"lun"
+#define	LUN64_PROP				"lun64"
 #define	MDI_GUID				"wwn"
+#define	NDI_GUID				"guid"
 #define	TARGET_PROP				"target"
 #define	LUN_PROP				"lun"
 #define	COMPAT_PROP				"compatible"
+#define	NAME_DISK				"disk"
+#define	NAME_ENCLOSURE				"enclosure"
 
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
@@ -475,7 +479,7 @@ typedef struct pqi_cmd {
 #define	PQI_REQUEST_IU_SET_VENDOR_EVENT_CONFIG		0x73
 #define	PQI_REQUEST_IU_ACKNOWLEDGE_VENDOR_EVENT		0xf6
 
-#define	MASKED_DEVICE(lunid)				((lunid)[6] & 0xc0)
+#define	MASKED_DEVICE(lunid)				((lunid)[3] & 0xc0)
 
 #define	MEMP(args...) (void) snprintf(m.mem + strlen(m.mem), \
 	m.len - strlen(m.mem), args)

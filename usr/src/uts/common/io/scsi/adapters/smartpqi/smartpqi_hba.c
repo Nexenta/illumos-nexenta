@@ -53,6 +53,7 @@ static void abort_all(struct scsi_address *ap, pqi_state_t s);
 static int cmd_ext_alloc(pqi_cmd_t cmd, int kf);
 static void cmd_ext_free(pqi_cmd_t cmd);
 static boolean_t is_physical_dev(pqi_device_t d);
+static boolean_t decode_to_target(void *arg, long *target);
 
 int
 smartpqi_register_hba(pqi_state_t s)
@@ -152,9 +153,6 @@ pqi_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 	mdi_pathinfo_t	*pip;
 	int		type;
 
-	if (sd->sd_pathinfo == NULL)
-		return (DDI_NOT_WELL_FORMED);
-
 	if ((lun = scsi_device_prop_get_int(sd, SCSI_DEVICE_PROP_PATH,
 	    LUN_PROP, 0xffff)) == 0xffff) {
 		return (DDI_NOT_WELL_FORMED);
@@ -173,7 +171,7 @@ pqi_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 			return (DDI_NOT_WELL_FORMED);
 
 		(void) snprintf(wwid_str, sizeof (wwid_str), "%" PRIx64,
-		    d->pd_wwid);
+		    d->pd_sas_address);
 		(void) mdi_prop_update_string(pip, SCSI_ADDR_PROP_TARGET_PORT,
 		    wwid_str);
 	}
@@ -705,7 +703,6 @@ pqi_bus_config(dev_info_t *pdip, uint_t flag,
 	int		circ1	= 0;
 	int		ret	= NDI_FAILURE;
 	long		target;
-	char		*p;
 	pqi_device_t	d;
 
 	tran = ddi_get_driver_private(pdip);
@@ -717,12 +714,15 @@ pqi_bus_config(dev_info_t *pdip, uint_t flag,
 	ndi_devi_enter(pdip, &circ);
 	switch (op) {
 	case BUS_CONFIG_ONE:
-		if ((p = strrchr((char *)arg, '@')) != NULL &&
-		    ddi_strtol(p + 1, NULL, 16, &target) == 0) {
+		if (decode_to_target(arg, &target) == B_TRUE) {
 			d = pqi_find_target_dev(s, target);
 			if (d != NULL)
 				ret = config_one(pdip, s, d, childp);
+		} else {
+			dev_err(s->s_dip, CE_WARN, "Couldn't decode %s",
+			    (char *)arg);
 		}
+		flag |= NDI_MDI_FALLBACK;
 		break;
 
 	case BUS_CONFIG_DRIVER:
@@ -788,6 +788,29 @@ pqi_quiesced_notify(pqi_state_t s)
  * []------------------------------------------------------------------[]
  */
 
+static boolean_t
+decode_to_target(void *arg, long *target)
+{
+	char	*ptr = arg;
+	char	*tgt_ptr;
+
+	if (strncmp(NAME_DISK, ptr, sizeof (NAME_DISK) - 1) == 0) {
+		if ((tgt_ptr = strrchr(ptr, '@')) != NULL &&
+		    ddi_strtol(tgt_ptr + 1, NULL, 16, target) == 0)
+			return (B_TRUE);
+		else
+			return (B_FALSE);
+	}
+	if (strncmp(NAME_ENCLOSURE, ptr, sizeof (NAME_ENCLOSURE) - 1) == 0) {
+		if ((tgt_ptr = strrchr(ptr, ',')) != NULL &&
+		    ddi_strtol(tgt_ptr + 1, NULL, 16, target) == 0)
+			return (B_TRUE);
+		else
+			return (B_FALSE);
+	}
+	return (B_FALSE);
+}
+
 /*ARGSUSED*/
 static void
 abort_all(struct scsi_address *ap, pqi_state_t s)
@@ -809,6 +832,8 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 	char		*scsi_binding_set;
 	int		ncompatible	= 0;
 	dev_info_t	*dip;
+	char		*wwn_str;
+	int		rval;
 
 	/* ---- get the 'scsi-binding-set' property ---- */
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, s->s_dip,
@@ -818,8 +843,8 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 	}
 
 	/* ---- At this point we have a new device not in our list ---- */
-	scsi_hba_nodename_compatible_get(inq, NULL, inq->inq_dtype, NULL,
-	    &nodename, &compatible, &ncompatible);
+	scsi_hba_nodename_compatible_get(inq, scsi_binding_set,
+	    inq->inq_dtype, NULL, &nodename, &compatible, &ncompatible);
 	if (scsi_binding_set != NULL)
 		ddi_prop_free(scsi_binding_set);
 	if (nodename == NULL)
@@ -834,24 +859,47 @@ create_phys_lun(pqi_state_t s, pqi_device_t d,
 	d->pd_dip = dip;
 	d->pd_pip = NULL;
 
-	if (ndi_prop_update_string(DDI_DEV_T_NONE, dip, "device-type",
-	    "scsi") != DDI_PROP_SUCCESS ||
-	    ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    LUN_PROP, d->pd_target) != DDI_PROP_SUCCESS ||
-	    ndi_prop_update_int(DDI_DEV_T_NONE, dip,
-	    "pm_capable", 1) != DDI_PROP_SUCCESS ||
-	    ndi_prop_update_string_array(DDI_DEV_T_NONE, dip,
-	    COMPAT_PROP, compatible, ncompatible) != DDI_PROP_SUCCESS) {
-		dev_err(s->s_dip, CE_WARN,
-		    "failed to update props for target %d", d->pd_target);
+	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip, TARGET_PROP,
+	    ddi_get_instance(s->s_dip)) != DDI_PROP_SUCCESS) {
 		goto free_devi;
 	}
 
-	if (ndi_devi_online(dip, NDI_ONLINE_ATTACH) != NDI_SUCCESS) {
-		dev_err(s->s_dip, CE_WARN, "Failed to online target %d",
-		    d->pd_target);
+	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip, LUN_PROP, d->pd_target) !=
+	    DDI_PROP_SUCCESS) {
 		goto free_devi;
 	}
+
+	if (ndi_prop_update_int64(DDI_DEV_T_NONE, dip, LUN64_PROP,
+	    (int64_t)d->pd_target) != DDI_PROP_SUCCESS) {
+		goto free_devi;
+	}
+
+	if (ndi_prop_update_string_array(DDI_DEV_T_NONE, dip, COMPAT_PROP,
+	    compatible, ncompatible) != DDI_PROP_SUCCESS) {
+		goto free_devi;
+	}
+
+	wwn_str = kmem_zalloc(MAX_NAME_PROP_SIZE, KM_SLEEP);
+	(void) snprintf(wwn_str, MAX_NAME_PROP_SIZE, "w%016" PRIx64,
+	    d->pd_wwid);
+	rval = ndi_prop_update_string(DDI_DEV_T_NONE, dip,
+	    SCSI_ADDR_PROP_TARGET_PORT, wwn_str);
+	kmem_free(wwn_str, MAX_NAME_PROP_SIZE);
+	if (rval != DDI_PROP_SUCCESS)
+		goto free_devi;
+
+	if (ddi_prop_update_string(DDI_DEV_T_NONE, dip, NDI_GUID, d->pd_guid) !=
+	    DDI_PROP_SUCCESS) {
+		goto free_devi;
+	}
+
+	if (ndi_prop_update_int(DDI_DEV_T_NONE, dip, "pm-capable", 1) !=
+	    DDI_PROP_SUCCESS) {
+		goto free_devi;
+	}
+
+	if (ndi_devi_online(dip, NDI_ONLINE_ATTACH) != NDI_SUCCESS)
+		goto free_devi;
 
 	if (childp != NULL)
 		*childp = dip;

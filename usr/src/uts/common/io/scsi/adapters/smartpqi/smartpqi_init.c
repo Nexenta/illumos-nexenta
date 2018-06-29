@@ -1738,6 +1738,7 @@ create_phys_dev(pqi_state_t s, report_phys_lun_extended_entry_t *e)
 
 	switch (dev->pd_devtype) {
 	case DTYPE_ESI:
+		build_guid(s, dev);
 		dev->pd_sas_address = ntohll(dev->pd_wwid);
 		break;
 
