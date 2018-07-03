@@ -1,11 +1,6 @@
 <?xml version="1.0"?>
 <!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
 <!--
- Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
- Use is subject to license terms.
-
- CDDL HEADER START
-
  The contents of this file are subject to the terms of the
  Common Development and Distribution License (the "License").
  You may not use this file except in compliance with the License.
@@ -21,14 +16,16 @@
  fields enclosed by brackets "[]" replaced with your own identifying
  information: Portions Copyright [yyyy] [name of copyright owner]
 
- CDDL HEADER END
+ Copyright 2006 Sun Microsystems, Inc.  All rights reserved.
+ Use is subject to license terms.
+ Copyright 2018 Nexenta Systems, Inc.
+-->
 
-        ident	"%Z%%M%	%I%	%E% SMI"
-
-	NOTE:  This service manifest is not editable; its contents will
-	be overwritten by package or patch operations, including
-	operating system upgrade.  Make customizations in a different
-	file.
+<!--
+ NOTE:  This service manifest is not editable; its contents will
+ be overwritten by package or patch operations, including
+ operating system upgrade.  Make customizations in a different
+ file.
 -->
 
 <service_bundle type='manifest' name='SUNWcsr:routing-setup'>
@@ -120,10 +117,8 @@
 		<propval name='default-ipv6-routing' type='boolean'
 			value='false' />
 		<!-- routing-svcs values, current and default -->
-		<propval name='routing-svcs' type='astring'
-		    value='route:default ripng:default' />
-		<propval name='default-routing-svcs' type='astring'
-		    value='route:default ripng:default' />
+		<propval name='routing-svcs' type='astring' value='' />
+		<propval name='default-routing-svcs' type='astring' value='' />
 		<propval name='value_authorization' type='astring'
 			value='solaris.smf.value.routing' />
 	</property_group>

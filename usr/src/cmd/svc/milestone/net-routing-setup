@@ -1,7 +1,5 @@
 #!/sbin/sh
 #
-# CDDL HEADER START
-#
 # The contents of this file are subject to the terms of the
 # Common Development and Distribution License (the "License").
 # You may not use this file except in compliance with the License.
@@ -17,10 +15,11 @@
 # fields enclosed by brackets "[]" replaced with your own identifying
 # information: Portions Copyright [yyyy] [name of copyright owner]
 #
-# CDDL HEADER END
-#
+
 #
 # Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.
+#
 
 # This script configures IP routing.
 
@@ -28,8 +27,8 @@
 
 #
 # In a shared-IP zone we need this service to be up, but all of the work
-# it tries to do is irrelevant (and will actually lead to the service 
-# failing if we try to do it), so just bail out. 
+# it tries to do is irrelevant (and will actually lead to the service
+# failing if we try to do it), so just bail out.
 # In the global zone and exclusive-IP zones we proceed.
 #
 smf_configure_ip || exit $SMF_EXIT_OK
@@ -46,17 +45,6 @@ smf_configure_ip || exit $SMF_EXIT_OK
 # point in boot, we cannot.
 #
 /sbin/routeadm -u
-
-#
-# Are we routing dynamically? routeadm(1M) reports this in the
-# "current" values of ipv4/6-routing - if either are true, we are running
-# routing daemons (or at least they are enabled to run).
-#
-dynamic_routing_test=`/sbin/routeadm -p | \
-nawk '/^ipv[46]-routing [.]*/ { print $2 }'  | /usr/bin/grep "current=enabled"`
-if [ -n "$dynamic_routing_test" ]; then
-	dynamic_routing="true"
-fi
 
 #
 # Configure default IPv4 routers using the local "/etc/defaultrouter"
@@ -128,26 +116,14 @@ elif [ -f /etc/defaultrouter ]; then
 	else
 		/usr/sbin/route -fn > /dev/null
 	fi
-else
-	defrouters=
 fi
 
 #
 # Use routeadm(1M) to configure forwarding and launch routing daemons
 # for IPv4 and IPv6 based on preset values.  These settings only apply
 # to the global zone.  For IPv4 dynamic routing, the system will default
-# to disabled if a default route was previously added via BOOTP, DHCP,
-# or the /etc/defaultrouter file.  routeadm also starts in.ndpd.
+# to disabled.
 #
-if [ "$dynamic_routing" != "true"  ] && [ -z "$defrouters" ]; then
-	#
-	# No default routes were setup by "route" command above.
-	# Check the kernel routing table for any other default
-	# routes.
-	#
-	/usr/bin/netstat -rn -f inet | \
-	    /usr/bin/grep default >/dev/null 2>&1 && defrouters=yes
-fi
 
 #
 # The routeadm/ipv4-routing-set property is true if the administrator
@@ -156,31 +132,17 @@ fi
 # however, as persistent daemon state is now controlled by SMF.
 #
 ipv4_routing_set=`/usr/bin/svcprop -p routeadm/ipv4-routing-set $SMF_FMRI`
-if [ -z "$defrouters" ]; then
-	#
-	# Set default value for ipv4-routing to enabled.  If routeadm -e/-d
-	# has not yet been run by the administrator, we apply this default.
-	# The -b option is project-private and informs routeadm not
-	# to treat the enable as administrator-driven.
-	#
-	/usr/sbin/svccfg -s $SMF_FMRI \
-	    setprop routeadm/default-ipv4-routing = true
-	if [ "$ipv4_routing_set" = "false" ]; then
-		/sbin/routeadm -b -e ipv4-routing -u
-	fi
-else
-	#
-	# Default router(s) have been found,  so ipv4-routing default value
-	# should be disabled.  If routaedm -e/d has not yet been run by
-	# the administrator, we apply this default.  The -b option is
-	# project-private and informs routeadm not to treat the disable as
-	# administrator-driven.
-	#
-	/usr/sbin/svccfg -s $SMF_FMRI \
-	    setprop routeadm/default-ipv4-routing = false
-	if [ "$ipv4_routing_set" = "false" ]; then
-		/sbin/routeadm -b -d ipv4-routing -u
-	fi
+
+#
+# Set default value for ipv4-routing to disabled.  If routeadm -e/-d
+# has not yet been run by the administrator, we apply this default.
+# The -b option is project-private and informs routeadm not
+# to treat the enable as administrator-driven.
+#
+/usr/sbin/svccfg -s $SMF_FMRI \
+    setprop routeadm/default-ipv4-routing = false
+if [ "$ipv4_routing_set" = "false" ]; then
+	/sbin/routeadm -b -d ipv4-routing -u
 fi
 
 #
@@ -197,7 +159,6 @@ if [ -f /etc/svc/volatile/etc/inet/static_routes ]; then
 		    /etc/inet/static_routes
 	fi
 	/usr/bin/rm /etc/svc/volatile/etc/inet/static_routes
-	
 fi
 
 #
