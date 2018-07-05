@@ -2703,7 +2703,8 @@ dumpsys(void)
 		(void) VOP_DUMPCTL(dumpvp, DUMP_ALLOC, NULL, NULL);
 		(void) vsnprintf(dumphdr->dump_panicstring, DUMP_PANICSIZE,
 		    panicstr, panicargs);
-
+		(void) strncpy(dumphdr->dump_uuid, dump_get_uuid(),
+		    sizeof (dumphdr->dump_uuid));
 	}
 
 	if (dump_conflags & DUMP_ALL)
