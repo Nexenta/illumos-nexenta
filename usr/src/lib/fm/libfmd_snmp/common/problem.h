@@ -24,25 +24,32 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #ifndef	_PROBLEM_H
 #define	_PROBLEM_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #ifdef	__cplusplus
 extern "C" {
 #endif
 
 #include <sys/types.h>
-#include <libuutil.h>
+
 #include <libnvpair.h>
+#include <libuutil.h>
 
 typedef struct sunFmProblem_data {
 	int		d_valid;
 	uu_avl_node_t	d_uuid_avl;
 	const char	*d_aci_uuid;
 	const char	*d_aci_code;
+	const char	*d_aci_type;
+	const char	*d_aci_severity;
 	const char	*d_aci_url;
+	const char	*d_aci_desc;
+	const char	*d_aci_fmri;
 	const char	*d_diag_engine;
 	struct timeval	d_diag_time;
 	ulong_t		d_nsuspects;

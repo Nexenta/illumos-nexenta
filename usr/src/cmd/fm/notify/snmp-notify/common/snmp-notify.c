@@ -304,7 +304,7 @@ send_fm_trap(fmproblem_trap_t *t)
 	static const oid sunFmProblemURL_oid[] =
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_URL };
 	static const oid sunFmProblemDescr_oid[] =
-	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_DESCR };
+	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_DESC };
 	static const oid sunFmProblemFMRI_oid[] =
 	    { SUNFMPROBLEMTABLE_OID, 1, SUNFMPROBLEM_COL_FMRI };
 

@@ -24,19 +24,28 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #include <sys/fm/protocol.h>
+
 #include <fm/fmd_adm.h>
 #include <fm/fmd_snmp.h>
+
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
+
+#include <alloca.h>
+#include <errno.h>
+#include <libnvpair.h>
+#include <libuutil.h>
+#include <locale.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <stddef.h>
-#include <errno.h>
-#include <alloca.h>
-#include <locale.h>
-#include <libuutil.h>
-#include <libnvpair.h>
+
 #include "sunFM_impl.h"
 #include "problem.h"
 
@@ -174,12 +183,23 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 			return (0);
 		}
 
-		data->d_aci_uuid = data->d_aci_code = data->d_aci_url = "-";
+		data->d_aci_uuid = data->d_aci_code = data->d_aci_type =
+		    data->d_aci_severity = data->d_aci_url =
+		    data->d_aci_desc = data->d_aci_fmri = "-";
 		(void) nvlist_lookup_string(data->d_aci_event, FM_SUSPECT_UUID,
 		    (char **)&data->d_aci_uuid);
 		(void) nvlist_lookup_string(data->d_aci_event,
 		    FM_SUSPECT_DIAG_CODE, (char **)&data->d_aci_code);
-		data->d_aci_url = strdup(acp->aci_url);
+		(void) nvlist_lookup_string(data->d_aci_event,
+		    FM_SUSPECT_TYPE, (char **)&data->d_aci_type);
+		(void) nvlist_lookup_string(data->d_aci_event,
+		    FM_SUSPECT_SEVERITY, (char **)&data->d_aci_severity);
+		if (acp->aci_url != NULL)
+			data->d_aci_url = strdup(acp->aci_url);
+		(void) nvlist_lookup_string(data->d_aci_event,
+		    FM_SUSPECT_DESC, (char **)&data->d_aci_desc);
+		if (acp->aci_fmri != NULL)
+			data->d_aci_fmri = strdup(acp->aci_fmri);
 
 		if (nvlist_lookup_nvlist(data->d_aci_event, FM_SUSPECT_DE,
 		    &nvl) == 0)
@@ -769,35 +789,54 @@ sunFmProblemTable_return(unsigned int reg, void *arg)
 
 	switch (table_info->colnum) {
 	case SUNFMPROBLEM_COL_UUID:
-	{
 		(void) netsnmp_table_build_result(reginfo, request, table_info,
 		    ASN_OCTET_STR, (uchar_t *)data->d_aci_uuid,
 		    strlen(data->d_aci_uuid));
 		break;
+	case SUNFMPROBLEM_COL_HOSTNAME: {
+		char hostname[MAXHOSTNAMELEN+1];
+
+		(void) gethostname(hostname, sizeof (hostname) - 1);
+		(void) netsnmp_table_build_result(reginfo, request, table_info,
+		    ASN_OCTET_STR, (uchar_t *)hostname, strlen(hostname));
+		break;
 	}
 	case SUNFMPROBLEM_COL_CODE:
-	{
 		(void) netsnmp_table_build_result(reginfo, request, table_info,
 		    ASN_OCTET_STR, (uchar_t *)data->d_aci_code,
 		    strlen(data->d_aci_code));
 		break;
-	}
+	case SUNFMPROBLEM_COL_TYPE:
+		(void) netsnmp_table_build_result(reginfo, request, table_info,
+		    ASN_OCTET_STR, (uchar_t *)data->d_aci_type,
+		    strlen(data->d_aci_type));
+		break;
+	case SUNFMPROBLEM_COL_SEVERITY:
+		(void) netsnmp_table_build_result(reginfo, request, table_info,
+		    ASN_OCTET_STR, (uchar_t *)data->d_aci_severity,
+		    strlen(data->d_aci_severity));
+		break;
 	case SUNFMPROBLEM_COL_URL:
-	{
 		(void) netsnmp_table_build_result(reginfo, request, table_info,
 		    ASN_OCTET_STR, (uchar_t *)data->d_aci_url,
 		    strlen(data->d_aci_url));
 		break;
-	}
+	case SUNFMPROBLEM_COL_DESC:
+		(void) netsnmp_table_build_result(reginfo, request, table_info,
+		    ASN_OCTET_STR, (uchar_t *)data->d_aci_desc,
+		    strlen(data->d_aci_desc));
+		break;
+	case SUNFMPROBLEM_COL_FMRI:
+		(void) netsnmp_table_build_result(reginfo, request, table_info,
+		    ASN_OCTET_STR, (uchar_t *)data->d_aci_fmri,
+		    strlen(data->d_aci_fmri));
+		break;
 	case SUNFMPROBLEM_COL_DIAGENGINE:
-	{
 		(void) netsnmp_table_build_result(reginfo, request, table_info,
 		    ASN_OCTET_STR, (uchar_t *)data->d_diag_engine,
 		    strlen(data->d_diag_engine));
 		break;
-	}
-	case SUNFMPROBLEM_COL_DIAGTIME:
-	{
+	case SUNFMPROBLEM_COL_DIAGTIME: {
 		/*
 		 * The date_n_time function is not Y2038-safe; this may
 		 * need to be updated when a suitable Y2038-safe Net-SNMP
@@ -812,13 +851,13 @@ sunFmProblemTable_return(unsigned int reg, void *arg)
 		break;
 	}
 	case SUNFMPROBLEM_COL_SUSPECTCOUNT:
-	{
 		(void) netsnmp_table_build_result(reginfo, request, table_info,
 		    ASN_UNSIGNED, (uchar_t *)&data->d_nsuspects,
 		    sizeof (data->d_nsuspects));
 		break;
-	}
 	default:
+		(void) netsnmp_table_build_result(reginfo, request, table_info,
+		    ASN_OCTET_STR, (uchar_t *)"-", strlen("-"));
 		break;
 	}
 

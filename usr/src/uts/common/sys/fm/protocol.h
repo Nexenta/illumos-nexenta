@@ -23,6 +23,10 @@
  * Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #ifndef	_SYS_FM_PROTOCOL_H
 #define	_SYS_FM_PROTOCOL_H
 
@@ -87,6 +91,7 @@ extern "C" {
 #define	FM_SUSPECT_DIAG_CODE		"code"
 #define	FM_SUSPECT_DIAG_TIME		"diag-time"
 #define	FM_SUSPECT_DE			"de"
+#define	FM_SUSPECT_DESC			"desc"
 #define	FM_SUSPECT_FAULT_LIST		"fault-list"
 #define	FM_SUSPECT_FAULT_SZ		"fault-list-sz"
 #define	FM_SUSPECT_FAULT_STATUS		"fault-status"
@@ -95,6 +100,7 @@ extern "C" {
 #define	FM_SUSPECT_RETIRE		"retire"
 #define	FM_SUSPECT_RESPONSE		"response"
 #define	FM_SUSPECT_SEVERITY		"severity"
+#define	FM_SUSPECT_TYPE			"type"
 
 #define	FM_SUSPECT_VERS0		0
 #define	FM_SUSPECT_VERSION		FM_SUSPECT_VERS0

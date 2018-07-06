@@ -24,10 +24,12 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #ifndef	_FMD_ADM_H
 #define	_FMD_ADM_H
-
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
 
 #include <fm/fmd_api.h>
 
@@ -94,7 +96,11 @@ typedef struct fmd_adm_rsrcinfo {
 typedef struct fmd_adm_caseinfo {
 	const char *aci_uuid;
 	const char *aci_code;
+	const char *aci_type;
+	const char *aci_severity;
 	const char *aci_url;
+	const char *aci_desc;
+	const char *aci_fmri;
 	nvlist_t *aci_event;
 } fmd_adm_caseinfo_t;
 

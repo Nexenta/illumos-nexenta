@@ -24,15 +24,20 @@
  * Use is subject to license terms.
  */
 
-#include <strings.h>
-#include <stdlib.h>
-#include <netdir.h>
-#include <errno.h>
-#include <alloca.h>
-#include <locale.h>
-#include <uuid/uuid.h>
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
 
 #include <sys/fm/protocol.h>
+
+#include <alloca.h>
+#include <errno.h>
+#include <locale.h>
+#include <netdir.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <uuid/uuid.h>
+
 #include <fmd_adm_impl.h>
 #include <fmd_rpc_adm.h>
 
@@ -793,6 +798,8 @@ fmd_adm_case_iter(fmd_adm_t *ap, const char *url_token, fmd_adm_case_f *func,
 	int i, rv;
 	enum clnt_stat cs;
 	uint_t retries = 0;
+	nvlist_t **fault_nvl;
+	uint_t nnvl;
 
 	bzero(&rcl, sizeof (rcl)); /* tell xdr to allocate memory for us */
 
@@ -871,6 +878,28 @@ fmd_adm_case_iter(fmd_adm_t *ap, const char *url_token, fmd_adm_case_f *func,
 			xdr_free(xdr_fmd_rpc_caselist, (char *)&rcl);
 			nvlist_free(aci.aci_event);
 			return (fmd_adm_set_errno(ap, rv));
+		}
+
+		/*
+		 * Don't treat absence of type, severity, or description as
+		 * fatal error.
+		 */
+		(void) nvlist_lookup_string(aci.aci_event, FM_SUSPECT_TYPE,
+		    (char **)&aci.aci_type);
+		(void) nvlist_lookup_string(aci.aci_event, FM_SUSPECT_SEVERITY,
+		    (char **)&aci.aci_severity);
+		(void) nvlist_lookup_string(aci.aci_event, FM_SUSPECT_DESC,
+		    (char **)&aci.aci_desc);
+
+		/*
+		 * Make up the fmri field, looking at the first element in fault
+		 * nvlist.
+		 */
+		if (nvlist_lookup_nvlist_array(aci.aci_event,
+		    FM_SUSPECT_FAULT_LIST, &fault_nvl, &nnvl) == 0 &&
+		    nnvl == 1) {
+			(void) nvlist_lookup_string(fault_nvl[0], "svc-string",
+			    (char **)&aci.aci_fmri);
 		}
 
 		rv = fmd_adm_case_one(&aci, url_token, func, arg);
