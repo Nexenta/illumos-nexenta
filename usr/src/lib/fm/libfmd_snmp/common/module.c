@@ -24,15 +24,22 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #include <fm/fmd_adm.h>
 #include <fm/fmd_snmp.h>
+
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
-#include <pthread.h>
-#include <stddef.h>
+
 #include <errno.h>
 #include <libuutil.h>
+#include <pthread.h>
+#include <stddef.h>
+
 #include "sunFM_impl.h"
 #include "module.h"
 
@@ -45,8 +52,6 @@ static uu_avl_t		*mod_index_avl;
 	mod_index_avl_pool != NULL && mod_name_avl != NULL &&	\
 	mod_index_avl != NULL)
 
-#define	UPDATE_WAIT_MILLIS	10	/* poll interval in milliseconds */
-
 /*
  * Update types.  Single-index and all are mutually exclusive.
  */
@@ -56,34 +61,9 @@ static uu_avl_t		*mod_index_avl;
 
 #define	MODULE_DATA_VALID(d)	((d)->d_valid == valid_stamp)
 
-/*
- * Locking rules are straightforward.  There is only one updater thread
- * for each table, and requests for update that are received while
- * another update is in progress are ignored.  The single per-table lock
- * protects all the data for the table, the valid_stamp and max_index
- * tags for new data, and - importantly - all the hidden static data
- * used by the Net-SNMP library.  The result return callbacks are always
- * called in the master agent thread; holding the table lock is
- * therefore sufficient since only one table's callback can be run at
- * any one time.  Finer-grained locking is possible here but
- * substantially more difficult because nearly all Net-SNMP functions
- * are unsafe.
- *
- * In practice this is more than adequate, since the purpose of
- * threading out the update is to prevent excessively time-consuming
- * data collection from bottlenecking the entire agent, not to improve
- * result throughput (SNMP is not intended to be used for applications
- * requiring high throughput anyway).  If the agent itself ever becomes
- * multithreaded, locking requirements become limited to our local
- * per-table data (the tree, max_index, and valid_stamp), and the
- * implementation could be revisited for better performance.
- */
-
 static ulong_t		max_index;
 static int		valid_stamp;
 static pthread_mutex_t	update_lock;
-static pthread_cond_t	update_cv;
-static volatile enum { US_QUIET, US_NEEDED, US_INPROGRESS } update_status;
 
 static Netsnmp_Node_Handler	sunFmModuleTable_handler;
 
@@ -270,47 +250,24 @@ modinfo_update(sunFmModule_update_ctx_t *update_ctx)
 	return (SNMP_ERR_NOERROR);
 }
 
-/*ARGSUSED*/
 static void
-update_thread(void *arg)
+request_update(void)
 {
+	sunFmModule_update_ctx_t	uc;
+
 	/*
 	 * The current modinfo_update implementation offers minimal savings
 	 * for the use of index-only updates; therefore we always do a full
 	 * update.  If it becomes advantageous to limit updates to a single
 	 * index, the contexts can be queued by the handler instead.
 	 */
-	sunFmModule_update_ctx_t	uc;
-
 	uc.uc_host = NULL;
 	uc.uc_prog = FMD_ADM_PROGRAM;
 	uc.uc_version = FMD_ADM_VERSION;
-
 	uc.uc_index = 0;
 	uc.uc_type = UCT_ALL;
 
-	for (;;) {
-		(void) pthread_mutex_lock(&update_lock);
-		update_status = US_QUIET;
-		while (update_status == US_QUIET)
-			(void) pthread_cond_wait(&update_cv, &update_lock);
-		update_status = US_INPROGRESS;
-		(void) pthread_mutex_unlock(&update_lock);
-		(void) modinfo_update(&uc);
-	}
-}
-
-static void
-request_update(void)
-{
-	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-	update_status = US_NEEDED;
-	(void) pthread_cond_signal(&update_cv);
-	(void) pthread_mutex_unlock(&update_lock);
+	(void) modinfo_update(&uc);
 }
 
 /*ARGSUSED*/
@@ -349,18 +306,6 @@ sunFmModuleTable_init(void)
 	if ((err = pthread_mutex_init(&update_lock, NULL)) != 0) {
 		(void) snmp_log(LOG_ERR, MODNAME_STR ": mutex_init failure: "
 		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-	if ((err = pthread_cond_init(&update_cv, NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": cond_init failure: "
-		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((err = pthread_create(NULL, NULL, (void *(*)(void *))update_thread,
-	    NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": error creating update "
-		    "thread: %s\n", strerror(err));
 		return (MIB_REGISTRATION_FAILED);
 	}
 
@@ -448,12 +393,12 @@ sunFmModuleTable_init(void)
 }
 
 /*
- * These two functions form the core of GET/GETNEXT/GETBULK handling (the
+ * These two functions form the core of GET/GETNEXT handling (the
  * only kind we do).  They perform two functions:
  *
  * - First, frob the request to set all the index variables to correspond
  *   to the value that's going to be returned.  For GET, this is a nop;
- *   for GETNEXT/GETBULK it always requires some work.
+ *   for GETNEXT it always requires some work.
  * - Second, find and return the fmd module information corresponding to
  *   the (possibly updated) indices.
  *
@@ -487,13 +432,13 @@ sunFmModuleTable_nextmod(netsnmp_handler_registration *reginfo,
 			snmp_free_varbind(var);
 			return (NULL);
 		}
-		DEBUGMSGTL((MODNAME_STR, "nextmod: built fake index:\n"));
+		DEBUGMSGTL((MODNAME_STR, "nextmod: built fake index: "));
 		DEBUGMSGVAR((MODNAME_STR, var));
 		DEBUGMSG((MODNAME_STR, "\n"));
 	} else {
 		var = snmp_clone_varbind(table_info->indexes);
 		index = *var->val.integer;
-		DEBUGMSGTL((MODNAME_STR, "nextmod: received index:\n"));
+		DEBUGMSGTL((MODNAME_STR, "nextmod: received index: "));
 		DEBUGMSGVAR((MODNAME_STR, var));
 		DEBUGMSG((MODNAME_STR, "\n"));
 		index++;
@@ -546,38 +491,31 @@ sunFmModuleTable_mod(netsnmp_handler_registration *reginfo,
 }
 
 /*ARGSUSED*/
-static void
-sunFmModuleTable_return(unsigned int reg, void *arg)
+static int
+sunFmModuleTable_handler(netsnmp_mib_handler *handler,
+    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
+    netsnmp_request_info *request)
 {
-	netsnmp_delegated_cache		*cache = (netsnmp_delegated_cache *)arg;
-	netsnmp_request_info		*request;
-	netsnmp_agent_request_info	*reqinfo;
-	netsnmp_handler_registration	*reginfo;
 	netsnmp_table_request_info	*table_info;
 	sunFmModule_data_t		*data;
 	ulong_t				modstate;
+	int				ret = SNMP_ERR_NOERROR;
 
-	ASSERT(netsnmp_handler_check_cache(cache) != NULL);
+	/*
+	 * We don't support MODE_GETBULK directly, so all bulk requests should
+	 * come through bulk_to_next helper.  Make sure it stays that way.
+	 */
+	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
+	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		struct timeval			tv;
-
-		tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-		tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-		(void) snmp_alarm_register_hr(tv, 0, sunFmModuleTable_return,
-		    cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-
-	request = cache->requests;
-	reqinfo = cache->reqinfo;
-	reginfo = cache->reginfo;
+	request_update();
 
 	table_info = netsnmp_extract_table_info(request);
-	request->delegated = 0;
+	if (table_info == NULL) {
+		ret = SNMP_ERR_GENERR;
+		goto out;
+	}
 
 	ASSERT(table_info->colnum >= SUNFMMODULE_COLMIN);
 	ASSERT(table_info->colnum <= SUNFMMODULE_COLMAX);
@@ -596,31 +534,22 @@ sunFmModuleTable_return(unsigned int reg, void *arg)
 	 *   nor those without a column number.  This is true even
 	 *   for GETNEXT requests.
 	 */
-
 	switch (reqinfo->mode) {
 	case MODE_GET:
-		if ((data = sunFmModuleTable_mod(reginfo, table_info)) ==
-		    NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmModuleTable_mod(reginfo, table_info);
+		if (data == NULL)
+			goto out;
 		break;
 	case MODE_GETNEXT:
-	case MODE_GETBULK:
-		if ((data = sunFmModuleTable_nextmod(reginfo, table_info)) ==
-		    NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmModuleTable_nextmod(reginfo, table_info);
+		if (data == NULL)
+			goto out;
 		break;
 	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": Unsupported request "
-		    "mode %d\n", reqinfo->mode);
-		netsnmp_free_delegated_cache(cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": unsupported request mode: %d\n", reqinfo->mode);
+		ret = SNMP_ERR_GENERR;
+		goto out;
 	}
 
 	switch (table_info->colnum) {
@@ -649,35 +578,8 @@ sunFmModuleTable_return(unsigned int reg, void *arg)
 	default:
 		break;
 	}
-	netsnmp_free_delegated_cache(cache);
+
+out:
 	(void) pthread_mutex_unlock(&update_lock);
-}
-
-static int
-sunFmModuleTable_handler(netsnmp_mib_handler *handler,
-    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
-    netsnmp_request_info *requests)
-{
-	netsnmp_request_info		*request;
-	struct timeval			tv;
-
-	tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-	tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-	request_update();
-
-	for (request = requests; request; request = request->next) {
-		if (request->processed != 0)
-			continue;
-
-		if (netsnmp_extract_table_info(request) == NULL)
-			continue;
-
-		request->delegated = 1;
-		(void) snmp_alarm_register_hr(tv, 0, sunFmModuleTable_return,
-		    (void *) netsnmp_create_delegated_cache(handler, reginfo,
-		    reqinfo, request, NULL));
-	}
-
-	return (SNMP_ERR_NOERROR);
+	return (ret);
 }

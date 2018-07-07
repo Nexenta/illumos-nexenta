@@ -24,15 +24,22 @@
  * Use is subject to license terms.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #include <fm/fmd_adm.h>
 #include <fm/fmd_snmp.h>
+
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
-#include <pthread.h>
-#include <stddef.h>
+
 #include <errno.h>
 #include <libuutil.h>
+#include <pthread.h>
+#include <stddef.h>
+
 #include "sunFM_impl.h"
 #include "resource.h"
 
@@ -45,8 +52,6 @@ static uu_avl_t		*rsrc_index_avl;
 	rsrc_index_avl_pool != NULL && rsrc_fmri_avl != NULL &&	\
 	rsrc_index_avl != NULL)
 
-#define	UPDATE_WAIT_MILLIS	10	/* poll interval in milliseconds */
-
 /*
  * Update types: single-index and all are mutually exclusive; a count
  * update is optional.
@@ -58,15 +63,10 @@ static uu_avl_t		*rsrc_index_avl;
 
 #define	RESOURCE_DATA_VALID(d)	((d)->d_valid == valid_stamp)
 
-/*
- * Locking strategy is described in module.c.
- */
 static ulong_t		max_index;
 static int		valid_stamp;
 static uint32_t		rsrc_count;
 static pthread_mutex_t	update_lock;
-static pthread_cond_t	update_cv;
-static volatile enum { US_QUIET, US_NEEDED, US_INPROGRESS } update_status;
 
 static Netsnmp_Node_Handler	sunFmResourceTable_handler;
 static Netsnmp_Node_Handler	sunFmResourceCount_handler;
@@ -265,17 +265,17 @@ rsrcinfo_update(sunFmResource_update_ctx_t *update_ctx)
 	return (SNMP_ERR_NOERROR);
 }
 
-/*ARGSUSED*/
 static void
-update_thread(void *arg)
+request_update(void)
 {
+	sunFmResource_update_ctx_t	uc;
+
 	/*
 	 * The current rsrcinfo_update implementation offers minimal savings
 	 * for the use of index-only updates; therefore we always do a full
 	 * update.  If it becomes advantageous to limit updates to a single
 	 * index, the contexts can be queued by the handler instead.
 	 */
-	sunFmResource_update_ctx_t	uc;
 
 	uc.uc_host = NULL;
 	uc.uc_prog = FMD_ADM_PROGRAM;
@@ -285,28 +285,7 @@ update_thread(void *arg)
 	uc.uc_index = 0;
 	uc.uc_type = UCT_ALL;
 
-	for (;;) {
-		(void) pthread_mutex_lock(&update_lock);
-		update_status = US_QUIET;
-		while (update_status == US_QUIET)
-			(void) pthread_cond_wait(&update_cv, &update_lock);
-		update_status = US_INPROGRESS;
-		(void) pthread_mutex_unlock(&update_lock);
-		(void) rsrcinfo_update(&uc);
-	}
-}
-
-static void
-request_update(void)
-{
-	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-	update_status = US_NEEDED;
-	(void) pthread_cond_signal(&update_cv);
-	(void) pthread_mutex_unlock(&update_lock);
+	(void) rsrcinfo_update(&uc);
 }
 
 /*ARGSUSED*/
@@ -346,18 +325,6 @@ sunFmResourceTable_init(void)
 	if ((err = pthread_mutex_init(&update_lock, NULL)) != 0) {
 		(void) snmp_log(LOG_ERR, MODNAME_STR ": mutex_init failure: "
 		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-	if ((err = pthread_cond_init(&update_cv, NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": cond_init failure: "
-		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((err = pthread_create(NULL, NULL, (void *(*)(void *))update_thread,
-	    NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": error creating update "
-		    "thread: %s\n", strerror(err));
 		return (MIB_REGISTRATION_FAILED);
 	}
 
@@ -461,12 +428,12 @@ sunFmResourceTable_init(void)
 }
 
 /*
- * These two functions form the core of GET/GETNEXT/GETBULK handling (the
+ * These two functions form the core of GET/GETNEXT handling (the
  * only kind we do).  They perform two functions:
  *
  * - First, frob the request to set all the index variables to correspond
  *   to the value that's going to be returned.  For GET, this is a nop;
- *   for GETNEXT/GETBULK it always requires some work.
+ *   for GETNEXT it always requires some work.
  * - Second, find and return the fmd resource information corresponding to
  *   the (possibly updated) indices.
  *
@@ -559,38 +526,27 @@ sunFmResourceTable_rsrc(netsnmp_handler_registration *reginfo,
 }
 
 /*ARGSUSED*/
-static void
-sunFmResourceTable_return(unsigned int reg, void *arg)
+static int
+sunFmResourceTable_handler(netsnmp_mib_handler *handler,
+    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
+    netsnmp_request_info *request)
 {
-	netsnmp_delegated_cache		*cache = (netsnmp_delegated_cache *)arg;
-	netsnmp_request_info		*request;
-	netsnmp_agent_request_info	*reqinfo;
-	netsnmp_handler_registration	*reginfo;
 	netsnmp_table_request_info	*table_info;
 	sunFmResource_data_t		*data;
 	ulong_t				rsrcstate;
+	int				ret = SNMP_ERR_NOERROR;
 
-	ASSERT(netsnmp_handler_check_cache(cache) != NULL);
+	/*
+	 * We don't support MODE_GETBULK directly, so all bulk requests should
+	 * come through bulk_to_next helper.  Make sure it stays that way.
+	 */
+	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
+	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		struct timeval			tv;
-
-		tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-		tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-		(void) snmp_alarm_register_hr(tv, 0, sunFmResourceTable_return,
-		    cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-
-	request = cache->requests;
-	reqinfo = cache->reqinfo;
-	reginfo = cache->reginfo;
+	request_update();
 
 	table_info = netsnmp_extract_table_info(request);
-	request->delegated = 0;
 
 	ASSERT(table_info->colnum >= SUNFMRESOURCE_COLMIN);
 	ASSERT(table_info->colnum <= SUNFMRESOURCE_COLMAX);
@@ -609,31 +565,22 @@ sunFmResourceTable_return(unsigned int reg, void *arg)
 	 *   nor those without a column number.  This is true even
 	 *   for GETNEXT requests.
 	 */
-
 	switch (reqinfo->mode) {
 	case MODE_GET:
-		if ((data = sunFmResourceTable_rsrc(reginfo, table_info)) ==
-		    NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmResourceTable_rsrc(reginfo, table_info);
+		if (data == NULL)
+			goto out;
 		break;
 	case MODE_GETNEXT:
-	case MODE_GETBULK:
-		if ((data = sunFmResourceTable_nextrsrc(reginfo, table_info)) ==
-		    NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmResourceTable_nextrsrc(reginfo, table_info);
+		if (data == NULL)
+			goto out;
 		break;
 	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": Unsupported request "
-		    "mode %d\n", reqinfo->mode);
-		netsnmp_free_delegated_cache(cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": unsupported request mode %d\n", reqinfo->mode);
+		ret = SNMP_ERR_GENERR;
+		goto out;
 	}
 
 	switch (table_info->colnum) {
@@ -670,67 +617,30 @@ sunFmResourceTable_return(unsigned int reg, void *arg)
 	default:
 		break;
 	}
-	netsnmp_free_delegated_cache(cache);
+
+out:
 	(void) pthread_mutex_unlock(&update_lock);
-}
-
-static int
-sunFmResourceTable_handler(netsnmp_mib_handler *handler,
-    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
-    netsnmp_request_info *requests)
-{
-	netsnmp_request_info		*request;
-	struct timeval			tv;
-
-	tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-	tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-	request_update();
-
-	for (request = requests; request; request = request->next) {
-		if (request->processed != 0)
-			continue;
-
-		if (netsnmp_extract_table_info(request) == NULL)
-			continue;
-
-		request->delegated = 1;
-		(void) snmp_alarm_register_hr(tv, 0, sunFmResourceTable_return,
-		    (void *) netsnmp_create_delegated_cache(handler, reginfo,
-		    reqinfo, request, NULL));
-	}
-
-	return (SNMP_ERR_NOERROR);
+	return (ret);
 }
 
 /*ARGSUSED*/
-static void
-sunFmResourceCount_return(unsigned int reg, void *arg)
+static int
+sunFmResourceCount_handler(netsnmp_mib_handler *handler,
+    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
+    netsnmp_request_info *request)
 {
-	netsnmp_delegated_cache		*cache = (netsnmp_delegated_cache *)arg;
-	netsnmp_request_info		*request;
-	netsnmp_agent_request_info	*reqinfo;
 	ulong_t				rsrc_count_long;
+	int				ret = SNMP_ERR_NOERROR;
 
-	ASSERT(netsnmp_handler_check_cache(cache) != NULL);
+	/*
+	 * We don't support MODE_GETBULK directly, so all bulk requests should
+	 * come through bulk_to_next helper.  Make sure it stays that way.
+	 */
+	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
+	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		struct timeval	tv;
-
-		tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-		tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-		(void) snmp_alarm_register_hr(tv, 0, sunFmResourceCount_return,
-		    cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-
-	request = cache->requests;
-	reqinfo = cache->reqinfo;
-
-	request->delegated = 0;
+	request_update();
 
 	switch (reqinfo->mode) {
 	/*
@@ -752,40 +662,11 @@ sunFmResourceCount_return(unsigned int reg, void *arg)
 		    (uchar_t *)&rsrc_count_long, sizeof (rsrc_count_long));
 		break;
 	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": Unsupported request "
-		    "mode %d\n", reqinfo->mode);
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": unsupported request mode: %d\n", reqinfo->mode);
+		ret = SNMP_ERR_GENERR;
 	}
 
-	netsnmp_free_delegated_cache(cache);
 	(void) pthread_mutex_unlock(&update_lock);
-}
-
-static int
-sunFmResourceCount_handler(netsnmp_mib_handler *handler,
-    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
-    netsnmp_request_info *requests)
-{
-	struct timeval	tv;
-
-	tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-	tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-	request_update();
-
-	/*
-	 * We are never called for a GETNEXT when registered as an
-	 * instance; it's handled for us and converted to a GET.
-	 * Also, an instance handler is given only one request at a time, so
-	 * we don't need to loop over a list of requests.
-	 */
-
-	if (requests->processed != 0)
-		return (SNMP_ERR_NOERROR);
-
-	requests->delegated = 1;
-	(void) snmp_alarm_register_hr(tv, 0, sunFmResourceCount_return,
-	    (void *) netsnmp_create_delegated_cache(handler, reginfo,
-	    reqinfo, requests, NULL));
-
-	return (SNMP_ERR_NOERROR);
+	return (ret);
 }

@@ -61,8 +61,6 @@ static uu_avl_t		*problem_uuid_avl;
 #define	VALID_AVL_STATE	(problem_uuid_avl_pool != NULL &&	\
 	problem_uuid_avl != NULL)
 
-#define	UPDATE_WAIT_MILLIS	10	/* poll interval in milliseconds */
-
 /*
  * Update types.  Single-index and all are mutually exclusive.
  */
@@ -70,13 +68,8 @@ static uu_avl_t		*problem_uuid_avl;
 #define	UCT_ALL		0x2
 #define	UCT_FLAGS	0x3
 
-/*
- * Locking strategy is described in module.c.
- */
 static int		valid_stamp;
 static pthread_mutex_t	update_lock;
-static pthread_cond_t	update_cv;
-static volatile enum { US_QUIET, US_NEEDED, US_INPROGRESS } update_status;
 
 static Netsnmp_Node_Handler	sunFmProblemTable_handler;
 static Netsnmp_Node_Handler	sunFmFaultEventTable_handler;
@@ -170,9 +163,8 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 		DEBUGMSGTL((MODNAME_STR, "found new problem %s\n",
 		    acp->aci_uuid));
 		if ((data = SNMP_MALLOC_TYPEDEF(sunFmProblem_data_t)) == NULL) {
-			(void) snmp_log(LOG_ERR, MODNAME_STR ": Out of memory "
-			    "for new problem data at %s:%d\n", __FILE__,
-			    __LINE__);
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": out of memory for new problem data\n");
 			return (0);
 		}
 		if ((err = nvlist_dup(acp->aci_event, &data->d_aci_event, 0))
@@ -220,12 +212,20 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 		(void) nvlist_lookup_nvlist_array(data->d_aci_event,
 		    FM_SUSPECT_FAULT_LIST, &data->d_suspects, &nelem);
 
-		ASSERT(nelem == data->d_nsuspects);
+		if (nelem != data->d_nsuspects) {
+			nvlist_free(data->d_aci_event);
+			SNMP_FREE(data);
+			return (0);
+		}
 
 		(void) nvlist_lookup_uint8_array(data->d_aci_event,
 		    FM_SUSPECT_FAULT_STATUS, &data->d_statuses, &nelem);
 
-		ASSERT(nelem == data->d_nsuspects);
+		if (nelem != data->d_nsuspects) {
+			nvlist_free(data->d_aci_event);
+			SNMP_FREE(data);
+			return (0);
+		}
 
 		uu_avl_node_init(data, &data->d_uuid_avl,
 		    problem_uuid_avl_pool);
@@ -243,7 +243,11 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 		(void) nvlist_lookup_uint8_array(acp->aci_event,
 		    FM_SUSPECT_FAULT_STATUS, &statuses, &nelem);
 
-		ASSERT(nelem == data->d_nsuspects);
+		if (nelem != data->d_nsuspects) {
+			nvlist_free(data->d_aci_event);
+			SNMP_FREE(data);
+			return (0);
+		}
 
 		for (i = 0; i < nelem; i++)
 			data->d_statuses[i] = statuses[i];
@@ -294,47 +298,24 @@ problem_update(sunFmProblem_update_ctx_t *update_ctx)
 	return (SNMP_ERR_NOERROR);
 }
 
-/*ARGSUSED*/
 static void
-update_thread(void *arg)
+request_update(void)
 {
+	sunFmProblem_update_ctx_t	uc;
+
 	/*
 	 * The current problem_update implementation offers minimal savings
 	 * for the use of index-only updates; therefore we always do a full
 	 * update.  If it becomes advantageous to limit updates to a single
 	 * index, the contexts can be queued by the handler instead.
 	 */
-	sunFmProblem_update_ctx_t	uc;
-
 	uc.uc_host = NULL;
 	uc.uc_prog = FMD_ADM_PROGRAM;
 	uc.uc_version = FMD_ADM_VERSION;
-
 	uc.uc_index = NULL;
 	uc.uc_type = UCT_ALL;
 
-	for (;;) {
-		(void) pthread_mutex_lock(&update_lock);
-		update_status = US_QUIET;
-		while (update_status == US_QUIET)
-			(void) pthread_cond_wait(&update_cv, &update_lock);
-		update_status = US_INPROGRESS;
-		(void) pthread_mutex_unlock(&update_lock);
-		(void) problem_update(&uc);
-	}
-}
-
-static void
-request_update(void)
-{
-	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-	update_status = US_NEEDED;
-	(void) pthread_cond_signal(&update_cv);
-	(void) pthread_mutex_unlock(&update_lock);
+	(void) problem_update(&uc);
 }
 
 /*ARGSUSED*/
@@ -358,20 +339,8 @@ sunFmProblemTable_init(void)
 	int err;
 
 	if ((err = pthread_mutex_init(&update_lock, NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": mutex_init failure: "
-		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-	if ((err = pthread_cond_init(&update_cv, NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": cond_init failure: "
-		    "%s\n", strerror(err));
-		return (MIB_REGISTRATION_FAILED);
-	}
-
-	if ((err = pthread_create(NULL, NULL, (void *(*)(void *))update_thread,
-	    NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": error creating update "
-		    "thread: %s\n", strerror(err));
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": mutex_init failure: %s\n", strerror(err));
 		return (MIB_REGISTRATION_FAILED);
 	}
 
@@ -521,7 +490,7 @@ sunFmProblemTable_nextpr(netsnmp_handler_registration *reginfo,
 		(void) memcpy(table_info->index_oid, table_info->indexes->name,
 		    table_info->indexes->name_length);
 
-		DEBUGMSGTL((MODNAME_STR, "nextpr: built fake index:\n"));
+		DEBUGMSGTL((MODNAME_STR, "nextpr: built fake index: "));
 		DEBUGMSGVAR((MODNAME_STR, table_info->indexes));
 		DEBUGMSG((MODNAME_STR, "\n"));
 	} else {
@@ -669,8 +638,8 @@ sunFmFaultEventTable_nextfe(netsnmp_handler_registration *reginfo,
 				    table_info->indexes->next_variable);
 				table_info->indexes->next_variable = var;
 				table_info->number_indexes = 2;
-				DEBUGMSGTL((MODNAME_STR, "nextfe: built fake "
-				    "index:\n"));
+				DEBUGMSGTL((MODNAME_STR,
+				    "nextfe: built fake index: "));
 				DEBUGMSGVAR((MODNAME_STR, table_info->indexes));
 				DEBUGMSG((MODNAME_STR, "\n"));
 				DEBUGMSGVAR((MODNAME_STR,
@@ -711,40 +680,30 @@ sunFmFaultEventTable_fe(netsnmp_handler_registration *reginfo,
 }
 
 /*ARGSUSED*/
-static void
-sunFmProblemTable_return(unsigned int reg, void *arg)
+static int
+sunFmProblemTable_handler(netsnmp_mib_handler *handler,
+    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
+    netsnmp_request_info *request)
 {
-	netsnmp_delegated_cache		*cache = (netsnmp_delegated_cache *)arg;
-	netsnmp_request_info		*request;
-	netsnmp_agent_request_info	*reqinfo;
-	netsnmp_handler_registration	*reginfo;
 	netsnmp_table_request_info	*table_info;
 	sunFmProblem_data_t		*data;
+	int				ret = SNMP_ERR_NOERROR;
 
-	ASSERT(netsnmp_handler_check_cache(cache) != NULL);
+	/*
+	 * We don't support MODE_GETBULK directly, so all bulk requests should
+	 * come through bulk_to_next helper.  Make sure it stays that way.
+	 */
+	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
+	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		struct timeval			tv;
-
-		tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-		tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-		(void) snmp_alarm_register_hr(tv, 0, sunFmProblemTable_return,
-		    cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-
-	request = cache->requests;
-	reqinfo = cache->reqinfo;
-	reginfo = cache->reginfo;
+	request_update();
 
 	table_info = netsnmp_extract_table_info(request);
-	request->delegated = 0;
-
-	ASSERT(table_info->colnum >= SUNFMPROBLEM_COLMIN);
-	ASSERT(table_info->colnum <= SUNFMPROBLEM_COLMAX);
+	if (table_info == NULL) {
+		ret = SNMP_ERR_GENERR;
+		goto out;
+	}
 
 	/*
 	 * table_info->colnum contains the column number requested.
@@ -760,37 +719,29 @@ sunFmProblemTable_return(unsigned int reg, void *arg)
 	 *   nor those without a column number.  This is true even
 	 *   for GETNEXT requests.
 	 */
-
 	switch (reqinfo->mode) {
 	case MODE_GET:
-		if ((data = sunFmProblemTable_pr(reginfo, table_info)) ==
-		    NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmProblemTable_pr(reginfo, table_info);
+		if (data == NULL)
+			goto out;
 		break;
 	case MODE_GETNEXT:
-	case MODE_GETBULK:
-		if ((data = sunFmProblemTable_nextpr(reginfo, table_info)) ==
-		    NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmProblemTable_nextpr(reginfo, table_info);
+		if (data == NULL)
+			goto out;
 		break;
 	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": Unsupported request "
-		    "mode %d\n", reqinfo->mode);
-		netsnmp_free_delegated_cache(cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": unsupported request mode: %d\n", reqinfo->mode);
+		ret = SNMP_ERR_GENERR;
+		goto out;
 	}
 
 	switch (table_info->colnum) {
 	case SUNFMPROBLEM_COL_UUID:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_aci_uuid,
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_OCTET_STR,
+		    (uchar_t *)data->d_aci_uuid,
 		    strlen(data->d_aci_uuid));
 		break;
 	case SUNFMPROBLEM_COL_HOSTNAME: {
@@ -861,74 +812,38 @@ sunFmProblemTable_return(unsigned int reg, void *arg)
 		break;
 	}
 
-	netsnmp_free_delegated_cache(cache);
+out:
 	(void) pthread_mutex_unlock(&update_lock);
-}
-
-static int
-sunFmProblemTable_handler(netsnmp_mib_handler *handler,
-    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
-    netsnmp_request_info *requests)
-{
-	netsnmp_request_info		*request;
-	struct timeval			tv;
-
-	tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-	tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-	request_update();
-
-	for (request = requests; request; request = request->next) {
-		if (request->processed != 0)
-			continue;
-
-		if (netsnmp_extract_table_info(request) == NULL)
-			continue;
-
-		request->delegated = 1;
-		(void) snmp_alarm_register_hr(tv, 0,
-		    sunFmProblemTable_return,
-		    (void *) netsnmp_create_delegated_cache(handler, reginfo,
-		    reqinfo, request, NULL));
-	}
-
-	return (SNMP_ERR_NOERROR);
+	return (ret);
 }
 
 /*ARGSUSED*/
-static void
-sunFmFaultEventTable_return(unsigned int reg, void *arg)
+static int
+sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
+    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
+    netsnmp_request_info *request)
 {
-	netsnmp_delegated_cache		*cache = (netsnmp_delegated_cache *)arg;
-	netsnmp_request_info		*request;
-	netsnmp_agent_request_info	*reqinfo;
-	netsnmp_handler_registration	*reginfo;
 	netsnmp_table_request_info	*table_info;
-	sunFmProblem_data_t		*pdata;
 	sunFmFaultEvent_data_t		*data;
 	sunFmFaultStatus_data_t		status;
+	sunFmProblem_data_t		*pdata;
+	int				ret = SNMP_ERR_NOERROR;
 
-	ASSERT(netsnmp_handler_check_cache(cache) != NULL);
+	/*
+	 * We don't support MODE_GETBULK directly, so all bulk requests should
+	 * come through bulk_to_next helper.  Make sure it stays that way.
+	 */
+	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
+	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
-	if (update_status != US_QUIET) {
-		struct timeval			tv;
-
-		tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-		tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-		(void) snmp_alarm_register_hr(tv, 0,
-		    sunFmFaultEventTable_return, cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
-	}
-
-	request = cache->requests;
-	reqinfo = cache->reqinfo;
-	reginfo = cache->reginfo;
+	request_update();
 
 	table_info = netsnmp_extract_table_info(request);
-	request->delegated = 0;
+	if (table_info == NULL) {
+		ret = SNMP_ERR_GENERR;
+		goto out;
+	}
 
 	ASSERT(table_info->colnum >= SUNFMFAULTEVENT_COLMIN);
 	ASSERT(table_info->colnum <= SUNFMFAULTEVENT_COLMAX);
@@ -947,118 +862,104 @@ sunFmFaultEventTable_return(unsigned int reg, void *arg)
 	 *   nor those without a column number.  This is true even
 	 *   for GETNEXT requests.
 	 */
-
 	switch (reqinfo->mode) {
 	case MODE_GET:
-		if ((data = sunFmFaultEventTable_fe(reginfo, table_info,
-		    &status)) == NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmFaultEventTable_fe(reginfo, table_info, &status);
+		if (data == NULL)
+			goto out;
 		break;
 	case MODE_GETNEXT:
-	case MODE_GETBULK:
-		if ((data = sunFmFaultEventTable_nextfe(reginfo, table_info,
-		    &status)) == NULL) {
-			netsnmp_free_delegated_cache(cache);
-			(void) pthread_mutex_unlock(&update_lock);
-			return;
-		}
+		data = sunFmFaultEventTable_nextfe(reginfo, table_info,
+		    &status);
+		if (data == NULL)
+			goto out;
 		break;
 	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR ": Unsupported request "
-		    "mode %d\n", reqinfo->mode);
-		netsnmp_free_delegated_cache(cache);
-		(void) pthread_mutex_unlock(&update_lock);
-		return;
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": unsupported request mode: %d\n", reqinfo->mode);
+		ret = SNMP_ERR_GENERR;
+		goto out;
 	}
 
 	switch (table_info->colnum) {
 	case SUNFMFAULTEVENT_COL_PROBLEMUUID:
-	{
 		if ((pdata = sunFmProblemTable_pr(reginfo, table_info))
 		    == NULL) {
-			(void) netsnmp_table_build_result(reginfo, request,
-			    table_info, ASN_OCTET_STR, NULL, 0);
+			(void) netsnmp_table_build_result(reginfo,
+			    request, table_info, ASN_OCTET_STR,
+			    NULL, 0);
 			break;
 		}
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)pdata->d_aci_uuid,
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_OCTET_STR,
+		    (uchar_t *)pdata->d_aci_uuid,
 		    strlen(pdata->d_aci_uuid));
 		break;
-	}
-	case SUNFMFAULTEVENT_COL_CLASS:
-	{
+	case SUNFMFAULTEVENT_COL_CLASS: {
 		char	*class = "-";
 
 		(void) nvlist_lookup_string(data, FM_CLASS, &class);
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)class, strlen(class));
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_OCTET_STR, (uchar_t *)class,
+		    strlen(class));
 		break;
 	}
-	case SUNFMFAULTEVENT_COL_CERTAINTY:
-	{
+	case SUNFMFAULTEVENT_COL_CERTAINTY: {
 		uint8_t	pct = 0;
 		ulong_t	pl;
 
 		(void) nvlist_lookup_uint8(data, FM_FAULT_CERTAINTY,
 		    &pct);
 		pl = (ulong_t)pct;
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_UNSIGNED, (uchar_t *)&pl, sizeof (pl));
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_UNSIGNED, (uchar_t *)&pl,
+		    sizeof (pl));
 		break;
 	}
-	case SUNFMFAULTEVENT_COL_ASRU:
-	{
+	case SUNFMFAULTEVENT_COL_ASRU: {
 		nvlist_t	*asru = NULL;
-		char		*fmri, *str;
+		char		*fmri = "-", *str;
 
 		(void) nvlist_lookup_nvlist(data, FM_FAULT_ASRU, &asru);
-		if ((str = sunFm_nvl2str(asru)) == NULL)
-			fmri = "-";
-		else
+		if ((str = sunFm_nvl2str(asru)) != NULL)
 			fmri = str;
 
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)fmri, strlen(fmri));
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
+		    strlen(fmri));
 		free(str);
 		break;
 	}
-	case SUNFMFAULTEVENT_COL_FRU:
-	{
+	case SUNFMFAULTEVENT_COL_FRU: {
 		nvlist_t	*fru = NULL;
-		char		*fmri, *str;
+		char		*fmri = "-", *str;
 
 		(void) nvlist_lookup_nvlist(data, FM_FAULT_FRU, &fru);
-		if ((str = sunFm_nvl2str(fru)) == NULL)
-			fmri = "-";
-		else
+		if ((str = sunFm_nvl2str(fru)) != NULL)
 			fmri = str;
 
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)fmri, strlen(fmri));
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
+		    strlen(fmri));
 		free(str);
 		break;
 	}
-	case SUNFMFAULTEVENT_COL_RESOURCE:
-	{
+	case SUNFMFAULTEVENT_COL_RESOURCE: {
 		nvlist_t	*rsrc = NULL;
-		char		*fmri, *str;
+		char		*fmri = "-", *str;
 
-		(void) nvlist_lookup_nvlist(data, FM_FAULT_RESOURCE, &rsrc);
-		if ((str = sunFm_nvl2str(rsrc)) == NULL)
-			fmri = "-";
-		else
+		(void) nvlist_lookup_nvlist(data, FM_FAULT_RESOURCE,
+		    &rsrc);
+		if ((str = sunFm_nvl2str(rsrc)) != NULL)
 			fmri = str;
 
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)fmri, strlen(fmri));
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
+		    strlen(fmri));
 		free(str);
 		break;
 	}
-	case SUNFMFAULTEVENT_COL_STATUS:
-	{
+	case SUNFMFAULTEVENT_COL_STATUS: {
 		ulong_t	pl = SUNFMFAULTEVENT_STATE_OTHER;
 
 		if (status & FM_SUSPECT_FAULTY)
@@ -1071,53 +972,26 @@ sunFmFaultEventTable_return(unsigned int reg, void *arg)
 			pl = SUNFMFAULTEVENT_STATE_REPAIRED;
 		else if (status & FM_SUSPECT_ACQUITTED)
 			pl = SUNFMFAULTEVENT_STATE_ACQUITTED;
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_INTEGER, (uchar_t *)&pl, sizeof (pl));
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_INTEGER, (uchar_t *)&pl,
+		    sizeof (pl));
 		break;
 	}
-	case SUNFMFAULTEVENT_COL_LOCATION:
-	{
+	case SUNFMFAULTEVENT_COL_LOCATION: {
 		char	*location = "-";
 
-		(void) nvlist_lookup_string(data, FM_FAULT_LOCATION, &location);
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)location, strlen(location));
+		(void) nvlist_lookup_string(data, FM_FAULT_LOCATION,
+		    &location);
+		(void) netsnmp_table_build_result(reginfo, request,
+		    table_info, ASN_OCTET_STR, (uchar_t *)location,
+		    strlen(location));
 		break;
 	}
 	default:
 		break;
 	}
 
-	netsnmp_free_delegated_cache(cache);
+out:
 	(void) pthread_mutex_unlock(&update_lock);
-}
-
-static int
-sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
-    netsnmp_handler_registration *reginfo, netsnmp_agent_request_info *reqinfo,
-    netsnmp_request_info *requests)
-{
-	netsnmp_request_info		*request;
-	struct timeval			tv;
-
-	tv.tv_sec = UPDATE_WAIT_MILLIS / 1000;
-	tv.tv_usec = (UPDATE_WAIT_MILLIS % 1000) * 1000;
-
-	request_update();
-
-	for (request = requests; request; request = request->next) {
-		if (request->processed != 0)
-			continue;
-
-		if (netsnmp_extract_table_info(request) == NULL)
-			continue;
-
-		request->delegated = 1;
-		(void) snmp_alarm_register_hr(tv, 0,
-		    sunFmFaultEventTable_return,
-		    (void *) netsnmp_create_delegated_cache(handler, reginfo,
-		    reqinfo, request, NULL));
-	}
-
-	return (SNMP_ERR_NOERROR);
+	return (ret);
 }
