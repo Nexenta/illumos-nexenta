@@ -96,8 +96,9 @@ static int scan_ds_queue_compar(const void *a, const void *b);
 static void scan_ds_queue_empty(dsl_scan_t *scn, boolean_t destroy);
 static boolean_t scan_ds_queue_contains(dsl_scan_t *scn, uint64_t dsobj,
     uint64_t *txg);
-static void scan_ds_queue_insert(dsl_scan_t *scn, uint64_t dsobj, uint64_t txg);
+static int scan_ds_queue_insert(dsl_scan_t *scn, uint64_t dsobj, uint64_t txg);
 static void scan_ds_queue_remove(dsl_scan_t *scn, uint64_t dsobj);
+static scan_ds_t *scan_ds_queue_first(dsl_scan_t *scn);
 static void scan_ds_queue_sync(dsl_scan_t *scn, dmu_tx_t *tx);
 
 /*
@@ -387,9 +388,9 @@ dsl_scan_init(dsl_pool_t *dp, uint64_t txg)
 		    scn->scn_phys.scn_queue_obj);
 		    zap_cursor_retrieve(&zc, &za) == 0;
 		    (void) zap_cursor_advance(&zc)) {
-			scan_ds_queue_insert(scn,
+			VERIFY0(scan_ds_queue_insert(scn,
 			    zfs_strtonum(za.za_name, NULL),
-			    za.za_first_integer);
+			    za.za_first_integer));
 		}
 		zap_cursor_fini(&zc);
 	}
@@ -759,6 +760,20 @@ dsl_scan_ds_maxtxg(dsl_dataset_t *ds)
 	return (smt);
 }
 
+/*
+ * This is the dataset processing "queue", i.e. the datasets that are to be
+ * scanned for data locations and inserted into the LBA reordering tree.
+ * Please note that even though we call this a "queue", the actual
+ * implementation uses an avl tree (to detect double insertion). The tree
+ * uses the dataset object set number for the sorting criterion, so
+ * scan_ds_queue_insert CANNOT be guaranteed to always append stuff at the
+ * end (datasets are inserted by the scanner in discovery order, i.e.
+ * parent-child relationships). Consequently, the scanner must never step
+ * through the AVL tree in a naively sequential fashion using AVL_NEXT.
+ * We must always use scan_ds_queue_first to pick the first dataset in the
+ * list, process it, remove it using scan_ds_queue_remove and pick the next
+ * first dataset, again using scan_ds_queue_first.
+ */
 static int
 scan_ds_queue_compar(const void *a, const void *b)
 {
@@ -795,7 +810,7 @@ scan_ds_queue_contains(dsl_scan_t *scn, uint64_t dsobj, uint64_t *txg)
 	return (sds != NULL);
 }
 
-static void
+static int
 scan_ds_queue_insert(dsl_scan_t *scn, uint64_t dsobj, uint64_t txg)
 {
 	scan_ds_t *sds;
@@ -805,8 +820,11 @@ scan_ds_queue_insert(dsl_scan_t *scn, uint64_t dsobj, uint64_t txg)
 	sds->sds_dsobj = dsobj;
 	sds->sds_txg = txg;
 
-	VERIFY3P(avl_find(&scn->scn_queue, sds, &where), ==, NULL);
+	if (avl_find(&scn->scn_queue, sds, &where) != NULL)
+		return (EEXIST);
 	avl_insert(&scn->scn_queue, sds, where);
+
+	return (0);
 }
 
 static void
@@ -820,6 +838,12 @@ scan_ds_queue_remove(dsl_scan_t *scn, uint64_t dsobj)
 	VERIFY(sds != NULL);
 	avl_remove(&scn->scn_queue, sds);
 	kmem_free(sds, sizeof (*sds));
+}
+
+static scan_ds_t *
+scan_ds_queue_first(dsl_scan_t *scn)
+{
+	return (avl_first(&scn->scn_queue));
 }
 
 static void
@@ -1386,8 +1410,8 @@ dsl_scan_ds_destroyed(dsl_dataset_t *ds, dmu_tx_t *tx)
 	if (scan_ds_queue_contains(scn, ds->ds_object, &mintxg)) {
 		scan_ds_queue_remove(scn, ds->ds_object);
 		if (ds->ds_is_snapshot)
-			scan_ds_queue_insert(scn,
-			    dsl_dataset_phys(ds)->ds_next_snap_obj, mintxg);
+			VERIFY0(scan_ds_queue_insert(scn,
+			    dsl_dataset_phys(ds)->ds_next_snap_obj, mintxg));
 	}
 
 	if (zap_lookup_int_key(dp->dp_meta_objset, scn->scn_phys.scn_queue_obj,
@@ -1461,8 +1485,8 @@ dsl_scan_ds_snapshotted(dsl_dataset_t *ds, dmu_tx_t *tx)
 
 	if (scan_ds_queue_contains(scn, ds->ds_object, &mintxg)) {
 		scan_ds_queue_remove(scn, ds->ds_object);
-		scan_ds_queue_insert(scn,
-		    dsl_dataset_phys(ds)->ds_prev_snap_obj, mintxg);
+		VERIFY0(scan_ds_queue_insert(scn,
+		    dsl_dataset_phys(ds)->ds_prev_snap_obj, mintxg));
 	}
 
 	if (zap_lookup_int_key(dp->dp_meta_objset, scn->scn_phys.scn_queue_obj,
@@ -1522,12 +1546,27 @@ dsl_scan_ds_clone_swapped(dsl_dataset_t *ds1, dsl_dataset_t *ds2, dmu_tx_t *tx)
 	ds_clone_swapped_bookmark(ds1, ds2, &scn->scn_phys_cached.scn_bookmark);
 
 	if (scan_ds_queue_contains(scn, ds1->ds_object, &mintxg)) {
+		int err;
+
 		scan_ds_queue_remove(scn, ds1->ds_object);
-		scan_ds_queue_insert(scn, ds2->ds_object, mintxg);
-	}
-	if (scan_ds_queue_contains(scn, ds2->ds_object, &mintxg)) {
+		err = scan_ds_queue_insert(scn, ds2->ds_object, mintxg);
+		VERIFY(err == 0 || err == EEXIST);
+		if (err == EEXIST) {
+			/* Both were there to begin with */
+			VERIFY0(scan_ds_queue_insert(scn, ds1->ds_object,
+			    mintxg));
+		}
+		zfs_dbgmsg("clone_swap ds %llu; currently traversing; "
+		    "reset zb_objset to %llu",
+		    (u_longlong_t)ds1->ds_object,
+		    (u_longlong_t)ds2->ds_object);
+	} else if (scan_ds_queue_contains(scn, ds2->ds_object, &mintxg)) {
 		scan_ds_queue_remove(scn, ds2->ds_object);
-		scan_ds_queue_insert(scn, ds1->ds_object, mintxg);
+		VERIFY0(scan_ds_queue_insert(scn, ds1->ds_object, mintxg));
+		zfs_dbgmsg("clone_swap ds %llu; currently traversing; "
+		    "reset zb_objset to %llu",
+		    (u_longlong_t)ds2->ds_object,
+		    (u_longlong_t)ds1->ds_object);
 	}
 
 	if (zap_lookup_int_key(dp->dp_meta_objset, scn->scn_phys.scn_queue_obj,
@@ -1554,9 +1593,8 @@ dsl_scan_ds_clone_swapped(dsl_dataset_t *ds1, dsl_dataset_t *ds2, dmu_tx_t *tx)
 		    "replacing with %llu",
 		    (u_longlong_t)ds1->ds_object,
 		    (u_longlong_t)ds2->ds_object);
-	}
-	if (zap_lookup_int_key(dp->dp_meta_objset, scn->scn_phys.scn_queue_obj,
-	    ds2->ds_object, &mintxg) == 0) {
+	} else if (zap_lookup_int_key(dp->dp_meta_objset,
+	    scn->scn_phys.scn_queue_obj, ds2->ds_object, &mintxg) == 0) {
 		DTRACE_PROBE4(scan_ds_clone_swapped__in_queue_ds2,
 		    dsl_scan_t *, scn, dsl_dataset_t *, ds1,
 		    dsl_dataset_t *, ds2, dmu_tx_t *, tx);
@@ -1601,8 +1639,8 @@ enqueue_clones_cb(dsl_pool_t *dp, dsl_dataset_t *hds, void *arg)
 			return (err);
 		ds = prev;
 	}
-	scan_ds_queue_insert(scn, ds->ds_object,
-	    dsl_dataset_phys(ds)->ds_prev_snap_txg);
+	VERIFY0(scan_ds_queue_insert(scn, ds->ds_object,
+	    dsl_dataset_phys(ds)->ds_prev_snap_txg));
 	dsl_dataset_rele(ds, FTAG);
 	return (0);
 }
@@ -1705,8 +1743,8 @@ dsl_scan_visitds(dsl_scan_t *scn, uint64_t dsobj, dmu_tx_t *tx)
 		    dsl_dataset_t *, ds, dmu_tx_t *, tx);
 		zfs_dbgmsg("incomplete pass; visiting again");
 		scn->scn_phys.scn_flags &= ~DSF_VISIT_DS_AGAIN;
-		scan_ds_queue_insert(scn, ds->ds_object,
-		    scn->scn_phys.scn_cur_max_txg);
+		VERIFY0(scan_ds_queue_insert(scn, ds->ds_object,
+		    scn->scn_phys.scn_cur_max_txg));
 		goto out;
 	}
 
@@ -1714,9 +1752,9 @@ dsl_scan_visitds(dsl_scan_t *scn, uint64_t dsobj, dmu_tx_t *tx)
 	 * Add descendent datasets to work queue.
 	 */
 	if (dsl_dataset_phys(ds)->ds_next_snap_obj != 0) {
-		scan_ds_queue_insert(scn,
+		VERIFY0(scan_ds_queue_insert(scn,
 		    dsl_dataset_phys(ds)->ds_next_snap_obj,
-		    dsl_dataset_phys(ds)->ds_creation_txg);
+		    dsl_dataset_phys(ds)->ds_creation_txg));
 	}
 	if (dsl_dataset_phys(ds)->ds_num_children > 1) {
 		boolean_t usenext = B_FALSE;
@@ -1743,9 +1781,9 @@ dsl_scan_visitds(dsl_scan_t *scn, uint64_t dsobj, dmu_tx_t *tx)
 			    dsl_dataset_phys(ds)->ds_next_clones_obj);
 			    zap_cursor_retrieve(&zc, &za) == 0;
 			    (void) zap_cursor_advance(&zc)) {
-				scan_ds_queue_insert(scn,
+				VERIFY0(scan_ds_queue_insert(scn,
 				    zfs_strtonum(za.za_name, NULL),
-				    dsl_dataset_phys(ds)->ds_creation_txg);
+				    dsl_dataset_phys(ds)->ds_creation_txg));
 			}
 			zap_cursor_fini(&zc);
 		} else {
@@ -1792,8 +1830,8 @@ enqueue_cb(dsl_pool_t *dp, dsl_dataset_t *hds, void *arg)
 		ds = prev;
 	}
 
-	scan_ds_queue_insert(scn, ds->ds_object,
-	    dsl_dataset_phys(ds)->ds_prev_snap_txg);
+	VERIFY0(scan_ds_queue_insert(scn, ds->ds_object,
+	    dsl_dataset_phys(ds)->ds_prev_snap_txg));
 	dsl_dataset_rele(ds, FTAG);
 	return (0);
 }
@@ -1901,6 +1939,7 @@ dsl_scan_ddt_entry(dsl_scan_t *scn, enum zio_checksum checksum,
 static void
 dsl_scan_visit(dsl_scan_t *scn, dmu_tx_t *tx)
 {
+	scan_ds_t *sds;
 	dsl_pool_t *dp = scn->scn_dp;
 
 	if (scn->scn_phys.scn_ddt_bookmark.ddb_class <=
@@ -1952,15 +1991,12 @@ dsl_scan_visit(dsl_scan_t *scn, dmu_tx_t *tx)
 	bzero(&scn->scn_phys.scn_bookmark, sizeof (zbookmark_phys_t));
 
 	/* keep pulling things out of the zap-object-as-queue */
-	for (scan_ds_t *sds = avl_first(&scn->scn_queue), *sds_next = NULL;
-	    sds != NULL; sds = sds_next) {
+	while ((sds = scan_ds_queue_first(scn)) != NULL) {
 		dsl_dataset_t *ds;
 		uint64_t dsobj = sds->sds_dsobj;
 		uint64_t txg = sds->sds_txg;
 
-		sds_next = AVL_NEXT(&scn->scn_queue, sds);
 		scan_ds_queue_remove(scn, dsobj);
-		sds = NULL;	/* must not be touched after removal */
 
 		/* Set up min/max txg */
 		VERIFY3U(0, ==, dsl_dataset_hold_obj(dp, dsobj, FTAG, &ds));
