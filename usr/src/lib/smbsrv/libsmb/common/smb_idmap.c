@@ -20,7 +20,17 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ */
+
+/*
+ * This is the libsmb version of these routines.  See also:
+ * $SRC/uts/common/fs/smbsrv/smb_idmap.c
+ * $SRC/lib/smbsrv/libfksmbsrv/common/fksmb_idmap.c
+ *
+ * This one implements libsmb interface used in libmlsvc, and
+ * calls the user-level idmap API for it's "back-end" support.
+ * There are longer comments in the uts variant.
  */
 
 #include <syslog.h>
@@ -180,6 +190,14 @@ smb_idmap_batch_destroy(smb_idmap_batch_t *sib)
 			smb_sid_free(sib->sib_maps[i].sim_sid);
 			free(sib->sib_maps[i].sim_domsid);
 		}
+	} else if (sib->sib_flags & SMB_IDMAP_SID2ID) {
+		/*
+		 * SID prefixes are allocated only when mapping
+		 * SIDs to UID/GID
+		 */
+		for (i = 0; i < sib->sib_nmap; i++) {
+			free(sib->sib_maps[i].sim_domsid);
+		}
 	}
 
 	if (sib->sib_size && sib->sib_maps) {
@@ -213,7 +231,8 @@ smb_idmap_batch_getid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
 	smb_sid_tostr(sid, sidstr);
 	if (smb_sid_splitstr(sidstr, &sim->sim_rid) != 0)
 		return (IDMAP_ERR_SID);
-	sim->sim_domsid = sidstr;
+	/* Note: Free sim_domsid in smb_idmap_batch_destroy */
+	sim->sim_domsid = strdup(sidstr);
 	sim->sim_idtype = idtype;
 
 	switch (idtype) {
@@ -241,9 +260,6 @@ smb_idmap_batch_getid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
 		break;
 	}
 
-	/* This was copied by idmap_get_Xbysid. */
-	sim->sim_domsid = NULL;
-
 	return (stat);
 }
 
@@ -254,6 +270,8 @@ smb_idmap_batch_getid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
  *
  * sim->sim_domsid and sim->sim_rid will contain the mapping
  * result upon successful process of the batched request.
+ * Stash the type for error reporting (caller saves the ID).
+ *
  * NB: sim_domsid allocated by strdup, here or in libidmap
  */
 idmap_stat
@@ -266,6 +284,7 @@ smb_idmap_batch_getsid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
 	if (!idmaph || !sim)
 		return (IDMAP_ERR_ARG);
 
+	sim->sim_idtype = idtype;
 	switch (idtype) {
 	case SMB_IDMAP_USER:
 		stat = idmap_get_sidbyuid(idmaph, id, flag,
@@ -310,6 +329,28 @@ smb_idmap_batch_getsid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
 	return (stat);
 }
 
+static void
+smb_idmap_bgm_report(smb_idmap_batch_t *sib, smb_idmap_t *sim)
+{
+
+	if ((sib->sib_flags & SMB_IDMAP_ID2SID) != 0) {
+		/*
+		 * Note: The ID and type we asked idmap to map
+		 * were saved in *sim_id and sim_idtype.
+		 */
+		uint_t id = (sim->sim_id == NULL) ?
+		    0 : (uint_t)*sim->sim_id;
+		syslog(LOG_ERR, "Can't get SID for "
+		    "ID=%u type=%d, status=%d",
+		    id, sim->sim_idtype, sim->sim_stat);
+	}
+
+	if ((sib->sib_flags & SMB_IDMAP_SID2ID) != 0) {
+		syslog(LOG_ERR, "Can't get ID for SID %s-%u, status=%d",
+		    sim->sim_domsid, sim->sim_rid, sim->sim_stat);
+	}
+}
+
 /*
  * smb_idmap_batch_getmappings
  *
@@ -335,11 +376,10 @@ smb_idmap_batch_getmappings(smb_idmap_batch_t *sib)
 	 */
 	for (i = 0, sim = sib->sib_maps; i < sib->sib_nmap; i++, sim++) {
 		if (sim->sim_stat != IDMAP_SUCCESS) {
-			if (sib->sib_flags == SMB_IDMAP_SID2ID) {
-				smb_tracef("[%d] %d (%d)", sim->sim_idtype,
-				    sim->sim_rid, sim->sim_stat);
+			smb_idmap_bgm_report(sib, sim);
+			if ((sib->sib_flags & SMB_IDMAP_SKIP_ERRS) == 0) {
+				return (sim->sim_stat);
 			}
-			return (sim->sim_stat);
 		}
 	}
 

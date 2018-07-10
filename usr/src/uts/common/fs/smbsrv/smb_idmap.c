@@ -21,7 +21,16 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ */
+
+/*
+ * This is the kernel version of these routines.  See also:
+ * $SRC/lib/smbsrv/libfksmbsrv/common/fksmb_idmap.c
+ * $SRC/lib/smbsrv/libsmb/common/smb_idmap.c
+ *
+ * This one implements in-kernel interface used in smbsrv, and
+ * calls the kernel-level idmap API for it's "back-end" support.
  */
 
 #include <sys/param.h>
@@ -162,7 +171,7 @@ smb_idmap_getsid(uid_t id, int idtype, smb_sid_t **sid)
 idmap_stat
 smb_idmap_batch_create(smb_idmap_batch_t *sib, uint16_t nmap, int flags)
 {
-	ASSERT(sib);
+	ASSERT(sib != NULL);
 
 	bzero(sib, sizeof (smb_idmap_batch_t));
 
@@ -189,11 +198,13 @@ smb_idmap_batch_destroy(smb_idmap_batch_t *sib)
 	char *domsid;
 	int i;
 
-	ASSERT(sib);
-	ASSERT(sib->sib_maps);
+	ASSERT(sib != NULL);
+	ASSERT(sib->sib_maps != NULL);
 
-	if (sib->sib_idmaph)
+	if (sib->sib_idmaph) {
 		kidmap_get_destroy(sib->sib_idmaph);
+		sib->sib_idmaph = NULL;
+	}
 
 	if (sib->sib_flags & SMB_IDMAP_ID2SID) {
 		/*
@@ -214,8 +225,10 @@ smb_idmap_batch_destroy(smb_idmap_batch_t *sib)
 		}
 	}
 
-	if (sib->sib_size && sib->sib_maps)
+	if (sib->sib_size && sib->sib_maps) {
 		kmem_free(sib->sib_maps, sib->sib_size);
+		sib->sib_maps = NULL;
+	}
 }
 
 /*
@@ -237,14 +250,16 @@ smb_idmap_batch_getid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
 	char strsid[SMB_SID_STRSZ];
 	idmap_stat idm_stat;
 
-	ASSERT(idmaph);
-	ASSERT(sim);
-	ASSERT(sid);
+	ASSERT(idmaph != NULL);
+	ASSERT(sim != NULL);
+	ASSERT(sid != NULL);
 
 	smb_sid_tostr(sid, strsid);
 	if (smb_sid_splitstr(strsid, &sim->sim_rid) != 0)
 		return (IDMAP_ERR_SID);
+	/* Note: Free sim_domsid in smb_idmap_batch_destroy */
 	sim->sim_domsid = smb_mem_strdup(strsid);
+	sim->sim_idtype = idtype;
 
 	switch (idtype) {
 	case SMB_IDMAP_USER:
@@ -278,6 +293,7 @@ smb_idmap_batch_getid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
  *
  * sim->sim_domsid and sim->sim_rid will contain the mapping
  * result upon successful process of the batched request.
+ * Stash the type for error reporting (caller saves the ID).
  */
 idmap_stat
 smb_idmap_batch_getsid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
@@ -285,6 +301,7 @@ smb_idmap_batch_getsid(idmap_get_handle_t *idmaph, smb_idmap_t *sim,
 {
 	idmap_stat idm_stat;
 
+	sim->sim_idtype = idtype;
 	switch (idtype) {
 	case SMB_IDMAP_USER:
 		idm_stat = kidmap_batch_getsidbyuid(idmaph, id,
@@ -350,7 +367,7 @@ smb_idmap_batch_binsid(smb_idmap_batch_t *sib)
 
 	sim = sib->sib_maps;
 	for (i = 0; i < sib->sib_nmap; sim++, i++) {
-		ASSERT(sim->sim_domsid);
+		ASSERT(sim->sim_domsid != NULL);
 		if (sim->sim_domsid == NULL)
 			return (1);
 
@@ -362,6 +379,28 @@ smb_idmap_batch_binsid(smb_idmap_batch_t *sib)
 	}
 
 	return (0);
+}
+
+static void
+smb_idmap_bgm_report(smb_idmap_batch_t *sib, smb_idmap_t *sim)
+{
+
+	if ((sib->sib_flags & SMB_IDMAP_ID2SID) != 0) {
+		/*
+		 * Note: The ID and type we asked idmap to map
+		 * were saved in *sim_id and sim_idtype.
+		 */
+		uint_t id = (sim->sim_id == NULL) ?
+		    0 : (uint_t)*sim->sim_id;
+		cmn_err(CE_WARN, "Can't get SID for "
+		    "ID=%u type=%d, status=%d",
+		    id, sim->sim_idtype, sim->sim_stat);
+	}
+
+	if ((sib->sib_flags & SMB_IDMAP_SID2ID) != 0) {
+		cmn_err(CE_WARN, "Can't get ID for SID %s-%u, status=%d",
+		    sim->sim_domsid, sim->sim_rid, sim->sim_stat);
+	}
 }
 
 /*
@@ -378,6 +417,7 @@ idmap_stat
 smb_idmap_batch_getmappings(smb_idmap_batch_t *sib)
 {
 	idmap_stat idm_stat = IDMAP_SUCCESS;
+	smb_idmap_t *sim;
 	int i;
 
 	idm_stat = kidmap_get_mappings(sib->sib_idmaph);
@@ -387,9 +427,13 @@ smb_idmap_batch_getmappings(smb_idmap_batch_t *sib)
 	/*
 	 * Check the status for all the queued requests
 	 */
-	for (i = 0; i < sib->sib_nmap; i++) {
-		if (sib->sib_maps[i].sim_stat != IDMAP_SUCCESS)
-			return (sib->sib_maps[i].sim_stat);
+	for (i = 0, sim = sib->sib_maps; i < sib->sib_nmap; i++, sim++) {
+		if (sim->sim_stat != IDMAP_SUCCESS) {
+			smb_idmap_bgm_report(sib, sim);
+			if ((sib->sib_flags & SMB_IDMAP_SKIP_ERRS) == 0) {
+				return (sim->sim_stat);
+			}
+		}
 	}
 
 	if (smb_idmap_batch_binsid(sib) != 0)

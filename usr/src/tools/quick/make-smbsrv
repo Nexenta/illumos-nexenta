@@ -14,8 +14,8 @@
 # Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
-# Use distributed make (dmake) by default.
-make=${MAKE:-dmake}
+# Use normal make (not dmake) by default.
+make=${MAKE:-make}
 
 CLOSED_IS_PRESENT=no
 export CLOSED_IS_PRESENT
@@ -115,6 +115,8 @@ for lib in \
   libsmbfs \
   libsqlite \
   libuutil \
+  libzfs_core \
+  libzfs \
   passwdutil \
   smbsrv
 do
@@ -192,7 +194,6 @@ clean|clobber)
   ;;
 esac
 
-(cd $SRC/cmd/devfsadm && $make $1)
 (cd $SRC/cmd/smbsrv && $make $1)
 
 # Build the MDB modules, WITH the linktest
@@ -289,7 +290,6 @@ usr/lib/smbsrv/libmlsvc.so.1
 usr/lib/smbsrv/libsmb.so.1
 usr/lib/smbsrv/libsmbns.so.1
 usr/lib/smbsrv/smbd
-usr/sbin/devfsadm
 usr/sbin/smbadm
 usr/sbin/smbstat
 "
