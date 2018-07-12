@@ -64,8 +64,11 @@
 
 /*
  * Scoreboard size must be a power of 2, and >= max credits.
+ * But note: In [MS-SMB2] footnote 166 (Section 3.3.1.1)
+ * they say Windows servers allow message IDs covering 2X
+ * the maximum credits.  (Sigh... so we must also.)
  */
-#define	SCOREBOARD_SIZE SMB_PI_MAXIMUM_CREDITS_MAX
+#define	SCOREBOARD_SIZE (SMB_PI_MAXIMUM_CREDITS_MAX * 2)
 #if (SCOREBOARD_SIZE & (SCOREBOARD_SIZE - 1)) != 0
 #error "SCOREBOARD_SIZE not a power of 2"
 #endif
@@ -73,10 +76,9 @@
 /*
  * We MAY on occasion want use a larger scoreboard, to keep longer
  * history about message IDs when debugging odd client behavior.
- * However, this is const to discourage whimsical frobbing.
- * Do not adjust while the SMB server is running.
+ * Do not adjust while the SMB server is running!
  */
-static const uint32_t smb2_scoreboard_size = SCOREBOARD_SIZE;
+static uint32_t smb2_scoreboard_size = SCOREBOARD_SIZE;
 
 /*
  * Convenience macro
@@ -195,6 +197,7 @@ smb2_scoreboard_cmd_new(smb_request_t *sr)
 	 */
 	if (sr->smb2_messageid <
 	    (s->s_scoreboard_maxid - smb2_scoreboard_size)) {
+		DTRACE_PROBE1(msgid__too__low, smb_request_t, sr);
 		errmsg = "too low";
 		goto out;
 	}
@@ -221,7 +224,10 @@ smb2_scoreboard_cmd_new(smb_request_t *sr)
 				case SB_received:
 				case SB_started:
 				case SB_cancelled:
-					errmsg = "too high";
+					DTRACE_PROBE2(msgid__too__high,
+					    smb_request_t, sr,
+					    uint64_t, delta);
+					errmsg = "too high (1)";
 					goto out;
 				default:
 					break;
@@ -242,7 +248,10 @@ smb2_scoreboard_cmd_new(smb_request_t *sr)
 				case SB_received:
 				case SB_started:
 				case SB_cancelled:
-					errmsg = "too high";
+					DTRACE_PROBE2(msgid__too__high,
+					    smb_request_t, sr,
+					    uint64_t, delta);
+					errmsg = "too high (2)";
 					goto out;
 				default:
 					break;
@@ -274,6 +283,7 @@ smb2_scoreboard_cmd_new(smb_request_t *sr)
 		s->s_scoreboard_arr[idx] = SB_received;
 		break;
 	default:
+		DTRACE_PROBE1(msgid__reused, smb_request_t, sr);
 		errmsg = "reused";
 		goto out;
 	}
@@ -455,8 +465,8 @@ smb2_scoreboard_cmd_cancel(smb_request_t *sr)
 
 	case SB_received:
 		s->s_scoreboard_arr[idx] = SB_cancelled;
-		DTRACE_PROBE1(smb2__cancel__before__start,
-		    uint64_t, sr->smb2_messageid);
+		DTRACE_PROBE1(msgid__cancel__before__start,
+		    smb_request_t, sr);
 		break;
 
 	case SB_started:
