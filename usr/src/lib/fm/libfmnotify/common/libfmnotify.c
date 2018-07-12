@@ -27,6 +27,8 @@
  * Copyright 2018 Nexenta Systems, Inc.
  */
 
+#include <fm/libtopo.h>
+
 #include <alloca.h>
 
 #include "libfmnotify.h"
@@ -263,29 +265,55 @@ bool_done:
 char *
 nd_get_event_fmri(nd_hdl_t *nhdl, fmev_t ev)
 {
-	nvlist_t *ev_nvl, *sub_nvl;
-	nvlist_t **fault_nvl;
+	nvlist_t *ev_nvl, *snvl;
+	nvlist_t **fnvl;
 	uint_t nnvl;
 	char *svcname;
 
 	if ((ev_nvl = fmev_attr_list(ev)) == NULL) {
-		nd_error(nhdl, "Failed to lookup event attr nvlist");
+		nd_error(nhdl, "failed to lookup event nvlist");
 		return (NULL);
 	}
 
-	/* This could be ireport or fault, check both */
-	if (nvlist_lookup_nvlist(ev_nvl, "attr", &sub_nvl) != 0) {
-		if (nvlist_lookup_nvlist_array(ev_nvl, "fault-list",
-		    &fault_nvl, &nnvl) != 0 || nnvl != 1)
+	/* If this is an ireport, simply lookup svc-string */
+	if (nvlist_lookup_nvlist(ev_nvl, "attr", &snvl) == 0 &&
+	    nvlist_lookup_string(snvl, "svc-string", &svcname) == 0)
+		return (strdup((const char *)svcname));
+
+	/* Otherwise extract the fault-list and use the first element */
+	if (nvlist_lookup_nvlist_array(ev_nvl, FM_SUSPECT_FAULT_LIST,
+	    &fnvl, &nnvl) != 0 || nnvl != 1)
+		return (NULL);
+
+	/*
+	 * NOTE: this should match the logic in libfmd_snmp.
+	 *
+	 * Use the following order of nested nvlists to make up FMRI:
+	 * - FRU
+	 * - ASRU
+	 * - resource
+	 */
+	if (nvlist_lookup_nvlist(fnvl[0], FM_FAULT_FRU, &snvl) == 0 ||
+	    nvlist_lookup_nvlist(fnvl[0], FM_FAULT_ASRU, &snvl) == 0 ||
+	    nvlist_lookup_nvlist(fnvl[0], FM_FAULT_RESOURCE, &snvl) == 0) {
+		topo_hdl_t *thp;
+		int topoerr;
+		char *fmri, *ret = NULL;
+
+		thp = topo_open(TOPO_VERSION, NULL, &topoerr);
+		if (thp == NULL)
 			return (NULL);
-		else
-			sub_nvl = fault_nvl[0];
+
+		if (topo_fmri_nvl2str(thp, snvl, &fmri, &topoerr) == 0) {
+			ret = strdup(fmri);
+			topo_hdl_strfree(thp, fmri);
+		}
+
+		topo_close(thp);
+		return (ret);
 	}
 
-	if (nvlist_lookup_string(sub_nvl, "svc-string", &svcname) != 0)
-		return (NULL);
-
-	return (strdup((const char *)svcname));
+	return (NULL);
 }
 
 int

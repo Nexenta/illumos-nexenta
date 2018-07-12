@@ -798,8 +798,6 @@ fmd_adm_case_iter(fmd_adm_t *ap, const char *url_token, fmd_adm_case_f *func,
 	int i, rv;
 	enum clnt_stat cs;
 	uint_t retries = 0;
-	nvlist_t **fault_nvl;
-	uint_t nnvl;
 
 	bzero(&rcl, sizeof (rcl)); /* tell xdr to allocate memory for us */
 
@@ -890,17 +888,6 @@ fmd_adm_case_iter(fmd_adm_t *ap, const char *url_token, fmd_adm_case_f *func,
 		    (char **)&aci.aci_severity);
 		(void) nvlist_lookup_string(aci.aci_event, FM_SUSPECT_DESC,
 		    (char **)&aci.aci_desc);
-
-		/*
-		 * Make up the fmri field, looking at the first element in fault
-		 * nvlist.
-		 */
-		if (nvlist_lookup_nvlist_array(aci.aci_event,
-		    FM_SUSPECT_FAULT_LIST, &fault_nvl, &nnvl) == 0 &&
-		    nnvl == 1) {
-			(void) nvlist_lookup_string(fault_nvl[0], "svc-string",
-			    (char **)&aci.aci_fmri);
-		}
 
 		rv = fmd_adm_case_one(&aci, url_token, func, arg);
 

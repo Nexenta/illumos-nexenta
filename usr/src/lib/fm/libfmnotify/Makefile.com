@@ -44,7 +44,7 @@ CFLAGS += $(CCVERBOSE) $(C_BIGPICFLAGS)
 CFLAGS64 += $(CCVERBOSE) $(C_BIGPICFLAGS)
 
 $(DYNLIB) := LDLIBS += $(MACH_LDLIBS)
-$(DYNLIB) := LDLIBS += -lnvpair -lc -lfmd_msg -lfmevent -lscf -ldiagcode
+$(DYNLIB) := LDLIBS += -lnvpair -lc -lfmd_msg -lfmevent -lscf -ldiagcode -ltopo
 
 LINTFLAGS = -msux
 LINTFLAGS64 = -msux -m64

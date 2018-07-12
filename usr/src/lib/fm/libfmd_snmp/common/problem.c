@@ -32,6 +32,7 @@
 
 #include <fm/fmd_adm.h>
 #include <fm/fmd_snmp.h>
+#include <fm/libtopo.h>
 
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -73,6 +74,26 @@ static pthread_mutex_t	update_lock;
 
 static Netsnmp_Node_Handler	sunFmProblemTable_handler;
 static Netsnmp_Node_Handler	sunFmFaultEventTable_handler;
+
+static char *
+nvl2fmri(nvlist_t *nvl)
+{
+	topo_hdl_t *thp;
+	int topoerr;
+	char *fmri, *ret = NULL;
+
+	thp = topo_open(TOPO_VERSION, NULL, &topoerr);
+	if (thp == NULL)
+		return (NULL);
+
+	if (topo_fmri_nvl2str(thp, nvl, &fmri, &topoerr) == 0) {
+		ret = strdup(fmri);
+		topo_hdl_strfree(thp, fmri);
+	}
+
+	topo_close(thp);
+	return (ret);
+}
 
 static sunFmProblem_data_t *
 problem_key_build(const char *uuid)
@@ -159,6 +180,9 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 
 	if ((data = problem_lookup_uuid_exact(acp->aci_uuid)) == NULL) {
 		uu_avl_index_t idx;
+		nvlist_t **fnvl;
+		nvlist_t *snvl;
+		uint_t nnvl;
 
 		DEBUGMSGTL((MODNAME_STR, "found new problem %s\n",
 		    acp->aci_uuid));
@@ -177,7 +201,7 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 
 		data->d_aci_uuid = data->d_aci_code = data->d_aci_type =
 		    data->d_aci_severity = data->d_aci_url =
-		    data->d_aci_desc = data->d_aci_fmri = "-";
+		    data->d_aci_desc = "-";
 		(void) nvlist_lookup_string(data->d_aci_event, FM_SUSPECT_UUID,
 		    (char **)&data->d_aci_uuid);
 		(void) nvlist_lookup_string(data->d_aci_event,
@@ -190,13 +214,31 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 			data->d_aci_url = strdup(acp->aci_url);
 		(void) nvlist_lookup_string(data->d_aci_event,
 		    FM_SUSPECT_DESC, (char **)&data->d_aci_desc);
-		if (acp->aci_fmri != NULL)
-			data->d_aci_fmri = strdup(acp->aci_fmri);
+
+		/*
+		 * NOTE: This should match the logic in libfmnotify.
+		 *
+		 * Extract the fault-list, and use the following order
+		 * of nested nvlists from its first element to make up FMRI:
+		 * - FRU
+		 * - ASRU
+		 * - resource
+		 */
+		if (nvlist_lookup_nvlist_array(data->d_aci_event,
+		    FM_SUSPECT_FAULT_LIST, &fnvl, &nnvl) == 0 && nnvl == 1 &&
+		    (nvlist_lookup_nvlist(fnvl[0], FM_FAULT_FRU, &snvl) == 0 ||
+		    nvlist_lookup_nvlist(fnvl[0], FM_FAULT_ASRU, &snvl) == 0 ||
+		    nvlist_lookup_nvlist(fnvl[0], FM_FAULT_RESOURCE,
+		    &snvl) == 0))
+			data->d_aci_fmri = nvl2fmri(snvl);
+		if (data->d_aci_fmri == NULL)
+			data->d_aci_fmri = "-";
 
 		if (nvlist_lookup_nvlist(data->d_aci_event, FM_SUSPECT_DE,
 		    &nvl) == 0)
-			if ((data->d_diag_engine = sunFm_nvl2str(nvl)) == NULL)
-				data->d_diag_engine = "-";
+			data->d_diag_engine = nvl2fmri(nvl);
+		if (data->d_diag_engine == NULL)
+			data->d_diag_engine = "-";
 
 		if (nvlist_lookup_int64_array(data->d_aci_event,
 		    FM_SUSPECT_DIAG_TIME, &diag_time, &nelem) == 0 &&
@@ -921,7 +963,7 @@ sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
 		char		*fmri = "-", *str;
 
 		(void) nvlist_lookup_nvlist(data, FM_FAULT_ASRU, &asru);
-		if ((str = sunFm_nvl2str(asru)) != NULL)
+		if ((str = nvl2fmri(asru)) != NULL)
 			fmri = str;
 
 		(void) netsnmp_table_build_result(reginfo, request,
@@ -935,7 +977,7 @@ sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
 		char		*fmri = "-", *str;
 
 		(void) nvlist_lookup_nvlist(data, FM_FAULT_FRU, &fru);
-		if ((str = sunFm_nvl2str(fru)) != NULL)
+		if ((str = nvl2fmri(fru)) != NULL)
 			fmri = str;
 
 		(void) netsnmp_table_build_result(reginfo, request,
@@ -950,7 +992,7 @@ sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
 
 		(void) nvlist_lookup_nvlist(data, FM_FAULT_RESOURCE,
 		    &rsrc);
-		if ((str = sunFm_nvl2str(rsrc)) != NULL)
+		if ((str = nvl2fmri(rsrc)) != NULL)
 			fmri = str;
 
 		(void) netsnmp_table_build_result(reginfo, request,

@@ -18,9 +18,11 @@
 #
 # CDDL HEADER END
 #
+
 #
 # Copyright 2008 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
+# Copyright 2018 Nexenta Systems, Inc.
 #
 
 LIBRARY = libfmd_snmp.a
@@ -31,8 +33,7 @@ LIBSRCS = \
 	init.c		\
 	module.c	\
 	problem.c	\
-	resource.c	\
-	scheme.c
+	resource.c
 
 OBJECTS = $(LIBSRCS:%.c=%.o)
 
