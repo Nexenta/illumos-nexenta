@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -631,7 +631,7 @@ sync_handler(void)
 	/*
 	 * Force a serial dump, since there are no CPUs to help.
 	 */
-	dump_plat_mincpu = 0;
+	dump_ncpu_low = 0;
 
 	/*
 	 * We've managed to get here without going through the
@@ -2439,7 +2439,7 @@ memlist_new(uint64_t start, uint64_t len, struct memlist **memlistp)
  */
 static void
 memlist_add(uint64_t start, uint64_t len, struct memlist **memlistp,
-	struct memlist **curmemlistp)
+    struct memlist **curmemlistp)
 {
 	struct memlist *new = *memlistp;
 

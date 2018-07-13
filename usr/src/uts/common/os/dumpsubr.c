@@ -119,14 +119,15 @@ char	    *dump_stack_scratch; /* scratch area for saving stack summary */
  *
  * dump_ncpu_low	number of helpers for parallel lzjb
  *	This is also the minimum configuration.
+ *	A special value of 0 means that parallel dump will not be used.
  *
  * dump_bzip2_level	bzip2 compression level: 1-9
  *	Higher numbers give greater compression, but take more memory
  *	and time. Memory used per helper is ~(dump_bzip2_level * 1MB).
  *
  * dump_plat_mincpu	the cross-over limit for using bzip2 (per platform):
- *	if dump_plat_mincpu == 0, then always do single threaded dump
  *	if ncpu >= dump_plat_mincpu then try to use bzip2
+ *	A special value of 0 means that bzip2 will not be used.
  *
  * dump_metrics_on	if set, metrics are collected in the kernel, passed
  *	to savecore via the dump file, and recorded by savecore in
@@ -148,7 +149,7 @@ uint_t dump_kmem_pages = 8;
 #define	NCMAP_PER_HELPER	4
 
 /* minimum number of helpers configured */
-#define	MINHELPERS	(dump_ncpu_low)
+#define	MINHELPERS	(MAX(dump_ncpu_low, 1))
 #define	MINCBUFS	(MINHELPERS * NCBUF_PER_HELPER)
 
 /*
@@ -611,21 +612,25 @@ dump_update_clevel()
 	if (dump_plat_mincpu == MINCPU_NOT_SET)
 		dump_plat_mincpu = dump_plat_mincpu_default;
 
-	/* increase threshold for faster disks */
-	new->threshold = dump_plat_mincpu;
-	if (dumpbuf.iosize >= DUMP_1MB)
-		new->threshold *= 3;
-	else if (dumpbuf.iosize >= (256 * DUMP_1KB))
-		new->threshold *= 2;
-
-	/* figure compression level based upon the computed threshold. */
-	if (dump_plat_mincpu == 0 || new->nhelper < 2) {
+	/* dump_ncpu_low = 0 => force serial, dump_plat_ncpu = 0 => no bzip2 */
+	if (dump_ncpu_low == 0 || new->nhelper < 2) {
 		new->clevel = 0;
 		new->nhelper = 1;
-	} else if ((new->nhelper + 1) >= new->threshold) {
-		new->clevel = DUMP_CLEVEL_BZIP2;
-	} else {
+	} else if (dump_plat_mincpu == 0) {
 		new->clevel = DUMP_CLEVEL_LZJB;
+	} else {
+		/* increase threshold for faster disks */
+		new->threshold = dump_plat_mincpu;
+		if (dumpbuf.iosize >= DUMP_1MB)
+			new->threshold *= 3;
+		else if (dumpbuf.iosize >= (256 * DUMP_1KB))
+			new->threshold *= 2;
+
+		if ((new->nhelper + 1) >= new->threshold) {
+			new->clevel = DUMP_CLEVEL_BZIP2;
+		} else {
+			new->clevel = DUMP_CLEVEL_LZJB;
+		}
 	}
 
 	if (new->clevel == 0) {
@@ -895,10 +900,9 @@ dumpsys_get_maxmem()
 	int k;
 
 	/*
-	 * Setting dump_plat_mincpu to 0 at any time forces a serial
-	 * dump.
+	 * Setting dump_ncpu_low to 0 forces a serial dump.
 	 */
-	if (dump_plat_mincpu == 0) {
+	if (dump_ncpu_low == 0) {
 		cfg->clevel = 0;
 		return;
 	}
@@ -2303,14 +2307,14 @@ dumpsys_main_task(void *arg)
 
 	/*
 	 * Fall back to serial mode if there are no helpers.
-	 * dump_plat_mincpu can be set to 0 at any time.
+	 * dump_ncpu_low can be set to 0 at any time.
 	 * dumpcfg.helpermap must contain at least one member.
 	 *
 	 * It is possible that the helpers haven't registered
 	 * in helpermap yet; wait up to DUMP_HELPER_MAX_WAIT.
 	 */
 	dumpserial = B_TRUE;
-	if (dump_plat_mincpu != 0 && dumpcfg.clevel != 0) {
+	if (dump_ncpu_low != 0 && dumpcfg.clevel != 0) {
 		hrtime_t hrtmax = MSEC2NSEC(DUMP_HELPER_MAX_WAIT);
 		hrtime_t hrtstart = gethrtime();
 
