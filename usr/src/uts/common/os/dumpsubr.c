@@ -612,8 +612,11 @@ dump_update_clevel()
 	if (dump_plat_mincpu == MINCPU_NOT_SET)
 		dump_plat_mincpu = dump_plat_mincpu_default;
 
-	/* dump_ncpu_low = 0 => force serial, dump_plat_ncpu = 0 => no bzip2 */
-	if (dump_ncpu_low == 0 || new->nhelper < 2) {
+	/*
+	 * if dump_ncpu_low is 0, or > ncpus => force serial
+	 * else if dump_plat_ncpu is 0 => no bzip2
+	 */
+	if (dump_ncpu_low == 0 || dump_ncpu_low > ncpus || new->nhelper < 2) {
 		new->clevel = 0;
 		new->nhelper = 1;
 	} else if (dump_plat_mincpu == 0) {
