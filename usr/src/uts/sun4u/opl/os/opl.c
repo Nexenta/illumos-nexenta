@@ -20,6 +20,7 @@
  */
 /*
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -221,9 +222,6 @@ set_platform_defaults(void)
 	tsb_lgrp_affinity = 1;
 
 	set_max_mmu_ctxdoms();
-
-	/* set OPL threshold for compressed dumps */
-	dump_plat_mincpu_default = DUMP_PLAT_SUN4U_OPL_MINCPU;
 }
 
 /*
@@ -861,8 +859,7 @@ cpu_sgn_update(ushort_t sgn, uchar_t state, uchar_t sub_state, int cpuid)
 /*ARGSUSED*/
 int
 plat_get_mem_unum(int synd_code, uint64_t flt_addr, int flt_bus_id,
-	int flt_in_memory, ushort_t flt_status,
-	char *buf, int buflen, int *lenp)
+    int flt_in_memory, ushort_t flt_status, char *buf, int buflen, int *lenp)
 {
 	/*
 	 * check if it's a Memory error.

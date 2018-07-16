@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2017, Joyent, Inc.
  */
 /*
@@ -1239,13 +1239,6 @@ num_phys_pages()
 
 	return (npages);
 }
-
-/* cpu threshold for compressed dumps */
-#ifdef _LP64
-uint_t dump_plat_mincpu_default = DUMP_PLAT_X86_64_MINCPU;
-#else
-uint_t dump_plat_mincpu_default = DUMP_PLAT_X86_32_MINCPU;
-#endif
 
 int
 dump_plat_addr()

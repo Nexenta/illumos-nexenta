@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -165,8 +165,8 @@ typedef struct dumpdatahdr {
 #define	DUMP_DATAHDR_MAGIC	('d' << 24 | 'h' << 16 | 'd' << 8 | 'r')
 
 #define	DUMP_DATAHDR_VERSION	1
+#define	DUMP_CLEVEL_SERIAL	0	/* single-threaded lzjb compression */
 #define	DUMP_CLEVEL_LZJB	1	/* parallel lzjb compression */
-#define	DUMP_CLEVEL_BZIP2	2	/* parallel bzip2 level 1 */
 
 #ifdef _KERNEL
 
@@ -199,25 +199,6 @@ extern int dump_plat_data(void *);
 extern int dump_set_uuid(const char *);
 extern int dump_update_uuid(const char *);
 extern const char *dump_get_uuid(void);
-
-/*
- * Define a CPU count threshold that determines when to employ
- * bzip2. This value is defined per-platform.
- */
-extern uint_t dump_plat_mincpu_default;
-
-#define	DUMP_PLAT_SUN4U_MINCPU		0
-#define	DUMP_PLAT_SUN4U_OPL_MINCPU	0
-#define	DUMP_PLAT_SUN4V_MINCPU		0
-#define	DUMP_PLAT_X86_64_MINCPU		0
-#define	DUMP_PLAT_X86_32_MINCPU		0
-
-/*
- * Override the per-platform default by setting this variable with
- * /etc/system.  The value 0 disables parallelism, and the old format
- * dump is produced.
- */
-extern uint_t dump_plat_mincpu;
 
 /*
  * Pages may be stolen at dump time. Prevent the pages from ever being

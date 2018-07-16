@@ -23,7 +23,7 @@
  * Copyright 2016 Joyent, Inc.
  */
 /*
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <stdio.h>
@@ -51,7 +51,6 @@
 #include <sys/sysmacros.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
-#include <bzip2/bzlib.h>
 #include <sys/fm/util.h>
 #include <fm/libfmevent.h>
 #include <sys/int_fmtio.h>
@@ -389,6 +388,10 @@ read_dumphdr(void)
 		    "dump version (%d) != %s version (%d)",
 		    dumphdr.dump_version, progname, DUMP_VERSION);
 
+	if (datahdr.dump_clevel > DUMP_CLEVEL_LZJB)
+		logprint(SC_SL_NONE | SC_EXIT_PEND,
+		    "unsupported compression format (%d)", datahdr.dump_clevel);
+
 	if (dumphdr.dump_wordsize != DUMP_WORDSIZE)
 		logprint(SC_SL_NONE | SC_EXIT_PEND,
 		    "dump is from %u-bit kernel - cannot save on %u-bit kernel",
@@ -714,7 +717,6 @@ typedef struct stream {
 	pgcnt_t curpage;
 	pgcnt_t npages;
 	pgcnt_t done;
-	bz_stream strm;
 	dumpcsize_t sc;
 	dumpstreamhdr_t sh;
 } stream_t;
@@ -977,121 +979,6 @@ lzjbblock(int corefd, stream_t *s, char *block, size_t blocksz)
 	}
 }
 
-/* bzlib library reports errors with this callback */
-void
-bz_internal_error(int errcode)
-{
-	logprint(SC_SL_ERR | SC_EXIT_ERR, "bz_internal_error: err %s\n",
-	    BZ2_bzErrorString(errcode));
-}
-
-/*
- * Return one object in the stream.
- *
- * An object (stream header or page) will likely span an input block
- * of compression data. Return non-zero when an entire object has been
- * retrieved from the stream.
- */
-static int
-bz2decompress(stream_t *s, void *buf, size_t size)
-{
-	int rc;
-
-	if (s->strm.avail_out == 0) {
-		s->strm.next_out = buf;
-		s->strm.avail_out = size;
-	}
-	while (s->strm.avail_in > 0) {
-		rc = BZ2_bzDecompress(&s->strm);
-		if (rc == BZ_STREAM_END) {
-			rc = BZ2_bzDecompressReset(&s->strm);
-			if (rc != BZ_OK)
-				logprint(SC_SL_ERR | SC_EXIT_ERR,
-				    "BZ2_bzDecompressReset: %s",
-				    BZ2_bzErrorString(rc));
-			continue;
-		}
-
-		if (s->strm.avail_out == 0)
-			break;
-	}
-	return (s->strm.avail_out == 0);
-}
-
-/*
- * Process one bzip2 block.
- * The interface is documented here:
- * http://www.bzip.org/1.0.5/bzip2-manual-1.0.5.html
- */
-static void
-bz2block(int corefd, stream_t *s, char *block, size_t blocksz)
-{
-	int rc = 0;
-	int doflush;
-	char *out;
-
-	if (!s->init) {
-		s->init = 1;
-		rc = BZ2_bzDecompressInit(&s->strm, 0, 0);
-		if (rc != BZ_OK)
-			logprint(SC_SL_ERR | SC_EXIT_ERR,
-			    "BZ2_bzDecompressInit: %s", BZ2_bzErrorString(rc));
-		if (s->blkbuf == NULL)
-			s->blkbuf = Zalloc(coreblksize);
-		s->strm.avail_out = 0;
-		s->state = STREAMSTART;
-	}
-	s->strm.next_in = block;
-	s->strm.avail_in = blocksz;
-
-	while (s->strm.avail_in > 0) {
-		switch (s->state) {
-		case STREAMSTART:
-			if (!bz2decompress(s, &s->sh, sizeof (s->sh)))
-				return;
-			if (strcmp(DUMP_STREAM_MAGIC, s->sh.stream_magic) != 0)
-				logprint(SC_SL_ERR | SC_EXIT_ERR,
-				    "BZ2 STREAMSTART: bad stream header");
-			if (s->sh.stream_npages > datahdr.dump_maxrange)
-				logprint(SC_SL_ERR | SC_EXIT_ERR,
-				    "BZ2 STREAMSTART: bad range: %d > %d",
-				    s->sh.stream_npages, datahdr.dump_maxrange);
-			s->pagenum = s->sh.stream_pagenum;
-			s->npages = s->sh.stream_npages;
-			s->curpage = s->pagenum;
-			s->nout = 0;
-			s->done = 0;
-			s->state = STREAMPAGES;
-			break;
-		case STREAMPAGES:
-			out = s->blkbuf + PTOB(s->nout);
-			if (!bz2decompress(s, out, pagesize))
-				return;
-
-			atomic_inc_64(&saved);
-
-			doflush = 0;
-			if (s->nout == 0 && iszpage(out)) {
-				doflush = 1;
-				atomic_inc_64(&zpages);
-			} else if (++s->nout >= BTOP(coreblksize) ||
-			    isblkbnd(s->curpage + s->nout)) {
-				doflush = 1;
-			}
-			if (++s->done >= s->npages) {
-				s->state = STREAMSTART;
-				doflush = 1;
-			}
-			if (doflush) {
-				putpage(corefd, s->blkbuf, s->curpage, s->nout);
-				s->nout = 0;
-				s->curpage = s->pagenum + s->done;
-			}
-			break;
-		}
-	}
-}
-
 /* report progress */
 static void
 report_progress()
@@ -1134,12 +1021,8 @@ runstreams(void *arg)
 				b = deqh(&s->blocks);
 				(void) pthread_mutex_unlock(&lock);
 
-				if (datahdr.dump_clevel < DUMP_CLEVEL_BZIP2)
-					lzjbblock(t->corefd, s, b->block,
-					    b->size);
-				else
-					bz2block(t->corefd, s, b->block,
-					    b->size);
+				lzjbblock(t->corefd, s, b->block,
+				    b->size);
 
 				(void) pthread_mutex_lock(&lock);
 				enqt(&freeblocks, b);
@@ -1178,16 +1061,14 @@ runstreams(void *arg)
  * be processing a crash file from a remote machine, which may have
  * more CPUs.
  *
- * When the kernel uses parallel lzjb or parallel bzip2, we expect a
- * series of 128KB blocks of compression data. In this case, each
- * block has a "tag", in the range 1-4095. Each block is handed off to
- * to the threads running "runstreams". The dump format is either lzjb
- * or bzip2, never a mixture. These threads, in turn, process the
- * compression data for groups of pages. Groups of pages are delimited
- * by a "stream header", which indicates a starting pfn and number of
- * pages. When a stream block has been read, the condition variable
- * "cvwork" is signalled, which causes one of the avaiable threads to
- * wake up and process the stream.
+ * When the kernel uses parallel compression we expect a series of 128KB
+ * blocks of compression data. In this case, each block has a "tag" in
+ * the range 1-4095. Each block is handed off to the threads running
+ * "runstreams". These threads, in turn, process the compression data
+ * for groups of pages. Groups of pages are delimited by a "stream header",
+ * which indicates a starting pfn and number of pages. When a stream block
+ * has been read, the condition variable "cvwork" is signalled, which causes
+ * one of the available threads to wake up and process the stream.
  *
  * In the parallel case there will be streams blocks encoding all data
  * pages. The stream of blocks is terminated by a zero size

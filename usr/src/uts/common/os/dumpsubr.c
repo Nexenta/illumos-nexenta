@@ -74,28 +74,13 @@
 #include <sys/hold_page.h>
 #include <sys/cpu.h>
 
-#include <bzip2/bzlib.h>
 #include <sys/uuid.h>
 
 /*
- * Crash dump time is dominated by disk write time.  To reduce this,
- * the stronger compression method bzip2 is applied to reduce the dump
- * size and hence reduce I/O time.  However, bzip2 is much more
- * computationally expensive than the existing lzjb algorithm, so to
- * avoid increasing compression time, CPUs that are otherwise idle
- * during panic are employed to parallelize the compression task.
- * Many helper CPUs are needed to prevent bzip2 from being a
- * bottleneck, and on systems with too few CPUs, the lzjb algorithm is
- * parallelized instead. Lastly, I/O and compression are performed by
- * different CPUs, and are hence overlapped in time, unlike the older
- * serial code.
- *
- * Another important consideration is the speed of the dump
- * device. Faster disks need less CPUs in order to benefit from
- * parallel lzjb versus parallel bzip2. Therefore, the CPU count
- * threshold for switching from parallel lzjb to paralled bzip2 is
- * elevated for faster disks. The dump device speed is adduced from
- * the setting for dumpbuf.iosize, see dump_update_clevel.
+ * Parallel Dump:
+ * CPUs that are otherwise idle during panic are employed to parallelize
+ * the compression task. I/O and compression are performed by different
+ * CPUs, and are hence overlapped in time, unlike the older serial code.
  */
 
 /*
@@ -111,34 +96,21 @@ int		dump_timeout = 120;	/* timeout for dumping pages */
 int		dump_timeleft;		/* portion of dump_timeout remaining */
 int		dump_ioerr;		/* dump i/o error */
 int		dump_check_used;	/* enable check for used pages */
-char	    *dump_stack_scratch; /* scratch area for saving stack summary */
+char		*dump_stack_scratch; /* scratch area for saving stack summary */
 
 /*
- * Tunables for dump compression and parallelism. These can be set via
- * /etc/system.
+ * Tunables for dump compression and parallelism.
+ * These can be set via /etc/system.
  *
- * dump_ncpu_low	number of helpers for parallel lzjb
- *	This is also the minimum configuration.
- *	A special value of 0 means that parallel dump will not be used.
+ * dump_ncpu_low:
+ * This is the minimum configuration for parallel lzjb.
+ * A special value of 0 means that parallel dump will not be used.
  *
- * dump_bzip2_level	bzip2 compression level: 1-9
- *	Higher numbers give greater compression, but take more memory
- *	and time. Memory used per helper is ~(dump_bzip2_level * 1MB).
- *
- * dump_plat_mincpu	the cross-over limit for using bzip2 (per platform):
- *	if ncpu >= dump_plat_mincpu then try to use bzip2
- *	A special value of 0 means that bzip2 will not be used.
- *
- * dump_metrics_on	if set, metrics are collected in the kernel, passed
- *	to savecore via the dump file, and recorded by savecore in
- *	METRICS.txt.
+ * dump_metrics_on:
+ * If set, metrics are collected in the kernel, passed to savecore
+ * via the dump file, and recorded by savecore in METRICS.txt.
  */
 uint_t dump_ncpu_low = 4;	/* minimum config for parallel lzjb */
-uint_t dump_bzip2_level = 1;	/* bzip2 level (1-9) */
-
-/* Use dump_plat_mincpu_default unless this variable is set by /etc/system */
-#define	MINCPU_NOT_SET	((uint_t)-1)
-uint_t dump_plat_mincpu = MINCPU_NOT_SET;
 
 /* tunables for pre-reserved heap */
 uint_t dump_kmem_permap = 1024;
@@ -384,7 +356,6 @@ typedef struct helper {
 	size_t used;			/* counts input consumed */
 	char *page;			/* buffer for page copy */
 	char *lzbuf;			/* lzjb output */
-	bz_stream bzstream;		/* bzip2 state */
 } helper_t;
 
 #define	MAINHELPER	(-1)		/* helper is also the main task */
@@ -395,7 +366,6 @@ typedef struct helper {
  * configuration vars for dumpsys
  */
 typedef struct dumpcfg {
-	int	threshold;	/* ncpu threshold for bzip2 */
 	int	nhelper;	/* number of helpers */
 	int	nhelper_used;	/* actual number of helpers used */
 	int	ncmap;		/* number VA pages for compression */
@@ -501,6 +471,9 @@ dumpbuf_resize(void)
 
 /*
  * dump_update_clevel is called when dumpadm configures the dump device.
+ *	Determine the compression level / type
+ *	- DUMP_CLEVEL_SERIAL is single threaded lzjb
+ *	- DUMP_CLEVEL_LZJB   is parallel lzjb
  *	Calculate number of helpers and buffers.
  *	Allocate the minimum configuration for now.
  *
@@ -512,33 +485,6 @@ dumpbuf_resize(void)
  * minimum.
  *
  * Live dump (savecore -L) always uses the minimum config.
- *
- * clevel 0 is single threaded lzjb
- * clevel 1 is parallel lzjb
- * clevel 2 is parallel bzip2
- *
- * The ncpu threshold is selected with dump_plat_mincpu.
- * On OPL, set_platform_defaults() overrides the sun4u setting.
- * The actual values are defined via DUMP_PLAT_*_MINCPU macros.
- *
- * Architecture		Threshold	Algorithm
- * sun4u		<  51		parallel lzjb
- * sun4u		>= 51		parallel bzip2(*)
- * sun4u OPL		<  8		parallel lzjb
- * sun4u OPL		>= 8		parallel bzip2(*)
- * sun4v		<  128		parallel lzjb
- * sun4v		>= 128		parallel bzip2(*)
- * x86			< 11		parallel lzjb
- * x86			>= 11		parallel bzip2(*)
- * 32-bit		N/A		single-threaded lzjb
- *
- * (*) bzip2 is only chosen if there is sufficient available
- * memory for buffers at dump time. See dumpsys_get_maxmem().
- *
- * Faster dump devices have larger I/O buffers. The threshold value is
- * increased according to the size of the dump I/O buffer, because
- * parallel lzjb performs better with faster disks. For buffers >= 1MB
- * the threshold is 3X; for buffers >= 256K threshold is 2X.
  *
  * For parallel dumps, the number of helpers is ncpu-1. The CPU
  * running panic runs the main task. For single-threaded dumps, the
@@ -555,7 +501,6 @@ static void
 dump_update_clevel()
 {
 	int tag;
-	size_t bz2size;
 	helper_t *hp, *hpend;
 	cbuf_t *cp, *cpend;
 	dumpcfg_t *old = &dumpcfg;
@@ -608,38 +553,14 @@ dump_update_clevel()
 	if (new->nhelper > DUMP_MAX_NHELPER)
 		new->nhelper = DUMP_MAX_NHELPER;
 
-	/* use platform default, unless /etc/system overrides */
-	if (dump_plat_mincpu == MINCPU_NOT_SET)
-		dump_plat_mincpu = dump_plat_mincpu_default;
-
-	/*
-	 * if dump_ncpu_low is 0, or > ncpus => force serial
-	 * else if dump_plat_ncpu is 0 => no bzip2
-	 */
+	/* If dump_ncpu_low is 0 or greater than ncpus, do serial dump */
 	if (dump_ncpu_low == 0 || dump_ncpu_low > ncpus || new->nhelper < 2) {
-		new->clevel = 0;
+		new->clevel = DUMP_CLEVEL_SERIAL;
 		new->nhelper = 1;
-	} else if (dump_plat_mincpu == 0) {
-		new->clevel = DUMP_CLEVEL_LZJB;
-	} else {
-		/* increase threshold for faster disks */
-		new->threshold = dump_plat_mincpu;
-		if (dumpbuf.iosize >= DUMP_1MB)
-			new->threshold *= 3;
-		else if (dumpbuf.iosize >= (256 * DUMP_1KB))
-			new->threshold *= 2;
-
-		if ((new->nhelper + 1) >= new->threshold) {
-			new->clevel = DUMP_CLEVEL_BZIP2;
-		} else {
-			new->clevel = DUMP_CLEVEL_LZJB;
-		}
-	}
-
-	if (new->clevel == 0) {
 		new->ncbuf = 1;
 		new->ncmap = 1;
 	} else {
+		new->clevel = DUMP_CLEVEL_LZJB;
 		new->ncbuf = NCBUF_PER_HELPER * new->nhelper;
 		new->ncmap = NCMAP_PER_HELPER * new->nhelper;
 	}
@@ -648,7 +569,6 @@ dump_update_clevel()
 	 * Allocate new data structures and buffers for MINHELPERS,
 	 * and also figure the max desired size.
 	 */
-	bz2size = BZ2_bzCompressInitSize(dump_bzip2_level);
 	new->maxsize = 0;
 	new->maxvmsize = 0;
 	new->maxvm = NULL;
@@ -660,13 +580,9 @@ dump_update_clevel()
 		if (hp < &new->helper[MINHELPERS]) {
 			hp->lzbuf = kmem_alloc(PAGESIZE, KM_SLEEP);
 			hp->page = kmem_alloc(PAGESIZE, KM_SLEEP);
-		} else if (new->clevel < DUMP_CLEVEL_BZIP2) {
+		} else  {
 			new->maxsize += 2 * PAGESIZE;
-		} else {
-			new->maxsize += PAGESIZE;
 		}
-		if (new->clevel >= DUMP_CLEVEL_BZIP2)
-			new->maxsize += bz2size;
 	}
 
 	new->cbuf = kmem_zalloc(new->ncbuf * sizeof (cbuf_t), KM_SLEEP);
@@ -819,31 +735,6 @@ dump_test_used(pfn_t pfn)
 }
 
 /*
- * dumpbzalloc and dumpbzfree are callbacks from the bzip2 library.
- * dumpsys_get_maxmem() uses them for BZ2_bzCompressInit().
- */
-static void *
-dumpbzalloc(void *opaque, int items, int size)
-{
-	size_t *sz;
-	char *ret;
-
-	ASSERT(opaque != NULL);
-	sz = opaque;
-	ret = dumpcfg.maxvm + *sz;
-	*sz += items * size;
-	*sz = P2ROUNDUP(*sz, BZ2_BZALLOC_ALIGN);
-	ASSERT(*sz <= dumpcfg.maxvmsize);
-	return (ret);
-}
-
-/*ARGSUSED*/
-static void
-dumpbzfree(void *opaque, void *addr)
-{
-}
-
-/*
  * Perform additional checks on the page to see if we can really use
  * it. The kernel (kas) pages are always set in the bitmap. However,
  * boot memory pages (prom_ppages or P_BOOTPAGES) are not in the
@@ -882,9 +773,7 @@ dump_range_check(pgcnt_t start, pgcnt_t end, pfn_t pfn)
 
 /*
  * dumpsys_get_maxmem() is called during panic. Find unused ranges
- * and use them for buffers. If we find enough memory switch to
- * parallel bzip2, otherwise use parallel lzjb.
- *
+ * and use them for buffers.
  * It searches the dump bitmap in 2 passes. The first time it looks
  * for CBUF_MAPSIZE ranges. On the second pass it uses small pages.
  */
@@ -895,18 +784,18 @@ dumpsys_get_maxmem()
 	cbuf_t *endcp = &cfg->cbuf[cfg->ncbuf];
 	helper_t *endhp = &cfg->helper[cfg->nhelper];
 	pgcnt_t bitnum, end;
-	size_t sz, endsz, bz2size;
+	size_t sz, endsz;
 	pfn_t pfn, off;
 	cbuf_t *cp;
-	helper_t *hp, *ohp;
+	helper_t *hp;
 	dumpmlw_t mlw;
 	int k;
 
 	/*
-	 * Setting dump_ncpu_low to 0 forces a serial dump.
+	 * Setting dump_ncpu_low to 0 forces a single threaded dump.
 	 */
 	if (dump_ncpu_low == 0) {
-		cfg->clevel = 0;
+		cfg->clevel = DUMP_CLEVEL_SERIAL;
 		return;
 	}
 
@@ -915,10 +804,8 @@ dumpsys_get_maxmem()
 	 * dumping all memory, then none is spare. If doing a serial
 	 * dump, then already have buffers.
 	 */
-	if (cfg->maxsize == 0 || cfg->clevel < DUMP_CLEVEL_LZJB ||
+	if (cfg->maxsize == 0 || cfg->clevel == DUMP_CLEVEL_SERIAL ||
 	    (dump_conflags & DUMP_ALL) != 0) {
-		if (cfg->clevel > DUMP_CLEVEL_LZJB)
-			cfg->clevel = DUMP_CLEVEL_LZJB;
 		return;
 	}
 
@@ -1002,12 +889,6 @@ dumpsys_get_maxmem()
 		}
 	}
 
-	/* Fall back to lzjb if we did not get enough memory for bzip2. */
-	endsz = (cfg->maxsize * cfg->threshold) / cfg->nhelper;
-	if (sz < endsz) {
-		cfg->clevel = DUMP_CLEVEL_LZJB;
-	}
-
 	/* Allocate memory for as many helpers as we can. */
 foundmax:
 
@@ -1015,42 +896,21 @@ foundmax:
 	endsz = sz;
 	sz = 0;
 
-	/* Set the size for bzip2 state. Only bzip2 needs it. */
-	bz2size = BZ2_bzCompressInitSize(dump_bzip2_level);
-
 	/* Skip the preallocate output buffers. */
 	cp = &cfg->cbuf[MINCBUFS];
-
-	/* Use this to move memory up from the preallocated helpers. */
-	ohp = cfg->helper;
 
 	/* Loop over all helpers and allocate memory. */
 	for (hp = cfg->helper; hp < endhp; hp++) {
 
 		/* Skip preallocated helpers by checking hp->page. */
 		if (hp->page == NULL) {
-			if (cfg->clevel <= DUMP_CLEVEL_LZJB) {
-				/* lzjb needs 2 1-page buffers */
-				if ((sz + (2 * PAGESIZE)) > endsz)
-					break;
-				hp->page = cfg->maxvm + sz;
-				sz += PAGESIZE;
-				hp->lzbuf = cfg->maxvm + sz;
-				sz += PAGESIZE;
-
-			} else if (ohp->lzbuf != NULL) {
-				/* re-use the preallocted lzjb page for bzip2 */
-				hp->page = ohp->lzbuf;
-				ohp->lzbuf = NULL;
-				++ohp;
-
-			} else {
-				/* bzip2 needs a 1-page buffer */
-				if ((sz + PAGESIZE) > endsz)
-					break;
-				hp->page = cfg->maxvm + sz;
-				sz += PAGESIZE;
-			}
+			/* lzjb needs 2 1-page buffers */
+			if ((sz + (2 * PAGESIZE)) > endsz)
+				break;
+			hp->page = cfg->maxvm + sz;
+			sz += PAGESIZE;
+			hp->lzbuf = cfg->maxvm + sz;
+			sz += PAGESIZE;
 		}
 
 		/*
@@ -1065,25 +925,6 @@ foundmax:
 			cp->buf = cfg->maxvm + sz;
 			sz += CBUF_SIZE;
 			++cp;
-		}
-
-		/*
-		 * bzip2 needs compression state. Use the dumpbzalloc
-		 * and dumpbzfree callbacks to allocate the memory.
-		 * bzip2 does allocation only at init time.
-		 */
-		if (cfg->clevel >= DUMP_CLEVEL_BZIP2) {
-			if ((sz + bz2size) > endsz) {
-				hp->page = NULL;
-				break;
-			} else {
-				hp->bzstream.opaque = &sz;
-				hp->bzstream.bzalloc = dumpbzalloc;
-				hp->bzstream.bzfree = dumpbzfree;
-				(void) BZ2_bzCompressInit(&hp->bzstream,
-				    dump_bzip2_level, 0, 0);
-				hp->bzstream.opaque = NULL;
-			}
 		}
 	}
 
@@ -1940,136 +1781,6 @@ dumpsys_sread(helper_t *hp)
 }
 
 /*
- * Compress size bytes starting at buf with bzip2
- * mode:
- *	BZ_RUN		add one more compressed page
- *	BZ_FINISH	no more input, flush the state
- */
-static void
-dumpsys_bzrun(helper_t *hp, void *buf, size_t size, int mode)
-{
-	dumpsync_t *ds = hp->ds;
-	const int CSIZE = sizeof (dumpcsize_t);
-	bz_stream *ps = &hp->bzstream;
-	int rc = 0;
-	uint32_t csize;
-	dumpcsize_t cs;
-
-	/* Set input pointers to new input page */
-	if (size > 0) {
-		ps->avail_in = size;
-		ps->next_in = buf;
-	}
-
-	/* CONSTCOND */
-	while (1) {
-
-		/* Quit when all input has been consumed */
-		if (ps->avail_in == 0 && mode == BZ_RUN)
-			break;
-
-		/* Get a new output buffer */
-		if (hp->cpout == NULL) {
-			HRSTART(hp->perpage, outwait);
-			hp->cpout = CQ_GET(freebufq);
-			HRSTOP(hp->perpage, outwait);
-			ps->avail_out = hp->cpout->size - CSIZE;
-			ps->next_out = hp->cpout->buf + CSIZE;
-		}
-
-		/* Compress input, or finalize */
-		HRSTART(hp->perpage, compress);
-		rc = BZ2_bzCompress(ps, mode);
-		HRSTOP(hp->perpage, compress);
-
-		/* Check for error */
-		if (mode == BZ_RUN && rc != BZ_RUN_OK) {
-			dumpsys_errmsg(hp, "%d: BZ_RUN error %s at page %lx\n",
-			    hp->helper, BZ2_bzErrorString(rc),
-			    hp->cpin->pagenum);
-			break;
-		}
-
-		/* Write the buffer if it is full, or we are flushing */
-		if (ps->avail_out == 0 || mode == BZ_FINISH) {
-			csize = hp->cpout->size - CSIZE - ps->avail_out;
-			cs = DUMP_SET_TAG(csize, hp->tag);
-			if (csize > 0) {
-				(void) memcpy(hp->cpout->buf, &cs, CSIZE);
-				dumpsys_swrite(hp, hp->cpout, csize + CSIZE);
-				hp->cpout = NULL;
-			}
-		}
-
-		/* Check for final complete */
-		if (mode == BZ_FINISH) {
-			if (rc == BZ_STREAM_END)
-				break;
-			if (rc != BZ_FINISH_OK) {
-				dumpsys_errmsg(hp, "%d: BZ_FINISH error %s\n",
-				    hp->helper, BZ2_bzErrorString(rc));
-				break;
-			}
-		}
-	}
-
-	/* Cleanup state and buffers */
-	if (mode == BZ_FINISH) {
-
-		/* Reset state so that it is re-usable. */
-		(void) BZ2_bzCompressReset(&hp->bzstream);
-
-		/* Give any unused outout buffer to the main task */
-		if (hp->cpout != NULL) {
-			hp->cpout->used = 0;
-			CQ_PUT(mainq, hp->cpout, CBUF_ERRMSG);
-			hp->cpout = NULL;
-		}
-	}
-}
-
-static void
-dumpsys_bz2compress(helper_t *hp)
-{
-	dumpsync_t *ds = hp->ds;
-	dumpstreamhdr_t sh;
-
-	(void) strcpy(sh.stream_magic, DUMP_STREAM_MAGIC);
-	sh.stream_pagenum = (pgcnt_t)-1;
-	sh.stream_npages = 0;
-	hp->cpin = NULL;
-	hp->cpout = NULL;
-	hp->cperr = NULL;
-	hp->in = 0;
-	hp->out = 0;
-	hp->bzstream.avail_in = 0;
-
-	/* Bump reference to mainq while we are running */
-	CQ_OPEN(mainq);
-
-	/* Get one page at a time */
-	while (dumpsys_sread(hp)) {
-		if (sh.stream_pagenum != hp->cpin->pagenum) {
-			sh.stream_pagenum = hp->cpin->pagenum;
-			sh.stream_npages = btop(hp->cpin->used);
-			dumpsys_bzrun(hp, &sh, sizeof (sh), BZ_RUN);
-		}
-		dumpsys_bzrun(hp, hp->page, PAGESIZE, 0);
-	}
-
-	/* Done with input, flush any partial buffer */
-	if (sh.stream_pagenum != (pgcnt_t)-1) {
-		dumpsys_bzrun(hp, NULL, 0, BZ_FINISH);
-		dumpsys_errmsg(hp, NULL);
-	}
-
-	ASSERT(hp->cpin == NULL && hp->cpout == NULL && hp->cperr == NULL);
-
-	/* Decrement main queue count, we are done */
-	CQ_CLOSE(mainq);
-}
-
-/*
  * Compress with lzjb
  * write stream block if full or size==0
  * if csize==0 write stream header, else write <csize, data>
@@ -2211,14 +1922,8 @@ dumpsys_helper()
 			if (hp->helper == FREEHELPER) {
 				hp->helper = CPU->cpu_id;
 				BT_SET(dumpcfg.helpermap, CPU->cpu_seqid);
-
 				dumpsys_spinunlock(&dumpcfg.helper_lock);
-
-				if (dumpcfg.clevel < DUMP_CLEVEL_BZIP2)
-					dumpsys_lzjbcompress(hp);
-				else
-					dumpsys_bz2compress(hp);
-
+				dumpsys_lzjbcompress(hp);
 				hp->helper = DONEHELPER;
 				return;
 			}
@@ -2255,10 +1960,7 @@ dumpsys_live_helper(void *arg)
 	helper_t *hp = arg;
 
 	BT_ATOMIC_SET(dumpcfg.helpermap, CPU->cpu_seqid);
-	if (dumpcfg.clevel < DUMP_CLEVEL_BZIP2)
-		dumpsys_lzjbcompress(hp);
-	else
-		dumpsys_bz2compress(hp);
+	dumpsys_lzjbcompress(hp);
 }
 
 /*
@@ -2305,7 +2007,6 @@ dumpsys_main_task(void *arg)
 	cbuf_t *cp;
 	pgcnt_t baseoff, pfnoff;
 	pfn_t base, pfn;
-	boolean_t dumpserial;
 	int i;
 
 	/*
@@ -2316,8 +2017,8 @@ dumpsys_main_task(void *arg)
 	 * It is possible that the helpers haven't registered
 	 * in helpermap yet; wait up to DUMP_HELPER_MAX_WAIT.
 	 */
-	dumpserial = B_TRUE;
-	if (dump_ncpu_low != 0 && dumpcfg.clevel != 0) {
+	if (dump_ncpu_low != 0 && dumpcfg.clevel != DUMP_CLEVEL_SERIAL) {
+		boolean_t dumpserial = B_TRUE;
 		hrtime_t hrtmax = MSEC2NSEC(DUMP_HELPER_MAX_WAIT);
 		hrtime_t hrtstart = gethrtime();
 
@@ -2338,7 +2039,7 @@ dumpsys_main_task(void *arg)
 		}
 
 		if (dumpserial) {
-			dumpcfg.clevel = 0;
+			dumpcfg.clevel = DUMP_CLEVEL_SERIAL;
 			if (dumpcfg.helper[0].lzbuf == NULL) {
 				dumpcfg.helper[0].lzbuf =
 				    dumpcfg.helper[1].page;
@@ -2486,7 +2187,7 @@ dumpsys_main_task(void *arg)
 			 * If there are no helpers the main task does
 			 * non-streams lzjb compress.
 			 */
-			if (dumpserial) {
+			if (dumpcfg.clevel == DUMP_CLEVEL_SERIAL) {
 				dumpsys_lzjb_page(dumpcfg.helper, cp);
 			} else {
 				/* pass mapped pages to a helper */
@@ -2597,12 +2298,8 @@ dumpsys_metrics(dumpsync_t *ds, char *buf, size_t size)
 	P("Found small pages,%ld\n", cfg->foundsm);
 
 	P("Compression level,%d\n", cfg->clevel);
-	P("Compression type,%s %s", cfg->clevel == 0 ? "serial" : "parallel",
-	    cfg->clevel >= DUMP_CLEVEL_BZIP2 ? "bzip2" : "lzjb");
-	if (cfg->clevel >= DUMP_CLEVEL_BZIP2)
-		P(" (level %d)\n", dump_bzip2_level);
-	else
-		P("\n");
+	P("Compression type,%s lzjb\n",
+	    cfg->clevel == DUMP_CLEVEL_SERIAL ? "serial" : "parallel");
 	P("Compression ratio,%d.%02d\n", compress_ratio / 100, compress_ratio %
 	    100);
 	P("nhelper_used,%d\n", cfg->nhelper_used);
@@ -2864,14 +2561,12 @@ dumpsys(void)
 	dumphdr->dump_data = dumpvp_flush();
 
 	bzero(dumpcfg.helpermap, BT_SIZEOFMAP(NCPU));
-	ds->live = dumpcfg.clevel > 0 &&
+	ds->live = dumpcfg.clevel > DUMP_CLEVEL_SERIAL &&
 	    (dumphdr->dump_flags & DF_LIVE) != 0;
 
 	save_dump_clevel = dumpcfg.clevel;
 	if (panicstr)
 		dumpsys_get_maxmem();
-	else if (dumpcfg.clevel >= DUMP_CLEVEL_BZIP2)
-		dumpcfg.clevel = DUMP_CLEVEL_LZJB;
 
 	dumpcfg.nhelper_used = 0;
 	for (hp = dumpcfg.helper; hp != hpend; hp++) {
@@ -2884,8 +2579,6 @@ dumpsys(void)
 		hp->taskqid = NULL;
 		hp->ds = ds;
 		bzero(&hp->perpage, sizeof (hp->perpage));
-		if (dumpcfg.clevel >= DUMP_CLEVEL_BZIP2)
-			(void) BZ2_bzCompressReset(&hp->bzstream);
 	}
 
 	CQ_OPEN(freebufq);
@@ -2923,7 +2616,7 @@ dumpsys(void)
 	} else {
 		if (panicstr)
 			kmem_dump_begin();
-		dumpcfg.helpers_wanted = dumpcfg.clevel > 0;
+		dumpcfg.helpers_wanted = dumpcfg.clevel > DUMP_CLEVEL_SERIAL;
 		dumpsys_spinunlock(&dumpcfg.helper_lock);
 	}
 

@@ -20,7 +20,7 @@
 #
 #
 # Copyright (c) 1998, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
 #
 
 PROG= savecore
@@ -33,50 +33,27 @@ C99MODE = $(C99_ENABLE)
 
 CFLAGS += $(CCVERBOSE)
 CFLAGS64 += $(CCVERBOSE)
-CPPFLAGS += -D_LARGEFILE64_SOURCE=1 -DBZ_NO_STDIO -I$(SRC)/uts/common
-
-#
-# savecore is compiled with bits from $(SRC)/common/bzip2 and some function
-# symbols there are defined as weak; if you leave them out of
-# savecore.c it will compile, but trying to call that function
-# will jump to 0.  So we use -ztext to avoid that.
-#
-LDFLAGS += -ztext
+CPPFLAGS += -D_LARGEFILE64_SOURCE=1 -I$(SRC)/uts/common
 
 LDLIBS += -luuid -lgen
-
-BZIP2OBJS =	bz2blocksort.o	\
-		bz2compress.o	\
-		bz2decompress.o	\
-		bz2randtable.o	\
-		bz2bzlib.o	\
-		bz2crctable.o	\
-		bz2huffman.o
 
 .KEEP_STATE:
 
 all: $(PROG)
 
-$(PROG): $(OBJS) $(BZIP2OBJS)
-	$(LINK.c) -o $(PROG) $(OBJS) $(BZIP2OBJS) $(LDLIBS)
+$(PROG): $(OBJS)
+	$(LINK.c) -o $(PROG) $(OBJS) $(LDLIBS)
 	$(POST_PROCESS)
 
 clean:
-	$(RM) $(OBJS) $(BZIP2OBJS)
-
-lint := CPPFLAGS += -I$(SRC)/common
+	$(RM) $(OBJS)
 
 #
-# Linting the usr/src/common/bzip2 source produces reams of complaints.
-# So we only lint regular SRCS, but we need to excuse two complaints
-# related to bz_internal_error.
+# savecore only uses the decompress() path of compress.c
+# suppress complaints about unused compress() path
 #
-
-lint := BZ2LINTCOPOUTS = -erroff=E_NAME_USED_NOT_DEF2
-lint := BZ2LINTCOPOUTS += -erroff=E_NAME_DEF_NOT_USED2
-
-lint := LINTFLAGS += $(BZ2LINTCOPOUTS)
-lint := LINTFLAGS64 += $(BZ2LINTCOPOUTS)
+lint := LINTFLAGS += -erroff=E_NAME_DEF_NOT_USED2
+lint := LINTFLAGS64 += -erroff=E_NAME_DEF_NOT_USED2
 
 lint:	$(LINTSRCS)
 	$(LINT.c) $(SRCS) $(LDLIBS)
@@ -89,8 +66,4 @@ include ../../Makefile.targ
 
 %.o: ../../../uts/common/os/%.c
 	$(COMPILE.c) $<
-	$(POST_PROCESS_O)
-
-bz2%.o: ../../../common/bzip2/%.c
-	$(COMPILE.c) -o $@ -I$(SRC)/common -I$(SRC)/common/bzip2 $<
 	$(POST_PROCESS_O)
