@@ -370,6 +370,7 @@ typedef struct pqi_device {
 	/* ---- Only one will be valid, MPxIO uses s_pip ---- */
 	dev_info_t		*pd_dip;
 	mdi_pathinfo_t		*pd_pip;
+	mdi_pathinfo_t		*pd_pip_offlined;
 
 	dev_info_t		*pd_parent;
 	int			pd_devtype;
@@ -505,6 +506,7 @@ void *pqi_state;
 /* ---- smartpqi_intr.c ---- */
 int smartpqi_register_intrs(pqi_state_t);
 void smartpqi_unregister_intrs(pqi_state_t);
+void pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg);
 
 /* ---- smartpqi_sis.c ---- */
 boolean_t sis_reenable_mode(pqi_state_t s);
@@ -540,6 +542,8 @@ void pqi_fail_cmd(pqi_cmd_t cmd);
 void pqi_fail_drive_cmds(pqi_device_t devp);
 void pqi_watchdog(void *v);
 void pqi_event_worker(void *v);
+uint32_t pqi_disable_intr(pqi_state_t s);
+void pqi_enable_intr(pqi_state_t s, uint32_t old_state);
 
 /* ---- smartpqi_util.c ---- */
 pqi_dma_overhead_t *pqi_alloc_single(pqi_state_t s, size_t len);

@@ -87,11 +87,11 @@ ddi_dma_attr_t smartpqi_dma_attrs = {
 	DMA_ATTR_V0,	/* attribute layout version		*/
 	0x0ull,		/* address low - should be 0 (longlong)	*/
 	0xffffffffffffffffull, /* address high - 64-bit max	*/
-	0x7ffffull,	/* count max - max DMA object size	*/
+	0x00ffffffull,	/* count max - max DMA object size	*/
 	4096,		/* allocation alignment requirements	*/
 	0x78,		/* burstsizes - binary encoded values	*/
 	1,		/* minxfer - gran. of DMA engine	*/
-	0x007ffffull,	/* maxxfer - gran. of DMA engine	*/
+	0x00ffffffull,	/* maxxfer - gran. of DMA engine	*/
 	0xffffffffull,	/* max segment size (DMA boundary)	*/
 	0x400,		/* scatter/gather list length		*/
 	512,		/* granularity - device transfer size	*/
@@ -322,10 +322,11 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			/* ---- Better not be any active commands ---- */
 			ASSERT(list_is_empty(&devp->pd_cmd_list));
 
-			if (devp->pd_guid != NULL) {
-				ddi_devid_free_guid(devp->pd_guid);
-				devp->pd_guid = NULL;
-			}
+			ddi_devid_free_guid(devp->pd_guid);
+			if (devp->pd_pip != NULL)
+				(void) mdi_pi_free(devp->pd_pip, 0);
+			if (devp->pd_pip_offlined)
+				(void) mdi_pi_free(devp->pd_pip_offlined, 0);
 			list_destroy(&devp->pd_cmd_list);
 			mutex_destroy(&devp->pd_mutex);
 			list_remove(&s->s_devnodes, devp);

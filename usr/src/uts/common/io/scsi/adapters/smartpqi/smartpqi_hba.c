@@ -201,7 +201,6 @@ pqi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	int		rc;
 	pqi_cmd_t	cmd	= PKT2CMD(pkt);
 	pqi_state_t	s	= ap->a_hba_tran->tran_hba_private;
-	ksema_t		poll_sema;
 
 	ASSERT3P(cmd->pc_pkt, ==, pkt);
 	ASSERT3P(cmd->pc_softc, ==, s);
@@ -241,10 +240,6 @@ pqi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	}
 	mutex_exit(&s->s_mutex);
 
-	if (poll) {
-		sema_init(&poll_sema, 0, NULL, SEMA_DRIVER, NULL);
-		cmd->pc_poll = &poll_sema;
-	}
 	pqi_cmd_sm(cmd, PQI_CMD_QUEUED);
 
 	rc = pqi_transport_command(s, cmd);
@@ -252,10 +247,27 @@ pqi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	if (poll) {
 		boolean_t	qnotify;
 
-		if (rc == TRAN_ACCEPT)
-			sema_p(&poll_sema);
+		if (rc == TRAN_ACCEPT) {
+			uint32_t	old_state;
+			int		timeo;
 
-		sema_destroy(&poll_sema);
+			timeo = pkt->pkt_time ? pkt->pkt_time :
+			    SCSI_POLL_TIMEOUT;
+			timeo *= MILLISEC / 2;
+			old_state = pqi_disable_intr(s);
+			do {
+				drv_usecwait(MILLISEC / 2);
+				pqi_process_io_intr(s, &s->s_queue_groups[0]);
+				if (--timeo == 0) {
+					pkt->pkt_state |= STAT_TIMEOUT;
+					pkt->pkt_reason = CMD_TIMEOUT;
+					break;
+				}
+			} while (pkt->pkt_state == 0);
+			pqi_enable_intr(s, old_state);
+		}
+
+		scsi_hba_pkt_comp(pkt);
 
 		mutex_enter(&s->s_mutex);
 		qnotify = HBA_QUIESCED_PENDING(s);
@@ -453,6 +465,7 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 		pkt->pkt_scbp = (uint8_t *)&cmd->pc_cmd_scb;
 		pkt->pkt_cdbp = cmd->pc_cdb;
 		pkt->pkt_private = (opaque_t)cmd->pc_tgt_priv;
+		pkt->pkt_time = SCSI_POLL_TIMEOUT;
 
 		if (cmdlen > sizeof (cmd->pc_cdb) ||
 		    statuslen > sizeof (cmd->pc_cmd_scb) ||
@@ -929,6 +942,47 @@ create_virt_lun(pqi_state_t s, pqi_device_t d, struct scsi_inquiry *inq,
 	char		wwid_str[17];
 	char		tgt_str[17];
 	int		instance = ddi_get_instance(s->s_dip);
+	dev_info_t	*lun_dip;
+	char		*old_guid;
+
+	if (d->pd_pip_offlined != NULL) {
+		lun_dip = mdi_pi_get_client(d->pd_pip_offlined);
+		ASSERT(lun_dip != NULL);
+
+		if (ddi_prop_lookup_string(DDI_DEV_T_ANY, lun_dip,
+		    (DDI_PROP_DONTPASS | DDI_PROP_NOTPROM),
+		    MDI_CLIENT_GUID_PROP, &old_guid) == DDI_SUCCESS) {
+			if (strncmp(d->pd_guid, old_guid,
+			    strlen(d->pd_guid)) == 0) {
+				/* ---- Same path came back online ---- */
+				(void) ddi_prop_free(old_guid);
+				if (mdi_pi_online(d->pd_pip_offlined, 0) ==
+				    DDI_SUCCESS) {
+					d->pd_pip = d->pd_pip_offlined;
+					d->pd_pip_offlined = NULL;
+					return (B_TRUE);
+				} else {
+					return (B_FALSE);
+				}
+			} else {
+				/* ---- Different device in slot ---- */
+				(void) ddi_prop_free(old_guid);
+				if (mdi_pi_offline(d->pd_pip_offlined, 0) !=
+				    DDI_SUCCESS) {
+					return (B_FALSE);
+				}
+				if (mdi_pi_free(d->pd_pip_offlined,
+				    MDI_CLIENT_FLAGS_NO_EVENT) != MDI_SUCCESS) {
+					return (B_FALSE);
+				}
+				d->pd_pip_offlined = NULL;
+			}
+		} else {
+			dev_err(s->s_dip, CE_WARN, "Can't get client-guid "
+			    "property for lun %d", d->pd_target);
+			return (B_FALSE);
+		}
+	}
 
 	scsi_hba_nodename_compatible_get(inq, "vhci", inq->inq_dtype, NULL,
 	    &nodename, &compatible, &ncompatible);
@@ -1006,6 +1060,8 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 {
 	struct scsi_inquiry	inq;
 	boolean_t		rval;
+	dev_info_t		*cdip;
+	dev_info_t		*parent;
 
 	/* ---- For now ignore logical devices ---- */
 	if (is_physical_dev(d) == B_FALSE)
@@ -1013,31 +1069,35 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 
 	/* ---- Inquiry target ---- */
 	if (pqi_scsi_inquiry(s, d, 0, &inq, sizeof (inq)) == B_FALSE) {
-		pqi_fail_drive_cmds(d);
-		if (d->pd_dip != NULL) {
-			/* ---- Target disappeared, remove references ---- */
-			if (i_ddi_devi_attached(d->pd_dip)) {
-				char *devname;
-				devname = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
-				/* ---- Get full name ---- */
-				(void) ddi_deviname(d->pd_dip, devname);
-				/* ---- Clean cache and name ---- */
-				(void) devfs_clean(d->pd_parent, devname + 1,
-				    DV_CLEAN_FORCE);
-				kmem_free(devname, MAXPATHLEN);
-			}
 
+		pqi_fail_drive_cmds(d);
+		if (d->pd_pip != NULL) {
+			parent = scsi_vhci_dip;
+			cdip = mdi_pi_get_client(d->pd_pip);
+		} else {
+			parent = pdip;
+			cdip = d->pd_dip;
+		}
+
+		/* ---- Target disappeared, remove references ---- */
+		if ((cdip != NULL) && i_ddi_devi_attached(cdip)) {
+			char *devname;
+			devname = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
+			/* ---- Get full name ---- */
+			(void) ddi_deviname(cdip, devname);
+			/* ---- Clean cache and name ---- */
+			(void) devfs_clean(parent, devname + 1,
+			    DV_CLEAN_FORCE);
+			kmem_free(devname, MAXPATHLEN);
+		}
+
+		if (d->pd_dip != NULL) {
 			(void) ndi_devi_offline(d->pd_dip, NDI_DEVI_REMOVE);
 			d->pd_dip = NULL;
 		} else if (d->pd_pip != NULL) {
-			(void) mdi_pi_offline(d->pd_pip, NDI_DEVI_REMOVE);
-			(void) mdi_prop_remove(d->pd_pip, NULL);
-			(void) mdi_pi_free(d->pd_pip, 0);
+			(void) mdi_pi_offline(d->pd_pip, 0);
+			d->pd_pip_offlined = d->pd_pip;
 			d->pd_pip = NULL;
-		}
-		if (d->pd_guid != NULL) {
-			ddi_devid_free_guid(d->pd_guid);
-			d->pd_guid = NULL;
 		}
 		return (NDI_FAILURE);
 	} else if (d->pd_dip != NULL) {

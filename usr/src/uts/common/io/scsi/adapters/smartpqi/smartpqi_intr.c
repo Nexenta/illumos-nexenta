@@ -24,6 +24,11 @@
 /* ---- Forward declarations of private methods ---- */
 static int add_intrs(pqi_state_t s, int type);
 static uint_t intr_handler(caddr_t arg1, caddr_t arg2);
+static void sync_error(pqi_state_t s, pqi_io_request_t *io,
+    pqi_io_response_t *rsp);
+static void process_raid_io_error(pqi_io_request_t *io);
+static void process_aio_io_error(pqi_io_request_t *io);
+static void disable_aio_path(pqi_io_request_t *io);
 
 /*
  * smartpqi_register_intrs -- Figure out which type of interrupts and register
@@ -94,6 +99,85 @@ smartpqi_unregister_intrs(pqi_state_t s)
 	/* ---- Just in case ---- */
 	s->s_itable = NULL;
 	s->s_intr_size = 0;
+}
+
+void
+pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
+{
+	pqi_index_t		oq_pi;
+	pqi_index_t		oq_ci;
+	pqi_io_request_t	*io;
+	pqi_io_response_t	*rsp;
+	uint16_t		rqst_id;
+	int			response_cnt = 0;
+	int			qnotify;
+
+	oq_ci = qg->oq_ci_copy;
+	atomic_inc_32(&s->s_intr_count);
+
+	for (;;) {
+		(void) ddi_dma_sync(s->s_queue_dma->handle,
+		    (uintptr_t)qg->oq_pi -
+		    (uintptr_t)s->s_queue_dma->alloc_memory,
+		    sizeof (oq_pi), DDI_DMA_SYNC_FORCPU);
+
+		oq_pi = *qg->oq_pi;
+		if (oq_pi == oq_ci)
+			break;
+
+		rsp = (pqi_io_response_t *)(qg->oq_element_array +
+		    (oq_ci * PQI_OPERATIONAL_OQ_ELEMENT_LENGTH));
+		(void) ddi_dma_sync(s->s_queue_dma->handle,
+		    (uintptr_t)rsp - (uintptr_t)s->s_queue_dma->alloc_memory,
+		    sizeof (*rsp), DDI_DMA_SYNC_FORCPU);
+		rqst_id = rsp->request_id;
+		ASSERT(rqst_id < s->s_max_io_slots);
+		io = &s->s_io_rqst_pool[rqst_id];
+
+		ASSERT(io->io_refcount == 1);
+
+		switch (rsp->header.iu_type) {
+		case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS:
+		case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS:
+		case PQI_RESPONSE_IU_GENERAL_MANAGEMENT:
+			io->io_status = PQI_DATA_IN_OUT_GOOD;
+			break;
+		case PQI_RESPONSE_IU_RAID_PATH_IO_ERROR:
+			io->io_status = PQI_DATA_IN_OUT_ERROR;
+			sync_error(s, io, rsp);
+			process_raid_io_error(io);
+			break;
+		case PQI_RESPONSE_IU_AIO_PATH_IO_ERROR:
+			io->io_status = PQI_DATA_IN_OUT_ERROR;
+			sync_error(s, io, rsp);
+			process_aio_io_error(io);
+			break;
+		case PQI_RESPONSE_IU_AIO_PATH_DISABLED:
+			io->io_status = PQI_DATA_IN_OUT_PROTOCOL_ERROR;
+			disable_aio_path(io);
+			break;
+
+		default:
+			ASSERT(0);
+			break;
+		}
+		io->io_cb(io, io->io_context);
+		response_cnt++;
+		oq_ci = (oq_ci + 1) % s->s_num_elements_per_oq;
+	}
+
+	mutex_enter(&s->s_mutex);
+	qnotify = HBA_QUIESCED_PENDING(s);
+	mutex_exit(&s->s_mutex);
+
+	if (qnotify)
+		pqi_quiesced_notify(s);
+
+	if (response_cnt) {
+		qg->cmplt_count += response_cnt;
+		qg->oq_ci_copy = oq_ci;
+		ddi_put32(s->s_datap, qg->oq_ci, oq_ci);
+	}
 }
 
 /*
@@ -272,85 +356,6 @@ sync_error(pqi_state_t s, pqi_io_request_t *io, pqi_io_response_t *rsp)
 }
 
 static void
-process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
-{
-	pqi_index_t		oq_pi;
-	pqi_index_t		oq_ci;
-	pqi_io_request_t	*io;
-	pqi_io_response_t	*rsp;
-	uint16_t		rqst_id;
-	int			response_cnt = 0;
-	int			qnotify;
-
-	oq_ci = qg->oq_ci_copy;
-	atomic_inc_32(&s->s_intr_count);
-
-	for (;;) {
-		(void) ddi_dma_sync(s->s_queue_dma->handle,
-		    (uintptr_t)qg->oq_pi -
-		    (uintptr_t)s->s_queue_dma->alloc_memory,
-		    sizeof (oq_pi), DDI_DMA_SYNC_FORCPU);
-
-		oq_pi = *qg->oq_pi;
-		if (oq_pi == oq_ci)
-			break;
-
-		rsp = (pqi_io_response_t *)(qg->oq_element_array +
-		    (oq_ci * PQI_OPERATIONAL_OQ_ELEMENT_LENGTH));
-		(void) ddi_dma_sync(s->s_queue_dma->handle,
-		    (uintptr_t)rsp - (uintptr_t)s->s_queue_dma->alloc_memory,
-		    sizeof (*rsp), DDI_DMA_SYNC_FORCPU);
-		rqst_id = rsp->request_id;
-		ASSERT(rqst_id < s->s_max_io_slots);
-		io = &s->s_io_rqst_pool[rqst_id];
-
-		ASSERT(io->io_refcount == 1);
-
-		switch (rsp->header.iu_type) {
-		case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS:
-		case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS:
-		case PQI_RESPONSE_IU_GENERAL_MANAGEMENT:
-			io->io_status = PQI_DATA_IN_OUT_GOOD;
-			break;
-		case PQI_RESPONSE_IU_RAID_PATH_IO_ERROR:
-			io->io_status = PQI_DATA_IN_OUT_ERROR;
-			sync_error(s, io, rsp);
-			process_raid_io_error(io);
-			break;
-		case PQI_RESPONSE_IU_AIO_PATH_IO_ERROR:
-			io->io_status = PQI_DATA_IN_OUT_ERROR;
-			sync_error(s, io, rsp);
-			process_aio_io_error(io);
-			break;
-		case PQI_RESPONSE_IU_AIO_PATH_DISABLED:
-			io->io_status = PQI_DATA_IN_OUT_PROTOCOL_ERROR;
-			disable_aio_path(io);
-			break;
-
-		default:
-			ASSERT(0);
-			break;
-		}
-		io->io_cb(io, io->io_context);
-		response_cnt++;
-		oq_ci = (oq_ci + 1) % s->s_num_elements_per_oq;
-	}
-
-	mutex_enter(&s->s_mutex);
-	qnotify = HBA_QUIESCED_PENDING(s);
-	mutex_exit(&s->s_mutex);
-
-	if (qnotify)
-		pqi_quiesced_notify(s);
-
-	if (response_cnt) {
-		qg->cmplt_count += response_cnt;
-		qg->oq_ci_copy = oq_ci;
-		ddi_put32(s->s_datap, qg->oq_ci, oq_ci);
-	}
-}
-
-static void
 process_event_intr(pqi_state_t s)
 {
 	pqi_event_queue_t	*q = &s->s_event_queue;
@@ -413,7 +418,7 @@ intr_handler(caddr_t arg1, caddr_t arg2)
 		return (DDI_INTR_CLAIMED);
 
 	qg = &s->s_queue_groups[queue_group_idx];
-	process_io_intr(s, qg);
+	pqi_process_io_intr(s, qg);
 	if (queue_group_idx == s->s_event_queue.int_msg_num)
 		process_event_intr(s);
 

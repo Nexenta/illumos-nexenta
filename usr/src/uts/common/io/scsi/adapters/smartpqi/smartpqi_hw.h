@@ -23,6 +23,19 @@ extern "C" {
 #include <sys/types.h>
 #include <sys/ccompile.h>
 
+/* ---- for submission of legacy SIS commands ---- */
+#define	SIS_REENABLE_SIS_MODE			0x1
+#define	SIS_ENABLE_MSIX				0x40
+#define	SIS_ENABLE_INTX				0x80
+#define	SIS_SOFT_RESET				0x100
+#define	SIS_TRIGGER_SHUTDOWN			0x800000
+#define	SIS_CMD_READY				0x200
+#define	SIS_CMD_COMPLETE			0x1000
+#define	SIS_CLEAR_CTRL_TO_HOST_DOORBELL		0x1000
+#define	SIS_CMD_STATUS_SUCCESS			0x1
+#define	SIS_CMD_COMPLETE_TIMEOUT_SECS		30
+#define	SIS_CMD_COMPLETE_POLL_INTERVAL_MSECS	10
+
 /* ---- SOP data direction flags ---- */
 #define	SOP_NO_DIRECTION_FLAG	0
 #define	SOP_WRITE_FLAG		1	/* host writes data to Data-Out */

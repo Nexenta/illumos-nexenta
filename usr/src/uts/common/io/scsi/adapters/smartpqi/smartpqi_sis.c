@@ -30,19 +30,6 @@
 #define	SIS_REQUIRED_EXTENDED_PROPERTIES	\
 	(SIS_SMARTARRAY_FEATURES_SUPPORTED | SIS_PQI_MODE_SUPPORTED)
 
-/* ---- for submission of legacy SIS commands ---- */
-#define	SIS_REENABLE_SIS_MODE			0x1
-#define	SIS_ENABLE_MSIX			0x40
-#define	SIS_ENABLE_INTX			0x80
-#define	SIS_SOFT_RESET				0x100
-#define	SIS_TRIGGER_SHUTDOWN			0x800000
-#define	SIS_CMD_READY				0x200
-#define	SIS_CMD_COMPLETE			0x1000
-#define	SIS_CLEAR_CTRL_TO_HOST_DOORBELL	0x1000
-#define	SIS_CMD_STATUS_SUCCESS			0x1
-#define	SIS_CMD_COMPLETE_TIMEOUT_SECS		30
-#define	SIS_CMD_COMPLETE_POLL_INTERVAL_MSECS	10
-
 #pragma pack(1)
 /* used for passing command parameters/results when issuing SIS commands */
 typedef struct sis_sync_cmd_params {

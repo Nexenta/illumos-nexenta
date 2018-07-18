@@ -257,6 +257,24 @@ pqi_fail_drive_cmds(pqi_device_t devp)
 	mutex_exit(&devp->pd_mutex);
 }
 
+uint32_t
+pqi_disable_intr(pqi_state_t s)
+{
+	uint32_t	db;
+	uint32_t	rval;
+
+	rval = db = G32(s, sis_host_to_ctrl_doorbell);
+	db &= ~(SIS_ENABLE_MSIX | SIS_ENABLE_INTX);
+	S32(s, sis_host_to_ctrl_doorbell, db);
+	return (rval);
+}
+
+void
+pqi_enable_intr(pqi_state_t s, uint32_t old_state)
+{
+	S32(s, sis_host_to_ctrl_doorbell, old_state);
+}
+
 /*
  * []------------------------------------------------------------------[]
  * | Support/utility functions for main entry points			|

@@ -923,6 +923,7 @@ pqi_scan_scsi_devices(pqi_state_t s)
 				list_insert_tail(&s->s_devnodes, dev);
 				mutex_exit(&s->s_mutex);
 			} else {
+				ddi_devid_free_guid(dev->pd_guid);
 				PQI_FREE(dev, sizeof (*dev));
 			}
 		}
@@ -1689,7 +1690,9 @@ build_guid(pqi_state_t s, pqi_device_t d)
 	uchar_t			*inq83	= NULL;
 	ddi_devid_t		devid;
 
+	ddi_devid_free_guid(d->pd_guid);
 	d->pd_guid = NULL;
+
 	inq = kmem_alloc(sizeof (struct scsi_inquiry), KM_SLEEP);
 	if (pqi_scsi_inquiry(s, d, 0, inq, sizeof (struct scsi_inquiry)) ==
 	    B_FALSE) {
