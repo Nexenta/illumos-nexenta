@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
@@ -5094,6 +5094,10 @@ stmf_abort(int abort_cmd, scsi_task_t *task, stmf_status_t s, void *arg)
 
 }
 
+/*
+ * NOTE: stmf_abort_task_offline will release and then reacquire the
+ * itask_mutex. This is required to prevent a lock order violation.
+ */
 void
 stmf_task_lu_aborted(scsi_task_t *task, stmf_status_t s, uint32_t iof)
 {
@@ -5122,6 +5126,10 @@ stmf_task_lu_aborted(scsi_task_t *task, stmf_status_t s, uint32_t iof)
 	stmf_abort_task_offline(task, 1, info);
 }
 
+/*
+ * NOTE: stmf_abort_task_offline will release and then reacquire the
+ * itask_mutex. This is required to prevent a lock order violation.
+ */
 void
 stmf_task_lport_aborted(scsi_task_t *task, stmf_status_t s, uint32_t iof)
 {
@@ -5144,10 +5152,7 @@ stmf_task_lport_aborted(scsi_task_t *task, stmf_status_t s, uint32_t iof)
 		/*
 		 * LPORT abort successfully
 		 */
-		if (!(itask->itask_flags & ITASK_KNOWN_TO_TGT_PORT)) {
-			return;
-		}
-		itask->itask_flags &= ~ITASK_KNOWN_TO_TGT_PORT;
+		atomic_and_32(&itask->itask_flags, ~ITASK_KNOWN_TO_TGT_PORT);
 		return;
 	}
 
@@ -5294,6 +5299,12 @@ stmf_do_task_abort(scsi_task_t *task)
 			stmf_abort_task_offline(itask->itask_task, 1, info);
 		}
 	}
+
+	/*
+	 * NOTE: After the call to either stmf_abort_task_offline() or
+	 * stmf_task_lu_abort() the itask_mutex was dropped and reacquired
+	 * to avoid a deadlock situation with stmf_state.stmf_lock.
+	 */
 
 	new = itask->itask_flags;
 	if ((itask->itask_flags & (ITASK_KNOWN_TO_TGT_PORT |
@@ -7752,6 +7763,14 @@ stmf_trace_clear()
 	mutex_exit(&trace_buf_lock);
 }
 
+/*
+ * NOTE: Due to lock order problems that are not possible to fix this
+ * method drops and reacquires the itask_mutex around the call to stmf_ctl.
+ * Another possible work around would be to use a dispatch queue and have
+ * the call to stmf_ctl run on another thread that's not holding the
+ * itask_mutex. The problem with that approach is that it's difficult to
+ * determine what impact an asynchronous change would have on the system state.
+ */
 static void
 stmf_abort_task_offline(scsi_task_t *task, int offline_lu, char *info)
 {
@@ -7759,18 +7778,13 @@ stmf_abort_task_offline(scsi_task_t *task, int offline_lu, char *info)
 	void				*ctl_private;
 	uint32_t			ctl_cmd;
 	int				msg = 0;
+	stmf_i_scsi_task_t		*itask =
+	    (stmf_i_scsi_task_t *)task->task_stmf_private;
 
 	stmf_trace("FROM STMF", "abort_task_offline called for %s: %s",
 	    offline_lu ? "LU" : "LPORT", info ? info : "no additional info");
 	change_info.st_additional_info = info;
-#ifdef DEBUG
-/* CSTYLED */
-	{
-		stmf_i_scsi_task_t *itask =
-		    (stmf_i_scsi_task_t *)task->task_stmf_private;
-		ASSERT(mutex_owned(&itask->itask_mutex));
-	}
-#endif
+	ASSERT(mutex_owned(&itask->itask_mutex));
 
 	if (offline_lu) {
 		change_info.st_rflags = STMF_RFLAG_RESET |
@@ -7799,7 +7813,9 @@ stmf_abort_task_offline(scsi_task_t *task, int offline_lu, char *info)
 		    offline_lu ? "LU" : "LPORT", info ? info :
 		    "<no additional info>");
 	}
+	mutex_exit(&itask->itask_mutex);
 	(void) stmf_ctl(ctl_cmd, ctl_private, &change_info);
+	mutex_enter(&itask->itask_mutex);
 }
 
 static char
