@@ -18,9 +18,10 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2001, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -1538,20 +1539,16 @@ pkt_cleanup:
  *		   1 - reset succeeded
  */
 
-/* ARGSUSED */
 static int
 vhci_scsi_reset(struct scsi_address *ap, int level)
 {
-	int rval = 0;
-
-	cmn_err(CE_WARN, "!vhci_scsi_reset 0x%x", level);
 	if ((level == RESET_TARGET) || (level == RESET_LUN)) {
 		return (vhci_scsi_reset_target(ap, level, TRUE));
 	} else if (level == RESET_ALL) {
 		return (vhci_scsi_reset_bus(ap));
+	} else {
+		return (0);
 	}
-
-	return (rval);
 }
 
 /*
