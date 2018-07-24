@@ -1071,8 +1071,6 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 {
 	struct scsi_inquiry	inq;
 	boolean_t		rval;
-	dev_info_t		*cdip;
-	dev_info_t		*parent;
 
 	/* ---- For now ignore logical devices ---- */
 	if (is_physical_dev(d) == B_FALSE)
@@ -1083,28 +1081,10 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 	    pqi_scsi_inquiry(s, d, 0, &inq, sizeof (inq)) == B_FALSE) {
 
 		pqi_fail_drive_cmds(d);
-		if (d->pd_pip != NULL) {
-			parent = scsi_vhci_dip;
-			cdip = mdi_pi_get_client(d->pd_pip);
-		} else {
-			parent = pdip;
-			cdip = d->pd_dip;
-		}
-
-		/* ---- Target disappeared, remove references ---- */
-		if ((cdip != NULL) && i_ddi_devi_attached(cdip)) {
-			char *devname;
-			devname = kmem_zalloc(MAXPATHLEN, KM_SLEEP);
-			/* ---- Get full name ---- */
-			(void) ddi_deviname(cdip, devname);
-			/* ---- Clean cache and name ---- */
-			(void) devfs_clean(parent, devname + 1,
-			    DV_CLEAN_FORCE);
-			kmem_free(devname, MAXPATHLEN);
-		}
 
 		if (d->pd_dip != NULL) {
-			(void) ndi_devi_offline(d->pd_dip, NDI_DEVI_REMOVE);
+			(void) ndi_devi_offline(d->pd_dip,
+			    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE);
 			d->pd_dip = NULL;
 		} else if (d->pd_pip != NULL) {
 			(void) mdi_pi_offline(d->pd_pip, 0);

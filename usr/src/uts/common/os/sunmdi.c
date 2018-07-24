@@ -18,6 +18,7 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2000, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2018 Nexenta Systems, Inc.
@@ -26,16 +27,6 @@
 /*
  * Multipath driver interface (MDI) implementation; see mdi_impldefs.h for a
  * more detailed discussion of the overall mpxio architecture.
- *
- * Default locking order:
- *
- * _NOTE(LOCK_ORDER(mdi_mutex, mdi_vhci:vh_phci_mutex);
- * _NOTE(LOCK_ORDER(mdi_mutex, mdi_vhci:vh_client_mutex);
- * _NOTE(LOCK_ORDER(mdi_vhci:vh_phci_mutex, mdi_phci::ph_mutex);
- * _NOTE(LOCK_ORDER(mdi_vhci:vh_client_mutex, mdi_client::ct_mutex);
- * _NOTE(LOCK_ORDER(mdi_phci::ph_mutex mdi_pathinfo::pi_mutex))
- * _NOTE(LOCK_ORDER(mdi_phci::ph_mutex mdi_client::ct_mutex))
- * _NOTE(LOCK_ORDER(mdi_client::ct_mutex mdi_pathinfo::pi_mutex))
  */
 
 #include <sys/note.h>
@@ -3676,26 +3667,24 @@ i_mdi_pi_state_change(mdi_pathinfo_t *pip, mdi_pathinfo_state_t state, int flag)
 				 * This is the last path case for
 				 * non-user initiated events.
 				 */
-				if (((flag & NDI_USER_REQ) == 0) &&
-				    cdip && (i_ddi_node_state(cdip) >=
-				    DS_INITIALIZED)) {
-					MDI_CLIENT_UNLOCK(ct);
-					rv = ndi_devi_offline(cdip,
-					    NDI_DEVFS_CLEAN);
-					MDI_CLIENT_LOCK(ct);
+				if ((flag & NDI_USER_REQ) ||
+				    cdip == NULL || i_ddi_node_state(cdip) <
+				    DS_INITIALIZED)
+					break;
 
-					if (rv != NDI_SUCCESS) {
-						/*
-						 * ndi_devi_offline failed.
-						 * Reset client flags to
-						 * online as the path could not
-						 * be offlined.
-						 */
-						MDI_DEBUG(1, (MDI_WARN, cdip,
-						    "!ndi_devi_offline failed: "
-						    "error %x", rv));
-						MDI_CLIENT_SET_ONLINE(ct);
-					}
+				MDI_CLIENT_UNLOCK(ct);
+				rv = ndi_devi_offline(cdip, NDI_DEVFS_CLEAN);
+				MDI_CLIENT_LOCK(ct);
+
+				if (rv != NDI_SUCCESS) {
+					/*
+					 * Reset client flags to online as the
+					 * path could not be offlined.
+					 */
+					MDI_DEBUG(1, (MDI_WARN, cdip,
+					    "!ndi_devi_offline failed: %d",
+					    rv));
+					MDI_CLIENT_SET_ONLINE(ct);
 				}
 				break;
 			}

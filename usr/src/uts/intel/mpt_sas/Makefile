@@ -18,18 +18,16 @@
 #
 # CDDL HEADER END
 #
+
+#
 # Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
-#
-#	This makefile drives the production of the mpt_sas driver kernel module.
-#
-#	intel architecture dependent
 #
 
 #
 #	Paths to the base of the uts directory trees
 #
-UTSBASE   = ../../../../src/uts
+UTSBASE=	$(SRC)/uts
 
 #
 #	Define the module and object file sets.

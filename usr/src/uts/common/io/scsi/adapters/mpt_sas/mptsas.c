@@ -104,8 +104,6 @@
 #include <sys/scsi/adapters/mpt_sas/mptsas_hash.h>
 #include <sys/raidioctl.h>
 
-#include <sys/fs/dv_node.h>	/* devfs_clean */
-
 /*
  * FMA header files
  */
@@ -398,13 +396,11 @@ static int mptsas_create_virt_lun(dev_info_t *pdip, struct scsi_inquiry *sd,
 
 static void mptsas_offline_missed_luns(dev_info_t *pdip,
     uint16_t *repluns, int lun_cnt, mptsas_target_t *ptgt);
-static int mptsas_offline_lun(dev_info_t *pdip, dev_info_t *rdip,
-    mdi_pathinfo_t *rpip, uint_t flags);
+static int mptsas_offline_lun(dev_info_t *rdip, mdi_pathinfo_t *rpip);
 
 static int mptsas_config_smp(dev_info_t *pdip, uint64_t sas_wwn,
     dev_info_t **smp_dip);
-static int mptsas_offline_smp(dev_info_t *pdip, mptsas_smp_t *smp_node,
-    uint_t flags);
+static int mptsas_offline_smp(dev_info_t *pdip, mptsas_smp_t *smp_node);
 
 static int mptsas_event_query(mptsas_t *mpt, mptsas_event_query_t *data,
     int mode, int *rval);
@@ -7040,7 +7036,7 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 		mutex_exit(&mpt->m_mutex);
 
 		ndi_devi_enter(parent, &circ1);
-		rval = mptsas_offline_smp(parent, psmp, NDI_DEVI_REMOVE);
+		rval = mptsas_offline_smp(parent, psmp);
 		ndi_devi_exit(parent, circ1);
 
 		dev_info = psmp->m_deviceinfo;
@@ -14887,8 +14883,7 @@ mptsas_offline_missed_luns(dev_info_t *pdip, uint16_t *repluns,
 			/*
 			 * The lun has not been there already
 			 */
-			(void) mptsas_offline_lun(pdip, savechild, NULL,
-			    NDI_DEVI_REMOVE);
+			(void) mptsas_offline_lun(savechild, NULL);
 		}
 	}
 
@@ -14924,8 +14919,7 @@ mptsas_offline_missed_luns(dev_info_t *pdip, uint16_t *repluns,
 			/*
 			 * The lun has not been there already
 			 */
-			(void) mptsas_offline_lun(pdip, NULL, savepip,
-			    NDI_DEVI_REMOVE);
+			(void) mptsas_offline_lun(NULL, savepip);
 		}
 	}
 }
@@ -15174,8 +15168,7 @@ mptsas_offline_target(dev_info_t *pdip, char *name)
 			continue;
 		}
 
-		tmp_rval = mptsas_offline_lun(pdip, prechild, NULL,
-		    NDI_DEVI_REMOVE);
+		tmp_rval = mptsas_offline_lun(prechild, NULL);
 		if (tmp_rval != DDI_SUCCESS) {
 			rval = DDI_FAILURE;
 			if (ndi_prop_create_boolean(DDI_DEV_T_NONE,
@@ -15207,8 +15200,7 @@ mptsas_offline_target(dev_info_t *pdip, char *name)
 			continue;
 		}
 
-		(void) mptsas_offline_lun(pdip, NULL, savepip,
-		    NDI_DEVI_REMOVE);
+		(void) mptsas_offline_lun(NULL, savepip);
 		/*
 		 * driver will not invoke mdi_pi_free, so path will not
 		 * be freed forever, return DDI_FAILURE.
@@ -15219,48 +15211,19 @@ mptsas_offline_target(dev_info_t *pdip, char *name)
 }
 
 static int
-mptsas_offline_lun(dev_info_t *pdip, dev_info_t *rdip,
-    mdi_pathinfo_t *rpip, uint_t flags)
+mptsas_offline_lun(dev_info_t *rdip, mdi_pathinfo_t *rpip)
 {
 	int		rval = DDI_FAILURE;
-	char		*devname;
-	dev_info_t	*cdip, *parent;
 
-	if (rpip != NULL) {
-		parent = scsi_vhci_dip;
-		cdip = mdi_pi_get_client(rpip);
-	} else if (rdip != NULL) {
-		parent = pdip;
-		cdip = rdip;
-	} else {
-		return (DDI_FAILURE);
-	}
-
-	/*
-	 * Make sure node is attached otherwise
-	 * it won't have related cache nodes to
-	 * clean up.  i_ddi_devi_attached is
-	 * similiar to i_ddi_node_state(cdip) >=
-	 * DS_ATTACHED.
-	 */
-	if (i_ddi_devi_attached(cdip)) {
-
-		/* Get full devname */
-		devname = kmem_alloc(MAXNAMELEN + 1, KM_SLEEP);
-		(void) ddi_deviname(cdip, devname);
-		/* Clean cache */
-		(void) devfs_clean(parent, devname + 1,
-		    DV_CLEAN_FORCE);
-		kmem_free(devname, MAXNAMELEN + 1);
-	}
 	if (rpip != NULL) {
 		if (MDI_PI_IS_OFFLINE(rpip)) {
 			rval = DDI_SUCCESS;
 		} else {
 			rval = mdi_pi_offline(rpip, 0);
 		}
-	} else {
-		rval = ndi_devi_offline(cdip, flags);
+	} else if (rdip != NULL) {
+		rval = ndi_devi_offline(rdip,
+		    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE);
 	}
 
 	return (rval);
@@ -15292,39 +15255,19 @@ mptsas_find_smp_child(dev_info_t *parent, char *str_wwn)
 }
 
 static int
-mptsas_offline_smp(dev_info_t *pdip, mptsas_smp_t *smp_node, uint_t flags)
+mptsas_offline_smp(dev_info_t *pdip, mptsas_smp_t *smp_node)
 {
 	int		rval = DDI_FAILURE;
-	char		*devname;
 	char		wwn_str[MPTSAS_WWN_STRLEN];
 	dev_info_t	*cdip;
 
 	(void) sprintf(wwn_str, "%"PRIx64, smp_node->m_addr.mta_wwn);
 
 	cdip = mptsas_find_smp_child(pdip, wwn_str);
-
 	if (cdip == NULL)
 		return (DDI_SUCCESS);
 
-	/*
-	 * Make sure node is attached otherwise
-	 * it won't have related cache nodes to
-	 * clean up.  i_ddi_devi_attached is
-	 * similiar to i_ddi_node_state(cdip) >=
-	 * DS_ATTACHED.
-	 */
-	if (i_ddi_devi_attached(cdip)) {
-
-		/* Get full devname */
-		devname = kmem_alloc(MAXNAMELEN + 1, KM_SLEEP);
-		(void) ddi_deviname(cdip, devname);
-		/* Clean cache */
-		(void) devfs_clean(pdip, devname + 1,
-		    DV_CLEAN_FORCE);
-		kmem_free(devname, MAXNAMELEN + 1);
-	}
-
-	rval = ndi_devi_offline(cdip, flags);
+	rval = ndi_devi_offline(cdip, NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE);
 
 	return (rval);
 }

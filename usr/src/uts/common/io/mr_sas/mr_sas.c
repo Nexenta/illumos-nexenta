@@ -44,7 +44,7 @@
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011 Bayard G. Bell. All rights reserved.
- * Copyright 2013 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright 2015, 2017 Citrus IT Limited. All rights reserved.
  * Copyright 2015 Garrett D'Amore <garrett@damore.org>
  */
@@ -70,7 +70,6 @@
 #include <sys/signal.h>
 #include <sys/byteorder.h>
 #include <sys/sdt.h>
-#include <sys/fs/dv_node.h>	/* devfs_clean */
 
 #include "mr_sas.h"
 
@@ -7749,9 +7748,8 @@ static void
 mrsas_issue_evt_taskq(struct mrsas_eventinfo *mrevt)
 {
 	struct mrsas_instance *instance = mrevt->instance;
-	dev_info_t *dip, *pdip;
+	dev_info_t *dip;
 	int circ1 = 0;
-	char *devname;
 
 	con_log(CL_ANN1, (CE_NOTE, "mrsas_issue_evt_taskq: called for"
 	    " tgt %d lun %d event %d",
@@ -7772,7 +7770,6 @@ mrsas_issue_evt_taskq(struct mrsas_eventinfo *mrevt)
 	switch (mrevt->event) {
 	case MRSAS_EVT_CONFIG_TGT:
 		if (dip == NULL) {
-
 			if (mrevt->lun == 0) {
 				(void) mrsas_config_ld(instance, mrevt->tgt,
 				    0, NULL);
@@ -7785,7 +7782,6 @@ mrsas_issue_evt_taskq(struct mrsas_eventinfo *mrevt)
 			    "mr_sas: EVT_CONFIG_TGT called:"
 			    " for tgt %d lun %d event %d",
 			    mrevt->tgt, mrevt->lun, mrevt->event));
-
 		} else {
 			con_log(CL_ANN1, (CE_NOTE,
 			    "mr_sas: EVT_CONFIG_TGT dip != NULL:"
@@ -7795,18 +7791,8 @@ mrsas_issue_evt_taskq(struct mrsas_eventinfo *mrevt)
 		break;
 	case MRSAS_EVT_UNCONFIG_TGT:
 		if (dip) {
-			if (i_ddi_devi_attached(dip)) {
-
-				pdip = ddi_get_parent(dip);
-
-				devname = kmem_zalloc(MAXNAMELEN + 1, KM_SLEEP);
-				(void) ddi_deviname(dip, devname);
-
-				(void) devfs_clean(pdip, devname + 1,
-				    DV_CLEAN_FORCE);
-				kmem_free(devname, MAXNAMELEN + 1);
-			}
-			(void) ndi_devi_offline(dip, NDI_DEVI_REMOVE);
+			(void) ndi_devi_offline(dip,
+			    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE);
 			con_log(CL_ANN1, (CE_NOTE,
 			    "mr_sas: EVT_UNCONFIG_TGT called:"
 			    " for tgt %d lun %d event %d",

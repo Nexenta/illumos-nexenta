@@ -18,13 +18,17 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
- *
- * Fibre Channel SCSI ULP Mapping driver
  */
+
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
+/*
+ * Fibre Channel SCSI ULP Mapping driver
  */
 
 #include <sys/scsi/scsi.h>
@@ -43,7 +47,6 @@
 #include <sys/scsi/impl/scsi_reset_notify.h>
 #include <sys/ndi_impldefs.h>
 #include <sys/byteorder.h>
-#include <sys/fs/dv_node.h>
 #include <sys/ctype.h>
 #include <sys/sunmdi.h>
 
@@ -8154,8 +8157,6 @@ fcp_trigger_lun(struct fcp_lun *plun, child_info_t *cip, int old_mpxio,
 	child_info_t		*ccip;
 	struct fcp_port		*pptr = plun->lun_tgt->tgt_port;
 	int			is_mpxio = pptr->port_mpxio;
-	dev_info_t		*cdip, *pdip;
-	char			*devname;
 
 	if ((old_mpxio != 0) && (plun->lun_mpxio != old_mpxio)) {
 		/*
@@ -8193,45 +8194,6 @@ fcp_trigger_lun(struct fcp_lun *plun, child_info_t *cip, int old_mpxio,
 			rval = NDI_SUCCESS;
 		}
 		return (rval);
-	}
-
-	/*
-	 * Explicit devfs_clean() due to ndi_devi_offline() not
-	 * executing devfs_clean() if parent lock is held.
-	 */
-	ASSERT(!servicing_interrupt());
-	if (online == FCP_OFFLINE) {
-		if (plun->lun_mpxio == 0) {
-			if (plun->lun_cip == cip) {
-				cdip = DIP(plun->lun_cip);
-			} else {
-				cdip = DIP(cip);
-			}
-		} else if ((plun->lun_cip == cip) && plun->lun_cip) {
-			cdip = mdi_pi_get_client(PIP(plun->lun_cip));
-		} else if ((plun->lun_cip != cip) && cip) {
-			/*
-			 * This means a DTYPE/GUID change, we shall get the
-			 * dip of the old cip instead of the current lun_cip.
-			 */
-			cdip = mdi_pi_get_client(PIP(cip));
-		}
-		if (cdip) {
-			if (i_ddi_devi_attached(cdip)) {
-				pdip = ddi_get_parent(cdip);
-				devname = kmem_alloc(MAXNAMELEN + 1, KM_SLEEP);
-				ndi_devi_enter(pdip, &circ);
-				(void) ddi_deviname(cdip, devname);
-				/*
-				 * Release parent lock before calling
-				 * devfs_clean().
-				 */
-				ndi_devi_exit(pdip, circ);
-				(void) devfs_clean(pdip, devname + 1,
-				    DV_CLEAN_FORCE);
-				kmem_free(devname, MAXNAMELEN + 1);
-			}
-		}
 	}
 
 	if (fc_ulp_busy_port(pptr->port_fp_handle) != 0) {
@@ -13310,7 +13272,7 @@ fcp_offline_child(struct fcp_lun *plun, child_info_t *cip, int lcount,
 		cdip = DIP(cip);
 		mutex_exit(&plun->lun_mutex);
 		mutex_exit(&pptr->port_mutex);
-		rval = ndi_devi_offline(DIP(cip), flags);
+		rval = ndi_devi_offline(DIP(cip), NDI_DEVFS_CLEAN | flags);
 		if (rval != NDI_SUCCESS) {
 			FCP_TRACE(fcp_logq, pptr->port_instbuf,
 			    fcp_trace, FCP_BUF_LEVEL_3, 0,

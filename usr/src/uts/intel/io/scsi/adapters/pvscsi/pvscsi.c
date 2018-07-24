@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #include <sys/atomic.h>
@@ -19,7 +19,6 @@
 #include <sys/cpuvar.h>
 #include <sys/ddi.h>
 #include <sys/errno.h>
-#include <sys/fs/dv_node.h>
 #include <sys/kmem.h>
 #include <sys/kmem_impl.h>
 #include <sys/list.h>
@@ -359,20 +358,8 @@ pvscsi_config_one(dev_info_t *pdip, pvscsi_softc_t *pvs, int target,
 
 	if (devnode != NULL) {
 		if (inqrc != 0) {
-			/* Target disappeared, drop devnode */
-			if (i_ddi_devi_attached(devnode->pdip)) {
-				char    *devname;
-				/* Get full devname */
-				devname = kmem_alloc(MAXPATHLEN, KM_SLEEP);
-				(void) ddi_deviname(devnode->pdip, devname);
-				/* Clean cache and name */
-				(void) devfs_clean(devnode->parent, devname + 1,
-				    DV_CLEAN_FORCE);
-				kmem_free(devname, MAXPATHLEN);
-			}
-
-			(void) ndi_devi_offline(devnode->pdip, NDI_DEVI_REMOVE);
-
+			(void) ndi_devi_offline(devnode->pdip,
+			    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE);
 			list_remove(&pvs->devnodes, devnode);
 			kmem_free(devnode, sizeof (*devnode));
 		} else if (childp != NULL) {

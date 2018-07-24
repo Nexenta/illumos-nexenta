@@ -18,19 +18,15 @@
 #
 # CDDL HEADER END
 #
-# Copyright 2018, Nexenta Systems, Inc. All Rights Reserved
-# Use is subject to license terms.
+
 #
-#	This makefile drives the production of the smartpqi driver kernel
-#	 module.
-#
-#	intel architecture dependent
+# Copyright 2018 Nexenta Systems, Inc.
 #
 
 #
 #	Paths to the base of the uts directory trees
 #
-UTSBASE   = ../../../../src/uts
+UTSBASE=	$(SRC)/uts
 
 #
 #	Define the module and object file sets.

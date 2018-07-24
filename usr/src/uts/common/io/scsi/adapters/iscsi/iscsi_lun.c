@@ -18,16 +18,21 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
- *
+ */
+
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
+/*
  * iSCSI logical unit interfaces
  */
 
 #include "iscsi.h"
-#include <sys/fs/dv_node.h>	/* devfs_clean */
 #include <sys/bootprops.h>
 #include <sys/sysevent/eventdefs.h>
 #include <sys/sysevent/dev.h>
@@ -682,56 +687,18 @@ iscsi_lun_offline(iscsi_hba_t *ihp, iscsi_lun_t *ilp, boolean_t lun_free)
 {
 	iscsi_status_t		status		= ISCSI_STATUS_SUCCESS;
 	int			circ		= 0;
-	dev_info_t		*cdip, *pdip;
-	char			*devname	= NULL;
+	dev_info_t		*cdip;
 	char			*pathname	= NULL;
-	int			rval;
 	boolean_t		offline		= B_FALSE;
 	nvlist_t		*attr_list	= NULL;
 
 	ASSERT(ilp != NULL);
 	ASSERT((ilp->lun_pip != NULL) || (ilp->lun_dip != NULL));
 
-	/*
-	 * Since we carry the logical units parent
-	 * lock across the offline call it will not
-	 * issue devfs_clean() and may fail with a
-	 * devi_ref count > 0.
-	 */
-	if (ilp->lun_pip == NULL) {
+	if (ilp->lun_pip == NULL)
 		cdip = ilp->lun_dip;
-	} else {
+	else
 		cdip = mdi_pi_get_client(ilp->lun_pip);
-	}
-
-	if ((cdip != NULL) &&
-	    (lun_free == B_TRUE) &&
-	    (ilp->lun_state & ISCSI_LUN_STATE_ONLINE)) {
-		/*
-		 * Make sure node is attached otherwise
-		 * it won't have related cache nodes to
-		 * clean up.  i_ddi_devi_attached is
-		 * similiar to i_ddi_node_state(cdip) >=
-		 * DS_ATTACHED. We should clean up only
-		 * when lun_free is set.
-		 */
-		if (i_ddi_devi_attached(cdip)) {
-
-			/* Get parent dip */
-			pdip = ddi_get_parent(cdip);
-
-			/* Get full devname */
-			devname = kmem_alloc(MAXNAMELEN + 1, KM_SLEEP);
-			ndi_devi_enter(pdip, &circ);
-			(void) ddi_deviname(cdip, devname);
-			/* Release lock before devfs_clean() */
-			ndi_devi_exit(pdip, circ);
-
-			/* Clean cache */
-			(void) devfs_clean(pdip, devname + 1, DV_CLEAN_FORCE);
-			kmem_free(devname, MAXNAMELEN + 1);
-		}
-	}
 
 	if (cdip != NULL && ilp->lun_type == DTYPE_DIRECT) {
 		pathname = kmem_zalloc(MAXNAMELEN + 1, KM_SLEEP);
@@ -740,18 +707,9 @@ iscsi_lun_offline(iscsi_hba_t *ihp, iscsi_lun_t *ilp, boolean_t lun_free)
 
 	/* Attempt to offline the logical units */
 	if (ilp->lun_pip != NULL) {
-
 		/* virt/mdi */
 		ndi_devi_enter(scsi_vhci_dip, &circ);
-		if ((lun_free == B_TRUE) &&
-		    (ilp->lun_state & ISCSI_LUN_STATE_ONLINE)) {
-			rval = mdi_pi_offline(ilp->lun_pip,
-			    NDI_DEVI_REMOVE);
-		} else {
-			rval = mdi_pi_offline(ilp->lun_pip, 0);
-		}
-
-		if (rval == MDI_SUCCESS) {
+		if (mdi_pi_offline(ilp->lun_pip, 0) == MDI_SUCCESS) {
 			ilp->lun_state &= ISCSI_LUN_STATE_CLEAR;
 			ilp->lun_state |= ISCSI_LUN_STATE_OFFLINE;
 			if (lun_free == B_TRUE) {
@@ -769,18 +727,14 @@ iscsi_lun_offline(iscsi_hba_t *ihp, iscsi_lun_t *ilp, boolean_t lun_free)
 		ndi_devi_exit(scsi_vhci_dip, circ);
 
 	} else  {
-
 		/* phys/ndi */
+		int flags = NDI_DEVFS_CLEAN;
+
 		ndi_devi_enter(ihp->hba_dip, &circ);
-		if ((lun_free == B_TRUE) &&
-		    (ilp->lun_state & ISCSI_LUN_STATE_ONLINE)) {
-			rval = ndi_devi_offline(
-			    ilp->lun_dip, NDI_DEVI_REMOVE);
-		} else {
-			rval = ndi_devi_offline(
-			    ilp->lun_dip, 0);
-		}
-		if (rval != NDI_SUCCESS) {
+		if (lun_free == B_TRUE &&
+		    (ilp->lun_state & ISCSI_LUN_STATE_ONLINE))
+			flags |= NDI_DEVI_REMOVE;
+		if (ndi_devi_offline(ilp->lun_dip, flags) != NDI_SUCCESS) {
 			status = ISCSI_STATUS_BUSY;
 			if (lun_free == B_FALSE) {
 				ilp->lun_state |= ISCSI_LUN_STATE_INVALID;
