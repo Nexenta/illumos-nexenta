@@ -16,7 +16,7 @@
  */
 
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 
@@ -1096,7 +1096,7 @@ wait_for_outstanding_poll_io(struct mrsas_instance *instance)
 		if (instance->fw_outstanding <= 2) {
 			break;
 		}
-		drv_usecwait(10*MILLISEC);
+		drv_usecwait(MILLISEC);
 		/* complete commands from reply queue */
 		(void) mr_sas_tbolt_process_outstanding_cmd(instance);
 	}
