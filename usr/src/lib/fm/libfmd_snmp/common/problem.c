@@ -254,20 +254,8 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 		(void) nvlist_lookup_nvlist_array(data->d_aci_event,
 		    FM_SUSPECT_FAULT_LIST, &data->d_suspects, &nelem);
 
-		if (nelem != data->d_nsuspects) {
-			nvlist_free(data->d_aci_event);
-			SNMP_FREE(data);
-			return (0);
-		}
-
 		(void) nvlist_lookup_uint8_array(data->d_aci_event,
 		    FM_SUSPECT_FAULT_STATUS, &data->d_statuses, &nelem);
-
-		if (nelem != data->d_nsuspects) {
-			nvlist_free(data->d_aci_event);
-			SNMP_FREE(data);
-			return (0);
-		}
 
 		uu_avl_node_init(data, &data->d_uuid_avl,
 		    problem_uuid_avl_pool);
