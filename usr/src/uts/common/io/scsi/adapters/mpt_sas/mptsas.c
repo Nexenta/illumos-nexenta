@@ -6327,7 +6327,7 @@ mptsas_update_sata_bridge(mptsas_t *mpt, dev_info_t *parent,
 	uint32_t		page_address;
 	uint16_t		bay_num, enclosure, io_flags;
 	uint32_t		dev_info;
-	char 			uabuf[SCSI_WWN_BUFLEN];
+	char			uabuf[SCSI_WWN_BUFLEN];
 	dev_info_t		*dip;
 	mdi_pathinfo_t		*pip;
 
@@ -15223,7 +15223,7 @@ mptsas_offline_lun(dev_info_t *rdip, mdi_pathinfo_t *rpip)
 		}
 	} else if (rdip != NULL) {
 		rval = ndi_devi_offline(rdip,
-		    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE);
+		    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE | NDI_DEVI_GONE);
 	}
 
 	return (rval);

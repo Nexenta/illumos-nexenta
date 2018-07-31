@@ -1084,7 +1084,7 @@ config_one(dev_info_t *pdip, pqi_state_t s, pqi_device_t d,
 
 		if (d->pd_dip != NULL) {
 			(void) ndi_devi_offline(d->pd_dip,
-			    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE);
+			    NDI_DEVFS_CLEAN | NDI_DEVI_REMOVE | NDI_DEVI_GONE);
 			d->pd_dip = NULL;
 		} else if (d->pd_pip != NULL) {
 			(void) mdi_pi_offline(d->pd_pip, 0);

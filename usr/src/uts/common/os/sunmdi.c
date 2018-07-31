@@ -3673,7 +3673,8 @@ i_mdi_pi_state_change(mdi_pathinfo_t *pip, mdi_pathinfo_state_t state, int flag)
 					break;
 
 				MDI_CLIENT_UNLOCK(ct);
-				rv = ndi_devi_offline(cdip, NDI_DEVFS_CLEAN);
+				rv = ndi_devi_offline(cdip, NDI_DEVFS_CLEAN |
+				    NDI_DEVI_GONE);
 				MDI_CLIENT_LOCK(ct);
 
 				if (rv != NDI_SUCCESS) {

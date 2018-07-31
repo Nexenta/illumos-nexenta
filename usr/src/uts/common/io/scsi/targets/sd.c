@@ -28,7 +28,7 @@
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 /*
@@ -8251,21 +8251,27 @@ sd_unit_detach(dev_info_t *devi)
 
 	/*
 	 * Fail the detach for any of the following:
-	 *  - Unable to get the sd_lun struct for the instance
-	 *  - A layered driver has an outstanding open on the instance
-	 *  - Another thread is already detaching this instance
-	 *  - Another thread is currently performing an open
+	 * - Unable to get the sd_lun struct for the instance
+	 * - The instance is still attaching
+	 * - Another thread is already detaching this instance
+	 * - Another thread is currently performing an open
+	 *
+	 * Additionaly, if "device gone" flag is not set:
+	 * - There are outstanding commands in driver
+	 * - There are outstanding commands in transport
 	 */
 	devp = ddi_get_driver_private(devi);
-	if ((devp == NULL) ||
-	    ((un = (struct sd_lun *)devp->sd_private) == NULL) ||
-	    (un->un_ncmds_in_driver != 0) || (un->un_layer_count != 0) ||
-	    (un->un_detach_count != 0) || (un->un_opens_in_progress != 0)) {
+	if (devp == NULL || (un = (struct sd_lun *)devp->sd_private) == NULL ||
+	    un->un_state == SD_STATE_RWAIT ||
+	    un->un_state == SD_STATE_ATTACHING ||
+	    un->un_detach_count != 0 || un->un_opens_in_progress != 0 ||
+	    (!DEVI_IS_GONE(devi) && (un->un_ncmds_in_driver != 0 ||
+	    un->un_ncmds_in_transport != 0))) {
 		mutex_exit(&sd_detach_mutex);
 		return (DDI_FAILURE);
 	}
 
-	SD_TRACE(SD_LOG_ATTACH_DETACH, un, "sd_unit_detach: entry 0x%p\n", un);
+	SD_TRACE(SD_LOG_ATTACH_DETACH, un, "%s: entry 0x%p\n", __func__, un);
 
 	/*
 	 * Mark this instance as currently in a detach, to inhibit any
@@ -8292,22 +8298,6 @@ sd_unit_detach(dev_info_t *devi)
 	}
 
 	/*
-	 * Verify there are NO outstanding commands issued to this device.
-	 * ie, un_ncmds_in_transport == 0.
-	 * It's possible to have outstanding commands through the physio
-	 * code path, even though everything's closed.
-	 */
-	if ((un->un_ncmds_in_transport != 0) || (un->un_retry_timeid != NULL) ||
-	    (un->un_direct_priority_timeid != NULL) ||
-	    (un->un_state == SD_STATE_RWAIT) ||
-	    (un->un_state == SD_STATE_ATTACHING)) {
-		mutex_exit(SD_MUTEX(un));
-		SD_ERROR(SD_LOG_ATTACH_DETACH, un,
-		    "sd_dr_detach: Detach failure due to outstanding cmds\n");
-		goto err_remove_event;
-	}
-
-	/*
 	 * If the attach wasn't successful, some normal cleanup work must not
 	 * be done.
 	 */
@@ -8319,7 +8309,8 @@ sd_unit_detach(dev_info_t *devi)
 	/*
 	 * If we have the device reserved, release the reservation.
 	 */
-	if ((un->un_resvd_status & SD_RESERVE) &&
+	if (!DEVI_IS_GONE(devi) &&
+	    (un->un_resvd_status & SD_RESERVE) &&
 	    !(un->un_resvd_status & SD_LOST_RESERVE)) {
 		mutex_exit(SD_MUTEX(un));
 		/*
@@ -8328,7 +8319,7 @@ sd_unit_detach(dev_info_t *devi)
 		 */
 		if (sd_reserve_release(dev, SD_RELEASE) != 0) {
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
-			    "sd_dr_detach: Cannot release reservation \n");
+			    "%s: cannot release reservation\n", __func__);
 		}
 	} else {
 		mutex_exit(SD_MUTEX(un));
@@ -8385,6 +8376,31 @@ sd_unit_detach(dev_info_t *devi)
 	sd_rmv_resv_reclaim_req(dev);
 
 	mutex_enter(SD_MUTEX(un));
+	if (un->un_retry_timeid != NULL) {
+		timeout_id_t temp_id = un->un_retry_timeid;
+		un->un_retry_timeid = NULL;
+		mutex_exit(SD_MUTEX(un));
+		(void) untimeout(temp_id);
+		mutex_enter(SD_MUTEX(un));
+
+		if (un->un_retry_bp != NULL) {
+			un->un_retry_bp->av_forw = un->un_waitq_headp;
+			un->un_waitq_headp = un->un_retry_bp;
+			if (un->un_waitq_tailp == NULL)
+				un->un_waitq_tailp = un->un_retry_bp;
+			un->un_retry_bp = NULL;
+			un->un_retry_statp = NULL;
+		}
+	}
+
+	if (DEVI_IS_GONE(SD_DEVINFO(un))) {
+		/* abort in-flight IO */
+		(void) scsi_abort(SD_ADDRESS(un), NULL);
+		/* abort pending IO */
+		un->un_failfast_state = SD_FAILFAST_ACTIVE;
+		un->un_failfast_bp = NULL;
+		sd_failfast_flushq(un, B_TRUE);
+	}
 
 	/* Cancel any pending callbacks for SD_PATH_DIRECT_PRIORITY cmd. */
 	if (un->un_direct_priority_timeid != NULL) {
@@ -8401,7 +8417,7 @@ sd_unit_detach(dev_info_t *devi)
 		if (scsi_watch_request_terminate(un->un_mhd_token,
 		    SCSI_WATCH_TERMINATE_NOWAIT)) {
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
-			    "sd_dr_detach: Cannot cancel mhd watch request\n");
+			    "%s: cannot cancel mhd watch request\n", __func__);
 			/*
 			 * Note: We are returning here after having removed
 			 * some driver timeouts above. This is consistent with
@@ -8419,7 +8435,7 @@ sd_unit_detach(dev_info_t *devi)
 		if (scsi_watch_request_terminate(un->un_swr_token,
 		    SCSI_WATCH_TERMINATE_NOWAIT)) {
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
-			    "sd_dr_detach: Cannot cancel swr watch request\n");
+			    "%s: cannot cancel swr watch request\n", __func__);
 			/*
 			 * Note: We are returning here after having removed
 			 * some driver timeouts above. This is consistent with
@@ -8432,13 +8448,12 @@ sd_unit_detach(dev_info_t *devi)
 		un->un_swr_token = NULL;
 	}
 
-	mutex_exit(SD_MUTEX(un));
-
 	/*
 	 * Clear any scsi_reset_notifies. We clear the reset notifies
 	 * if we have not registered one.
 	 * Note: The sd_mhd_reset_notify_cb() fn tries to acquire SD_MUTEX!
 	 */
+	mutex_exit(SD_MUTEX(un));
 	(void) scsi_reset_notify(SD_ADDRESS(un), SCSI_RESET_CANCEL,
 	    sd_mhd_reset_notify_cb, (caddr_t)un);
 
@@ -8483,9 +8498,9 @@ sd_unit_detach(dev_info_t *devi)
 		    (pm_lower_power(SD_DEVINFO(un), 0, SD_PM_STATE_STOPPED(un))
 		    != DDI_SUCCESS)) {
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
-		    "sd_dr_detach: Lower power request failed, ignoring.\n");
+			    "%s: lower power request failed, ignoring\n",
+			    __func__);
 			/*
-			 * Fix for bug: 4297749, item # 13
 			 * The above test now includes a check to see if PM is
 			 * supported by this device before call
 			 * pm_lower_power().
@@ -8548,7 +8563,7 @@ sd_unit_detach(dev_info_t *devi)
 			 * be the right thing to do.
 			 */
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
-			    "sd_dr_detach: Cannot cancel insert event\n");
+			    "%s: cannot cancel insert event\n", __func__);
 			goto err_remove_event;
 		}
 		un->un_insert_event = NULL;
@@ -8563,7 +8578,7 @@ sd_unit_detach(dev_info_t *devi)
 			 * be the right thing to do.
 			 */
 			SD_ERROR(SD_LOG_ATTACH_DETACH, un,
-			    "sd_dr_detach: Cannot cancel remove event\n");
+			    "%s: cannot cancel remove event\n", __func__);
 			goto err_remove_event;
 		}
 		un->un_remove_event = NULL;
@@ -8717,7 +8732,7 @@ err_remove_event:
 	un->un_detach_count--;
 	mutex_exit(&sd_detach_mutex);
 
-	SD_TRACE(SD_LOG_ATTACH_DETACH, un, "sd_unit_detach: exit failure\n");
+	SD_TRACE(SD_LOG_ATTACH_DETACH, un, "%s: exit failure\n", __func__);
 	return (DDI_FAILURE);
 }
 
@@ -9696,7 +9711,7 @@ sdopen(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
 	 * if another thread somewhere is trying to detach the instance.
 	 */
 	if (((un = ddi_get_soft_state(sd_state, instance)) == NULL) ||
-	    (un->un_detach_count != 0)) {
+	    un->un_detach_count != 0 || DEVI_IS_GONE(SD_DEVINFO(un))) {
 		mutex_exit(&sd_detach_mutex);
 		/*
 		 * The probe cache only needs to be cleared when open (9E) fails
@@ -10003,7 +10018,11 @@ sdclose(dev_t dev, int flag, int otyp, cred_t *cred_p)
 		return (ENXIO);
 	}
 
+	/* Hold the detach mutex to allow close to complete */
+	mutex_enter(&sd_detach_mutex);
+
 	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL) {
+		mutex_exit(&sd_detach_mutex);
 		return (ENXIO);
 	}
 
@@ -10064,7 +10083,6 @@ sdclose(dev_t dev, int flag, int otyp, cred_t *cred_p)
 			cmlb_invalidate(un->un_cmlbhandle,
 			    (void *)SD_PATH_DIRECT);
 			mutex_enter(SD_MUTEX(un));
-
 		} else if (un->un_state != SD_STATE_ATTACH_FAILED) {
 			/*
 			 * Flush any outstanding writes in NVRAM cache.
@@ -10080,9 +10098,10 @@ sdclose(dev_t dev, int flag, int otyp, cred_t *cred_p)
 			 * commands are added which require a powered up
 			 * drive, the following sequence may have to change.
 			 */
-			if ((un->un_f_sync_cache_supported &&
+			if (!DEVI_IS_GONE(SD_DEVINFO(un)) &&
+			    ((un->un_f_sync_cache_supported &&
 			    un->un_f_sync_cache_required) ||
-			    un->un_f_dvdram_writable_device == TRUE) {
+			    un->un_f_dvdram_writable_device == TRUE)) {
 				mutex_exit(SD_MUTEX(un));
 				if (sd_pm_entry(un) == DDI_SUCCESS) {
 					rval =
@@ -10174,15 +10193,10 @@ sdclose(dev_t dev, int flag, int otyp, cred_t *cred_p)
 	mutex_exit(SD_MUTEX(un));
 	sema_v(&un->un_semoclose);
 
-	if (otyp == OTYP_LYR) {
-		mutex_enter(&sd_detach_mutex);
-		/*
-		 * The detach routine may run when the layer count
-		 * drops to zero.
-		 */
+	if (otyp == OTYP_LYR)
 		un->un_layer_count--;
-		mutex_exit(&sd_detach_mutex);
-	}
+
+	mutex_exit(&sd_detach_mutex);
 
 	return (rval);
 }
@@ -10485,9 +10499,9 @@ sdread(dev_t dev, struct uio *uio, cred_t *cred_p)
 	int		err = 0;
 	sd_ssc_t	*ssc;
 
-	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL) {
+	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL ||
+	    DEVI_IS_GONE(SD_DEVINFO(un)))
 		return (ENXIO);
-	}
 
 	ASSERT(!mutex_owned(SD_MUTEX(un)));
 
@@ -10587,9 +10601,9 @@ sdwrite(dev_t dev, struct uio *uio, cred_t *cred_p)
 	int		err = 0;
 	sd_ssc_t	*ssc;
 
-	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL) {
+	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL ||
+	    DEVI_IS_GONE(SD_DEVINFO(un)))
 		return (ENXIO);
-	}
 
 	ASSERT(!mutex_owned(SD_MUTEX(un)));
 
@@ -10689,9 +10703,9 @@ sdaread(dev_t dev, struct aio_req *aio, cred_t *cred_p)
 	int		err = 0;
 	sd_ssc_t	*ssc;
 
-	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL) {
+	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL ||
+	    DEVI_IS_GONE(SD_DEVINFO(un)))
 		return (ENXIO);
-	}
 
 	ASSERT(!mutex_owned(SD_MUTEX(un)));
 
@@ -10791,9 +10805,9 @@ sdawrite(dev_t dev, struct aio_req *aio, cred_t *cred_p)
 	int		err = 0;
 	sd_ssc_t	*ssc;
 
-	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL) {
+	if ((un = ddi_get_soft_state(sd_state, SDUNIT(dev))) == NULL ||
+	    DEVI_IS_GONE(SD_DEVINFO(un)))
 		return (ENXIO);
-	}
 
 	ASSERT(!mutex_owned(SD_MUTEX(un)));
 
@@ -11042,21 +11056,17 @@ static int
 sdstrategy(struct buf *bp)
 {
 	struct sd_lun *un;
+	int error = EIO;
 
-	un = ddi_get_soft_state(sd_state, SD_GET_INSTANCE_FROM_BUF(bp));
-	if (un == NULL) {
-		bioerror(bp, EIO);
-		bp->b_resid = bp->b_bcount;
-		biodone(bp);
-		return (0);
-	}
+	if ((un = ddi_get_soft_state(sd_state,
+	    SD_GET_INSTANCE_FROM_BUF(bp))) == NULL)
+		goto fail;
 
-	/* As was done in the past, fail new cmds. if state is dumping. */
-	if (un->un_state == SD_STATE_DUMPING) {
-		bioerror(bp, ENXIO);
-		bp->b_resid = bp->b_bcount;
-		biodone(bp);
-		return (0);
+	/* Fail new cmds if state is dumping or device is gone */
+	if (un->un_state == SD_STATE_DUMPING ||
+	    DEVI_IS_GONE(SD_DEVINFO(un))) {
+		error = ENXIO;
+		goto fail;
 	}
 
 	ASSERT(!mutex_owned(SD_MUTEX(un)));
@@ -11080,14 +11090,10 @@ sdstrategy(struct buf *bp)
 
 	if (un->un_state == SD_STATE_ATTACH_FAILED) {
 		mutex_exit(SD_MUTEX(un));
-		bioerror(bp, EIO);
-		bp->b_resid = bp->b_bcount;
-		biodone(bp);
 		SD_ERROR(SD_LOG_READ_WRITE, un,
 		    "sdstrategy: attach failed\n");
-		return (0);
+		goto fail;
 	}
-
 
 	un->un_ncmds_in_driver++;
 
@@ -11116,8 +11122,13 @@ sdstrategy(struct buf *bp)
 	 * imized tail call which saves us a stack frame.
 	 */
 	return (ddi_xbuf_qstrategy(bp, un->un_xbuf_attr));
-}
 
+fail:
+	bioerror(bp, error);
+	bp->b_resid = bp->b_bcount;
+	biodone(bp);
+	return (0);
+}
 
 /*
  *    Function: sd_xbuf_strategy
@@ -11301,7 +11312,7 @@ sd_uscsi_strategy(struct buf *bp)
 	ASSERT(bp != NULL);
 
 	un = ddi_get_soft_state(sd_state, SD_GET_INSTANCE_FROM_BUF(bp));
-	if (un == NULL) {
+	if (un == NULL || DEVI_IS_GONE(SD_DEVINFO(un))) {
 		bioerror(bp, EIO);
 		bp->b_resid = bp->b_bcount;
 		biodone(bp);
@@ -11421,9 +11432,8 @@ sd_send_scsi_cmd(dev_t dev, struct uscsi_cmd *incmd, int flag,
 	int		rval;
 
 	un = ddi_get_soft_state(sd_state, SDUNIT(dev));
-	if (un == NULL) {
+	if (un == NULL || DEVI_IS_GONE(SD_DEVINFO(un)))
 		return (ENXIO);
-	}
 
 	/*
 	 * Using sd_ssc_send to handle uscsi cmd

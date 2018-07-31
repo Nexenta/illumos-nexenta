@@ -18,11 +18,13 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1991, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright 2016 Joyent, Inc.
  * Copyright (c) 2016 by Delphix. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #ifndef _SYS_DDI_IMPLDEFS_H
@@ -614,6 +616,7 @@ struct dev_info  {
 #define	DEVI_R_BLOCKED		0x00000800 /* constraints block retire  */
 #define	DEVI_CT_NOP		0x00001000 /* NOP contract event occurred */
 #define	DEVI_PCI_DEVICE		0x00002000 /* dip is PCI */
+#define	DEVI_GONE		0x00004000 /* device is physically removed */
 
 #define	DEVI_BUSY_CHANGING(dip)	(DEVI(dip)->devi_flags & DEVI_BUSY)
 #define	DEVI_BUSY_OWNED(dip)	(DEVI_BUSY_CHANGING(dip) &&	\
@@ -621,6 +624,10 @@ struct dev_info  {
 
 #define	DEVI_IS_PCI(dip)	(DEVI(dip)->devi_flags & DEVI_PCI_DEVICE)
 #define	DEVI_SET_PCI(dip)	(DEVI(dip)->devi_flags |= (DEVI_PCI_DEVICE))
+
+#define	DEVI_IS_GONE(dip)	(DEVI(dip)->devi_flags & DEVI_GONE)
+#define	DEVI_SET_GONE(dip)	(DEVI(dip)->devi_flags |= DEVI_GONE)
+#define	DEVI_UNSET_GONE(dip)	(DEVI(dip)->devi_flags &= ~DEVI_GONE)
 
 char	*i_ddi_devi_class(dev_info_t *);
 int	i_ddi_set_devi_class(dev_info_t *, char *, int);

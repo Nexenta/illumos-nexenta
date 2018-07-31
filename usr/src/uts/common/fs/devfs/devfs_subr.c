@@ -18,8 +18,10 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 2002, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 /*
@@ -72,7 +74,7 @@ struct dv_node *dvroot;
 
 /* prototype memory vattrs */
 vattr_t dv_vattr_dir = {
-	AT_TYPE|AT_MODE|AT_UID|AT_GID, 		/* va_mask */
+	AT_TYPE|AT_MODE|AT_UID|AT_GID,		/* va_mask */
 	VDIR,					/* va_type */
 	DV_DIRMODE_DEFAULT,			/* va_mode */
 	DV_UID_DEFAULT,				/* va_uid */
@@ -380,7 +382,7 @@ dv_mkdir(struct dv_node *ddv, dev_info_t *devi, char *nm)
  */
 static struct dv_node *
 dv_mknod(struct dv_node *ddv, dev_info_t *devi, char *nm,
-	struct ddi_minor_data *dmd)
+    struct ddi_minor_data *dmd)
 {
 	struct dv_node	*dv;
 	struct vnode	*vp;
@@ -403,13 +405,10 @@ dv_mknod(struct dv_node *ddv, dev_info_t *devi, char *nm,
 	vn_setops(vp, vn_getops(DVTOV(ddv)));
 	vn_exists(vp);
 
-	/* increment dev_ref with devi_lock held */
 	ASSERT(DEVI_BUSY_OWNED(devi));
-	mutex_enter(&DEVI(devi)->devi_lock);
-	dv->dv_devi = devi;
-	DEVI(devi)->devi_ref++;		/* ndi_hold_devi(dip) */
-	mutex_exit(&DEVI(devi)->devi_lock);
+	ndi_hold_devi(devi);
 
+	dv->dv_devi = devi;
 	dv->dv_ino = dv_mkino(devi, vp->v_type, vp->v_rdev);
 	dv->dv_nlink = 0;		/* updated on insert */
 	dv->dv_dotdot = ddv;
@@ -922,7 +921,7 @@ dv_clone_mknod(struct dv_node *ddv, char *drvname)
  */
 int
 dv_find(struct dv_node *ddv, char *nm, struct vnode **vpp, struct pathname *pnp,
-	struct vnode *rdir, struct cred *cred, uint_t ndi_flags)
+    struct vnode *rdir, struct cred *cred, uint_t ndi_flags)
 {
 	extern int isminiroot;	/* see modctl.c */
 
@@ -1445,8 +1444,23 @@ dv_cleandir(struct dv_node *ddv, char *devnm, uint_t flags)
 			ASSERT(dv->dv_nlink == 1);	/* no hard links */
 			mutex_enter(&vp->v_lock);
 			if (vp->v_count > 0) {
-				mutex_exit(&vp->v_lock);
-				goto set_busy;
+				/*
+				 * The file still has references to it.  If
+				 * DEVI_GONE is *not* set on the devi referenced
+				 * file is considered busy.
+				 */
+				if (!DEVI_IS_GONE(dv->dv_devi)) {
+					mutex_exit(&vp->v_lock);
+					goto set_busy;
+				}
+
+				/*
+				 * Mark referenced file stale so that DR will
+				 * succeed even if there are userland opens.
+				 */
+				ASSERT(!DV_STALE(dv));
+				ndi_rele_devi(dv->dv_devi);
+				dv->dv_devi = NULL;
 			}
 		}
 

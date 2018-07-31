@@ -18,8 +18,10 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1996, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #ifndef	_SYS_SUNNDI_H
@@ -325,6 +327,7 @@ ndi_irm_resize_pool(ddi_irm_pool_t *poolp, uint_t newsize);
 #define	NDI_DETACH_DRIVER	0x08000000 /* performing driver_detach */
 #define	NDI_MTC_OFF		0x10000000 /* disable multi-threading */
 #define	NDI_USER_REQ		0x20000000 /* user requested operation */
+#define	NDI_DEVI_GONE		0x40000000 /* device is gone */
 
 /* ndi interface flag values */
 #define	NDI_SLEEP		0x000000
