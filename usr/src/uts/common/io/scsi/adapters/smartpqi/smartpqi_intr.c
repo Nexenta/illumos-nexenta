@@ -297,38 +297,68 @@ process_raid_io_error(pqi_io_request_t *io)
 {
 	pqi_raid_error_info_t	ei;
 	pqi_cmd_t		cmd;
-	int			xfer_count = 0;
 	int			sense_len;
+	int			statusbuf_len;
+	int			sense_len_to_copy;
+	struct scsi_arq_status	*arq;
+	struct scsi_pkt		*pkt;
 
 	if ((ei = io->io_error_info) != NULL) {
-		switch (ei->data_out_result) {
-		case PQI_DATA_IN_OUT_GOOD:
-			break;
-		case PQI_DATA_IN_OUT_UNDERFLOW:
-			xfer_count = ei->data_out_transferred;
-			io->io_status = ei->data_out_result;
-			break;
-		default:
-			cmn_err(CE_NOTE, "%s: unknown error result: %d\n",
-			    __func__, ei->data_out_result);
-			io->io_status = PQI_DATA_IN_OUT_PROTOCOL_ERROR;
-			break;
+		io->io_status = ei->data_out_result;
+		if (ei->data_out_result == PQI_DATA_IN_OUT_GOOD)
+			return;
+
+		if ((cmd = io->io_cmd) == NULL)
+			return;
+
+		pkt = cmd->pc_pkt;
+		pkt->pkt_resid -= ei->data_out_transferred;
+		/* LINTED E_BAD_PTR_CAST_ALIGN */
+		arq = (struct scsi_arq_status *)pkt->pkt_scbp;
+		*((uchar_t *)&arq->sts_status) = ei->status;
+		*((uchar_t *)&arq->sts_rqpkt_status) = STATUS_GOOD;
+		arq->sts_rqpkt_state = STATE_GOT_BUS | STATE_GOT_TARGET |
+		    STATE_SENT_CMD | STATE_XFERRED_DATA | STATE_GOT_STATUS |
+		    STATE_ARQ_DONE;
+
+		sense_len = ei->sense_data_length;
+		if (sense_len == 0)
+			sense_len = ei->response_data_length;
+		if (sense_len == 0) {
+			/* ---- auto request sense failed ---- */
+			arq->sts_rqpkt_status.sts_chk = 1;
+			arq->sts_rqpkt_resid = cmd->pc_statuslen;
+			return;
+		} else if (sense_len < cmd->pc_statuslen) {
+			/* ---- auto request sense short ---- */
+			arq->sts_rqpkt_resid = cmd->pc_statuslen -
+			    sense_len;
+		} else {
+			/* ---- auto request sense complete ---- */
+			arq->sts_rqpkt_resid = 0;
 		}
-		cmd = io->io_cmd;
-		if (cmd != NULL) {
-			cmd->pc_pkt->pkt_resid = cmd->pc_dma_count - xfer_count;
-			sense_len = ei->sense_data_length;
-			if (sense_len == 0)
-				sense_len = ei->response_data_length;
-			if (sense_len != 0) {
-				if (sense_len > sizeof (ei->data))
-					sense_len = sizeof (ei->data);
-				if (sense_len > cmd->pc_statuslen)
-					sense_len = cmd->pc_statuslen;
-				(void) memcpy(&cmd->pc_cmd_scb, ei->data,
-				    sense_len);
+		arq->sts_rqpkt_statistics = 0;
+		pkt->pkt_state |= STATE_ARQ_DONE;
+		statusbuf_len = cmd->pc_statuslen - PQI_ARQ_STATUS_NOSENSE_LEN;
+
+		if (sense_len > sizeof (ei->data))
+			sense_len = sizeof (ei->data);
+		sense_len_to_copy = min(sense_len, statusbuf_len);
+
+		if (sense_len_to_copy) {
+			(void) memcpy(&arq->sts_sensedata, ei->data,
+			    sense_len_to_copy);
+			if ((ei->status == STATUS_CHECK) &&
+			    (arq->sts_sensedata.es_key == KEY_HARDWARE_ERROR) &&
+			    (arq->sts_sensedata.es_add_code == 0x3e) &&
+			    (arq->sts_sensedata.es_qual_code == 0x01)) {
+				cmd->pc_device->pd_online = 0;
+				(void) ddi_taskq_dispatch(
+				    cmd->pc_softc->s_taskq,
+				    pqi_do_rescan, cmd->pc_softc, 0);
 			}
 		}
+
 	} else {
 		/*
 		 * sync_error is called before this and sets io_error_info

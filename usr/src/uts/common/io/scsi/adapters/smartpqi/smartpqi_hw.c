@@ -70,6 +70,11 @@ pqi_watchdog(void *v)
 		s->s_watchdog = timeout(pqi_watchdog, s,
 		    drv_usectohz(WATCHDOG));
 	}
+	if (pqi_do_scan && s->s_instance == pqi_do_ctrl) {
+		pqi_do_scan = 0;
+		s->s_rescan = timeout(pqi_do_rescan, (void *)s,
+		    drv_usectohz(MICROSEC));
+	}
 }
 
 /*
@@ -194,6 +199,21 @@ pqi_transport_command(pqi_state_t s, pqi_cmd_t cmd)
 }
 
 void
+pqi_do_rescan(void *v)
+{
+	pqi_state_t	s	= v;
+	int		circ	= 0;
+	int		circ1	= 0;
+
+	ndi_devi_enter(scsi_vhci_dip, &circ1);
+	ndi_devi_enter(s->s_dip, &circ);
+	pqi_rescan_devices(s);
+	(void) pqi_config_all(s->s_dip, s);
+	ndi_devi_exit(s->s_dip, circ);
+	ndi_devi_exit(scsi_vhci_dip, circ1);
+}
+
+void
 pqi_event_worker(void *v)
 {
 	pqi_state_t	s		= v;
@@ -215,8 +235,8 @@ pqi_event_worker(void *v)
 		e++;
 	}
 	if (non_heartbeat == B_TRUE) {
-		pqi_rescan_devices(s);
-		(void) pqi_config_all(s->s_dip, s);
+		s->s_rescan = timeout(pqi_do_rescan, (void *)s,
+		    drv_usectohz(MICROSEC * 10));
 	}
 }
 
@@ -225,9 +245,9 @@ pqi_fail_cmd(pqi_cmd_t cmd)
 {
 	struct scsi_pkt		*pkt	= CMD2PKT(cmd);
 
-	pkt->pkt_reason = CMD_TRAN_ERR;
-	pkt->pkt_statistics |= STAT_DEV_RESET;
-	*pkt->pkt_scbp = STATUS_CHECK;
+	pkt->pkt_reason = CMD_DEV_GONE;
+	pkt->pkt_statistics = STAT_TERMINATED;
+
 	pqi_cmd_sm(cmd, PQI_CMD_FATAL);
 	if (cmd->pc_poll)
 		sema_v(cmd->pc_poll);
@@ -243,6 +263,18 @@ pqi_fail_drive_cmds(pqi_device_t devp)
 
 	mutex_enter(&devp->pd_mutex);
 	while ((cmd = list_head(&devp->pd_cmd_list)) != NULL) {
+
+		if (cmd->pc_flags & PQI_FLAG_FINISHING) {
+			/*
+			 * This will be a very short wait since
+			 * raid_io_complete is a quick function that will
+			 * call pqi_cmd_sm() which removes the command
+			 * from pd_cmd_list.
+			 */
+			drv_usecwait(100);
+			continue;
+		}
+		cmd->pc_flags |= PQI_FLAG_ABORTED;
 
 		/*
 		 * pqi_fail_cmd calls pqi_cmd_sm which will remove
@@ -287,6 +319,7 @@ send_event_ack(pqi_state_t s, pqi_event_acknowledge_request_t *rqst)
 	caddr_t			next_element;
 	pqi_index_t		iq_ci;
 	pqi_index_t		iq_pi;
+	int			ms_timeo = 1000 * 10;
 
 	qg = &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP];
 	rqst->header.iu_id = qg->oq_id;
@@ -313,6 +346,20 @@ send_event_ack(pqi_state_t s, pqi_event_acknowledge_request_t *rqst)
 	qg->iq_pi_copy[RAID_PATH] = iq_pi;
 
 	ddi_put32(s->s_datap, qg->iq_pi[RAID_PATH], iq_pi);
+
+	/*
+	 * Special case processing for events required. The driver must
+	 * wait until the acknowledgement is processed before proceeding.
+	 * Unfortunately, the HBA doesn't provide an interrupt which means
+	 * the code must busy wait.
+	 * Code will wait up to 10 seconds.
+	 */
+	while (ms_timeo--) {
+		drv_usecwait(1000);
+		iq_ci = ddi_get32(s->s_queue_dma->acc, qg->iq_ci[RAID_PATH]);
+		if (iq_pi == iq_ci)
+			break;
+	}
 
 	mutex_exit(&qg->submit_lock[RAID_PATH]);
 }
@@ -433,6 +480,7 @@ raid_io_complete(pqi_io_request_t *io, void *context)
 	 */
 	aio_io_complete(io, context);
 }
+
 /*ARGSUSED*/
 static void
 aio_io_complete(pqi_io_request_t *io, void *context)
@@ -440,8 +488,16 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 	pqi_cmd_t	cmd = io->io_cmd;
 	struct scsi_pkt	*pkt = CMD2PKT(cmd);
 
+	mutex_enter(&cmd->pc_device->pd_mutex);
+	if (cmd->pc_flags & PQI_FLAG_ABORTED) {
+		mutex_exit(&cmd->pc_device->pd_mutex);
+		return;
+	}
+	cmd->pc_flags |= PQI_FLAG_FINISHING;
+
 	if (cmd->pc_flags & (PQI_FLAG_IO_READ | PQI_FLAG_IO_IOPB))
 		(void) ddi_dma_sync(cmd->pc_dmahdl, 0, 0, DDI_DMA_SYNC_FORCPU);
+	mutex_exit(&cmd->pc_device->pd_mutex);
 
 	switch (io->io_status) {
 	case PQI_DATA_IN_OUT_UNDERFLOW:
@@ -449,11 +505,9 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		    STATE_SENT_CMD | STATE_GOT_STATUS;
 		if (pkt->pkt_resid == cmd->pc_dma_count) {
 			pkt->pkt_reason = CMD_INCOMPLETE;
-			*pkt->pkt_scbp = STATUS_CHECK;
 		} else {
 			pkt->pkt_state |= STATE_XFERRED_DATA;
 			pkt->pkt_reason = CMD_CMPLT;
-			*pkt->pkt_scbp = STATUS_GOOD;
 		}
 		break;
 
@@ -474,16 +528,24 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		if (pkt->pkt_resid != cmd->pc_dma_count) {
 			pkt->pkt_state |= STATE_XFERRED_DATA;
 			pkt->pkt_reason = CMD_CMPLT;
-			*pkt->pkt_scbp = STATUS_GOOD;
 		} else {
-			pkt->pkt_reason = CMD_INCOMPLETE;
-			*pkt->pkt_scbp = STATUS_CHECK;
+			pkt->pkt_reason = CMD_CMPLT;
 		}
+		break;
+
+	case PQI_DATA_IN_OUT_PROTOCOL_ERROR:
+		pkt->pkt_reason = CMD_TERMINATED;
+		pkt->pkt_state |= STATE_GOT_BUS | STATE_GOT_TARGET;
+		break;
+
+	case PQI_DATA_IN_OUT_HARDWARE_ERROR:
+		pkt->pkt_reason = CMD_DEV_GONE;
+		pkt->pkt_state |= STATE_GOT_BUS;
 		break;
 
 	default:
 		pkt->pkt_reason = CMD_INCOMPLETE;
-		*pkt->pkt_scbp = STATUS_CHECK;
+		break;
 	}
 
 	pqi_cmd_sm(cmd, PQI_CMD_CMPLT);
@@ -653,6 +715,9 @@ read_heartbeat_counter(pqi_state_t s)
 static void
 take_ctlr_offline(pqi_state_t s)
 {
+	int		circ	= 0;
+	int		circ1	= 0;
+
 	mutex_enter(&s->s_mutex);
 	s->s_offline = 1;
 	s->s_watchdog = 0;
@@ -663,7 +728,11 @@ take_ctlr_offline(pqi_state_t s)
 	 * This will have the effect of releasing the device's dip
 	 * structure from the NDI layer do to s_offline == 1.
 	 */
+	ndi_devi_enter(scsi_vhci_dip, &circ1);
+	ndi_devi_enter(s->s_dip, &circ);
 	(void) pqi_config_all(s->s_dip, s);
+	ndi_devi_exit(s->s_dip, circ);
+	ndi_devi_exit(scsi_vhci_dip, circ1);
 }
 
 static uint32_t

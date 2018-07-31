@@ -79,6 +79,11 @@ static struct modlinkage modlinkage = {
 	MODREV_1, &modldrv, NULL
 };
 
+int pqi_do_scan = 0;
+int pqi_do_ctrl = 0;
+int pqi_offline_target = 0;
+int pqi_do_offline = 0;
+
 /*
  * This is used for data I/O DMA memory allocation. (full 64-bit DMA
  * physical addresses are supported.)
@@ -288,6 +293,11 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 
 	instance = ddi_get_instance(dip);
 	if ((s = ddi_get_soft_state(pqi_state, instance)) != NULL) {
+		if (s->s_rescan != NULL) {
+			(void) untimeout(s->s_rescan);
+			s->s_rescan = NULL;
+		}
+
 		if (s->s_watchdog != 0) {
 			(void) untimeout(s->s_watchdog);
 			s->s_watchdog = 0;

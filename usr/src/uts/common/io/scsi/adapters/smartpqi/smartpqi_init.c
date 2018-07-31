@@ -897,6 +897,19 @@ pqi_scan_scsi_devices(pqi_state_t s)
 		    sizeof (logical_list->lun_entries[0]);
 	}
 
+	/*
+	 * Need to look for devices that are no longer available. The call
+	 * below to is_new_dev() will mark either the new device just created
+	 * as having been scanned or if is_new_dev() finds an existing
+	 * device in the list that one will be marked as scanned.
+	 */
+	mutex_enter(&s->s_mutex);
+	for (dev = list_head(&s->s_devnodes); dev != NULL;
+	     dev = list_next(&s->s_devnodes, dev)) {
+		dev->pd_scanned = 0;
+	}
+	mutex_exit(&s->s_mutex);
+
 	for (i = 0; i < (num_phys + num_logical); i++) {
 		if (i < num_phys) {
 			dev = create_phys_dev(s, &phys_list->lun_entries[i]);
@@ -928,6 +941,29 @@ pqi_scan_scsi_devices(pqi_state_t s)
 			}
 		}
 	}
+
+	/*
+	 * Now look through the list for devices which have disappeared.
+	 * Mark them as being offline. During the call to config_one, which
+	 * will come next during a hotplug event, those devices will be
+	 * offlined to the SCSI subsystem.
+	 */
+	mutex_enter(&s->s_mutex);
+	for (dev = list_head(&s->s_devnodes); dev != NULL;
+	     dev = list_next(&s->s_devnodes, dev)) {
+		if (dev->pd_scanned)
+			dev->pd_online = 1;
+		else
+			dev->pd_online = 0;
+
+		/* ---- Software version of disk pull ---- */
+		if (pqi_do_offline && dev->pd_target == pqi_offline_target) {
+			cmn_err(CE_WARN, "%s: offlining %d\n", __func__,
+			    pqi_offline_target);
+			dev->pd_online = 0;
+		}
+	}
+	mutex_exit(&s->s_mutex);
 
 	rval = B_TRUE;
 error_out:
@@ -1801,6 +1837,13 @@ out:
 	return (NULL);
 }
 
+/*
+ * is_new_dev -- look to see if new_dev is indeed new.
+ *
+ * NOTE: This function has two outcomes. One is to determine if the new_dev
+ * is truly new. The other is to mark a new_dev as being scanned if it's
+ * truly new or marking the existing device as having been scanned.
+ */
 static boolean_t
 is_new_dev(pqi_state_t s, pqi_device_t new_dev)
 {
@@ -1808,10 +1851,13 @@ is_new_dev(pqi_state_t s, pqi_device_t new_dev)
 
 	for (dev = list_head(&s->s_devnodes); dev != NULL;
 	    dev = list_next(&s->s_devnodes, dev)) {
-		if (dev->pd_wwid == new_dev->pd_wwid)
+		if (dev->pd_wwid == new_dev->pd_wwid) {
+			dev->pd_scanned = 1;
 			return (B_FALSE);
+		}
 	}
 
+	new_dev->pd_scanned = 1;
 	return (B_TRUE);
 }
 

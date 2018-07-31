@@ -68,6 +68,9 @@ extern "C" {
 #define	PQI_DEFAULT_QUEUE_GROUP			0
 #define	PQI_MAX_QUEUE_GROUPS			PQI_MAX_MSIX_VECTORS
 #define	PQI_MIN_OPERATIONAL_QUEUE_ID		1
+/* ---- Size of structure scsi_arq_status without sense data. ---- */
+#define PQI_ARQ_STATUS_NOSENSE_LEN    (sizeof (struct scsi_arq_status) - \
+    sizeof (struct scsi_extended_sense))
 
 /* ---- macros to return various addresses ---- */
 #define	ADDR2TRAN(ap)	((ap)->a_hba_tran)
@@ -124,6 +127,13 @@ extern "C" {
     ddi_put64(state->s_datap, &state->s_reg->__reg__, val)
 #define	G64(state, __reg__) \
     ddi_get64(state->s_datap, &state->s_reg->__reg__)
+
+/*
+ * Yuck! Internal knowledge of MPxIO, but since this variable is required
+ * to use MPxIO and there's no public API it must be declared here. Both
+ * the iSCSI Initiator and MPT SAS drivers do the same thing.
+ */
+extern dev_info_t *scsi_vhci_dip;
 
 typedef enum pqi_io_path {
 	RAID_PATH = 0,
@@ -251,6 +261,7 @@ typedef struct pqi_state {
 	kmem_cache_t		*s_cmd_cache;
 	ddi_taskq_t		*s_taskq;
 	timeout_id_t		s_time_of_day;
+	timeout_id_t		s_rescan;
 
 	/* ---- Debug related state ---- */
 	int			s_debug_level;
@@ -374,6 +385,9 @@ typedef struct pqi_device {
 
 	dev_info_t		*pd_parent;
 	int			pd_devtype;
+	int			pd_flags;
+	int			pd_online : 1;
+	int			pd_scanned : 1;
 	int			pd_phys_dev : 1;
 	int			pd_external_raid : 1;
 	int			pd_aio_enabled : 1;
@@ -398,6 +412,7 @@ typedef struct pqi_device {
 #define	PQI_FLAG_PRIV_EXT	0x0800
 #define	PQI_FLAG_IO_READ	0x1000
 #define	PQI_FLAG_IO_BOUNCE	0x2000
+#define	PQI_FLAG_FINISHING	0x4000
 
 typedef enum pqi_cmd_state {
 	PQI_CMD_UNINIT		= 0,
@@ -436,7 +451,6 @@ typedef struct pqi_cmd {
 	int			pc_flags;
 	int			pc_tgtlen;
 	int			pc_statuslen;
-	int			pc_cmd_rqslen;
 	int			pc_cmdlen;
 
 	/* ---- For partial DMA transfers ---- */
@@ -502,6 +516,10 @@ typedef struct mem_len_pair {
 
 /* ---- smartpqi_main.c ---- */
 void *pqi_state;
+extern int pqi_do_scan;
+extern int pqi_do_ctrl;
+extern int pqi_do_offline;
+extern int pqi_offline_target;
 
 /* ---- smartpqi_intr.c ---- */
 int smartpqi_register_intrs(pqi_state_t);
@@ -541,6 +559,7 @@ int pqi_transport_command(pqi_state_t s, pqi_cmd_t cmd);
 void pqi_fail_cmd(pqi_cmd_t cmd);
 void pqi_fail_drive_cmds(pqi_device_t devp);
 void pqi_watchdog(void *v);
+void pqi_do_rescan(void *v);
 void pqi_event_worker(void *v);
 uint32_t pqi_disable_intr(pqi_state_t s);
 void pqi_enable_intr(pqi_state_t s, uint32_t old_state);
