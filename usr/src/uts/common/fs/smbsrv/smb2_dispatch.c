@@ -181,8 +181,7 @@ smb2sr_newrq(smb_request_t *sr)
 
 	/*
 	 * Walk the SMB2 commands in this compound message and
-	 * update the scoreboard to record that we've received
-	 * the new message IDs in these commands.
+	 * keep track of the range of message IDs it uses.
 	 */
 	for (;;) {
 		if (smb2_decode_header(sr) != 0)
@@ -201,9 +200,30 @@ smb2sr_newrq(smb_request_t *sr)
 			return (rc);
 		}
 
-		if ((rc = smb2_scoreboard_cmd_new(sr)) != 0) {
-			/* Logging was done in the above call. */
-			goto drop;
+		/*
+		 * Keep track of the total credits in this compound
+		 * and the first (real) message ID (not: 0, -1)
+		 * While we're looking, verify that all (real) IDs
+		 * are (first <= ID < (first + msg_credits))
+		 */
+		if (sr->smb2_credit_charge == 0)
+			sr->smb2_credit_charge = 1;
+		sr->smb2_total_credits += sr->smb2_credit_charge;
+
+		if (sr->smb2_messageid != 0 &&
+		    sr->smb2_messageid != UINT64_MAX) {
+
+			if (sr->smb2_first_msgid == 0)
+				sr->smb2_first_msgid = sr->smb2_messageid;
+
+			if (sr->smb2_messageid < sr->smb2_first_msgid ||
+			    sr->smb2_messageid >= (sr->smb2_first_msgid +
+			    sr->smb2_total_credits)) {
+				long long id = (long long) sr->smb2_messageid;
+				cmn_err(CE_WARN, "clnt %s msg ID 0x%llx "
+				    "out of sequence in compound",
+				    sr->session->ip_addr_str, id);
+			}
 		}
 
 		/* Normal loop exit on next == zero */
@@ -343,21 +363,6 @@ cmd_start:
 		    session->ip_addr_str);
 		disconnect = B_TRUE;
 		goto cleanup;
-	}
-
-	/*
-	 * Update the "scoreboard" for this new command, and
-	 * check whether this message ID was marked cancelled.
-	 */
-	if (smb2_scoreboard_cmd_start(sr)) {
-		/*
-		 * This command was cancelled.  Update sr_state
-		 * and continue.  See notes above at cmd_start.
-		 */
-		mutex_enter(&sr->sr_mutex);
-		if (sr->sr_state == SMB_REQ_STATE_ACTIVE)
-			sr->sr_state = SMB_REQ_STATE_CANCELLED;
-		mutex_exit(&sr->sr_mutex);
 	}
 
 	/*
@@ -733,12 +738,6 @@ cmd_done:
 	    (int64_t)(sr->command.chain_offset - sr->smb2_cmd_hdr));
 	atomic_add_64(&sds->sdt_txb,
 	    (int64_t)(sr->reply.chain_offset - sr->smb2_reply_hdr));
-
-	/*
-	 * Mark this command "done" in the scoreboard, but keep track
-	 * of whether there's async work still to happen (for debug)
-	 */
-	smb2_scoreboard_cmd_done(sr, (sr->sr_async_req != NULL));
 
 	switch (rc) {
 	case SDRC_SUCCESS:
