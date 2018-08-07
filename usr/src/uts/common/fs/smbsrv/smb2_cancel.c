@@ -84,7 +84,10 @@ smb2_cancel(smb_request_t *sr)
 
 /*
  * SMB2 Cancel (sync) has an inherent race with the request being
- * cancelled.  See comments at the top of smb2_scoreboard.c
+ * cancelled.  The request may have been received but not yet
+ * executed by a worker thread, in which case we'll mark the
+ * request state as cancelled, and when a worker thread starts
+ * on this request we'll cancel everything in the compound.
  */
 static void
 smb2_cancel_sync(smb_request_t *sr)
@@ -92,41 +95,43 @@ smb2_cancel_sync(smb_request_t *sr)
 	struct smb_request *req;
 	struct smb_session *session = sr->session;
 	int cnt = 0;
-	boolean_t was_active;
 
-	was_active = smb2_scoreboard_cmd_cancel(sr);
-
-	/*
-	 * Could optimize and skip the cmd list walk when the
-	 * scoreboard state says the command was not active,
-	 * but cancel is relatively rare so don't bother.
-	 *
-	 * We do want to report "missed cancel", but only when
-	 * the command was found "active" in the scoreboard.
-	 * Commands that have already completed, or have not
-	 * yet started processing should not be reported.
-	 */
+	if (sr->smb2_messageid == 0)
+		goto failure;
 
 	smb_slist_enter(&session->s_req_list);
-	req = smb_slist_head(&session->s_req_list);
-	while (req) {
-		ASSERT(req->sr_magic == SMB_REQ_MAGIC);
-		if ((req != sr) &&
-		    (req->smb2_messageid == sr->smb2_messageid)) {
+	for (req = smb_slist_head(&session->s_req_list); req != NULL;
+	    req = smb_slist_next(&session->s_req_list, req)) {
+
+		/* never cancel self */
+		if (req == sr)
+			continue;
+
+		if (sr->smb2_messageid >= req->smb2_first_msgid &&
+		    sr->smb2_messageid < (req->smb2_first_msgid +
+		    req->smb2_total_credits)) {
 			smb_request_cancel(req);
 			cnt++;
 		}
-		req = smb_slist_next(&session->s_req_list, req);
 	}
-	if (was_active && cnt != 1) {
+	smb_slist_exit(&session->s_req_list);
+
+	if (cnt != 1) {
+	failure:
 		DTRACE_PROBE2(smb2__cancel__error,
 		    uint64_t, sr->smb2_messageid, int, cnt);
+#ifdef	DEBUG
+		/*
+		 * It's somewhat common that we may see a cancel for a
+		 * request that has already completed, so report that
+		 * only in debug builds.
+		 */
 		cmn_err(CE_WARN, "SMB2 cancel failed, "
 		    "client=%s, MID=0x%llx",
 		    sr->session->ip_addr_str,
 		    (u_longlong_t)sr->smb2_messageid);
+#endif
 	}
-	smb_slist_exit(&session->s_req_list);
 }
 
 /*

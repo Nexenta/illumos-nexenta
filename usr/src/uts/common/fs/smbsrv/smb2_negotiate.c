@@ -302,7 +302,6 @@ smb2_negotiate_common(smb_request_t *sr, uint16_t version)
 	uint16_t secmode;
 
 	sr->smb2_status = 0;
-	smb2_scoreboard_init(s);
 
 	/*
 	 * Negotiation itself.  First the Security Mode.

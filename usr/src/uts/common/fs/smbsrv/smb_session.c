@@ -952,9 +952,6 @@ smb_session_delete(smb_session_t *session)
 		    session->signing.mackey_len);
 	}
 
-	if (session->s_scoreboard_arr != NULL)
-		smb2_scoreboard_fini(session);
-
 	session->s_magic = 0;
 
 	smb_rwx_destroy(&session->s_lock);

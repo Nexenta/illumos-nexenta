@@ -131,14 +131,6 @@ uint32_t smb2_setinfo_fs(smb_request_t *, smb_setinfo_t *, int);
 uint32_t smb2_setinfo_sec(smb_request_t *, smb_setinfo_t *, uint32_t);
 uint32_t smb2_setinfo_quota(smb_request_t *, smb_setinfo_t *);
 
-void smb2_scoreboard_init(smb_session_t *);
-void smb2_scoreboard_fini(smb_session_t *);
-
-int smb2_scoreboard_cmd_new(smb_request_t *);
-boolean_t  smb2_scoreboard_cmd_start(smb_request_t *);
-void smb2_scoreboard_cmd_done(smb_request_t *, boolean_t);
-boolean_t smb2_scoreboard_cmd_cancel(smb_request_t *);
-
 void smb2_oplock_acquire(smb_request_t *sr);
 void smb2_lease_acquire(smb_request_t *sr);
 uint32_t smb2_lease_create(smb_request_t *sr, uint8_t *);

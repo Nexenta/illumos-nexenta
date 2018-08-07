@@ -985,9 +985,6 @@ typedef struct smb_session {
 	uint16_t		smb_msg_size;
 	uint16_t		smb_max_mpx;
 	smb_srqueue_t		*s_srqueue;
-	uchar_t			*s_scoreboard_arr;
-	kmutex_t		s_scoreboard_mutex;
-	uint64_t		s_scoreboard_maxid;
 	uint64_t		start_time;
 	kstat_t			*s_ksp;
 	smb_disp_stats_t	s_stats[SMBSRV_CLSH__NREQ];
@@ -1867,9 +1864,11 @@ typedef struct smb_request {
 	uint16_t		smb2_cmd_code;
 	uint16_t		smb2_credit_request;
 	uint16_t		smb2_credit_response;
+	uint16_t		smb2_total_credits; /* in compound */
 	uint32_t		smb2_hdr_flags;
 	uint32_t		smb2_next_command;
 	uint64_t		smb2_messageid;
+	uint64_t		smb2_first_msgid;
 	/* uint32_t		smb2_pid; use smb_pid */
 	/* uint32_t		smb2_tid; use smb_tid */
 	uint64_t		smb2_ssnid;	/* See u_ssnid */

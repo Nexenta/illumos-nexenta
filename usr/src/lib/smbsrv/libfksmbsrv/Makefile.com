@@ -149,7 +149,6 @@ OBJS_FS_SMBSRV = \
 		smb2_query_dir.o \
 		smb2_query_info.o \
 		smb2_read.o \
-		smb2_scoreboard.o \
 		smb2_session_setup.o \
 		smb2_set_info.o \
 		smb2_setinfo_file.o \

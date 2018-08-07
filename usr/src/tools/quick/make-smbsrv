@@ -193,10 +193,8 @@ case $1 in
 install)
   # mount programs need fslib.o
   (cd $SRC/cmd/fs.d && $make fslib.o)
-  (cd $SRC/cmd/fs.d/smbclnt && $make $1 catalog)
   ;;
 clean|clobber)
-  (cd $SRC/cmd/fs.d/smbclnt && $make $1)
   (cd $SRC/cmd/fs.d && $make ${1}_local)
   ;;
 esac
