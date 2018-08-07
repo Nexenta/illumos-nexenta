@@ -18,10 +18,10 @@
 #
 # CDDL HEADER END
 #
+
 #
 # Copyright (c) 2004, 2010, Oracle and/or its affiliates. All rights reserved.
-#
-# Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.
 #
 
 SUBDIRS = cpumem-retire \
@@ -42,7 +42,6 @@ SUBDIRS = cpumem-retire \
 	sp-monitor	\
 	syslog-msgs	\
 	zfs-diagnosis	\
-	zfs-monitor	\
 	zfs-retire
 
 include ../../Makefile.subdirs

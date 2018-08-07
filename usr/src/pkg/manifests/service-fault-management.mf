@@ -471,8 +471,6 @@ file path=usr/lib/fm/fmd/plugins/syslog-msgs.so mode=0555 \
     variant.opensolaris.zone=__NODEFAULT
 file path=usr/lib/fm/fmd/plugins/zfs-diagnosis.conf
 file path=usr/lib/fm/fmd/plugins/zfs-diagnosis.so mode=0555
-file path=usr/lib/fm/fmd/plugins/zfs-monitor.conf
-file path=usr/lib/fm/fmd/plugins/zfs-monitor.so mode=0555
 file path=usr/lib/fm/fmd/plugins/zfs-retire.conf
 file path=usr/lib/fm/fmd/plugins/zfs-retire.so mode=0555
 
