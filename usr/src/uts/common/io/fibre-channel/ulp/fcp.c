@@ -3872,6 +3872,8 @@ fcp_port_ioctl(opaque_t ulph, opaque_t port_handle, dev_t dev, int cmd,
 
 		if (cmd == DEVCTL_DEVICE_REMOVE) {
 			flag = NDI_DEVI_REMOVE;
+			if (is_mpxio)
+				flag |= NDI_USER_REQ;
 		}
 
 		if (is_mpxio) {
@@ -13291,7 +13293,7 @@ fcp_offline_child(struct fcp_lun *plun, child_info_t *cip, int lcount,
 		mdi_hold_path(PIP(cip));
 		mdi_devi_exit_phci(pptr->port_dip, *circ);
 
-		rval = mdi_pi_offline(PIP(cip), flags);
+		rval = mdi_pi_offline(PIP(cip), flags & ~NDI_DEVI_REMOVE);
 
 		mdi_devi_enter_phci(pptr->port_dip, circ);
 		mdi_rele_path(PIP(cip));
@@ -13391,24 +13393,22 @@ fcp_remove_child(struct fcp_lun *plun)
 			mutex_exit(&plun->lun_tgt->tgt_mutex);
 			mutex_exit(&plun->lun_tgt->tgt_port->port_mutex);
 
-			mdi_devi_enter(
-			    plun->lun_tgt->tgt_port->port_dip, &circ);
+			mdi_devi_enter(plun->lun_tgt->tgt_port->port_dip,
+			    &circ);
 
 			/*
 			 * Exit phci to avoid deadlock with power management
 			 * code during mdi_pi_offline
 			 */
 			mdi_hold_path(PIP(cip));
-			mdi_devi_exit_phci(
-			    plun->lun_tgt->tgt_port->port_dip, circ);
-			(void) mdi_pi_offline(PIP(cip),
-			    NDI_DEVI_REMOVE);
-			mdi_devi_enter_phci(
-			    plun->lun_tgt->tgt_port->port_dip, &circ);
+			mdi_devi_exit_phci(plun->lun_tgt->tgt_port->port_dip,
+			    circ);
+			(void) mdi_pi_offline(PIP(cip), 0);
+			mdi_devi_enter_phci(plun->lun_tgt->tgt_port->port_dip,
+			    &circ);
 			mdi_rele_path(PIP(cip));
 
-			mdi_devi_exit(
-			    plun->lun_tgt->tgt_port->port_dip, circ);
+			mdi_devi_exit(plun->lun_tgt->tgt_port->port_dip, circ);
 
 			FCP_TRACE(fcp_logq,
 			    plun->lun_tgt->tgt_port->port_instbuf,
