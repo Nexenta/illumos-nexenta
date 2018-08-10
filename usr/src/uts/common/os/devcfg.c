@@ -485,11 +485,6 @@ i_ddi_free_node(dev_info_t *dip)
 	    "dip=%p, name=%s", (void *)dip, devi->devi_node_name));
 
 	kmem_free(devi->devi_node_name, strlen(devi->devi_node_name) + 1);
-
-	/* free event data */
-	if (devi->devi_ev_path)
-		kmem_free(devi->devi_ev_path, MAXPATHLEN);
-
 	kmem_cache_free(ddi_node_cache, devi);
 }
 
@@ -5941,26 +5936,29 @@ devi_detach_node(dev_info_t *dip, uint_t flags)
 	}
 
 	if (i_ddi_node_state(dip) == DS_INITIALIZED) {
-		struct dev_info *devi = DEVI(dip);
-
-		if (devi->devi_ev_path == NULL) {
-			devi->devi_ev_path = kmem_alloc(MAXPATHLEN, KM_SLEEP);
-			(void) ddi_pathname(dip, devi->devi_ev_path);
-		}
 		if (flags & NDI_DEVI_OFFLINE)
 			i_ndi_devi_report_status_change(dip,
 			    devi->devi_ev_path);
 
 		if (need_remove_event(dip, flags)) {
-			/*
-			 * instance and path data are lost in call to
-			 * ddi_uninitchild
-			 */
-			devi->devi_ev_instance = ddi_get_instance(dip);
-
 			mutex_enter(&(DEVI(dip)->devi_lock));
 			DEVI_SET_EVREMOVE(dip);
 			mutex_exit(&(DEVI(dip)->devi_lock));
+
+			post_event = (flags & NDI_DEVI_REMOVE) ||
+			    DEVI_IS_GONE(dip);
+		}
+
+		if (post_event) {
+			/*
+			 * Instance and path data are lost in call to
+			 * ddi_uninitchild.
+			 */
+			path = kmem_alloc(MAXPATHLEN, KM_SLEEP);
+			(void) ddi_pathname(dip, path);
+			class = strdup(i_ddi_devi_class(dip));
+			driver = strdup(ddi_driver_name(dip));
+			instance = ddi_get_instance(dip);
 		}
 	}
 
@@ -5975,44 +5973,22 @@ devi_detach_node(dev_info_t *dip, uint_t flags)
 			if (!ndi_dev_is_persistent_node(dip))
 				flags |= NDI_DEVI_REMOVE;
 
-			if (flags & NDI_DEVI_REMOVE) {
-				/*
-				 * NOTE: If there is a consumer of LDI events,
-				 * ddi_uninitchild above would have failed
-				 * because of active devi_ref from ldi_open().
-				 */
-
-				if (DEVI_EVREMOVE(dip)) {
-					path = i_ddi_strdup(
-					    DEVI(dip)->devi_ev_path,
-					    KM_SLEEP);
-					class =
-					    i_ddi_strdup(i_ddi_devi_class(dip),
-					    KM_SLEEP);
-					driver =
-					    i_ddi_strdup(
-					    (char *)ddi_driver_name(dip),
-					    KM_SLEEP);
-					instance = DEVI(dip)->devi_ev_instance;
-					post_event = 1;
-				}
-
+			if (flags & NDI_DEVI_REMOVE)
 				ret = ddi_remove_child(dip, 0);
-				if (post_event && ret == NDI_SUCCESS) {
-					/* Generate EC_DEVFS_DEVI_REMOVE */
-					(void) i_log_devfs_remove_devinfo(path,
-					    class, driver, instance, flags);
-				}
-			}
-
 		}
 	}
 
-	if (path)
-		strfree(path);
-	if (class)
+	if (ret == NDI_SUCCESS && post_event) {
+		/* Generate EC_DEVFS/ESC_DEVFS_DEVI_REMOVE */
+		(void) i_log_devfs_remove_devinfo(path,
+		    class, driver, instance, flags);
+	}
+
+	if (path != NULL)
+		kmem_free(path, MAXPATHLEN);
+	if (class != NULL)
 		strfree(class);
-	if (driver)
+	if (driver != NULL)
 		strfree(driver);
 
 	/* Clean the flag on successful detach */
