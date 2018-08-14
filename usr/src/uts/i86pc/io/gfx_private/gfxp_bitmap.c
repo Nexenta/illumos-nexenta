@@ -54,7 +54,7 @@ static struct fbgattr bitmap_attr =  {
 	{ -1 }
 };
 
-static struct vis_identifier text_ident = { "illumos_fb" };
+static struct vis_identifier gfxp_bitmap_ident = { "illumos_fb" };
 
 static void bitmap_copy_fb(struct gfxp_fb_softc *, uint8_t *, uint8_t *);
 static int bitmap_kdsetmode(struct gfxp_fb_softc *, int);
@@ -78,8 +78,8 @@ static void	bitmap_resume(struct gfxp_fb_softc *softc);
 static int	bitmap_devmap(dev_t dev, devmap_cookie_t dhp, offset_t off,
     size_t len, size_t *maplen, uint_t model, void *ptr);
 
-static struct gfxp_ops gfxp_ops = {
-	.ident = &text_ident,
+static struct gfxp_ops gfxp_bitmap_ops = {
+	.ident = &gfxp_bitmap_ident,
 	.kdsetmode = bitmap_kdsetmode,
 	.devinit = bitmap_devinit,
 	.cons_copy = bitmap_cons_copy,
@@ -139,7 +139,7 @@ int gfxp_bm_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 	softc->polledio.display = bitmap_polled_display;
 	softc->polledio.copy = bitmap_polled_copy;
 	softc->polledio.cursor = bitmap_polled_cursor;
-	softc->gfxp_ops = &gfxp_ops;
+	softc->gfxp_ops = &gfxp_bitmap_ops;
 	softc->fbgattr = &bitmap_attr;
 	softc->silent = 0;
 

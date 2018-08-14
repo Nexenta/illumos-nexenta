@@ -115,7 +115,7 @@ static struct fbgattr vgatext_attr =  {
 	{ -1 }
 };
 
-static struct vis_identifier text_ident = { "illumos_text" };
+static struct vis_identifier gfxp_vgatext_ident = { "illumos_text" };
 
 int gfxp_vga_detach(dev_info_t *, ddi_detach_cmd_t, struct gfxp_fb_softc *);
 static int vgatext_devinit(struct gfxp_fb_softc *, struct vis_devinit *data);
@@ -162,8 +162,8 @@ static int vgatext_get_pci_reg_index(dev_info_t *const devi,
 static int vgatext_get_isa_reg_index(dev_info_t *const devi,
 		unsigned long hival, unsigned long addr, off_t *offset);
 
-static struct gfxp_ops gfxp_ops = {
-	.ident = &text_ident,
+static struct gfxp_ops gfxp_vgatext_ops = {
+	.ident = &gfxp_vgatext_ident,
 	.kdsetmode = vgatext_kdsetmode,
 	.devinit = vgatext_devinit,
 	.cons_copy = vgatext_cons_copy,
@@ -195,7 +195,7 @@ gfxp_vga_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 	softc->polledio.display = vgatext_polled_display;
 	softc->polledio.copy = vgatext_polled_copy;
 	softc->polledio.cursor = vgatext_polled_cursor;
-	softc->gfxp_ops = &gfxp_ops;
+	softc->gfxp_ops = &gfxp_vgatext_ops;
 	softc->fbgattr = &vgatext_attr;
 	softc->console = (union gfx_console *)&vga;
 
