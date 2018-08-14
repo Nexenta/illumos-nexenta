@@ -5937,8 +5937,7 @@ devi_detach_node(dev_info_t *dip, uint_t flags)
 
 	if (i_ddi_node_state(dip) == DS_INITIALIZED) {
 		if (flags & NDI_DEVI_OFFLINE)
-			i_ndi_devi_report_status_change(dip,
-			    devi->devi_ev_path);
+			i_ndi_devi_report_status_change(dip, NULL);
 
 		if (need_remove_event(dip, flags)) {
 			mutex_enter(&(DEVI(dip)->devi_lock));
