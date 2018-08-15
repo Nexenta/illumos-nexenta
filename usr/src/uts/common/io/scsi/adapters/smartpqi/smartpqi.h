@@ -60,6 +60,7 @@ extern "C" {
 #define	NAME_DISK				"disk"
 #define	NAME_ENCLOSURE				"enclosure"
 
+#define	CMD_TIMEOUT_SCAN_SECS			2
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
 
@@ -221,7 +222,11 @@ typedef struct pqi_io_request {
 	pqi_dma_overhead_t	*io_sg_chain_dma;
 	void			*io_iu;
 	list_node_t		io_list_node;
-	pqi_index_t		io_pi;	// Debug
+
+	/* ---- Debug aids ---- */
+	pqi_index_t		io_pi;
+	int			io_iu_type;
+
 	struct pqi_state	*io_softc;
 } pqi_io_request_t;
 
@@ -262,6 +267,7 @@ typedef struct pqi_state {
 	ddi_taskq_t		*s_taskq;
 	timeout_id_t		s_time_of_day;
 	timeout_id_t		s_rescan;
+	timeout_id_t		s_cmd_timeout;
 
 	/* ---- Debug related state ---- */
 	int			s_debug_level;
@@ -373,8 +379,11 @@ typedef struct mem_check {
 typedef struct pqi_device {
 	list_node_t		pd_list;
 	kmutex_t		pd_mutex;
-	list_t			pd_cmd_list;	/* Protected by pd_mutex */
-	list_t			pd_cache_list;	/* Protected by pd_mutex */
+
+	/* ---- Protected by pd_mutex ---- */
+	list_t			pd_cmd_list;
+	int			pd_flags;
+
 	int			pd_active_cmds;
 	int			pd_target;
 
@@ -385,7 +394,6 @@ typedef struct pqi_device {
 
 	dev_info_t		*pd_parent;
 	int			pd_devtype;
-	int			pd_flags;
 	int			pd_online : 1;
 	int			pd_scanned : 1;
 	int			pd_phys_dev : 1;
@@ -448,10 +456,20 @@ typedef struct pqi_cmd {
 
 	uint64_t		pc_tgt_priv[2];
 	int			pc_dma_count;	/* bytes to transfer */
+
+	/*
+	 * Setting/clearing/testing of ABORT and FINISHING are
+	 * protected by pqi_device->pd_mutex. The other bits in
+	 * this flag are set during init_pkt and read only during
+	 * cleanup.
+	 */
 	int			pc_flags;
+
 	int			pc_tgtlen;
 	int			pc_statuslen;
 	int			pc_cmdlen;
+	hrtime_t		pc_expiration;
+	hrtime_t		pc_start_time;
 
 	/* ---- For partial DMA transfers ---- */
 	uint_t			pc_nwin;
@@ -556,13 +574,14 @@ void pqi_quiesced_notify(pqi_state_t s);
 void pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
     pqi_io_request_t *io);
 int pqi_transport_command(pqi_state_t s, pqi_cmd_t cmd);
-void pqi_fail_cmd(pqi_cmd_t cmd);
+void pqi_fail_cmd(pqi_cmd_t cmd, uchar_t reason, uint_t stats);
 void pqi_fail_drive_cmds(pqi_device_t devp);
 void pqi_watchdog(void *v);
 void pqi_do_rescan(void *v);
 void pqi_event_worker(void *v);
 uint32_t pqi_disable_intr(pqi_state_t s);
 void pqi_enable_intr(pqi_state_t s, uint32_t old_state);
+boolean_t pqi_lun_reset(pqi_state_t s, pqi_device_t d);
 
 /* ---- smartpqi_util.c ---- */
 pqi_dma_overhead_t *pqi_alloc_single(pqi_state_t s, size_t len);
@@ -570,7 +589,7 @@ void pqi_free_single(pqi_state_t s, pqi_dma_overhead_t *d);
 pqi_io_request_t *pqi_alloc_io(pqi_state_t s);
 void pqi_free_io(pqi_io_request_t *io);
 void pqi_dump_io(pqi_io_request_t *io);
-void pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state);
+void pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock);
 char *pqi_event_to_str(uint8_t event);
 int pqi_map_event(uint8_t event);
 boolean_t pqi_supported_event(uint8_t event_type);
@@ -588,6 +607,10 @@ void *pqi_kmem_alloc(size_t size, int kmflag, char *file, int line,
     pqi_state_t s);
 void pqi_kmem_free(void *v, size_t, pqi_state_t s);
 void pqi_mem_check(void *v);
+char *cdb_to_str(uint8_t scsi_cmd);
+char *io_status_to_str(int val);
+char *scsi_status_to_str(uint8_t val);
+char *iu_type_to_str(int val);
 
 #ifdef __cplusplus
 }

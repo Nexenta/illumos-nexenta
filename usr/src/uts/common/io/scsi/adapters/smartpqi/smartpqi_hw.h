@@ -54,6 +54,8 @@ extern "C" {
 #define	SOP_TMF_COMPLETE		0x0
 #define	SOP_TMF_FUNCTION_SUCCEEDED	0x8
 
+#define	SOP_TASK_MANAGEMENT_LUN_RESET	0x08
+
 /* ---- CISS commands ---- */
 #define	CISS_READ				0xc0
 #define	CISS_REPORT_LOG				0xc2
@@ -517,6 +519,20 @@ typedef struct pqi_general_admin_response {
 		} create_operational_oq;
 	} data;
 } pqi_general_admin_response_t;
+
+typedef struct pqi_task_management_rqst {
+	pqi_iu_header_t	header;
+	uint16_t 	request_id;
+	uint16_t	nexus_id;
+	uint8_t		reserved[4];
+	uint8_t		lun_number[8];
+	uint16_t	protocol_specific;
+	uint16_t	outbound_queue_id_to_manage;
+	uint16_t	request_id_to_manage;
+	uint8_t		task_management_function;
+	uint8_t		reserved2 : 7;
+	uint8_t		fence : 1;
+} pqi_task_management_rqst_t;
 
 /* ---- Support event types ---- */
 #define	PQI_EVENT_TYPE_HOTPLUG			0x1

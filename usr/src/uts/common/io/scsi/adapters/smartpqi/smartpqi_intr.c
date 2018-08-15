@@ -136,6 +136,21 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 
 		ASSERT(io->io_refcount == 1);
 
+		if (io->io_cmd != NULL) {
+			pqi_cmd_t	cmd = io->io_cmd;
+
+			mutex_enter(&cmd->pc_device->pd_mutex);
+			if (cmd->pc_flags & PQI_FLAG_ABORTED) {
+				mutex_exit(&cmd->pc_device->pd_mutex);
+				response_cnt++;
+				oq_ci = (oq_ci + 1) % s->s_num_elements_per_oq;
+				continue;
+			}
+			cmd->pc_flags |= PQI_FLAG_FINISHING;
+			mutex_exit(&cmd->pc_device->pd_mutex);
+		}
+
+		io->io_iu_type = rsp->header.iu_type;
 		switch (rsp->header.iu_type) {
 		case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS:
 		case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS:
@@ -305,9 +320,6 @@ process_raid_io_error(pqi_io_request_t *io)
 
 	if ((ei = io->io_error_info) != NULL) {
 		io->io_status = ei->data_out_result;
-		if (ei->data_out_result == PQI_DATA_IN_OUT_GOOD)
-			return;
-
 		if ((cmd = io->io_cmd) == NULL)
 			return;
 
@@ -324,6 +336,7 @@ process_raid_io_error(pqi_io_request_t *io)
 		sense_len = ei->sense_data_length;
 		if (sense_len == 0)
 			sense_len = ei->response_data_length;
+
 		if (sense_len == 0) {
 			/* ---- auto request sense failed ---- */
 			arq->sts_rqpkt_status.sts_chk = 1;
@@ -339,7 +352,12 @@ process_raid_io_error(pqi_io_request_t *io)
 		}
 		arq->sts_rqpkt_statistics = 0;
 		pkt->pkt_state |= STATE_ARQ_DONE;
-		statusbuf_len = cmd->pc_statuslen - PQI_ARQ_STATUS_NOSENSE_LEN;
+		if (cmd->pc_statuslen > PQI_ARQ_STATUS_NOSENSE_LEN) {
+			statusbuf_len = cmd->pc_statuslen -
+			    PQI_ARQ_STATUS_NOSENSE_LEN;
+		} else {
+			statusbuf_len = 0;
+		}
 
 		if (sense_len > sizeof (ei->data))
 			sense_len = sizeof (ei->data);
@@ -348,17 +366,7 @@ process_raid_io_error(pqi_io_request_t *io)
 		if (sense_len_to_copy) {
 			(void) memcpy(&arq->sts_sensedata, ei->data,
 			    sense_len_to_copy);
-			if ((ei->status == STATUS_CHECK) &&
-			    (arq->sts_sensedata.es_key == KEY_HARDWARE_ERROR) &&
-			    (arq->sts_sensedata.es_add_code == 0x3e) &&
-			    (arq->sts_sensedata.es_qual_code == 0x01)) {
-				cmd->pc_device->pd_online = 0;
-				(void) ddi_taskq_dispatch(
-				    cmd->pc_softc->s_taskq,
-				    pqi_do_rescan, cmd->pc_softc, 0);
-			}
 		}
-
 	} else {
 		/*
 		 * sync_error is called before this and sets io_error_info

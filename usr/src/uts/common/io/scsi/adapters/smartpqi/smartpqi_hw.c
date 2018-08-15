@@ -37,6 +37,8 @@ static uint32_t free_elem_count(pqi_index_t pi, pqi_index_t ci,
 	uint32_t per_iq);
 static void ack_event(pqi_state_t s, pqi_event_t e);
 static boolean_t is_aio_enabled(pqi_device_t d);
+static void lun_reset_worker(void *v);
+static void lun_reset_complete(pqi_io_request_t *io, void *ctx);
 
 #define	DIV_UP(n, d) ((n + (d - 1)) / d)
 
@@ -108,8 +110,10 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
 
 		/* ---- Primary cause for !active is controller failure ---- */
 		if (qg->qg_active == B_FALSE && io->io_cmd) {
-			pqi_fail_cmd(io->io_cmd);
 			list_remove(&qg->request_list[path], io);
+			mutex_enter(&io->io_cmd->pc_device->pd_mutex);
+			pqi_fail_cmd(io->io_cmd, CMD_DEV_GONE, STAT_TERMINATED);
+			mutex_exit(&io->io_cmd->pc_device->pd_mutex);
 			continue;
 		}
 
@@ -153,7 +157,7 @@ pqi_start_io(pqi_state_t s, pqi_queue_group_t *qg, pqi_path_t path,
 		}
 		sending += elem_needed;
 		if (io->io_cmd != NULL)
-			pqi_cmd_sm(io->io_cmd, PQI_CMD_STARTED);
+			pqi_cmd_sm(io->io_cmd, PQI_CMD_STARTED, B_TRUE);
 		else if ((rqst->iu_type == PQI_REQUEST_IU_RAID_PATH_IO) &&
 		    (s->s_debug_level & (DBG_LVL_CDB | DBG_LVL_RQST)))
 			pqi_dump_io(io);
@@ -234,26 +238,28 @@ pqi_event_worker(void *v)
 		}
 		e++;
 	}
-	if (non_heartbeat == B_TRUE) {
-		s->s_rescan = timeout(pqi_do_rescan, (void *)s,
-		    drv_usectohz(MICROSEC * 10));
-	}
+
+	if (non_heartbeat == B_TRUE)
+		pqi_do_rescan(s);
 }
 
+/*
+ * pqi_fail_cmd -- given a reason and stats the command is failed.
+ *
+ * NOTE: pqi_device->pd_mutex must be held. Also note that during the
+ * call to pqi_cmd_sm() the lock will be dropped and reacquired.
+ */
 void
-pqi_fail_cmd(pqi_cmd_t cmd)
+pqi_fail_cmd(pqi_cmd_t cmd, uchar_t reason, uint_t stats)
 {
 	struct scsi_pkt		*pkt	= CMD2PKT(cmd);
 
-	pkt->pkt_reason = CMD_DEV_GONE;
-	pkt->pkt_statistics = STAT_TERMINATED;
+	ASSERT(MUTEX_HELD(&cmd->pc_device->pd_mutex));
 
-	pqi_cmd_sm(cmd, PQI_CMD_FATAL);
-	if (cmd->pc_poll)
-		sema_v(cmd->pc_poll);
-	if ((pkt->pkt_flags & FLAG_NOINTR) == 0 &&
-	    (pkt->pkt_comp != NULL))
-		(*pkt->pkt_comp)(pkt);
+	pkt->pkt_reason = reason;
+	pkt->pkt_statistics = stats;
+
+	pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_FALSE);
 }
 
 void
@@ -261,6 +267,7 @@ pqi_fail_drive_cmds(pqi_device_t devp)
 {
 	pqi_cmd_t	cmd;
 
+restart:
 	mutex_enter(&devp->pd_mutex);
 	while ((cmd = list_head(&devp->pd_cmd_list)) != NULL) {
 
@@ -271,21 +278,13 @@ pqi_fail_drive_cmds(pqi_device_t devp)
 			 * call pqi_cmd_sm() which removes the command
 			 * from pd_cmd_list.
 			 */
+			mutex_exit(&devp->pd_mutex);
 			drv_usecwait(100);
-			continue;
+			goto restart;
 		}
-		cmd->pc_flags |= PQI_FLAG_ABORTED;
-
-		/*
-		 * pqi_fail_cmd calls pqi_cmd_sm which will remove
-		 * the command from the device active command list
-		 * and needs to grab pd_mutex to do so which is why
-		 * the lock is dropped and then reaquired.
-		 */
-		mutex_exit(&devp->pd_mutex);
-		pqi_fail_cmd(cmd);
-		mutex_enter(&devp->pd_mutex);
+		pqi_fail_cmd(cmd, CMD_DEV_GONE, STAT_TERMINATED);
 	}
+
 	mutex_exit(&devp->pd_mutex);
 }
 
@@ -307,11 +306,87 @@ pqi_enable_intr(pqi_state_t s, uint32_t old_state)
 	S32(s, sis_host_to_ctrl_doorbell, old_state);
 }
 
+typedef struct reset_closure {
+	pqi_state_t	rc_s;
+	pqi_device_t	rc_d;
+} *reset_closure_t;
+
+/*
+ * pqi_lun_reset -- set up callback to reset the device
+ *
+ * Dispatch queue is used here because the call tree can come from the interrupt
+ * routine. (pqi_process_io_intr -> aio_io_complete -> SCSA -> tran_reset ->
+ * pqi_lun_reset). If pqi_lun_reset were to actually do the reset work it would
+ * then wait for an interrupt which would never arrive since the current thread
+ * would be the interrupt thread. So, start a task to reset the device and
+ * wait for completion.
+ */
+boolean_t
+pqi_lun_reset(pqi_state_t s, pqi_device_t d)
+{
+	reset_closure_t	r = kmem_alloc(sizeof (struct reset_closure), KM_SLEEP);
+
+	r->rc_s = s;
+	r->rc_d = d;
+	(void) ddi_taskq_dispatch(s->s_taskq, lun_reset_worker, r, 0);
+	return (B_TRUE);
+}
+
 /*
  * []------------------------------------------------------------------[]
  * | Support/utility functions for main entry points			|
  * []------------------------------------------------------------------[]
  */
+
+static void
+lun_reset_worker(void *v)
+{
+	reset_closure_t			r = v;
+	pqi_state_t			s;
+	pqi_device_t			d;
+	pqi_io_request_t		*io;
+	ksema_t				sema;
+	pqi_task_management_rqst_t	*rqst;
+
+	s = r->rc_s;
+	d = r->rc_d;
+	kmem_free(r, sizeof (*r));
+	sema_p(&s->s_sync_rqst);
+
+	sema_init(&sema, 0, NULL, SEMA_DRIVER, NULL);
+
+	io = pqi_alloc_io(s);
+	io->io_cb = lun_reset_complete;
+	io->io_context = &sema;
+
+	rqst = io->io_iu;
+	(void) memset(rqst, 0, sizeof (*rqst));
+
+	rqst->header.iu_type = PQI_REQUEST_IU_TASK_MANAGEMENT;
+	rqst->header.iu_length = sizeof (*rqst) - PQI_REQUEST_HEADER_LENGTH;
+	rqst->request_id = io->io_index;
+	(void) memcpy(rqst->lun_number, d->pd_scsi3addr,
+	    sizeof (rqst->lun_number));
+	rqst->task_management_function = SOP_TASK_MANAGEMENT_LUN_RESET;
+
+	s->s_sync_io = io;
+	pqi_start_io(s, &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP], RAID_PATH,
+	    io);
+
+	sema_p(&sema);
+	pqi_free_io(io);
+	s->s_sync_io = NULL;
+
+	sema_v(&s->s_sync_rqst);
+}
+
+/*ARGSUSED*/
+static void
+lun_reset_complete(pqi_io_request_t *io, void *ctx)
+{
+	sema_v((ksema_t *)ctx);
+}
+
 static void
 send_event_ack(pqi_state_t s, pqi_event_acknowledge_request_t *rqst)
 {
@@ -481,6 +556,42 @@ raid_io_complete(pqi_io_request_t *io, void *context)
 	aio_io_complete(io, context);
 }
 
+/*
+ * special_error_check -- See if sense buffer matches "offline" status.
+ *
+ * spc3r23 section 4.5.6 -- Sense key and sense code definitions.
+ * Sense key == 5 (KEY_ILLEGAL_REQUEST) indicates one of several conditions
+ * a) Command addressed to incorrect logical unit.
+ * b) Command had an invalid task attribute.
+ * ...
+ * Table 28 also shows that ASC 0x26 and ASCQ of 0x00 is an INVALID FIELD
+ * IN PARAMETER LIST.
+ * At no other time does this combination of KEY/ASC/ASCQ occur except when
+ * a device or cable is pulled from the system along with a Hotplug event.
+ * Without documentation it's only a guess, but it's the best that's available.
+ * So, if the conditions are true the command packet pkt_reason will be changed
+ * to CMD_DEV_GONE which causes MPxIO to switch to the other path and the
+ * Hotplug event will cause a scan to occur which removes other inactive
+ * devices in case of a cable pull.
+ */
+boolean_t
+special_error_check(pqi_cmd_t cmd)
+{
+	struct scsi_arq_status *arq;
+
+	/* LINTED E_BAD_PTR_CAST_ALIGN */
+	arq = (struct scsi_arq_status *)cmd->pc_pkt->pkt_scbp;
+
+	if (((*cmd->pc_pkt->pkt_scbp & STATUS_MASK) == STATUS_CHECK) &&
+	    (arq->sts_sensedata.es_key == KEY_ILLEGAL_REQUEST) &&
+	    (arq->sts_sensedata.es_add_code == 0x26) &&
+	    (arq->sts_sensedata.es_qual_code == 0)) {
+		return (B_TRUE);
+	} else {
+		return (B_FALSE);
+	}
+}
+
 /*ARGSUSED*/
 static void
 aio_io_complete(pqi_io_request_t *io, void *context)
@@ -488,16 +599,8 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 	pqi_cmd_t	cmd = io->io_cmd;
 	struct scsi_pkt	*pkt = CMD2PKT(cmd);
 
-	mutex_enter(&cmd->pc_device->pd_mutex);
-	if (cmd->pc_flags & PQI_FLAG_ABORTED) {
-		mutex_exit(&cmd->pc_device->pd_mutex);
-		return;
-	}
-	cmd->pc_flags |= PQI_FLAG_FINISHING;
-
 	if (cmd->pc_flags & (PQI_FLAG_IO_READ | PQI_FLAG_IO_IOPB))
 		(void) ddi_dma_sync(cmd->pc_dmahdl, 0, 0, DDI_DMA_SYNC_FORCPU);
-	mutex_exit(&cmd->pc_device->pd_mutex);
 
 	switch (io->io_status) {
 	case PQI_DATA_IN_OUT_UNDERFLOW:
@@ -519,7 +622,6 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		pkt->pkt_reason = CMD_CMPLT;
 		pkt->pkt_resid = 0;
 		pkt->pkt_statistics = 0;
-		*pkt->pkt_scbp = STATUS_GOOD;
 		break;
 
 	case PQI_DATA_IN_OUT_ERROR:
@@ -539,7 +641,7 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		break;
 
 	case PQI_DATA_IN_OUT_HARDWARE_ERROR:
-		pkt->pkt_reason = CMD_DEV_GONE;
+		pkt->pkt_reason = CMD_CMPLT;
 		pkt->pkt_state |= STATE_GOT_BUS;
 		break;
 
@@ -548,14 +650,14 @@ aio_io_complete(pqi_io_request_t *io, void *context)
 		break;
 	}
 
-	pqi_cmd_sm(cmd, PQI_CMD_CMPLT);
-	pqi_free_io(io);
+	if (special_error_check(cmd) == B_TRUE) {
+		pkt->pkt_reason = CMD_DEV_GONE;
+		pkt->pkt_statistics = STAT_TERMINATED;
 
-	/* ---- Don't touch 'cmd' after here ---- */
-	if (cmd->pc_poll)
-		sema_v(cmd->pc_poll);
-	if ((pkt->pkt_flags & FLAG_NOINTR) == 0 && (pkt->pkt_comp != NULL))
-		(*pkt->pkt_comp)(pkt);
+		pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_TRUE);
+	} else {
+		pqi_cmd_sm(cmd, PQI_CMD_CMPLT, B_TRUE);
+	}
 }
 
 static void

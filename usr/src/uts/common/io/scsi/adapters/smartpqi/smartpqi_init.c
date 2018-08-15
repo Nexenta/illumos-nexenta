@@ -905,7 +905,7 @@ pqi_scan_scsi_devices(pqi_state_t s)
 	 */
 	mutex_enter(&s->s_mutex);
 	for (dev = list_head(&s->s_devnodes); dev != NULL;
-	     dev = list_next(&s->s_devnodes, dev)) {
+	    dev = list_next(&s->s_devnodes, dev)) {
 		dev->pd_scanned = 0;
 	}
 	mutex_exit(&s->s_mutex);
@@ -950,23 +950,26 @@ pqi_scan_scsi_devices(pqi_state_t s)
 	 */
 	mutex_enter(&s->s_mutex);
 	for (dev = list_head(&s->s_devnodes); dev != NULL;
-	     dev = list_next(&s->s_devnodes, dev)) {
+	    dev = list_next(&s->s_devnodes, dev)) {
 		if (dev->pd_scanned)
 			dev->pd_online = 1;
 		else
 			dev->pd_online = 0;
 
-		/* ---- Software version of disk pull ---- */
+		/* ---- Software version of disk pull for debug ---- */
 		if (pqi_do_offline && dev->pd_target == pqi_offline_target) {
 			cmn_err(CE_WARN, "%s: offlining %d\n", __func__,
 			    pqi_offline_target);
 			dev->pd_online = 0;
 		}
 	}
+
 	mutex_exit(&s->s_mutex);
 
 	rval = B_TRUE;
+
 error_out:
+
 	if (phys_list != NULL)
 		PQI_FREE(phys_list, ntohl(phys_list->header.list_length) +
 		    sizeof (report_lun_header_t));

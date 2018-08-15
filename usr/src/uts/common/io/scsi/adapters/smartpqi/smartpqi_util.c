@@ -125,11 +125,18 @@ pqi_dump_io(pqi_io_request_t *io)
 	}
 }
 
+/*
+ * pqi_cmd_sm -- state machine for command
+ *
+ * NOTE: PQI_CMD_CMPLT and PQI_CMD_FATAL will drop the pd_mutex and regain
+ * it even if grab_lock==B_FALSE.
+ */
 void
-pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state)
+pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 {
 	pqi_device_t	devp = cmd->pc_device;
 	pqi_state_t	s = cmd->pc_softc;
+	struct scsi_pkt	*pkt;
 
 	if (cmd->pc_softc->s_debug_level & DBG_LVL_STATE) {
 		cmn_err(CE_NOTE, "%s: cmd=%p (%s) -> (%s)\n", __func__,
@@ -149,11 +156,16 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state)
 	case PQI_CMD_QUEUED:
 		if (cmd->pc_cmd_state == PQI_CMD_STARTED)
 			break;
-		mutex_enter(&devp->pd_mutex);
+		if (grab_lock == B_TRUE)
+			mutex_enter(&devp->pd_mutex);
+		cmd->pc_start_time = gethrtime();
+		cmd->pc_expiration = cmd->pc_start_time +
+		    ((hrtime_t)cmd->pc_pkt->pkt_time * NANOSEC);
 		devp->pd_active_cmds++;
 		atomic_inc_32(&s->s_cmd_queue_len);
 		list_insert_tail(&devp->pd_cmd_list, cmd);
-		mutex_exit(&devp->pd_mutex);
+		if (grab_lock == B_TRUE)
+			mutex_exit(&devp->pd_mutex);
 		break;
 
 	case PQI_CMD_STARTED:
@@ -162,21 +174,77 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state)
 		break;
 
 	case PQI_CMD_CMPLT:
-		mutex_enter(&devp->pd_mutex);
-		list_remove(&devp->pd_cmd_list, cmd);
-		devp->pd_active_cmds--;
-		atomic_dec_32(&s->s_cmd_queue_len);
-		mutex_exit(&devp->pd_mutex);
+		if (grab_lock == B_TRUE)
+			mutex_enter(&devp->pd_mutex);
+
+		if ((cmd->pc_flags & PQI_FLAG_ABORTED) == 0) {
+			list_remove(&devp->pd_cmd_list, cmd);
+
+			devp->pd_active_cmds--;
+			atomic_dec_32(&s->s_cmd_queue_len);
+			pqi_free_io(cmd->pc_io_rqst);
+			pkt = cmd->pc_pkt;
+
+			/*
+			 * Can't hold the lock across pkt_comp() call because
+			 * the SCSA layer will sometimes call back into
+			 * our tran_start() routine which must grab the
+			 * lock to examine pd_flags.
+			 * When called with grab_lock==B_FALSE the callers
+			 * are all looping with calls to list_head to process
+			 * the list and aren't expecting any link list pointers
+			 * to remain intact.
+			 */
+			cmd->pc_flags &= ~PQI_FLAG_FINISHING;
+			mutex_exit(&devp->pd_mutex);
+			if (cmd->pc_poll)
+				sema_v(cmd->pc_poll);
+			if ((pkt->pkt_flags & FLAG_NOINTR) == 0 &&
+			    (pkt->pkt_comp != NULL))
+				(*pkt->pkt_comp)(pkt);
+			/* ---- Don't touch 'cmd' after here ---- */
+			mutex_enter(&devp->pd_mutex);
+		}
+
+		if (grab_lock == B_TRUE)
+			mutex_exit(&devp->pd_mutex);
+
 		break;
 
 	case PQI_CMD_FATAL:
 		if ((cmd->pc_cmd_state == PQI_CMD_QUEUED) ||
 		    (cmd->pc_cmd_state == PQI_CMD_STARTED)) {
-			mutex_enter(&devp->pd_mutex);
+			if (grab_lock == B_TRUE)
+				mutex_enter(&devp->pd_mutex);
+
+			cmd->pc_flags |= PQI_FLAG_ABORTED;
+
+			/*
+			 * If this call came from aio_io_complete() when
+			 * dealing with a drive offline the flags will contain
+			 * PQI_FLAG_FINISHING so just clear it here to be
+			 * safe.
+			 */
+			cmd->pc_flags &= ~PQI_FLAG_FINISHING;
+
 			list_remove(&devp->pd_cmd_list, cmd);
+
 			devp->pd_active_cmds--;
 			atomic_dec_32(&s->s_cmd_queue_len);
+			if (cmd->pc_io_rqst)
+				pqi_free_io(cmd->pc_io_rqst);
+
+			pkt = cmd->pc_pkt;
 			mutex_exit(&devp->pd_mutex);
+			if (cmd->pc_poll)
+				sema_v(cmd->pc_poll);
+			if ((pkt->pkt_flags & FLAG_NOINTR) == 0 &&
+			    (pkt->pkt_comp != NULL))
+				(*pkt->pkt_comp)(pkt);
+			/* ---- Don't touch 'cmd' after here ---- */
+
+			if (grab_lock == B_FALSE)
+				mutex_enter(&devp->pd_mutex);
 		}
 		break;
 
@@ -446,6 +514,99 @@ pqi_mem_check(void *v)
 	mutex_exit(&s->s_mem_mutex);
 }
 
+
+char *
+cdb_to_str(uint8_t scsi_cmd)
+{
+	switch (scsi_cmd) {
+	case SCMD_INQUIRY: return ("Inquiry");
+	case SCMD_TEST_UNIT_READY: return ("TestUnitReady");
+	case SCMD_READ: return ("Read");
+	case SCMD_READ_G1: return ("Read G1");
+	case SCMD_RESERVE: return ("Reserve");
+	case SCMD_RELEASE: return ("Release");
+	case SCMD_WRITE: return ("Write");
+	case SCMD_WRITE_G1: return ("Write G1");
+	case SCMD_START_STOP: return ("StartStop");
+	case SCMD_READ_CAPACITY: return ("ReadCap");
+	case SCMD_MODE_SENSE: return ("ModeSense");
+	case SCMD_MODE_SELECT: return ("ModeSelect");
+	case SCMD_SVC_ACTION_IN_G4: return ("ActionInG4");
+	case SCMD_MAINTENANCE_IN: return ("MaintenanceIn");
+	case SCMD_GDIAG: return ("ReceiveDiag");
+	case SCMD_SDIAG: return ("SendDiag");
+	case SCMD_LOG_SENSE_G1: return ("LogSenseG1");
+	case SCMD_PERSISTENT_RESERVE_IN: return ("PgrReserveIn");
+	case SCMD_PERSISTENT_RESERVE_OUT: return ("PgrReserveOut");
+	case BMIC_READ: return ("BMIC Read");
+	case BMIC_WRITE: return ("BMIC Write");
+	case CISS_REPORT_LOG: return ("CISS Report Logical");
+	case CISS_REPORT_PHYS: return ("CISS Report Physical");
+	default: return ("unmapped");
+	}
+}
+
+char *
+io_status_to_str(int val)
+{
+	switch (val) {
+	case PQI_DATA_IN_OUT_GOOD: return ("Good");
+	case PQI_DATA_IN_OUT_UNDERFLOW: return ("Underflow");
+	case PQI_DATA_IN_OUT_ERROR: return ("ERROR");
+	case PQI_DATA_IN_OUT_PROTOCOL_ERROR: return ("Protocol Error");
+	case PQI_DATA_IN_OUT_HARDWARE_ERROR: return ("Hardware Error");
+	default: return ("UNHANDLED");
+	}
+}
+
+char *
+scsi_status_to_str(uint8_t val)
+{
+	switch (val) {
+	case STATUS_GOOD: return ("Good");
+	case STATUS_CHECK: return ("Check");
+	case STATUS_MET: return ("Met");
+	case STATUS_BUSY: return ("Busy");
+	case STATUS_INTERMEDIATE: return ("Intermediate");
+	case STATUS_RESERVATION_CONFLICT: return ("Reservation Conflict");
+	case STATUS_TERMINATED: return ("Terminated");
+	case STATUS_QFULL: return ("QFull");
+	case STATUS_ACA_ACTIVE: return ("ACA Active");
+	case STATUS_TASK_ABORT: return ("Task Abort");
+	default: return ("Illegal Status");
+	}
+}
+
+char *
+iu_type_to_str(int val)
+{
+	switch (val) {
+	case PQI_RESPONSE_IU_RAID_PATH_IO_SUCCESS: return ("Success");
+	case PQI_RESPONSE_IU_AIO_PATH_IO_SUCCESS: return ("AIO Success");
+	case PQI_RESPONSE_IU_GENERAL_MANAGEMENT: return ("General");
+	case PQI_RESPONSE_IU_RAID_PATH_IO_ERROR: return ("IO Error");
+	case PQI_RESPONSE_IU_AIO_PATH_IO_ERROR: return ("AIO IO Error");
+	case PQI_RESPONSE_IU_AIO_PATH_DISABLED: return ("AIO Path Disabled");
+	default: return ("UNHANDLED");
+	}
+}
+
+void
+pqi_free_mem_len(mem_len_pair_t *m)
+{
+	kmem_free(m->mem, m->len);
+}
+
+mem_len_pair_t
+pqi_alloc_mem_len(int len)
+{
+	mem_len_pair_t m;
+	m.len = len;
+	m.mem = kmem_alloc(m.len, KM_SLEEP);
+	*m.mem = '\0';
+	return (m);
+}
+
 /*
  * []------------------------------------------------------------------[]
  * | Support/utility functions for main functions above			|
@@ -522,9 +683,22 @@ show_error_detail(pqi_state_t s)
 	    code, qualifier);
 }
 
+/*ARGSUSED*/
+static void
+pqi_catch_release(pqi_io_request_t *io, void *v)
+{
+	/*
+	 * This call can occur if the software times out a command because
+	 * the HBA hasn't responded in the default amount of time, 10 seconds,
+	 * and then the HBA responds. It's occurred a few times during testing
+	 * so catch and ignore.
+	 */
+}
+
 static void
 reinit_io(pqi_io_request_t *io)
 {
+	io->io_cb = pqi_catch_release;
 	io->io_status = 0;
 	io->io_error_info = NULL;
 	io->io_raid_bypass = B_FALSE;
@@ -554,44 +728,6 @@ cmd_state_str(pqi_cmd_state_t state)
 	}
 }
 
-static char *
-cdb_to_str(uint8_t scsi_cmd)
-{
-	switch (scsi_cmd) {
-	case SCMD_INQUIRY: return ("Inquiry");
-	case SCMD_TEST_UNIT_READY: return ("TestUnitReady");
-	case SCMD_READ: return ("Read");
-	case SCMD_READ_G1: return ("Read G1");
-	case SCMD_WRITE: return ("Write");
-	case SCMD_WRITE_G1: return ("Write G1");
-	case SCMD_START_STOP: return ("StartStop");
-	case SCMD_READ_CAPACITY: return ("ReadCap");
-	case SCMD_MODE_SENSE: return ("ModeSense");
-	case SCMD_MODE_SELECT: return ("ModeSelect");
-	case SCMD_SVC_ACTION_IN_G4: return ("ActionInG4");
-	case SCMD_MAINTENANCE_IN: return ("MaintenanceIn");
-	case BMIC_READ: return ("BMIC Read");
-	case BMIC_WRITE: return ("BMIC Write");
-	case CISS_REPORT_LOG: return ("CISS Report Logical");
-	case CISS_REPORT_PHYS: return ("CISS Report Physical");
-	default: return ("unmapped");
-	}
-}
-
-void
-pqi_free_mem_len(mem_len_pair_t *m)
-{
-	kmem_free(m->mem, m->len);
-}
-
-mem_len_pair_t
-pqi_alloc_mem_len(int len)
-{
-	mem_len_pair_t m;
-	m.len = len;
-	m.mem = kmem_alloc(m.len, KM_SLEEP);
-	return (m);
-}
 
 mem_len_pair_t
 build_cdb_str(uint8_t *cdb)
@@ -642,13 +778,13 @@ build_cdb_str(uint8_t *cdb)
 mem_len_pair_t
 mem_to_arraystr(uint8_t *ptr, size_t len)
 {
-	mem_len_pair_t	m	= pqi_alloc_mem_len(len * 7 + 20);
+	mem_len_pair_t	m	= pqi_alloc_mem_len(len * 3 + 20);
 	int		i;
 
 	m.mem[0] = '\0';
 	MEMP("{ ");
 	for (i = 0; i < len; i++) {
-		MEMP("0x%02x, ", *ptr++ & 0xff);
+		MEMP("%02x ", *ptr++ & 0xff);
 	}
 	MEMP(" }");
 

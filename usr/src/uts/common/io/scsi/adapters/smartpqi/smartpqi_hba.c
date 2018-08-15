@@ -54,6 +54,7 @@ static int cmd_ext_alloc(pqi_cmd_t cmd, int kf);
 static void cmd_ext_free(pqi_cmd_t cmd);
 static boolean_t is_physical_dev(pqi_device_t d);
 static boolean_t decode_to_target(void *arg, long *target);
+static void cmd_timeout_scan(void *);
 
 int
 smartpqi_register_hba(pqi_state_t s)
@@ -126,6 +127,8 @@ smartpqi_register_hba(pqi_state_t s)
 			s->s_enable_mpxio = 0;
 		}
 	}
+	s->s_cmd_timeout = timeout(cmd_timeout_scan, s,
+	    CMD_TIMEOUT_SCAN_SECS * drv_usectohz(MICROSEC));
 
 	return (TRUE);
 }
@@ -135,6 +138,11 @@ smartpqi_unregister_hba(pqi_state_t s)
 {
 	if (s->s_enable_mpxio)
 		(void) mdi_phci_unregister(s->s_dip, 0);
+
+	if (s->s_cmd_timeout != NULL) {
+		(void) untimeout(s->s_cmd_timeout);
+		s->s_cmd_timeout = NULL;
+	}
 
 	if (s->s_tran == NULL)
 		return;
@@ -240,7 +248,7 @@ pqi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	}
 	mutex_exit(&s->s_mutex);
 
-	pqi_cmd_sm(cmd, PQI_CMD_QUEUED);
+	pqi_cmd_sm(cmd, PQI_CMD_QUEUED, B_TRUE);
 
 	rc = pqi_transport_command(s, cmd);
 
@@ -280,11 +288,34 @@ pqi_start(struct scsi_address *ap, struct scsi_pkt *pkt)
 	return (rc);
 }
 
-/*ARGSUSED*/
 static int
 pqi_scsi_reset(struct scsi_address *ap, int level)
 {
-	return (TRUE);
+	pqi_device_t	d;
+	pqi_state_t	s;
+	int		rval = FALSE;
+
+	s = ap->a_hba_tran->tran_hba_private;
+	switch (level) {
+	case RESET_TARGET:
+	case RESET_LUN:
+		if ((d = scsi_device_hba_private_get(ap->a.a_sd)) == NULL)
+			break;
+
+		if (pqi_lun_reset(s, d) == B_TRUE)
+			rval = TRUE;
+		break;
+
+	case RESET_BUS:
+	case RESET_ALL:
+		for (d = list_head(&s->s_devnodes); d != NULL;
+		    d = list_next(&s->s_devnodes, d)) {
+			(void) pqi_lun_reset(s, d);
+		}
+		rval = TRUE;
+		break;
+	}
+	return (rval);
 }
 
 /*
@@ -294,7 +325,6 @@ pqi_scsi_reset(struct scsi_address *ap, int level)
  *      - if pkt is not NULL, abort just that command
  *      - if pkt is NULL, abort all outstanding commands for target
  */
-/*ARGSUSED*/
 static int
 pqi_scsi_abort(struct scsi_address *ap, struct scsi_pkt *pkt)
 {
@@ -304,7 +334,10 @@ pqi_scsi_abort(struct scsi_address *ap, struct scsi_pkt *pkt)
 	if (pkt != NULL) {
 		/* ---- Abort single command ---- */
 		pqi_cmd_t	cmd = PKT2CMD(pkt);
-		pqi_fail_cmd(cmd);
+
+		mutex_enter(&cmd->pc_device->pd_mutex);
+		pqi_fail_cmd(cmd, CMD_ABORTED, STAT_ABORTED);
+		mutex_exit(&cmd->pc_device->pd_mutex);
 	} else {
 		abort_all(ap, s);
 	}
@@ -392,7 +425,7 @@ pqi_cache_constructor(void *buf, void *un, int flags)
 		dev_err(s->s_dip, CE_WARN, "Failed to alloc dma handle");
 		return (-1);
 	}
-	pqi_cmd_sm(c, PQI_CMD_CONSTRUCT);
+	pqi_cmd_sm(c, PQI_CMD_CONSTRUCT, B_TRUE);
 
 	return (0);
 }
@@ -465,7 +498,8 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 		pkt->pkt_scbp = (uint8_t *)&cmd->pc_cmd_scb;
 		pkt->pkt_cdbp = cmd->pc_cdb;
 		pkt->pkt_private = (opaque_t)cmd->pc_tgt_priv;
-		pkt->pkt_time = SCSI_POLL_TIMEOUT;
+		if (pkt->pkt_time == 0)
+			pkt->pkt_time = SCSI_POLL_TIMEOUT;
 
 		if (cmdlen > sizeof (cmd->pc_cdb) ||
 		    statuslen > sizeof (cmd->pc_cmd_scb) ||
@@ -480,7 +514,7 @@ pqi_init_pkt(struct scsi_address *ap, struct scsi_pkt *pkt,
 		cmd = PKT2CMD(pkt);
 		cmd->pc_flags &= PQI_FLAGS_PERSISTENT;
 	}
-	pqi_cmd_sm(cmd, PQI_CMD_INIT);
+	pqi_cmd_sm(cmd, PQI_CMD_INIT, B_TRUE);
 
 	/* ---- Handle partial DMA transfer ---- */
 	if (cmd->pc_nwin > 0) {
@@ -575,7 +609,7 @@ handle_dma_cookies:
 
 	return (pkt);
 out:
-	pqi_cmd_sm(cmd, PQI_CMD_FATAL);
+	pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_TRUE);
 	if (is_new == B_TRUE)
 		pqi_destroy_pkt(ap, pkt);
 	return (NULL);
@@ -600,7 +634,7 @@ pqi_destroy_pkt(struct scsi_address *ap, struct scsi_pkt *pkt)
 		(void) ddi_dma_unbind_handle(c->pc_dmahdl);
 	}
 	cmd_ext_free(c);
-	pqi_cmd_sm(c, PQI_CMD_DESTRUCT);
+	pqi_cmd_sm(c, PQI_CMD_DESTRUCT, B_TRUE);
 
 	kmem_cache_free(s->s_cmd_cache, c);
 }
@@ -776,7 +810,7 @@ pqi_config_all(dev_info_t *pdip, pqi_state_t s)
 	 * pulled.
 	 */
 	for (d = list_head(&s->s_devnodes); d != NULL;
-	     d = list_next(&s->s_devnodes, d)) {
+	    d = list_next(&s->s_devnodes, d)) {
 		if (d->pd_online)
 			(void) config_one(pdip, s, d, NULL);
 	}
@@ -811,6 +845,62 @@ pqi_quiesced_notify(pqi_state_t s)
  * | Support routines used only by the trans_xxx routines		|
  * []------------------------------------------------------------------[]
  */
+
+static void
+cmd_timeout_scan(void *v)
+{
+	pqi_state_t	s = v;
+	pqi_device_t	d;
+	pqi_cmd_t	cmd;
+	hrtime_t	now = gethrtime();
+	list_t		to_scan;
+
+	mutex_enter(&s->s_mutex);
+	for (d = list_head(&s->s_devnodes); d != NULL;
+	    d = list_next(&s->s_devnodes, d)) {
+
+		list_create(&to_scan, sizeof (struct pqi_cmd),
+		    offsetof(struct pqi_cmd, pc_list));
+
+		mutex_enter(&d->pd_mutex);
+		list_move_tail(&to_scan, &d->pd_cmd_list);
+
+		while ((cmd = list_remove_head(&to_scan)) != NULL) {
+			if (cmd->pc_expiration < now) {
+				struct scsi_pkt	*pkt	= CMD2PKT(cmd);
+
+				pkt->pkt_reason = CMD_TIMEOUT;
+				pkt->pkt_statistics = STAT_TIMEOUT;
+
+				/*
+				 * Insert the command back onto the list, with
+				 * the lock held, so that the state machine
+				 * can do its processing which removes the
+				 * command from the list and calls pkt_comp.
+				 */
+				list_insert_tail(&d->pd_cmd_list, cmd);
+				pqi_cmd_sm(cmd, PQI_CMD_FATAL, B_FALSE);
+
+			} else {
+				/*
+				 * Once a command's experiation date is in
+				 * the future this command and all remaining
+				 * commands on the chain are in the future as
+				 * well. So, add them back to the device
+				 * command list lock, stock, and barrel. Then
+				 * stop processing for this command.
+				 */
+				list_insert_tail(&d->pd_cmd_list, cmd);
+				list_move_tail(&d->pd_cmd_list, &to_scan);
+				break;
+			}
+		}
+		mutex_exit(&d->pd_mutex);
+	}
+	mutex_exit(&s->s_mutex);
+	s->s_cmd_timeout = timeout(cmd_timeout_scan, s,
+	    CMD_TIMEOUT_SCAN_SECS * drv_usectohz(MICROSEC));
+}
 
 static boolean_t
 decode_to_target(void *arg, long *target)
