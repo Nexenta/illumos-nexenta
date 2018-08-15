@@ -5955,8 +5955,9 @@ devi_detach_node(dev_info_t *dip, uint_t flags)
 			 */
 			path = kmem_alloc(MAXPATHLEN, KM_SLEEP);
 			(void) ddi_pathname(dip, path);
-			class = strdup(i_ddi_devi_class(dip));
-			driver = strdup(ddi_driver_name(dip));
+			class = i_ddi_strdup(i_ddi_devi_class(dip), KM_SLEEP);
+			driver = i_ddi_strdup((char *)ddi_driver_name(dip),
+			    KM_SLEEP);
 			instance = ddi_get_instance(dip);
 		}
 	}
