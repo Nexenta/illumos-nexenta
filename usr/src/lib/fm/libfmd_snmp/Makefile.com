@@ -57,7 +57,7 @@ SNMPLIBS = -lnetsnmp -lnetsnmphelpers -lnetsnmpagent
 lint := SNMPLIBS=
 
 LDLIBS += $(MACH_LDLIBS)
-LDLIBS += -lfmd_adm -luutil -lnvpair -ltopo
+LDLIBS += -lfmd_adm -luutil -lnvpair -ltopo -lfmevent
 LDLIBS += $(SNMPLIBS)
 LDLIBS += -lc
 

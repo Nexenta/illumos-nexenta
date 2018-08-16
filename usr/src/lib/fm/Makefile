@@ -49,7 +49,7 @@ i386_SUBDIRS =
 SUBDIRS = $(common_SUBDIRS) $($(MACH)_SUBDIRS)
 
 libldom: libmdesc libfmd_agent
-libfmd_snmp: libfmd_adm topo
+libfmd_snmp: libfmd_adm topo libfmevent
 libfmnotify: topo
 
 topo: $($(MACH)_SUBDIRS) libfmd_agent libdiskstatus

@@ -52,25 +52,16 @@ typedef struct sunFmProblem_data {
 	const char	*d_aci_fmri;
 	const char	*d_diag_engine;
 	struct timeval	d_diag_time;
-	ulong_t		d_nsuspects;
+	uint32_t	d_nsuspects;
 	nvlist_t	**d_suspects;
 	nvlist_t	*d_aci_event;
 	uint8_t		*d_statuses;
 } sunFmProblem_data_t;
 
-typedef struct sunFmProblem_update_ctx {
-	const char	*uc_host;
-	uint32_t	uc_prog;
-	int		uc_version;
-	const char	*uc_index;
-	uint32_t	uc_type;
-} sunFmProblem_update_ctx_t;
-
 typedef nvlist_t sunFmFaultEvent_data_t;
 typedef uint8_t sunFmFaultStatus_data_t;
 
 int sunFmProblemTable_init(void);
-int sunFmFaultEventTable_init(void);
 
 #ifdef	__cplusplus
 }

@@ -37,7 +37,6 @@ static const sunFm_table_t sun_fm_tables[] = {
 	TABLE_REG(sunFmModuleTable),
 	TABLE_REG(sunFmResourceTable),
 	TABLE_REG(sunFmProblemTable),
-	TABLE_REG(sunFmFaultEventTable),
 	TABLE_NULL
 };
 
