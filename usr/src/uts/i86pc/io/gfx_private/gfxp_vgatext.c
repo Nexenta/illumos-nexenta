@@ -175,8 +175,6 @@ static struct gfxp_ops gfxp_vgatext_ops = {
 	.devmap = vgatext_devmap
 };
 
-static struct gfx_vga vga;
-
 #define	STREQ(a, b)	(strcmp((a), (b)) == 0)
 
 /*ARGSUSED*/
@@ -191,13 +189,16 @@ gfxp_vga_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 	off_t	reg_offset;
 	off_t	mem_offset;
 	char	*cons;
+	struct gfx_vga *vga;
+
 
 	softc->polledio.display = vgatext_polled_display;
 	softc->polledio.copy = vgatext_polled_copy;
 	softc->polledio.cursor = vgatext_polled_cursor;
 	softc->gfxp_ops = &gfxp_vgatext_ops;
 	softc->fbgattr = &vgatext_attr;
-	softc->console = (union gfx_console *)&vga;
+	vga = kmem_zalloc(sizeof (*vga), KM_SLEEP);
+	softc->console = (union gfx_console *)vga;
 
 	error = ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_get_parent(devi),
 	    DDI_PROP_DONTPASS, "device_type", &parent_type);
@@ -217,9 +218,9 @@ gfxp_vga_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 			error = DDI_FAILURE;
 			goto fail;
 		}
-		vga.fb_regno = vgatext_get_isa_reg_index(devi, 0,
+		vga->fb_regno = vgatext_get_isa_reg_index(devi, 0,
 		    VGA_MEM_ADDR, &mem_offset);
-		if (vga.fb_regno < 0) {
+		if (vga->fb_regno < 0) {
 			cmn_err(CE_WARN,
 			    MYNAME ": can't find reg entry for memory");
 			error = DDI_FAILURE;
@@ -236,11 +237,11 @@ gfxp_vga_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 			error = DDI_FAILURE;
 			goto fail;
 		}
-		vga.fb_regno = vgatext_get_pci_reg_index(devi,
+		vga->fb_regno = vgatext_get_pci_reg_index(devi,
 		    PCI_REG_ADDR_M|PCI_REG_REL_M,
 		    PCI_ADDR_MEM32|PCI_RELOCAT_B, VGA_MEM_ADDR,
 		    &mem_offset);
-		if (vga.fb_regno < 0) {
+		if (vga->fb_regno < 0) {
 			cmn_err(CE_WARN,
 			    MYNAME ": can't find reg entry for memory");
 			error = DDI_FAILURE;
@@ -256,44 +257,45 @@ gfxp_vga_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 	parent_type = NULL;
 
 	error = ddi_regs_map_setup(devi, reg_rnumber,
-	    (caddr_t *)&vga.regs.addr, reg_offset, VGA_REG_SIZE,
-	    &dev_attr, &vga.regs.handle);
+	    (caddr_t *)&vga->regs.addr, reg_offset, VGA_REG_SIZE,
+	    &dev_attr, &vga->regs.handle);
 	if (error != DDI_SUCCESS)
 		goto fail;
-	vga.regs.mapped = B_TRUE;
+	vga->regs.mapped = B_TRUE;
 
-	vga.fb_size = VGA_MEM_SIZE;
+	vga->fb_size = VGA_MEM_SIZE;
 
-	error = ddi_regs_map_setup(devi, vga.fb_regno, (caddr_t *)&vga.fb.addr,
-	    mem_offset, vga.fb_size, &dev_attr, &vga.fb.handle);
+	error = ddi_regs_map_setup(devi, vga->fb_regno,
+	    (caddr_t *)&vga->fb.addr, mem_offset, vga->fb_size, &dev_attr,
+	    &vga->fb.handle);
 	if (error != DDI_SUCCESS)
 		goto fail;
-	vga.fb.mapped = B_TRUE;
+	vga->fb.mapped = B_TRUE;
 
-	if (ddi_get8(vga.regs.handle,
-	    vga.regs.addr + VGA_MISC_R) & VGA_MISC_IOA_SEL)
-		vga.text_base = (caddr_t)vga.fb.addr + VGA_COLOR_BASE;
+	if (ddi_get8(vga->regs.handle,
+	    vga->regs.addr + VGA_MISC_R) & VGA_MISC_IOA_SEL)
+		vga->text_base = (caddr_t)vga->fb.addr + VGA_COLOR_BASE;
 	else
-		vga.text_base = (caddr_t)vga.fb.addr + VGA_MONO_BASE;
+		vga->text_base = (caddr_t)vga->fb.addr + VGA_MONO_BASE;
 
 	if (ddi_prop_lookup_string(DDI_DEV_T_ANY, ddi_root_node(),
 	    DDI_PROP_DONTPASS, "console", &cons) == DDI_SUCCESS) {
 		if (strcmp(cons, "graphics") == 0) {
 			softc->happyface_boot = 1;
 			softc->silent = 1;
-			vga.current_base = vga.shadow;
+			vga->current_base = vga->shadow;
 		} else {
-			vga.current_base = vga.text_base;
+			vga->current_base = vga->text_base;
 		}
 		ddi_prop_free(cons);
 	} else {
-		vga.current_base = vga.text_base;
+		vga->current_base = vga->text_base;
 	}
 
 	/* Set cursor info. */
-	vga.cursor.visible = fb_info.cursor.visible;
-	vga.cursor.row = fb_info.cursor.pos.y;
-	vga.cursor.col = fb_info.cursor.pos.x;
+	vga->cursor.visible = fb_info.cursor.visible;
+	vga->cursor.row = fb_info.cursor.pos.y;
+	vga->cursor.col = fb_info.cursor.pos.x;
 
 	error = ddi_prop_create(makedevice(DDI_MAJOR_T_UNKNOWN, unit),
 	    devi, DDI_PROP_CANSLEEP, DDI_KERNEL_IOCTL, NULL, 0);
@@ -309,6 +311,7 @@ gfxp_vga_attach(dev_info_t *devi, ddi_attach_cmd_t cmd,
 	return (DDI_SUCCESS);
 
 fail:
+	kmem_free(vga, sizeof (*vga));
 	if (parent_type != NULL)
 		ddi_prop_free(parent_type);
 	return (error);
@@ -323,6 +326,7 @@ gfxp_vga_detach(dev_info_t *devi, ddi_detach_cmd_t cmd,
 		ddi_regs_map_free(&softc->console->vga.fb.handle);
 	if (softc->console->vga.regs.mapped)
 		ddi_regs_map_free(&softc->console->vga.regs.handle);
+	kmem_free(softc->console, sizeof (struct gfx_vga));
 	return (DDI_SUCCESS);
 }
 
