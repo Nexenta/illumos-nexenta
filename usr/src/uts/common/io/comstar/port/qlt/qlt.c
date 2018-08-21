@@ -40,8 +40,12 @@
 #include <sys/atomic.h>
 #include <sys/scsi/scsi.h>
 #include <sys/time.h>
+#ifdef __x86
+#include <sys/x86_archext.h>
+#endif
 
 #include <sys/stmf_defines.h>
+#include <sys/stmf_ioctl.h>
 #include <sys/fct_defines.h>
 #include <sys/stmf.h>
 #include <sys/portif.h>
@@ -51,7 +55,6 @@
 #include "qlt_dma.h"
 #include "qlt_ioctl.h"
 #include "qlt_open.h"
-#include <sys/stmf_ioctl.h>
 
 static int qlt_attach(dev_info_t *dip, ddi_attach_cmd_t cmd);
 static int qlt_detach(dev_info_t *dip, ddi_detach_cmd_t cmd);
@@ -1264,6 +1267,13 @@ qlt_setup_msix(qlt_state_t *qlt)
 	int ret;
 	int itype = DDI_INTR_TYPE_MSIX;
 	int i;
+
+#ifdef __x86
+	if (get_hwenv() == HW_VMWARE) {
+		EL(qlt, "running under hypervisor, disabling MSI-X\n");
+		return (DDI_FAILURE);
+	}
+#endif
 
 	/* check 24xx revision */
 	if ((!qlt->qlt_25xx_chip) && (!qlt->qlt_81xx_chip) &&
