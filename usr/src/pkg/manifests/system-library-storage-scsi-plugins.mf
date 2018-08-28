@@ -65,6 +65,8 @@ link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HGST-2U24_STOR_ENCL.so \
     target=LENOVO-D1224J12ESM3P.so
+link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HGST-ScaleApex-4U60.so \
+    target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HGST.so target=HP.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HPE.so \
     target=LENOVO-D1224J12ESM3P.so
@@ -85,6 +87,8 @@ link path=usr/lib/scsi/plugins/ses/vendor/Ericsson-KDU-137-976-1.so \
 link path=usr/lib/scsi/plugins/ses/vendor/Ericsson.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/HGST-2U24_STOR_ENCL.so \
+    target=LENOVO-D1224J12ESM3P.so
+link path=usr/lib/scsi/plugins/ses/vendor/HGST-ScaleApex-4U60.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/HGST.so target=HP.so
 link path=usr/lib/scsi/plugins/ses/vendor/HPE.so \
