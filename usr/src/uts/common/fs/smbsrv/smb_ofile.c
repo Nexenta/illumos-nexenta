@@ -22,7 +22,7 @@
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Syneto S.R.L. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -805,6 +805,7 @@ smb_ofile_release(smb_ofile_t *of)
 	switch (of->f_state) {
 	case SMB_OFILE_STATE_OPEN:
 	case SMB_OFILE_STATE_ORPHANED:
+	case SMB_OFILE_STATE_EXPIRED:
 		break;
 
 	case SMB_OFILE_STATE_SAVE_DH:

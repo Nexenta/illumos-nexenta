@@ -213,7 +213,7 @@ smb_ofun_to_crdisposition(uint16_t  ofun)
  *
  * 3. The DOS readonly bit affects only data and some metadata.
  * The following metadata can be changed regardless of the readonly bit:
- * 	- security descriptors
+ *	- security descriptors
  *	- DOS attributes
  *	- timestamps
  *
@@ -260,6 +260,7 @@ smb_common_open(smb_request_t *sr)
 	smb_pathname_t	*pn = &op->fqi.fq_path;
 	smb_ofile_t	*of = NULL;
 	smb_attr_t	new_attr;
+	hrtime_t	shrlock_t0;
 	int		max_requested = 0;
 	uint32_t	max_allowed;
 	uint32_t	status = NT_STATUS_SUCCESS;
@@ -279,6 +280,8 @@ smb_common_open(smb_request_t *sr)
 	boolean_t	fnode_wlock = B_FALSE;
 	boolean_t	fnode_shrlk = B_FALSE;
 	boolean_t	did_open = B_FALSE;
+	boolean_t	did_break_handle = B_FALSE;
+	boolean_t	did_cleanup_orphans = B_FALSE;
 	char		*sname = NULL;
 	boolean_t	do_audit = B_FALSE;
 
@@ -686,15 +689,6 @@ smb_common_open(smb_request_t *sr)
 		tree_fid = 0; // given to the ofile
 		uniq_fid = of->f_uniqid;
 
-		/*
-		 * If we still have orphaned durable handles on this file,
-		 * let's assume the client has lost interest in those and
-		 * close them so they don't cause sharing violations for
-		 * this open (or later byte-range lock failures).
-		 */
-		if (sr->session->dialect > SMB_VERS_2_BASE)
-			smb2_dh_close_my_orphans(sr, of);
-
 		smb_node_inc_opening_count(fnode);
 		opening_incr = B_TRUE;
 
@@ -748,56 +742,84 @@ smb_common_open(smb_request_t *sr)
 		 * do oplock break of handle caching.
 		 *
 		 * Need node_wrlock during shrlock checks,
-		 * and not locked during oplock breaks,
-		 * until after the smb_fsop_shrlock call.
+		 * and not locked during oplock breaks etc.
 		 */
+		shrlock_t0 = gethrtime();
+	shrlock_again:
 		smb_node_wrlock(fnode);
 		fnode_wlock = B_TRUE;
 		status = smb_fsop_shrlock(sr->user_cr, fnode, uniq_fid,
 		    op->desired_access, op->share_access);
-		if (status == NT_STATUS_SHARING_VIOLATION) {
-			hrtime_t t0 = gethrtime();
+		smb_node_unlock(fnode);
+		fnode_wlock = B_FALSE;
 
-			smb_node_unlock(fnode);
-			fnode_wlock = B_FALSE;
+		/*
+		 * [MS-FSA] "OPEN_BREAK_H"
+		 * If the (proposed) new open would violate sharing rules,
+		 * indicate an oplock break with OPEN_BREAK_H (to break
+		 * handle level caching rights) then try again.
+		 */
+		if (status == NT_STATUS_SHARING_VIOLATION &&
+		    did_break_handle == B_FALSE) {
+			did_break_handle = B_TRUE;
 
-			/* [MS-FSA] "OPEN_BREAK_H" */
 			status = smb_oplock_break_HANDLE(fnode, of);
 			if (status == NT_STATUS_OPLOCK_BREAK_IN_PROGRESS) {
 				if (sr->session->dialect >= SMB_VERS_2_BASE)
 					(void) smb2sr_go_async(sr);
 				(void) smb_oplock_wait_break(fnode, 0);
 				status = 0;
+			} else {
+				/*
+				 * Even when the oplock layer does NOT
+				 * give us the special status indicating
+				 * we should wait, it may have scheduled
+				 * taskq jobs that may close handles.
+				 * Give those a chance to run before we
+				 * check again for sharing violations.
+				 */
+				delay(MSEC_TO_TICK(10));
 			}
 			if (status != NT_STATUS_SUCCESS)
 				goto errout;
 
-			/*
-			 * SMB1 expects a 1 sec. delay before returning a
-			 * sharing violation error.  If breaking oplocks
-			 * above took less than a sec, wait some more.
-			 * See: smbtorture base.defer_open
-			 */
-			if (sr->session->dialect < SMB_VERS_2_BASE) {
-				hrtime_t t1 = t0 + NANOSEC;
-				hrtime_t now = gethrtime();
-				if (now < t1) {
-					delay(NSEC_TO_TICK_ROUNDUP(t1 - now));
-				}
-			}
-
-			smb_node_wrlock(fnode);
-			fnode_wlock = B_TRUE;
-
-			status = smb_fsop_shrlock(sr->user_cr, fnode, uniq_fid,
-			    op->desired_access, op->share_access);
+			goto shrlock_again;
 		}
+
+		/*
+		 * If we still have orphaned durable handles on this file,
+		 * let's assume the client has lost interest in those and
+		 * close them so they don't cause sharing violations.
+		 * See longer comment at smb2_dh_close_my_orphans().
+		 */
+		if (status == NT_STATUS_SHARING_VIOLATION &&
+		    sr->session->dialect >= SMB_VERS_2_BASE &&
+		    did_cleanup_orphans == B_FALSE) {
+
+			did_cleanup_orphans = B_TRUE;
+			smb2_dh_close_my_orphans(sr, of);
+
+			goto shrlock_again;
+		}
+
+		/*
+		 * SMB1 expects a 1 sec. delay before returning a
+		 * sharing violation error.  If breaking oplocks
+		 * above took less than a sec, wait some more.
+		 * See: smbtorture base.defer_open
+		 */
+		if (status == NT_STATUS_SHARING_VIOLATION &&
+		    sr->session->dialect < SMB_VERS_2_BASE) {
+			hrtime_t t1 = shrlock_t0 + NANOSEC;
+			hrtime_t now = gethrtime();
+			if (now < t1) {
+				delay(NSEC_TO_TICK_ROUNDUP(t1 - now));
+			}
+		}
+
 		if (status != NT_STATUS_SUCCESS)
 			goto errout;
 		fnode_shrlk = B_TRUE;
-
-		smb_node_unlock(fnode);
-		fnode_wlock = B_FALSE;
 
 		/*
 		 * The [MS-FSA] spec. describes this oplock break as
