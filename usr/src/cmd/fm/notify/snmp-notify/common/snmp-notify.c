@@ -311,13 +311,33 @@ send_fm_trap(fmproblem_trap_t *t)
 	const size_t sunFmProblem_base_len = OID_LENGTH(sunFmProblemUUID_oid);
 
 	size_t oid_len = sunFmProblem_base_len * sizeof (oid);
-	size_t var_len = sunFmProblem_base_len + 1;
-	oid var_name[MAX_OID_LEN] = { 0 };
+	size_t uuid_len = strlen(t->uuid);
+	size_t var_len = sunFmProblem_base_len + 1 + uuid_len;
+	oid var_name[MAX_OID_LEN];
 
 	netsnmp_variable_list *notification_vars = NULL;
 
+	/*
+	 * The format of our trap varbinds' oids is as follows:
+	 *
+	 * +-----------------------+---+--------+----------+------+
+	 * | SUNFMPROBLEMTABLE_OID | 1 | column | uuid_len | uuid |
+	 * +-----------------------+---+--------+----------+------+
+	 *					 \---- index ----/
+	 *
+	 * A common mistake here is to send the trap with varbinds that
+	 * do not contain the index.  All the indices are the same, and
+	 * all the oids are the same length, so the only thing we need to
+	 * do for each varbind is set the table and column parts of the
+	 * variable name.
+	 */
+
 	if (var_len > MAX_OID_LEN)
 		return;
+
+	var_name[sunFmProblem_base_len] = (oid)uuid_len;
+	for (int i = 0; i < uuid_len; i++)
+		var_name[i + sunFmProblem_base_len + 1] = (oid)t->uuid[i];
 
 	/*
 	 * Ordinarily, we would need to add the OID of the trap itself
