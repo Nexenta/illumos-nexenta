@@ -1458,6 +1458,8 @@ postattach_node(dev_info_t *dip)
 {
 	int rval;
 
+	DEVI_UNSET_GONE(dip);
+
 	/*
 	 * For hotplug busses like USB, it's possible that devices
 	 * are removed but dip is still around. We don't want to
