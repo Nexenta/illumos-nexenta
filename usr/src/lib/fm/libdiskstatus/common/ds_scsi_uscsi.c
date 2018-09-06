@@ -1021,7 +1021,7 @@ uscsi_timeout(void)
 		i = atoi(env);
 		if (i > USCSI_TIMEOUT_MAX)
 			i = USCSI_TIMEOUT_MAX;
-		else if (i < 0)
+		else if (i <= 0)
 			i = USCSI_DEFAULT_TIMEOUT;
 	} else
 		i = USCSI_DEFAULT_TIMEOUT;
