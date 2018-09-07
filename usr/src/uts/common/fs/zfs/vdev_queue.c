@@ -21,7 +21,7 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
- * Copyright 2015 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  */
 
 /*
@@ -922,6 +922,7 @@ vdev_queue_get_prop_uint64(vdev_queue_t *vq, vdev_prop_t p)
 	case VDEV_PROP_WRITE_MINACTIVE:
 	case VDEV_PROP_AWRITE_MINACTIVE:
 	case VDEV_PROP_SCRUB_MINACTIVE:
+	case VDEV_PROP_RESILVER_MINACTIVE:
 		zprio = VDEV_PROP_TO_ZIO_PRIO_MIN(p);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(zprio));
 		if (vq->vq_cos != NULL) {
@@ -937,6 +938,7 @@ vdev_queue_get_prop_uint64(vdev_queue_t *vq, vdev_prop_t p)
 	case VDEV_PROP_WRITE_MAXACTIVE:
 	case VDEV_PROP_AWRITE_MAXACTIVE:
 	case VDEV_PROP_SCRUB_MAXACTIVE:
+	case VDEV_PROP_RESILVER_MAXACTIVE:
 		zprio = VDEV_PROP_TO_ZIO_PRIO_MAX(p);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(zprio));
 		if (vq->vq_cos != NULL) {

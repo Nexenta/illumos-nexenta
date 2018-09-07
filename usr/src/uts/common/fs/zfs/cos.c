@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/dmu_tx.h>
@@ -131,6 +131,7 @@ cos_set_common(cos_t *cos, const char *strval, uint64_t ival, cos_prop_t prop)
 	case COS_PROP_WRITE_MINACTIVE:
 	case COS_PROP_AWRITE_MINACTIVE:
 	case COS_PROP_SCRUB_MINACTIVE:
+	case COS_PROP_RESILVER_MINACTIVE:
 		p = COS_PROP_TO_ZIO_PRIO_MIN(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		cos->cos_min_active[p] = ival;
@@ -141,6 +142,7 @@ cos_set_common(cos_t *cos, const char *strval, uint64_t ival, cos_prop_t prop)
 	case COS_PROP_WRITE_MAXACTIVE:
 	case COS_PROP_AWRITE_MAXACTIVE:
 	case COS_PROP_SCRUB_MAXACTIVE:
+	case COS_PROP_RESILVER_MAXACTIVE:
 		p = COS_PROP_TO_ZIO_PRIO_MAX(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		cos->cos_max_active[p] = ival;
@@ -178,6 +180,7 @@ cos_get_common(cos_t *cos, char **value, uint64_t *oval, cos_prop_t prop)
 	case COS_PROP_WRITE_MINACTIVE:
 	case COS_PROP_AWRITE_MINACTIVE:
 	case COS_PROP_SCRUB_MINACTIVE:
+	case COS_PROP_RESILVER_MINACTIVE:
 		p = COS_PROP_TO_ZIO_PRIO_MIN(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		*oval = cos->cos_min_active[p];
@@ -188,6 +191,7 @@ cos_get_common(cos_t *cos, char **value, uint64_t *oval, cos_prop_t prop)
 	case COS_PROP_WRITE_MAXACTIVE:
 	case COS_PROP_AWRITE_MAXACTIVE:
 	case COS_PROP_SCRUB_MAXACTIVE:
+	case COS_PROP_RESILVER_MAXACTIVE:
 		p = COS_PROP_TO_ZIO_PRIO_MAX(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		*oval = cos->cos_max_active[p];
@@ -493,11 +497,13 @@ cos_prop_validate(spa_t *spa, uint64_t id, nvlist_t *props)
 		case COS_PROP_WRITE_MINACTIVE:
 		case COS_PROP_AWRITE_MINACTIVE:
 		case COS_PROP_SCRUB_MINACTIVE:
+		case COS_PROP_RESILVER_MINACTIVE:
 		case COS_PROP_READ_MAXACTIVE:
 		case COS_PROP_AREAD_MAXACTIVE:
 		case COS_PROP_WRITE_MAXACTIVE:
 		case COS_PROP_AWRITE_MAXACTIVE:
 		case COS_PROP_SCRUB_MAXACTIVE:
+		case COS_PROP_RESILVER_MAXACTIVE:
 			error = nvpair_value_uint64(elem, &intval);
 			if (!error && intval > 1000)
 				error = EINVAL;
@@ -831,6 +837,7 @@ cos_get_prop_uint64(cos_t *cos, cos_prop_t p)
 	case COS_PROP_WRITE_MINACTIVE:
 	case COS_PROP_AWRITE_MINACTIVE:
 	case COS_PROP_SCRUB_MINACTIVE:
+	case COS_PROP_RESILVER_MINACTIVE:
 		zprio = COS_PROP_TO_ZIO_PRIO_MIN(p);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(zprio));
 		val = cos->cos_min_active[zprio];
@@ -840,6 +847,7 @@ cos_get_prop_uint64(cos_t *cos, cos_prop_t p)
 	case COS_PROP_WRITE_MAXACTIVE:
 	case COS_PROP_AWRITE_MAXACTIVE:
 	case COS_PROP_SCRUB_MAXACTIVE:
+	case COS_PROP_RESILVER_MAXACTIVE:
 		zprio = COS_PROP_TO_ZIO_PRIO_MAX(p);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(zprio));
 		val = cos->cos_max_active[zprio];

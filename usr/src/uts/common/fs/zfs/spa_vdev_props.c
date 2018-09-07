@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/spa_impl.h>
@@ -205,6 +205,7 @@ spa_vdev_get_common(spa_t *spa, uint64_t guid, char **value,
 	case VDEV_PROP_WRITE_MINACTIVE:
 	case VDEV_PROP_AWRITE_MINACTIVE:
 	case VDEV_PROP_SCRUB_MINACTIVE:
+	case VDEV_PROP_RESILVER_MINACTIVE:
 		p = VDEV_PROP_TO_ZIO_PRIO_MIN(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		*oval = vqc[p].vqc_min_active;
@@ -215,6 +216,7 @@ spa_vdev_get_common(spa_t *spa, uint64_t guid, char **value,
 	case VDEV_PROP_WRITE_MAXACTIVE:
 	case VDEV_PROP_AWRITE_MAXACTIVE:
 	case VDEV_PROP_SCRUB_MAXACTIVE:
+	case VDEV_PROP_RESILVER_MAXACTIVE:
 		p = VDEV_PROP_TO_ZIO_PRIO_MAX(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		*oval = vqc[p].vqc_max_active;
@@ -324,6 +326,7 @@ spa_vdev_set_common(vdev_t *vd, const char *value,
 	case VDEV_PROP_WRITE_MINACTIVE:
 	case VDEV_PROP_AWRITE_MINACTIVE:
 	case VDEV_PROP_SCRUB_MINACTIVE:
+	case VDEV_PROP_RESILVER_MINACTIVE:
 		p = VDEV_PROP_TO_ZIO_PRIO_MIN(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		vqc[p].vqc_min_active = ival;
@@ -334,6 +337,7 @@ spa_vdev_set_common(vdev_t *vd, const char *value,
 	case VDEV_PROP_WRITE_MAXACTIVE:
 	case VDEV_PROP_AWRITE_MAXACTIVE:
 	case VDEV_PROP_SCRUB_MAXACTIVE:
+	case VDEV_PROP_RESILVER_MAXACTIVE:
 		p = VDEV_PROP_TO_ZIO_PRIO_MAX(prop);
 		ASSERT(ZIO_PRIORITY_QUEUEABLE_VALID(p));
 		vqc[p].vqc_max_active = ival;
@@ -426,6 +430,8 @@ spa_vdev_prop_set_nosync(vdev_t *vd, nvlist_t *nvp, boolean_t *needsyncp)
 		case VDEV_PROP_AWRITE_MAXACTIVE:
 		case VDEV_PROP_SCRUB_MINACTIVE:
 		case VDEV_PROP_SCRUB_MAXACTIVE:
+		case VDEV_PROP_RESILVER_MAXACTIVE:
+		case VDEV_PROP_RESILVER_MINACTIVE:
 		case VDEV_PROP_PREFERRED_READ:
 		case VDEV_PROP_COS:
 		case VDEV_PROP_SPAREGROUP:
@@ -659,11 +665,13 @@ spa_vdev_prop_validate(spa_t *spa, uint64_t vdev_guid, nvlist_t *props)
 		case VDEV_PROP_WRITE_MINACTIVE:
 		case VDEV_PROP_AWRITE_MINACTIVE:
 		case VDEV_PROP_SCRUB_MINACTIVE:
+		case VDEV_PROP_RESILVER_MINACTIVE:
 		case VDEV_PROP_READ_MAXACTIVE:
 		case VDEV_PROP_AREAD_MAXACTIVE:
 		case VDEV_PROP_WRITE_MAXACTIVE:
 		case VDEV_PROP_AWRITE_MAXACTIVE:
 		case VDEV_PROP_SCRUB_MAXACTIVE:
+		case VDEV_PROP_RESILVER_MAXACTIVE:
 			error = nvpair_value_uint64(elem, &ival);
 			if (!error && ival > 1000)
 				error = SET_ERROR(EINVAL);

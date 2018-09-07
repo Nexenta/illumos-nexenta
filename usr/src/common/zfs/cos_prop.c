@@ -19,7 +19,7 @@
  * CDDL HEADER END
  */
 /*
- * Copyright 2012 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/zio.h>
@@ -89,6 +89,12 @@ cos_prop_init(void)
 	zprop_register_number(COS_PROP_SCRUB_MAXACTIVE, "scrub_maxactive", 0,
 	    PROP_DEFAULT, ZFS_TYPE_COS, "<scrub max active (0..1000)>",
 	    "SCRUB_MAXACTIVE");
+	zprop_register_number(COS_PROP_RESILVER_MINACTIVE, "resilver_minactive", 0,
+	    PROP_DEFAULT, ZFS_TYPE_COS, "<resilver min active (0..1000)>",
+	    "RESILVER_MINACTIVE");
+	zprop_register_number(COS_PROP_RESILVER_MAXACTIVE, "resilver_maxactive", 0,
+	    PROP_DEFAULT, ZFS_TYPE_COS, "<resilver max active (0..1000)>",
+	    "RESILVER_MAXACTIVE");
 }
 
 /*

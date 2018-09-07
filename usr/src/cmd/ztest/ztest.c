@@ -21,7 +21,7 @@
 /*
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2016 by Delphix. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 Steven Hartland. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright 2017 Joyent, Inc.
@@ -4938,11 +4938,13 @@ static const cos_prop_t cprops_uint64[] = {
 	COS_PROP_WRITE_MINACTIVE,
 	COS_PROP_AWRITE_MINACTIVE,
 	COS_PROP_SCRUB_MINACTIVE,
+	COS_PROP_RESILVER_MINACTIVE,
 	COS_PROP_READ_MAXACTIVE,
 	COS_PROP_AREAD_MAXACTIVE,
 	COS_PROP_WRITE_MAXACTIVE,
 	COS_PROP_AWRITE_MAXACTIVE,
 	COS_PROP_SCRUB_MAXACTIVE,
+	COS_PROP_RESILVER_MAXACTIVE,
 	COS_PROP_PREFERRED_READ
 };
 
@@ -5030,11 +5032,13 @@ static const vdev_prop_t vprops_uint64[] = {
 	VDEV_PROP_WRITE_MINACTIVE,
 	VDEV_PROP_AWRITE_MINACTIVE,
 	VDEV_PROP_SCRUB_MINACTIVE,
+	VDEV_PROP_RESILVER_MINACTIVE,
 	VDEV_PROP_READ_MAXACTIVE,
 	VDEV_PROP_AREAD_MAXACTIVE,
 	VDEV_PROP_WRITE_MAXACTIVE,
 	VDEV_PROP_AWRITE_MAXACTIVE,
 	VDEV_PROP_SCRUB_MAXACTIVE,
+	VDEV_PROP_RESILVER_MAXACTIVE,
 	VDEV_PROP_PREFERRED_READ
 };
 static const vdev_prop_t vprops_string[] = {
