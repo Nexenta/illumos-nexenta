@@ -897,6 +897,21 @@ cmd_timeout_scan(void *v)
 		}
 		mutex_exit(&d->pd_mutex);
 	}
+
+	/*
+	 * Certain commands are issued and run serially through the driver.
+	 * These all should complete no matter what since they are commands
+	 * which are actually sent to the HBA. Yet, there have been cases
+	 * where the HBA failed to respond. So, if the time is past the
+	 * expired time mark the IO has having a timeout error and call the
+	 * return function.
+	 */
+	if (s->s_sync_io != NULL &&
+	    s->s_sync_expire < now) {
+		s->s_sync_io->io_status = PQI_DATA_IN_OUT_TIMEOUT;
+		s->s_sync_io->io_cb(s->s_sync_io, s->s_sync_io->io_context);
+	}
+
 	mutex_exit(&s->s_mutex);
 	s->s_cmd_timeout = timeout(cmd_timeout_scan, s,
 	    CMD_TIMEOUT_SCAN_SECS * drv_usectohz(MICROSEC));

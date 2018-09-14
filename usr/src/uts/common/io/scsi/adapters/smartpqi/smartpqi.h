@@ -61,6 +61,7 @@ extern "C" {
 #define	NAME_ENCLOSURE				"enclosure"
 
 #define	CMD_TIMEOUT_SCAN_SECS			2
+#define	SYNC_CMDS_TIMEOUT_SECS			5
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
 
@@ -258,8 +259,12 @@ typedef struct pqi_state {
 	kmutex_t		s_rx_mutex;
 	kmutex_t		s_tx_mutex;
 	kcondvar_t		s_quiescedvar;
+
+	/* ---- Used for serialized commands through driver ---- */
 	ksema_t			s_sync_rqst;
+	hrtime_t		s_sync_expire;
 	pqi_io_request_t	*s_sync_io;
+
 	int			s_intr_ready : 1,
 				s_offline : 1,
 				s_enable_mpxio : 1;

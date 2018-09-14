@@ -1319,11 +1319,13 @@ submit_raid_sync_with_io(pqi_state_t s, pqi_io_request_t *io)
 	 * EIO instead of PQI_DATA_IN_OUT_GOOD.
 	 */
 	s->s_sync_io = io;
+	s->s_sync_expire = gethrtime() + (SYNC_CMDS_TIMEOUT_SECS * NANOSEC);
 
 	pqi_start_io(s, &s->s_queue_groups[PQI_DEFAULT_QUEUE_GROUP],
 	    RAID_PATH, io);
 	sema_p(&sema);
 	s->s_sync_io = NULL;
+	s->s_sync_expire = 0;
 	switch (io->io_status) {
 		case PQI_DATA_IN_OUT_GOOD:
 		case PQI_DATA_IN_OUT_UNDERFLOW:

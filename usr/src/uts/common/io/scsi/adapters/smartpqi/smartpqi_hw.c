@@ -352,6 +352,7 @@ lun_reset_worker(void *v)
 	d = r->rc_d;
 	kmem_free(r, sizeof (*r));
 	sema_p(&s->s_sync_rqst);
+	s->s_sync_expire = gethrtime() + (SYNC_CMDS_TIMEOUT_SECS * NANOSEC);
 
 	sema_init(&sema, 0, NULL, SEMA_DRIVER, NULL);
 
@@ -376,6 +377,7 @@ lun_reset_worker(void *v)
 	sema_p(&sema);
 	pqi_free_io(io);
 	s->s_sync_io = NULL;
+	s->s_sync_expire = 0;
 
 	sema_v(&s->s_sync_rqst);
 }
