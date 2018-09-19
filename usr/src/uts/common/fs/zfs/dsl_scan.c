@@ -2472,6 +2472,7 @@ dsl_scan_scrub_cb(dsl_pool_t *dp,
 	uint64_t phys_birth = BP_PHYSICAL_BIRTH(bp);
 	boolean_t needs_io;
 	int zio_flags = ZIO_FLAG_SCAN_THREAD | ZIO_FLAG_RAW | ZIO_FLAG_CANFAIL;
+	boolean_t ignore_dva0;
 
 	if (phys_birth <= scn->scn_phys.scn_min_txg ||
 	    phys_birth >= scn->scn_phys.scn_max_txg)
@@ -2508,9 +2509,17 @@ dsl_scan_scrub_cb(dsl_pool_t *dp,
 	DTRACE_PROBE3(scan_needs_io, boolean_t, needs_io,
 	    const blkptr_t *, bp, spa_t *, spa);
 
+	/*
+	 * WBC will invalidate DVA[0] after migrating the block to the main
+	 * pool. If the user subsequently disables WBC and removes the special
+	 * device, DVA[0] can now point to a hole vdev. We won't try to do
+	 * I/O to it, but we must also avoid doing DTL checks.
+	 */
+	ignore_dva0 = (BP_IS_SPECIAL(bp) &&
+	    wbc_bp_is_migrated(spa_get_wbc_data(spa), bp));
+
 	for (int d = 0; d < BP_GET_NDVAS(bp); d++) {
-		vdev_t *vd = vdev_lookup_top(spa,
-		    DVA_GET_VDEV(&bp->blk_dva[d]));
+		vdev_t *vd;
 
 		/*
 		 * Keep track of how much data we've examined so that
@@ -2518,6 +2527,11 @@ dsl_scan_scrub_cb(dsl_pool_t *dp,
 		 */
 		scn->scn_phys.scn_examined += DVA_GET_ASIZE(&bp->blk_dva[d]);
 		spa->spa_scan_pass_exam += DVA_GET_ASIZE(&bp->blk_dva[d]);
+
+		/* WBC-invalidated DVA post-migration, so skip it */
+		if (d == 0 && ignore_dva0)
+			continue;
+		vd = vdev_lookup_top(spa, DVA_GET_VDEV(&bp->blk_dva[d]));
 
 		/* if it's a resilver, this may not be in the target range */
 		if (!needs_io && scn->scn_phys.scn_func != POOL_SCAN_MOS &&
