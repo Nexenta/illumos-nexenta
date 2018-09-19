@@ -256,8 +256,7 @@ typedef struct pqi_state {
 	dev_info_t		*s_dip;
 	int			s_flags;
 	kmutex_t		s_mutex;
-	kmutex_t		s_rx_mutex;
-	kmutex_t		s_tx_mutex;
+	kmutex_t		s_intr_mutex;
 	kcondvar_t		s_quiescedvar;
 
 	/* ---- Used for serialized commands through driver ---- */

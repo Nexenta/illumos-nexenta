@@ -224,9 +224,8 @@ smartpqi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	mutex_init(&s->s_mutex, NULL, MUTEX_DRIVER,
 	    DDI_INTR_PRI(s->s_intr_pri));
 	mutex_init(&s->s_mem_mutex, NULL, MUTEX_DRIVER, NULL);
-	mutex_init(&s->s_rx_mutex, NULL, MUTEX_DRIVER, NULL);
-	mutex_init(&s->s_tx_mutex, NULL, MUTEX_DRIVER, NULL);
 	mutex_init(&s->s_io_mutex, NULL, MUTEX_DRIVER, NULL);
+	mutex_init(&s->s_intr_mutex, NULL, MUTEX_DRIVER, NULL);
 	cv_init(&s->s_quiescedvar, NULL, CV_DRIVER, NULL);
 	cv_init(&s->s_io_condvar, NULL, CV_DRIVER, NULL);
 	sema_init(&s->s_sync_rqst, 1, NULL, SEMA_DRIVER, NULL);
@@ -344,8 +343,8 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 		}
 		list_destroy(&s->s_devnodes);
 		mutex_destroy(&s->s_mutex);
-		mutex_destroy(&s->s_rx_mutex);
-		mutex_destroy(&s->s_tx_mutex);
+		mutex_destroy(&s->s_io_mutex);
+		mutex_destroy(&s->s_intr_mutex);
 
 		cv_destroy(&s->s_quiescedvar);
 		smartpqi_unregister_hba(s);

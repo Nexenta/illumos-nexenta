@@ -115,6 +115,7 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 	oq_ci = qg->oq_ci_copy;
 	atomic_inc_32(&s->s_intr_count);
 
+	mutex_enter(&s->s_intr_mutex);
 	for (;;) {
 		(void) ddi_dma_sync(s->s_queue_dma->handle,
 		    (uintptr_t)qg->oq_pi -
@@ -181,6 +182,13 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 		oq_ci = (oq_ci + 1) % s->s_num_elements_per_oq;
 	}
 
+	if (response_cnt) {
+		qg->cmplt_count += response_cnt;
+		qg->oq_ci_copy = oq_ci;
+		ddi_put32(s->s_datap, qg->oq_ci, oq_ci);
+	}
+	mutex_exit(&s->s_intr_mutex);
+
 	mutex_enter(&s->s_mutex);
 	qnotify = HBA_QUIESCED_PENDING(s);
 	mutex_exit(&s->s_mutex);
@@ -188,11 +196,6 @@ pqi_process_io_intr(pqi_state_t s, pqi_queue_group_t *qg)
 	if (qnotify)
 		pqi_quiesced_notify(s);
 
-	if (response_cnt) {
-		qg->cmplt_count += response_cnt;
-		qg->oq_ci_copy = oq_ci;
-		ddi_put32(s->s_datap, qg->oq_ci, oq_ci);
-	}
 }
 
 /*
@@ -406,6 +409,7 @@ process_event_intr(pqi_state_t s)
 
 	oq_ci = q->oq_ci_copy;
 
+	mutex_enter(&s->s_intr_mutex);
 	for (;;) {
 		(void) ddi_dma_sync(s->s_queue_dma->handle,
 		    (uintptr_t)q->oq_pi -
@@ -442,6 +446,7 @@ process_event_intr(pqi_state_t s)
 		ddi_put32(s->s_datap, q->oq_ci, oq_ci);
 		(void) ddi_taskq_dispatch(s->s_taskq, pqi_event_worker, s, 0);
 	}
+	mutex_exit(&s->s_intr_mutex);
 }
 
 static uint_t
