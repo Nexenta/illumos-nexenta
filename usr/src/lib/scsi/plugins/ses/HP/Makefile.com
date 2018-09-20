@@ -10,13 +10,13 @@
 #
 
 #
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
 #
 
 MODULE =	HP
 SRCS =		hp.c
 SRCDIR =	../common
 PLUGINTYPE =	vendor
-ALIASES =	HGST
+ALIASES =	HGST-1ES0034
 
 include ../../Makefile.lib
