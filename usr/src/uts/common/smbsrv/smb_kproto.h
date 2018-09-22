@@ -721,6 +721,8 @@ smb_user_t *smb_user_new(smb_session_t *);
 int smb_user_logon(smb_user_t *, cred_t *,
     char *, char *, uint32_t, uint32_t, uint32_t);
 void smb_user_logoff(smb_user_t *);
+void smb_user_auth_tmo(void *);
+
 boolean_t smb_user_is_admin(smb_user_t *);
 boolean_t smb_user_namecmp(smb_user_t *, const char *);
 int smb_user_enum(smb_user_t *, smb_svcenum_t *);

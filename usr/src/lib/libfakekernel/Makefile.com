@@ -18,6 +18,7 @@ VERS =		.1
 
 COBJS = \
 	audit.o \
+	callout.o \
 	cred.o \
 	clock.o \
 	cond.o \

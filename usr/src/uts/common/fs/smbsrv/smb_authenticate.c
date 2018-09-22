@@ -688,6 +688,11 @@ struct timeval smb_auth_recv_tmo = { 45, 0 };
  */
 struct timeval smb_auth_send_tmo = { 15, 0 };
 
+/*
+ * Maximum time a user object may stay in state LOGGING_ON
+ */
+int smb_auth_total_tmo = 45;	/* seconds */
+
 static uint32_t
 smb_authsock_open(smb_request_t *sr)
 {
@@ -733,6 +738,10 @@ smb_authsock_open(smb_request_t *sr)
 		goto errout;
 	}
 	user->u_authsock = so;
+	if (smb_auth_total_tmo != 0) {
+		user->u_auth_tmo = timeout(smb_user_auth_tmo, user,
+		    SEC_TO_TICK(smb_auth_total_tmo));
+	}
 	mutex_exit(&user->u_mutex);
 
 	/*
