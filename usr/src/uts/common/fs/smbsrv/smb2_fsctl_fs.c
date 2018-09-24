@@ -84,6 +84,13 @@ smb2_fsctl_set_compression(smb_request_t *sr, smb_fsctl_t *fsctl)
  * in which we stash the SMB2 "file ID" (both parts). Later,
  * copychunk may lookup the ofile using that file ID.
  * See: smb2_fsctl_copychunk()
+ *
+ * Note that Mac clients make this request on a directory
+ * (even though this only makes sense on a file) just to
+ * find out if the server supports server-side copy.
+ * There's no harm letting a client have a resume key
+ * for a directory.  They'll never be able to DO anything
+ * with it because we check for a plain file later.
  */
 static uint32_t
 smb2_fsctl_get_resume_key(smb_request_t *sr, smb_fsctl_t *fsctl)
@@ -92,8 +99,7 @@ smb2_fsctl_get_resume_key(smb_request_t *sr, smb_fsctl_t *fsctl)
 	smb2fid_t smb2fid;
 
 	/* Caller makes sure we have of = sr->fid_ofile */
-	if (!smb_node_is_file(of->f_node))
-		return (NT_STATUS_INVALID_PARAMETER);
+	/* Don't insist on a plain file (see above). */
 
 	smb2fid.persistent = of->f_persistid;
 	smb2fid.temporal = of->f_fid;
