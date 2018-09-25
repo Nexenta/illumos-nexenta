@@ -541,81 +541,86 @@ sunFmResourceTable_handler(netsnmp_mib_handler *handler,
 	 * come through bulk_to_next helper.  Make sure it stays that way.
 	 */
 	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
-	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
 	request_update();
 
-	table_info = netsnmp_extract_table_info(request);
+	for (; request != NULL; request = request->next) {
+		table_info = netsnmp_extract_table_info(request);
+		if (table_info == NULL)
+			continue;
 
-	ASSERT(table_info->colnum >= SUNFMRESOURCE_COLMIN);
-	ASSERT(table_info->colnum <= SUNFMRESOURCE_COLMAX);
+		ASSERT(table_info->colnum >= SUNFMRESOURCE_COLMIN);
+		ASSERT(table_info->colnum <= SUNFMRESOURCE_COLMAX);
 
-	/*
-	 * table_info->colnum contains the column number requested.
-	 * table_info->indexes contains a linked list of snmp variable
-	 * bindings for the indexes of the table.  Values in the list
-	 * have been set corresponding to the indexes of the
-	 * request.  We have other guarantees as well:
-	 *
-	 * - The column number is always within range.
-	 * - If we have no index data, table_info->index_oid_len is 0.
-	 * - We will never receive requests outside our table nor
-	 *   those with the first subid anything other than 1 (Entry)
-	 *   nor those without a column number.  This is true even
-	 *   for GETNEXT requests.
-	 */
-	switch (reqinfo->mode) {
-	case MODE_GET:
-		data = sunFmResourceTable_rsrc(reginfo, table_info);
-		if (data == NULL)
-			goto out;
-		break;
-	case MODE_GETNEXT:
-		data = sunFmResourceTable_nextrsrc(reginfo, table_info);
-		if (data == NULL)
-			goto out;
-		break;
-	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": unsupported request mode %d\n", reqinfo->mode);
-		ret = SNMP_ERR_GENERR;
-		goto out;
-	}
-
-	switch (table_info->colnum) {
-	case SUNFMRESOURCE_COL_FMRI:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_ari_fmri,
-		    strlen(data->d_ari_fmri));
-		break;
-	case SUNFMRESOURCE_COL_STATUS:
-		switch (data->d_ari_flags &
-		    (FMD_ADM_RSRC_FAULTY|FMD_ADM_RSRC_UNUSABLE)) {
+		/*
+		 * table_info->colnum contains the column number requested.
+		 * table_info->indexes contains a linked list of snmp variable
+		 * bindings for the indexes of the table.  Values in the list
+		 * have been set corresponding to the indexes of the
+		 * request.  We have other guarantees as well:
+		 *
+		 * - The column number is always within range.
+		 * - If we have no index data, table_info->index_oid_len is 0.
+		 * - We will never receive requests outside our table nor
+		 *   those with the first subid anything other than 1 (Entry)
+		 *   nor those without a column number.  This is true even
+		 *   for GETNEXT requests.
+		 */
+		switch (reqinfo->mode) {
+		case MODE_GET:
+			data = sunFmResourceTable_rsrc(reginfo, table_info);
+			if (data == NULL)
+				goto out;
+			break;
+		case MODE_GETNEXT:
+			data = sunFmResourceTable_nextrsrc(reginfo, table_info);
+			if (data == NULL)
+				goto out;
+			break;
 		default:
-			rsrcstate = SUNFMRESOURCE_STATE_OK;
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": unsupported request mode %d\n", reqinfo->mode);
+			ret = SNMP_ERR_GENERR;
+			goto out;
+		}
+
+		switch (table_info->colnum) {
+		case SUNFMRESOURCE_COL_FMRI:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_ari_fmri,
+			    strlen(data->d_ari_fmri));
 			break;
-		case FMD_ADM_RSRC_FAULTY:
-			rsrcstate = SUNFMRESOURCE_STATE_DEGRADED;
+		case SUNFMRESOURCE_COL_STATUS:
+			switch (data->d_ari_flags &
+			    (FMD_ADM_RSRC_FAULTY|FMD_ADM_RSRC_UNUSABLE)) {
+			default:
+				rsrcstate = SUNFMRESOURCE_STATE_OK;
+				break;
+			case FMD_ADM_RSRC_FAULTY:
+				rsrcstate = SUNFMRESOURCE_STATE_DEGRADED;
+				break;
+			case FMD_ADM_RSRC_UNUSABLE:
+				rsrcstate = SUNFMRESOURCE_STATE_UNKNOWN;
+				break;
+			case FMD_ADM_RSRC_FAULTY | FMD_ADM_RSRC_UNUSABLE:
+				rsrcstate = SUNFMRESOURCE_STATE_FAULTED;
+				break;
+			}
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_INTEGER, (uchar_t *)&rsrcstate,
+			    sizeof (rsrcstate));
 			break;
-		case FMD_ADM_RSRC_UNUSABLE:
-			rsrcstate = SUNFMRESOURCE_STATE_UNKNOWN;
+		case SUNFMRESOURCE_COL_DIAGNOSISUUID:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_ari_case,
+			    strlen(data->d_ari_case));
 			break;
-		case FMD_ADM_RSRC_FAULTY | FMD_ADM_RSRC_UNUSABLE:
-			rsrcstate = SUNFMRESOURCE_STATE_FAULTED;
+		default:
 			break;
 		}
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_INTEGER, (uchar_t *)&rsrcstate,
-		    sizeof (rsrcstate));
-		break;
-	case SUNFMRESOURCE_COL_DIAGNOSISUUID:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_ari_case,
-		    strlen(data->d_ari_case));
-		break;
-	default:
-		break;
 	}
 
 out:
@@ -637,34 +642,38 @@ sunFmResourceCount_handler(netsnmp_mib_handler *handler,
 	 * come through bulk_to_next helper.  Make sure it stays that way.
 	 */
 	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
-	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
 	request_update();
 
-	switch (reqinfo->mode) {
-	/*
-	 * According to the documentation, it's not possible for us ever to
-	 * be called with MODE_GETNEXT.  However, Net-SNMP does the following:
-	 * - set reqinfo->mode to MODE_GET
-	 * - invoke the handler
-	 * - set reqinfo->mode to MODE_GETNEXT (even if the request was not
-	 *   actually processed; i.e. it's been delegated)
-	 * Since we're called back later with the same reqinfo, we see
-	 * GETNEXT.  Therefore this case is needed to work around the
-	 * Net-SNMP bug.
-	 */
-	case MODE_GET:
-	case MODE_GETNEXT:
-		DEBUGMSGTL((MODNAME_STR, "resource count is %u\n", rsrc_count));
-		rsrc_count_long = (ulong_t)rsrc_count;
-		(void) snmp_set_var_typed_value(request->requestvb, ASN_GAUGE,
-		    (uchar_t *)&rsrc_count_long, sizeof (rsrc_count_long));
-		break;
-	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": unsupported request mode: %d\n", reqinfo->mode);
-		ret = SNMP_ERR_GENERR;
+	for (; request != NULL; request = request->next) {
+		switch (reqinfo->mode) {
+		/*
+		 * According to the documentation, it's not possible for us ever
+		 * to be called with MODE_GETNEXT.  However, Net-SNMP does the
+		 * following:
+		 * - set reqinfo->mode to MODE_GET
+		 * - invoke the handler
+		 * - set reqinfo->mode to MODE_GETNEXT (even if the request was
+		 *   not actually processed; i.e. it's been delegated)
+		 * Since we're called back later with the same reqinfo, we see
+		 * GETNEXT.  Therefore this case is needed to work around the
+		 * Net-SNMP bug.
+		 */
+		case MODE_GET:
+		case MODE_GETNEXT:
+			DEBUGMSGTL((MODNAME_STR, "resource count is %u\n",
+			    rsrc_count));
+			rsrc_count_long = (ulong_t)rsrc_count;
+			(void) snmp_set_var_typed_value(request->requestvb,
+			    ASN_GAUGE, (uchar_t *)&rsrc_count_long,
+			    sizeof (rsrc_count_long));
+			break;
+		default:
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": unsupported request mode: %d\n", reqinfo->mode);
+			ret = SNMP_ERR_GENERR;
+		}
 	}
 
 	(void) pthread_mutex_unlock(&update_lock);

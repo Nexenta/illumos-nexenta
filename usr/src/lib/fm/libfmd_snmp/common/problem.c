@@ -729,121 +729,130 @@ sunFmProblemTable_handler(netsnmp_mib_handler *handler,
 	 * come through bulk_to_next helper.  Make sure it stays that way.
 	 */
 	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
-	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
 
-	table_info = netsnmp_extract_table_info(request);
-	if (table_info == NULL) {
-		ret = SNMP_ERR_GENERR;
-		goto out;
-	}
+	for (; request != NULL; request = request->next) {
+		table_info = netsnmp_extract_table_info(request);
+		if (table_info == NULL)
+			continue;
 
-	/*
-	 * table_info->colnum contains the column number requested.
-	 * table_info->indexes contains a linked list of snmp variable
-	 * bindings for the indexes of the table.  Values in the list
-	 * have been set corresponding to the indexes of the
-	 * request.  We have other guarantees as well:
-	 *
-	 * - The column number is always within range.
-	 * - If we have no index data, table_info->index_oid_len is 0.
-	 * - We will never receive requests outside our table nor
-	 *   those with the first subid anything other than 1 (Entry)
-	 *   nor those without a column number.  This is true even
-	 *   for GETNEXT requests.
-	 */
-	switch (reqinfo->mode) {
-	case MODE_GET:
-		data = sunFmProblemTable_pr(reginfo, table_info);
-		if (data == NULL)
-			goto out;
-		break;
-	case MODE_GETNEXT:
-		data = sunFmProblemTable_nextpr(reginfo, table_info);
-		if (data == NULL)
-			goto out;
-		break;
-	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": unsupported request mode: %d\n", reqinfo->mode);
-		ret = SNMP_ERR_GENERR;
-		goto out;
-	}
-
-	switch (table_info->colnum) {
-	case SUNFMPROBLEM_COL_UUID:
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_OCTET_STR,
-		    (uchar_t *)data->d_aci_uuid,
-		    strlen(data->d_aci_uuid));
-		break;
-	case SUNFMPROBLEM_COL_HOSTNAME: {
-		char hostname[MAXHOSTNAMELEN+1];
-
-		(void) gethostname(hostname, sizeof (hostname) - 1);
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)hostname, strlen(hostname));
-		break;
-	}
-	case SUNFMPROBLEM_COL_CODE:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_aci_code,
-		    strlen(data->d_aci_code));
-		break;
-	case SUNFMPROBLEM_COL_TYPE:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_aci_type,
-		    strlen(data->d_aci_type));
-		break;
-	case SUNFMPROBLEM_COL_SEVERITY:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_aci_severity,
-		    strlen(data->d_aci_severity));
-		break;
-	case SUNFMPROBLEM_COL_URL:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_aci_url,
-		    strlen(data->d_aci_url));
-		break;
-	case SUNFMPROBLEM_COL_DESC:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_aci_desc,
-		    strlen(data->d_aci_desc));
-		break;
-	case SUNFMPROBLEM_COL_FMRI:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_aci_fmri,
-		    strlen(data->d_aci_fmri));
-		break;
-	case SUNFMPROBLEM_COL_DIAGENGINE:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_diag_engine,
-		    strlen(data->d_diag_engine));
-		break;
-	case SUNFMPROBLEM_COL_DIAGTIME: {
 		/*
-		 * The date_n_time function is not Y2038-safe; this may
-		 * need to be updated when a suitable Y2038-safe Net-SNMP
-		 * API is available.
+		 * table_info->colnum contains the column number requested.
+		 * table_info->indexes contains a linked list of snmp variable
+		 * bindings for the indexes of the table.  Values in the list
+		 * have been set corresponding to the indexes of the
+		 * request.  We have other guarantees as well:
+		 *
+		 * - The column number is always within range.
+		 * - If we have no index data, table_info->index_oid_len is 0.
+		 * - We will never receive requests outside our table nor
+		 *   those with the first subid anything other than 1 (Entry)
+		 *   nor those without a column number.  This is true even
+		 *   for GETNEXT requests.
 		 */
-		size_t	dt_size;
-		time_t	dt_time = (time_t)data->d_diag_time.tv_sec;
-		uchar_t	*dt = date_n_time(&dt_time, &dt_size);
+		switch (reqinfo->mode) {
+		case MODE_GET:
+			data = sunFmProblemTable_pr(reginfo, table_info);
+			if (data == NULL)
+				goto out;
+			break;
+		case MODE_GETNEXT:
+			data = sunFmProblemTable_nextpr(reginfo, table_info);
+			if (data == NULL)
+				goto out;
+			break;
+		default:
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": unsupported request mode: %d\n", reqinfo->mode);
+			ret = SNMP_ERR_GENERR;
+			goto out;
+		}
 
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, dt, dt_size);
-		break;
-	}
-	case SUNFMPROBLEM_COL_SUSPECTCOUNT:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_UNSIGNED, (uchar_t *)&data->d_nsuspects,
-		    sizeof (data->d_nsuspects));
-		break;
-	default:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)"-", strlen("-"));
-		break;
+		switch (table_info->colnum) {
+		case SUNFMPROBLEM_COL_UUID:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_aci_uuid,
+			    strlen(data->d_aci_uuid));
+			break;
+		case SUNFMPROBLEM_COL_HOSTNAME: {
+			char hostname[MAXHOSTNAMELEN+1];
+
+			(void) gethostname(hostname, sizeof (hostname) - 1);
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, (uchar_t *)hostname,
+			    strlen(hostname));
+			break;
+		}
+		case SUNFMPROBLEM_COL_CODE:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_aci_code,
+			    strlen(data->d_aci_code));
+			break;
+		case SUNFMPROBLEM_COL_TYPE:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_aci_type,
+			    strlen(data->d_aci_type));
+			break;
+		case SUNFMPROBLEM_COL_SEVERITY:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_aci_severity,
+			    strlen(data->d_aci_severity));
+			break;
+		case SUNFMPROBLEM_COL_URL:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_aci_url,
+			    strlen(data->d_aci_url));
+			break;
+		case SUNFMPROBLEM_COL_DESC:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_aci_desc,
+			    strlen(data->d_aci_desc));
+			break;
+		case SUNFMPROBLEM_COL_FMRI:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_aci_fmri,
+			    strlen(data->d_aci_fmri));
+			break;
+		case SUNFMPROBLEM_COL_DIAGENGINE:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_diag_engine,
+			    strlen(data->d_diag_engine));
+			break;
+		case SUNFMPROBLEM_COL_DIAGTIME: {
+			/*
+			 * The date_n_time function is not Y2038-safe; this may
+			 * need to be updated when a suitable Y2038-safe
+			 * Net-SNMP API is available.
+			 */
+			size_t	dt_size;
+			time_t	dt_time = (time_t)data->d_diag_time.tv_sec;
+			uchar_t	*dt = date_n_time(&dt_time, &dt_size);
+
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, dt, dt_size);
+			break;
+		}
+		case SUNFMPROBLEM_COL_SUSPECTCOUNT:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_UNSIGNED,
+			    (uchar_t *)&data->d_nsuspects,
+			    sizeof (data->d_nsuspects));
+			break;
+		default:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, (uchar_t *)"-",
+			    strlen("-"));
+			break;
+		}
 	}
 
 out:
@@ -868,160 +877,160 @@ sunFmFaultEventTable_handler(netsnmp_mib_handler *handler,
 	 * come through bulk_to_next helper.  Make sure it stays that way.
 	 */
 	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
-	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
 
-	table_info = netsnmp_extract_table_info(request);
-	if (table_info == NULL) {
-		ret = SNMP_ERR_GENERR;
-		goto out;
-	}
+	for (; request != NULL; request = request->next) {
+		table_info = netsnmp_extract_table_info(request);
+		if (table_info == NULL)
+			continue;
 
-	ASSERT(table_info->colnum >= SUNFMFAULTEVENT_COLMIN);
-	ASSERT(table_info->colnum <= SUNFMFAULTEVENT_COLMAX);
+		ASSERT(table_info->colnum >= SUNFMFAULTEVENT_COLMIN);
+		ASSERT(table_info->colnum <= SUNFMFAULTEVENT_COLMAX);
 
-	/*
-	 * table_info->colnum contains the column number requested.
-	 * table_info->indexes contains a linked list of snmp variable
-	 * bindings for the indexes of the table.  Values in the list
-	 * have been set corresponding to the indexes of the
-	 * request.  We have other guarantees as well:
-	 *
-	 * - The column number is always within range.
-	 * - If we have no index data, table_info->index_oid_len is 0.
-	 * - We will never receive requests outside our table nor
-	 *   those with the first subid anything other than 1 (Entry)
-	 *   nor those without a column number.  This is true even
-	 *   for GETNEXT requests.
-	 */
-	switch (reqinfo->mode) {
-	case MODE_GET:
-		data = sunFmFaultEventTable_fe(reginfo, table_info, &status);
-		if (data == NULL)
+		/*
+		 * table_info->colnum contains the column number requested.
+		 * table_info->indexes contains a linked list of snmp variable
+		 * bindings for the indexes of the table.  Values in the list
+		 * have been set corresponding to the indexes of the
+		 * request.  We have other guarantees as well:
+		 *
+		 * - The column number is always within range.
+		 * - If we have no index data, table_info->index_oid_len is 0.
+		 * - We will never receive requests outside our table nor
+		 *   those with the first subid anything other than 1 (Entry)
+		 *   nor those without a column number.  This is true even
+		 *   for GETNEXT requests.
+		 */
+		switch (reqinfo->mode) {
+		case MODE_GET:
+			data = sunFmFaultEventTable_fe(reginfo, table_info,
+			    &status);
+			if (data == NULL)
+				goto out;
+			break;
+		case MODE_GETNEXT:
+			data = sunFmFaultEventTable_nextfe(reginfo, table_info,
+			    &status);
+			if (data == NULL)
+				goto out;
+			break;
+		default:
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": unsupported request mode: %d\n", reqinfo->mode);
+			ret = SNMP_ERR_GENERR;
 			goto out;
-		break;
-	case MODE_GETNEXT:
-		data = sunFmFaultEventTable_nextfe(reginfo, table_info,
-		    &status);
-		if (data == NULL)
-			goto out;
-		break;
-	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": unsupported request mode: %d\n", reqinfo->mode);
-		ret = SNMP_ERR_GENERR;
-		goto out;
-	}
+		}
 
-	switch (table_info->colnum) {
-	case SUNFMFAULTEVENT_COL_PROBLEMUUID:
-		if ((pdata = sunFmProblemTable_pr(reginfo, table_info))
-		    == NULL) {
-			(void) netsnmp_table_build_result(reginfo,
-			    request, table_info, ASN_OCTET_STR,
-			    NULL, 0);
+		switch (table_info->colnum) {
+		case SUNFMFAULTEVENT_COL_PROBLEMUUID:
+			if ((pdata = sunFmProblemTable_pr(reginfo, table_info))
+			    == NULL) {
+				(void) netsnmp_table_build_result(reginfo,
+				    request, table_info, ASN_OCTET_STR,
+				    NULL, 0);
+				break;
+			}
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)pdata->d_aci_uuid,
+			    strlen(pdata->d_aci_uuid));
+			break;
+		case SUNFMFAULTEVENT_COL_CLASS: {
+			char	*class = "-";
+
+			(void) nvlist_lookup_string(data, FM_CLASS, &class);
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, (uchar_t *)class,
+			    strlen(class));
 			break;
 		}
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_OCTET_STR,
-		    (uchar_t *)pdata->d_aci_uuid,
-		    strlen(pdata->d_aci_uuid));
-		break;
-	case SUNFMFAULTEVENT_COL_CLASS: {
-		char	*class = "-";
+		case SUNFMFAULTEVENT_COL_CERTAINTY: {
+			uint8_t	pct = 0;
+			ulong_t	pl;
 
-		(void) nvlist_lookup_string(data, FM_CLASS, &class);
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_OCTET_STR, (uchar_t *)class,
-		    strlen(class));
-		break;
-	}
-	case SUNFMFAULTEVENT_COL_CERTAINTY: {
-		uint8_t	pct = 0;
-		ulong_t	pl;
+			(void) nvlist_lookup_uint8(data, FM_FAULT_CERTAINTY,
+			    &pct);
+			pl = (ulong_t)pct;
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_UNSIGNED, (uchar_t *)&pl,
+			    sizeof (pl));
+			break;
+		}
+		case SUNFMFAULTEVENT_COL_ASRU: {
+			nvlist_t	*asru = NULL;
+			char		*fmri = "-", *str;
 
-		(void) nvlist_lookup_uint8(data, FM_FAULT_CERTAINTY,
-		    &pct);
-		pl = (ulong_t)pct;
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_UNSIGNED, (uchar_t *)&pl,
-		    sizeof (pl));
-		break;
-	}
-	case SUNFMFAULTEVENT_COL_ASRU: {
-		nvlist_t	*asru = NULL;
-		char		*fmri = "-", *str;
+			(void) nvlist_lookup_nvlist(data, FM_FAULT_ASRU, &asru);
+			if ((str = nvl2fmri(asru)) != NULL)
+				fmri = str;
 
-		(void) nvlist_lookup_nvlist(data, FM_FAULT_ASRU, &asru);
-		if ((str = nvl2fmri(asru)) != NULL)
-			fmri = str;
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
+			    strlen(fmri));
+			free(str);
+			break;
+		}
+		case SUNFMFAULTEVENT_COL_FRU: {
+			nvlist_t	*fru = NULL;
+			char		*fmri = "-", *str;
 
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
-		    strlen(fmri));
-		free(str);
-		break;
-	}
-	case SUNFMFAULTEVENT_COL_FRU: {
-		nvlist_t	*fru = NULL;
-		char		*fmri = "-", *str;
+			(void) nvlist_lookup_nvlist(data, FM_FAULT_FRU, &fru);
+			if ((str = nvl2fmri(fru)) != NULL)
+				fmri = str;
 
-		(void) nvlist_lookup_nvlist(data, FM_FAULT_FRU, &fru);
-		if ((str = nvl2fmri(fru)) != NULL)
-			fmri = str;
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
+			    strlen(fmri));
+			free(str);
+			break;
+		}
+		case SUNFMFAULTEVENT_COL_RESOURCE: {
+			nvlist_t	*rsrc = NULL;
+			char		*fmri = "-", *str;
 
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
-		    strlen(fmri));
-		free(str);
-		break;
-	}
-	case SUNFMFAULTEVENT_COL_RESOURCE: {
-		nvlist_t	*rsrc = NULL;
-		char		*fmri = "-", *str;
+			(void) nvlist_lookup_nvlist(data, FM_FAULT_RESOURCE,
+			    &rsrc);
+			if ((str = nvl2fmri(rsrc)) != NULL)
+				fmri = str;
 
-		(void) nvlist_lookup_nvlist(data, FM_FAULT_RESOURCE,
-		    &rsrc);
-		if ((str = nvl2fmri(rsrc)) != NULL)
-			fmri = str;
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
+			    strlen(fmri));
+			free(str);
+			break;
+		}
+		case SUNFMFAULTEVENT_COL_STATUS: {
+			ulong_t	pl = SUNFMFAULTEVENT_STATE_OTHER;
 
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_OCTET_STR, (uchar_t *)fmri,
-		    strlen(fmri));
-		free(str);
-		break;
-	}
-	case SUNFMFAULTEVENT_COL_STATUS: {
-		ulong_t	pl = SUNFMFAULTEVENT_STATE_OTHER;
+			if (status & FM_SUSPECT_FAULTY)
+				pl = SUNFMFAULTEVENT_STATE_FAULTY;
+			else if (status & FM_SUSPECT_NOT_PRESENT)
+				pl = SUNFMFAULTEVENT_STATE_REMOVED;
+			else if (status & FM_SUSPECT_REPLACED)
+				pl = SUNFMFAULTEVENT_STATE_REPLACED;
+			else if (status & FM_SUSPECT_REPAIRED)
+				pl = SUNFMFAULTEVENT_STATE_REPAIRED;
+			else if (status & FM_SUSPECT_ACQUITTED)
+				pl = SUNFMFAULTEVENT_STATE_ACQUITTED;
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_INTEGER, (uchar_t *)&pl,
+			    sizeof (pl));
+			break;
+		}
+		case SUNFMFAULTEVENT_COL_LOCATION: {
+			char	*location = "-";
 
-		if (status & FM_SUSPECT_FAULTY)
-			pl = SUNFMFAULTEVENT_STATE_FAULTY;
-		else if (status & FM_SUSPECT_NOT_PRESENT)
-			pl = SUNFMFAULTEVENT_STATE_REMOVED;
-		else if (status & FM_SUSPECT_REPLACED)
-			pl = SUNFMFAULTEVENT_STATE_REPLACED;
-		else if (status & FM_SUSPECT_REPAIRED)
-			pl = SUNFMFAULTEVENT_STATE_REPAIRED;
-		else if (status & FM_SUSPECT_ACQUITTED)
-			pl = SUNFMFAULTEVENT_STATE_ACQUITTED;
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_INTEGER, (uchar_t *)&pl,
-		    sizeof (pl));
-		break;
-	}
-	case SUNFMFAULTEVENT_COL_LOCATION: {
-		char	*location = "-";
-
-		(void) nvlist_lookup_string(data, FM_FAULT_LOCATION,
-		    &location);
-		(void) netsnmp_table_build_result(reginfo, request,
-		    table_info, ASN_OCTET_STR, (uchar_t *)location,
-		    strlen(location));
-		break;
-	}
-	default:
-		break;
+			(void) nvlist_lookup_string(data, FM_FAULT_LOCATION,
+			    &location);
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR, (uchar_t *)location,
+			    strlen(location));
+			break;
+		}
+		default:
+			break;
+		}
 	}
 
 out:

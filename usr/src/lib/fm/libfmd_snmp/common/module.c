@@ -506,77 +506,79 @@ sunFmModuleTable_handler(netsnmp_mib_handler *handler,
 	 * come through bulk_to_next helper.  Make sure it stays that way.
 	 */
 	ASSERT(reqinfo->mode == MODE_GET || reqinfo->mode == MODE_GETNEXT);
-	ASSERT(request->next == NULL);
 
 	(void) pthread_mutex_lock(&update_lock);
 	request_update();
 
-	table_info = netsnmp_extract_table_info(request);
-	if (table_info == NULL) {
-		ret = SNMP_ERR_GENERR;
-		goto out;
-	}
+	for (; request != NULL; request = request->next) {
+		table_info = netsnmp_extract_table_info(request);
+		if (table_info == NULL)
+			continue;
 
-	ASSERT(table_info->colnum >= SUNFMMODULE_COLMIN);
-	ASSERT(table_info->colnum <= SUNFMMODULE_COLMAX);
+		ASSERT(table_info->colnum >= SUNFMMODULE_COLMIN);
+		ASSERT(table_info->colnum <= SUNFMMODULE_COLMAX);
 
-	/*
-	 * table_info->colnum contains the column number requested.
-	 * table_info->indexes contains a linked list of snmp variable
-	 * bindings for the indexes of the table.  Values in the list
-	 * have been set corresponding to the indexes of the
-	 * request.  We have other guarantees as well:
-	 *
-	 * - The column number is always within range.
-	 * - If we have no index data, table_info->index_oid_len is 0.
-	 * - We will never receive requests outside our table nor
-	 *   those with the first subid anything other than 1 (Entry)
-	 *   nor those without a column number.  This is true even
-	 *   for GETNEXT requests.
-	 */
-	switch (reqinfo->mode) {
-	case MODE_GET:
-		data = sunFmModuleTable_mod(reginfo, table_info);
-		if (data == NULL)
+		/*
+		 * table_info->colnum contains the column number requested.
+		 * table_info->indexes contains a linked list of snmp variable
+		 * bindings for the indexes of the table.  Values in the list
+		 * have been set corresponding to the indexes of the
+		 * request.  We have other guarantees as well:
+		 *
+		 * - The column number is always within range.
+		 * - If we have no index data, table_info->index_oid_len is 0.
+		 * - We will never receive requests outside our table nor
+		 *   those with the first subid anything other than 1 (Entry)
+		 *   nor those without a column number.  This is true even
+		 *   for GETNEXT requests.
+		 */
+		switch (reqinfo->mode) {
+		case MODE_GET:
+			data = sunFmModuleTable_mod(reginfo, table_info);
+			if (data == NULL)
+				goto out;
+			break;
+		case MODE_GETNEXT:
+			data = sunFmModuleTable_nextmod(reginfo, table_info);
+			if (data == NULL)
+				goto out;
+			break;
+		default:
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": unsupported request mode: %d\n", reqinfo->mode);
+			ret = SNMP_ERR_GENERR;
 			goto out;
-		break;
-	case MODE_GETNEXT:
-		data = sunFmModuleTable_nextmod(reginfo, table_info);
-		if (data == NULL)
-			goto out;
-		break;
-	default:
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": unsupported request mode: %d\n", reqinfo->mode);
-		ret = SNMP_ERR_GENERR;
-		goto out;
-	}
+		}
 
-	switch (table_info->colnum) {
-	case SUNFMMODULE_COL_NAME:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_ami_name,
-		    strlen(data->d_ami_name));
-		break;
-	case SUNFMMODULE_COL_VERSION:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_ami_vers,
-		    strlen(data->d_ami_vers));
-		break;
-	case SUNFMMODULE_COL_STATUS:
-		modstate = (data->d_ami_flags & FMD_ADM_MOD_FAILED) ?
-		    SUNFMMODULE_STATE_FAILED : SUNFMMODULE_STATE_ACTIVE;
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_INTEGER, (uchar_t *)&modstate,
-		    sizeof (modstate));
-		break;
-	case SUNFMMODULE_COL_DESCRIPTION:
-		(void) netsnmp_table_build_result(reginfo, request, table_info,
-		    ASN_OCTET_STR, (uchar_t *)data->d_ami_desc,
-		    strlen(data->d_ami_desc));
-		break;
-	default:
-		break;
+		switch (table_info->colnum) {
+		case SUNFMMODULE_COL_NAME:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_ami_name,
+			    strlen(data->d_ami_name));
+			break;
+		case SUNFMMODULE_COL_VERSION:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_ami_vers,
+			    strlen(data->d_ami_vers));
+			break;
+		case SUNFMMODULE_COL_STATUS:
+			modstate = (data->d_ami_flags & FMD_ADM_MOD_FAILED) ?
+			    SUNFMMODULE_STATE_FAILED : SUNFMMODULE_STATE_ACTIVE;
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_INTEGER, (uchar_t *)&modstate,
+			    sizeof (modstate));
+			break;
+		case SUNFMMODULE_COL_DESCRIPTION:
+			(void) netsnmp_table_build_result(reginfo, request,
+			    table_info, ASN_OCTET_STR,
+			    (uchar_t *)data->d_ami_desc,
+			    strlen(data->d_ami_desc));
+			break;
+		default:
+			break;
+		}
 	}
 
 out:
