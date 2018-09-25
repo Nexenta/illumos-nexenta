@@ -1769,8 +1769,7 @@ dumpsys_sread(helper_t *hp)
 			 * return the buffer to the main task.
 			 */
 			if (panicstr && hp->helper != MAINHELPER)
-				hat_flush_range(kas.a_hat,
-				    hp->cpin->buf, hp->cpin->size);
+				hat_flush();
 			dumpsys_errmsg(hp, NULL);
 			CQ_PUT(mainq, hp->cpin, CBUF_USEDMAP);
 			hp->cpin = NULL;
@@ -2453,11 +2452,11 @@ dumpsys(void)
 	lbolt_debug_entry();
 
 	/*
-	 * Leave room for the message and ereport save areas and terminal dump
-	 * header.
+	 * Leave room for the summary, message and ereport save areas
+	 * and terminal dump header.
 	 */
 	dumpbuf.vp_limit = dumpvp_size - DUMP_LOGSIZE - DUMP_OFFSET -
-	    DUMP_ERPTSIZE;
+	    DUMP_ERPTSIZE - DUMP_SUMMARYSIZE;
 
 	/*
 	 * Write out the symbol table.  It's no longer compressed,

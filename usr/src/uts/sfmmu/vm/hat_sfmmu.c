@@ -22,7 +22,7 @@
  * Copyright (c) 1993, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2016 Gary Mills
  */
 
@@ -6188,25 +6188,13 @@ tte_unloaded:
 }
 
 /*
- * Invalidate a virtual address range for the local CPU.
- * For best performance ensure that the va range is completely
- * mapped, otherwise the entire TLB will be flushed.
+ * Flush the TLB for the local CPU
+ * Invoked from a slave CPU during panic() dumps.
  */
 void
-hat_flush_range(struct hat *sfmmup, caddr_t va, size_t size)
+hat_flush(void)
 {
-	ssize_t sz;
-	caddr_t endva = va + size;
-
-	while (va < endva) {
-		sz = hat_getpagesize(sfmmup, va);
-		if (sz < 0) {
-			vtag_flushall();
-			break;
-		}
-		vtag_flushpage(va, (uint64_t)sfmmup);
-		va += sz;
-	}
+	vtag_flushall();
 }
 
 /*

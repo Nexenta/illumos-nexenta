@@ -36,6 +36,10 @@
  * contributors.
  */
 
+/*
+ * Copyright 2018 Nexenta Systems, Inc.
+ */
+
 #ifndef	_VM_HAT_H
 #define	_VM_HAT_H
 
@@ -197,8 +201,8 @@ void	hat_thread_exit(kthread_t *);
  *	then remove write permission, leaving the other permissions
  *	unchanged.  If vprot is ~PROT_USER, remove user permissions.
  *
- * void hat_flush_range(hat, addr, size)
- *	Invalidate a virtual address translation for the local CPU.
+ * void hat_flush(void)
+ *	Flush the TLB for the local CPU.
  */
 
 void	hat_memload(struct hat *, caddr_t, struct page *, uint_t, uint_t);
@@ -217,7 +221,7 @@ void	hat_unlock_region(struct hat *, caddr_t, size_t, hat_region_cookie_t);
 void	hat_unload(struct hat *, caddr_t, size_t, uint_t);
 void	hat_unload_callback(struct hat *, caddr_t, size_t, uint_t,
 		hat_callback_t *);
-void	hat_flush_range(struct hat *, caddr_t, size_t);
+void	hat_flush(void);
 void	hat_sync(struct hat *, caddr_t, size_t, uint_t);
 void	hat_map(struct hat *, caddr_t, size_t, uint_t);
 void	hat_setattr(struct hat *, caddr_t, size_t, uint_t);
