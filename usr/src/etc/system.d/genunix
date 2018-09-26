@@ -1,2 +1,1 @@
 set dump_metrics_on = 1
-set dump_ncpu_low = 0
