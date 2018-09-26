@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -105,7 +105,7 @@ errout:
 	sr->smb2_status = status;
 	DTRACE_SMB2_DONE(op__ChangeNotify, smb_request_t *, sr);
 
-	if (status == 0 || status == NT_STATUS_NOTIFY_ENUM_DIR) {
+	if (NT_SC_SEVERITY(status) == NT_STATUS_SEVERITY_SUCCESS) {
 		oBufLength = sr->raw_data.chain_offset;
 		(void) smb_mbc_encodef(
 		    &sr->reply, "wwlC",
@@ -147,9 +147,7 @@ smb2_change_notify_finish(void *arg)
 	sr->smb2_status = status;
 	DTRACE_SMB2_DONE(op__ChangeNotify, smb_request_t *, sr);
 
-	if (status == 0 || status == NT_STATUS_NOTIFY_ENUM_DIR) {
-		sr->smb2_status = status;
-
+	if (NT_SC_SEVERITY(status) == NT_STATUS_SEVERITY_SUCCESS) {
 		oBufLength = sr->raw_data.chain_offset;
 		(void) smb_mbc_encodef(
 		    &sr->reply, "wwlC",
