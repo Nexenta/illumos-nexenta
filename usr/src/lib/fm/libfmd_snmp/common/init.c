@@ -48,8 +48,12 @@ static const sunFm_table_t sun_fm_tables[] = {
 int
 init_sunFM(void)
 {
+	static int		once = 0;
 	int			max_err = MIB_REGISTERED_OK;
 	const sunFm_table_t	*table;
+
+	if (once != 0)
+		return (MIB_DUPLICATE_REGISTRATION);
 
 	for (table = sun_fm_tables; table->t_name != NULL; table++) {
 		int err = table->t_init();
@@ -79,5 +83,6 @@ init_sunFM(void)
 			max_err = err;
 	}
 
+	once = 1;
 	return (max_err);
 }
