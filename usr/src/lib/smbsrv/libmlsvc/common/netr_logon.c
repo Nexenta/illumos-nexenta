@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -293,6 +293,8 @@ reauth:
 		    NETR_FLG_NULL);
 
 		if (status != 0) {
+			syslog(LOG_ERR, "netlogon remote auth failed (%s)",
+			    xlate_nt_status(status));
 			(void) netr_close(&netr_handle);
 			return (NT_STATUS_DOMAIN_TRUST_INCONSISTENT);
 		}
@@ -313,6 +315,67 @@ reauth:
 	}
 
 	(void) netr_close(&netr_handle);
+
+	return (status);
+}
+
+/*
+ * Helper for mlsvc_netlogon
+ *
+ * Call netlogon_auth with appropriate locks etc.
+ * Serialize like smb_logon_domain does for
+ * netlogon_logon / netlogon_auth
+ */
+uint32_t
+smb_netlogon_check(char *server, char *domain)
+{
+	mlsvc_handle_t netr_handle;
+	uint32_t	status;
+
+	(void) mutex_lock(&netlogon_mutex);
+	while (netlogon_busy)
+		(void) cond_wait(&netlogon_cv, &netlogon_mutex);
+
+	netlogon_busy = B_TRUE;
+	(void) mutex_unlock(&netlogon_mutex);
+
+	/*
+	 * This section like netlogon_logon(), but only does
+	 * one pass and no netr_server_samlogon call.
+	 */
+
+	status = netr_open(server, domain,
+	    &netr_handle);
+	if (status != 0) {
+		syslog(LOG_ERR, "netlogon remote open failed (%s)",
+		    xlate_nt_status(status));
+		goto unlock_out;
+	}
+
+	if ((netr_global_info.flags & NETR_FLG_VALID) == 0 ||
+	    !smb_match_netlogon_seqnum()) {
+		/*
+		 * This does netr_server_req_challenge() and
+		 * netr_server_authenticate2(), updating the
+		 * current netlogon sequence number.
+		 */
+		status = netlogon_auth(server, &netr_handle,
+		    NETR_FLG_NULL);
+		if (status != 0) {
+			syslog(LOG_ERR, "netlogon remote auth failed (%s)",
+			    xlate_nt_status(status));
+		} else {
+			netr_global_info.flags |= NETR_FLG_VALID;
+		}
+	}
+
+	(void) netr_close(&netr_handle);
+
+unlock_out:
+	(void) mutex_lock(&netlogon_mutex);
+	netlogon_busy = B_FALSE;
+	(void) cond_signal(&netlogon_cv);
+	(void) mutex_unlock(&netlogon_mutex);
 
 	return (status);
 }
