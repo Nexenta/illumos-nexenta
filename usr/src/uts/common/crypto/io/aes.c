@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -275,9 +275,12 @@ aes_check_mech_param(crypto_mechanism_t *mechanism, aes_ctx_t **ctx, int kmflag)
 		alloc_fun = ecb_alloc_ctx;
 		break;
 	case AES_CBC_MECH_INFO_TYPE:
-	case AES_CMAC_MECH_INFO_TYPE:
 		param_len = AES_BLOCK_LEN;
 		alloc_fun = cbc_alloc_ctx;
+		break;
+	case AES_CMAC_MECH_INFO_TYPE:
+		param_required = B_FALSE;
+		alloc_fun = cmac_alloc_ctx;
 		break;
 	case AES_CTR_MECH_INFO_TYPE:
 		param_len = sizeof (CK_AES_CTR_PARAMS);
@@ -351,14 +354,16 @@ aes_provider_status(crypto_provider_handle_t provider, uint_t *status)
 static int
 aes_encrypt_init(crypto_ctx_t *ctx, crypto_mechanism_t *mechanism,
     crypto_key_t *key, crypto_spi_ctx_template_t template,
-    crypto_req_handle_t req) {
+    crypto_req_handle_t req)
+{
 	return (aes_common_init(ctx, mechanism, key, template, req, B_TRUE));
 }
 
 static int
 aes_decrypt_init(crypto_ctx_t *ctx, crypto_mechanism_t *mechanism,
     crypto_key_t *key, crypto_spi_ctx_template_t template,
-    crypto_req_handle_t req) {
+    crypto_req_handle_t req)
+{
 	return (aes_common_init(ctx, mechanism, key, template, req, B_FALSE));
 }
 
@@ -529,8 +534,8 @@ aes_encrypt(crypto_ctx_t *ctx, crypto_data_t *plaintext,
 	} else if (aes_ctx->ac_flags & CMAC_MODE) {
 		/* cmac_update doesn't store data */
 		ciphertext->cd_length = saved_length;
-		ret = cmac_mode_final(aes_ctx, ciphertext, aes_encrypt_block,
-		    aes_xor_block);
+		ret = cmac_mode_final((cbc_ctx_t *)aes_ctx, ciphertext,
+		    aes_encrypt_block, aes_xor_block);
 		aes_ctx->ac_remainder_len = 0;
 	}
 
@@ -863,8 +868,8 @@ aes_encrypt_final(crypto_ctx_t *ctx, crypto_data_t *data,
 		data->cd_length = data->cd_offset - saved_offset;
 		data->cd_offset = saved_offset;
 	} else if (aes_ctx->ac_flags & CMAC_MODE) {
-		ret = cmac_mode_final(aes_ctx, data, aes_encrypt_block,
-		    aes_xor_block);
+		ret = cmac_mode_final((cbc_ctx_t *)aes_ctx, data,
+		    aes_encrypt_block, aes_xor_block);
 		if (ret != CRYPTO_SUCCESS)
 			return (ret);
 		data->cd_length = AES_BLOCK_LEN;
@@ -1005,7 +1010,7 @@ aes_encrypt_atomic(crypto_provider_handle_t provider,
 	AES_ARG_INPLACE(plaintext, ciphertext);
 
 	/*
-	 * CTR, CCM, GCM, and GMAC modes do not require that plaintext
+	 * CTR, CCM, CMAC, GCM, and GMAC modes do not require that plaintext
 	 * be a multiple of AES block size.
 	 */
 	switch (mechanism->cm_type) {
@@ -1102,7 +1107,7 @@ aes_encrypt_atomic(crypto_provider_handle_t provider,
 					goto out;
 			}
 		} else if (mechanism->cm_type == AES_CMAC_MECH_INFO_TYPE) {
-			ret = cmac_mode_final(&aes_ctx,
+			ret = cmac_mode_final((cbc_ctx_t *)&aes_ctx,
 			    ciphertext, aes_encrypt_block,
 			    aes_xor_block);
 			if (ret != CRYPTO_SUCCESS)

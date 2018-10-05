@@ -18,6 +18,7 @@
 .PARALLEL:	$(SUBDIRS)
 
 SUBDIRS=	comstar-tests	\
+		crypto-tests	\
 		libc-tests	\
 		lofi-tests	\
 		os-tests	\

@@ -255,9 +255,9 @@ soft_aes_encrypt_common(soft_session_t *session_p, CK_BYTE_PTR pData,
 		out_buf = pEncrypted;
 
 		/*
-		 * we don't really care about much of the below validation
-		 * for CMAC, as we want to let aes_encrypt* handle 'extra'
-		 * bytes, and output only occurs during *_final.
+		 * We prefer to let the underlying implementation of CMAC handle
+		 * the storing of extra bytes, and no data is output until
+		 * *_final, so skip that part of the following validation.
 		 */
 		if (mechanism == CKM_AES_CMAC) {
 			if (pEncrypted == NULL) {
@@ -467,6 +467,13 @@ encrypt_failed:
 		if (((aes_ctx_t *)soft_aes_ctx->aes_cbc)->ac_remainder_len > 0)
 			rc = ctr_mode_final(soft_aes_ctx->aes_cbc, &out,
 			    aes_encrypt_block);
+
+		/*
+		 * Even though success means we've encrypted all of the input,
+		 * we should still behave like the other functions and return
+		 * the encrypted length in pulEncryptedLen
+		 */
+		*pulEncryptedLen = ulDataLen;
 	}
 	} /* end switch */
 
@@ -822,6 +829,14 @@ decrypt_failed:
 			if (rc == CRYPTO_DATA_LEN_RANGE)
 				rc = CRYPTO_ENCRYPTED_DATA_LEN_RANGE;
 		}
+
+		/*
+		 * Even though success means we've decrypted all of the input,
+		 * we should still behave like the other functions and return
+		 * the decrypted length in pulDataLen
+		 */
+		*pulDataLen = ulEncryptedLen;
+
 	}
 	} /* end switch */
 
@@ -929,7 +944,7 @@ aes_ctr_ctx_init(void *key_sched, size_t size, uint8_t *param)
  */
 CK_RV
 soft_aes_sign_verify_init_common(soft_session_t *session_p,
-	CK_MECHANISM_PTR pMechanism, soft_object_t *key_p, boolean_t sign_op)
+    CK_MECHANISM_PTR pMechanism, soft_object_t *key_p, boolean_t sign_op)
 {
 	soft_aes_ctx_t	*soft_aes_ctx;
 	CK_MECHANISM	encrypt_mech;
@@ -1012,8 +1027,8 @@ soft_aes_sign_verify_init_common(soft_session_t *session_p,
  */
 CK_RV
 soft_aes_sign_verify_common(soft_session_t *session_p, CK_BYTE_PTR pData,
-	CK_ULONG ulDataLen, CK_BYTE_PTR pSigned, CK_ULONG_PTR pulSignedLen,
-	boolean_t sign_op, boolean_t Final)
+    CK_ULONG ulDataLen, CK_BYTE_PTR pSigned, CK_ULONG_PTR pulSignedLen,
+    boolean_t sign_op, boolean_t Final)
 {
 	soft_aes_ctx_t		*soft_aes_ctx_sign_verify;
 	CK_RV			rv;
@@ -1089,7 +1104,7 @@ clean_exit:
  */
 CK_RV
 soft_aes_mac_sign_verify_update(soft_session_t *session_p, CK_BYTE_PTR pPart,
-	CK_ULONG ulPartLen)
+    CK_ULONG ulPartLen)
 {
 	CK_BYTE		buf[AES_BLOCK_LEN];
 	CK_ULONG	ulEncryptedLen = AES_BLOCK_LEN;

@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef _KERNEL
@@ -229,6 +231,10 @@ crypto_free_mode_ctx(void *ctx)
 	}
 }
 
+/*
+ * Utility routine to apply the command, 'cmd', to the
+ * data in the uio structure.
+ */
 int
 crypto_uio_data(crypto_data_t *data, uchar_t *buf, int len, cmd_type_t cmd,
     void *digest_ctx, void (*update)())
@@ -408,6 +414,9 @@ crypto_put_output_data(uchar_t *buf, crypto_data_t *output, int len)
 {
 	switch (output->cd_format) {
 	case CRYPTO_DATA_RAW:
+		if (MAXOFF_T - output->cd_offset < (off_t)len) {
+			return (CRYPTO_ARGUMENTS_BAD);
+		}
 		if (output->cd_raw.iov_len < len + output->cd_offset) {
 			output->cd_length = len;
 			return (CRYPTO_BUFFER_TOO_SMALL);

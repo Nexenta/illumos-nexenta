@@ -344,12 +344,12 @@ pkcs11_mech2keytype(CK_MECHANISM_TYPE mech_type, CK_KEY_TYPE *ktype)
 	case CKM_AES_MAC:
 	case CKM_AES_MAC_GENERAL:
 	case CKM_AES_CBC_PAD:
-	case CKM_AES_CMAC:
-	case CKM_AES_CMAC_GENERAL:
 	case CKM_AES_CTR:
 	case CKM_AES_GCM:
 	case CKM_AES_CCM:
 	case CKM_AES_CTS:
+	case CKM_AES_CMAC:
+	case CKM_AES_CMAC_GENERAL:
 	case CKM_AES_XCBC_MAC:
 	case CKM_AES_XCBC_MAC_96:
 	case CKM_AES_GMAC:

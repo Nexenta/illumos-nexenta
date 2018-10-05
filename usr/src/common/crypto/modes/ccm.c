@@ -51,12 +51,16 @@ ccm_mode_encrypt_contiguous_blocks(ccm_ctx_t *ctx, char *data, size_t length,
     void (*copy_block)(uint8_t *, uint8_t *),
     void (*xor_block)(uint8_t *, uint8_t *))
 {
-	_NOTE(ARGUNUSED(copy_block))
 	size_t remainder = length;
 	size_t need;
 	uint8_t *datap = (uint8_t *)data;
 	uint8_t *blockp;
 	uint8_t *lastp;
+	void *iov_or_mp;
+	offset_t offset;
+	uint8_t *out_data_1;
+	uint8_t *out_data_2;
+	size_t out_data_1_len;
 	uint64_t counter;
 	uint8_t *mac_buf;
 
@@ -71,6 +75,9 @@ ccm_mode_encrypt_contiguous_blocks(ccm_ctx_t *ctx, char *data, size_t length,
 	}
 
 	lastp = (uint8_t *)ctx->ccm_cb;
+	if (out != NULL)
+		crypto_init_ptrs(out, &iov_or_mp, &offset);
+
 	mac_buf = (uint8_t *)ctx->ccm_mac_buf;
 
 	do {
@@ -129,7 +136,20 @@ ccm_mode_encrypt_contiguous_blocks(ccm_ctx_t *ctx, char *data, size_t length,
 				    need);
 			}
 		} else {
-			(void) crypto_put_output_data(lastp, out, block_size);
+			crypto_get_ptrs(out, &iov_or_mp, &offset, &out_data_1,
+			    &out_data_1_len, &out_data_2, block_size);
+
+			/* copy block to where it belongs */
+			if (out_data_1_len == block_size) {
+				copy_block(lastp, out_data_1);
+			} else {
+				bcopy(lastp, out_data_1, out_data_1_len);
+				if (out_data_2 != NULL) {
+					bcopy(lastp + out_data_1_len,
+					    out_data_2,
+					    block_size - out_data_1_len);
+				}
+			}
 			/* update offset */
 			out->cd_offset += block_size;
 		}

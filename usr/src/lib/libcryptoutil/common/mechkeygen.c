@@ -373,8 +373,6 @@ pkcs11_mech2keygen(CK_MECHANISM_TYPE mech_type, CK_MECHANISM_TYPE *gen_mech)
 	case CKM_AES_MAC:
 	case CKM_AES_MAC_GENERAL:
 	case CKM_AES_CBC_PAD:
-	case CKM_AES_CMAC:
-	case CKM_AES_CMAC_GENERAL:
 	case CKM_AES_ECB_ENCRYPT_DATA:
 	case CKM_AES_CBC_ENCRYPT_DATA:
 	case CKM_AES_CCM:
@@ -382,6 +380,8 @@ pkcs11_mech2keygen(CK_MECHANISM_TYPE mech_type, CK_MECHANISM_TYPE *gen_mech)
 	case CKM_AES_CFB128:
 	case CKM_AES_CFB64:
 	case CKM_AES_CFB8:
+	case CKM_AES_CMAC:
+	case CKM_AES_CMAC_GENERAL:
 	case CKM_AES_CTR:
 	case CKM_AES_CTS:
 	case CKM_AES_GCM:

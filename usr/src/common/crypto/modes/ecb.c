@@ -48,6 +48,11 @@ ecb_cipher_contiguous_blocks(ecb_ctx_t *ctx, char *data, size_t length,
 	uint8_t *datap = (uint8_t *)data;
 	uint8_t *blockp;
 	uint8_t *lastp;
+	void *iov_or_mp;
+	offset_t offset;
+	uint8_t *out_data_1;
+	uint8_t *out_data_2;
+	size_t out_data_1_len;
 
 	if (length + ctx->ecb_remainder_len < block_size) {
 		/* accumulate bytes here and return */
@@ -60,6 +65,8 @@ ecb_cipher_contiguous_blocks(ecb_ctx_t *ctx, char *data, size_t length,
 	}
 
 	lastp = (uint8_t *)ctx->ecb_iv;
+	if (out != NULL)
+		crypto_init_ptrs(out, &iov_or_mp, &offset);
 
 	do {
 		/* Unprocessed data from last call. */
@@ -91,7 +98,15 @@ ecb_cipher_contiguous_blocks(ecb_ctx_t *ctx, char *data, size_t length,
 			}
 		} else {
 			cipher(ctx->ecb_keysched, blockp, lastp);
-			(void) crypto_put_output_data(lastp, out, block_size);
+			crypto_get_ptrs(out, &iov_or_mp, &offset, &out_data_1,
+			    &out_data_1_len, &out_data_2, block_size);
+
+			/* copy block to where it belongs */
+			bcopy(lastp, out_data_1, out_data_1_len);
+			if (out_data_2 != NULL) {
+				bcopy(lastp + out_data_1_len, out_data_2,
+				    block_size - out_data_1_len);
+			}
 			/* update offset */
 			out->cd_offset += block_size;
 		}

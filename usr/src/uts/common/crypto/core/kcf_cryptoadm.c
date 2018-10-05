@@ -73,9 +73,11 @@ static void kcf_soft_config_dump(char *message);
  * (excluding final NUL-character string element).
  */
 static int
-count_mechanisms(crypto_mech_name_t mechs[]) {
+count_mechanisms(crypto_mech_name_t mechs[])
+{
 	int	count;
-	for (count = 0; mechs[count][0] != '\0'; ++count);
+	for (count = 0; mechs[count][0] != '\0'; ++count)
+		;
 	return (count);
 }
 
@@ -250,7 +252,7 @@ kcf_soft_config_dump(char *message)
  */
 static void
 filter_providers(uint_t count, kcf_provider_desc_t **provider_array,
-	char *skip_providers, int *mech_counts, int *new_count)
+    char *skip_providers, int *mech_counts, int *new_count)
 {
 	int i, j;
 	kcf_provider_desc_t *prov1, *prov2;

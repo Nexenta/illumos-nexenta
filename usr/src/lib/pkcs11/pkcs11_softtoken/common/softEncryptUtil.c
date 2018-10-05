@@ -56,7 +56,7 @@ soft_add_pkcs7_padding(CK_BYTE *buf, int block_size, CK_ULONG data_len)
  */
 CK_RV
 soft_encrypt_init_internal(soft_session_t *session_p, CK_MECHANISM_PTR
-	pMechanism, soft_object_t *key_p)
+    pMechanism, soft_object_t *key_p)
 {
 	CK_RV rv;
 
@@ -500,8 +500,8 @@ soft_encrypt(soft_session_t *session_p, CK_BYTE_PTR pData,
  */
 CK_RV
 soft_encrypt_update(soft_session_t *session_p, CK_BYTE_PTR pPart,
-	CK_ULONG ulPartLen, CK_BYTE_PTR pEncryptedPart,
-	CK_ULONG_PTR pulEncryptedPartLen)
+    CK_ULONG ulPartLen, CK_BYTE_PTR pEncryptedPart,
+    CK_ULONG_PTR pulEncryptedPartLen)
 {
 
 	CK_MECHANISM_TYPE mechanism = session_p->encrypt.mech.mechanism;
@@ -551,7 +551,7 @@ soft_encrypt_update(soft_session_t *session_p, CK_BYTE_PTR pPart,
  */
 CK_RV
 soft_encrypt_final(soft_session_t *session_p, CK_BYTE_PTR pLastEncryptedPart,
-	CK_ULONG_PTR pulLastEncryptedPartLen)
+    CK_ULONG_PTR pulLastEncryptedPartLen)
 {
 
 	CK_MECHANISM_TYPE mechanism = session_p->encrypt.mech.mechanism;
@@ -893,7 +893,7 @@ clean1:
  */
 void
 soft_crypt_cleanup(soft_session_t *session_p, boolean_t encrypt,
-	boolean_t lock_held)
+    boolean_t lock_held)
 {
 
 	crypto_active_op_t *active_op;

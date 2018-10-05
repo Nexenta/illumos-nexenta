@@ -203,7 +203,7 @@ soft_sign(soft_session_t *session_p, CK_BYTE_PTR pData,
 			    ulDataLen, signature, pulSignatureLen, B_TRUE,
 			    B_FALSE);
 		} else {
-			/* Pass NULL, let callee to handle it. */
+			/* Pass NULL, let callee handle it. */
 			rv = soft_aes_sign_verify_common(session_p, pData,
 			    ulDataLen, NULL, pulSignatureLen, B_TRUE, B_FALSE);
 		}
@@ -409,7 +409,7 @@ soft_sign_final(soft_session_t *session_p, CK_BYTE_PTR pSignature,
 			rv = soft_aes_sign_verify_common(session_p, NULL, 0,
 			    signature, pulSignatureLen, B_TRUE, B_TRUE);
 		} else {
-			/* Pass NULL, let callee to handle it. */
+			/* Pass NULL, let callee handle it. */
 			rv = soft_aes_sign_verify_common(session_p, NULL, 0,
 			    NULL, pulSignatureLen, B_TRUE, B_TRUE);
 		}

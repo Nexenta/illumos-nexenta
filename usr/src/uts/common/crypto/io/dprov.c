@@ -20,6 +20,7 @@
  */
 /*
  * Copyright 2010 Sun Microsystems, Inc.  All rights reserved.
+ * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
 
@@ -481,6 +482,7 @@ static crypto_mech_info_t dprov_mech_info_tab[] = {
 	{SUN_CKM_AES_CMAC, AES_CMAC_MECH_INFO_TYPE,
 	    CRYPTO_FG_ENCRYPT | CRYPTO_FG_ENCRYPT_MAC |
 	    CRYPTO_FG_ENCRYPT_ATOMIC | CRYPTO_FG_ENCRYPT_MAC_ATOMIC |
+	    CRYPTO_FG_MAC | CRYPTO_FG_MAC_ATOMIC |
 	    CRYPTO_FG_SIGN | CRYPTO_FG_SIGN_ATOMIC |
 	    CRYPTO_FG_VERIFY | CRYPTO_FG_VERIFY_ATOMIC,
 	    AES_MIN_KEY_LEN, AES_MAX_KEY_LEN, CRYPTO_KEYSIZE_UNIT_IN_BYTES},
@@ -4751,7 +4753,6 @@ dprov_copyin_mechanism(crypto_provider_handle_t provider,
 		break;
 
 	case AES_CBC_MECH_INFO_TYPE:
-	case AES_CMAC_MECH_INFO_TYPE:
 		expected_param_len = AES_BLOCK_LEN;
 		break;
 
@@ -9509,7 +9510,7 @@ dprov_object_is_token(dprov_object_t *object)
  */
 static int
 dprov_get_object_attr_scalar_common(dprov_object_t *object, uint64_t attr_type,
-				    void *value, size_t value_len)
+    void *value, size_t value_len)
 {
 	int attr_idx;
 	size_t oa_value_len;

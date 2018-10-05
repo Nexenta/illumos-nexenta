@@ -35,11 +35,6 @@
 #include <sys/crypto/impl.h>
 
 /*
- * Utility routine to apply the command, 'cmd', to the
- * data in the uio structure.
- */
-
-/*
  * Utility routine to get data from a crypto_data structure.
  *
  * '*dptr' contains a pointer to a buffer on return. 'buf'

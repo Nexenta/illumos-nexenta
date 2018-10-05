@@ -21,6 +21,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2014 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #ifndef	_COMMON_CRYPTO_MODES_H
@@ -247,7 +249,6 @@ typedef struct aes_ctx {
 } aes_ctx_t;
 
 #define	ac_flags		acu.acu_ecb.ecb_common.cc_flags
-#define	ac_remainder		acu.acu_ecb.ecb_common.cc_remainder
 #define	ac_remainder_len	acu.acu_ecb.ecb_common.cc_remainder_len
 #define	ac_keysched		acu.acu_ecb.ecb_common.cc_keysched
 #define	ac_keysched_len		acu.acu_ecb.ecb_common.cc_keysched_len
@@ -351,7 +352,7 @@ extern int gcm_decrypt_final(gcm_ctx_t *, crypto_data_t *, size_t,
     int (*encrypt_block)(const void *, const uint8_t *, uint8_t *),
     void (*xor_block)(uint8_t *, uint8_t *));
 
-extern int cmac_mode_final(aes_ctx_t *, crypto_data_t *,
+extern int cmac_mode_final(cbc_ctx_t *, crypto_data_t *,
     int (*encrypt_block)(const void *, const uint8_t *, uint8_t *),
     void (*xor_block)(uint8_t *, uint8_t *));
 
@@ -391,6 +392,7 @@ extern void crypto_get_ptrs(crypto_data_t *, void **, offset_t *,
 
 extern void *ecb_alloc_ctx(int);
 extern void *cbc_alloc_ctx(int);
+extern void *cmac_alloc_ctx(int);
 extern void *ctr_alloc_ctx(int);
 extern void *ccm_alloc_ctx(int);
 extern void *gcm_alloc_ctx(int);
