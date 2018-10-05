@@ -8262,10 +8262,11 @@ sd_unit_detach(dev_info_t *devi)
 	 */
 	devp = ddi_get_driver_private(devi);
 	if (devp == NULL || (un = (struct sd_lun *)devp->sd_private) == NULL ||
-	    un->un_state == SD_STATE_RWAIT ||
-	    un->un_state == SD_STATE_ATTACHING ||
 	    un->un_detach_count != 0 || un->un_opens_in_progress != 0 ||
-	    (!DEVI_IS_GONE(devi) && (un->un_ncmds_in_driver != 0 ||
+	    (!DEVI_IS_GONE(devi) &&
+	    (un->un_state == SD_STATE_RWAIT ||
+	    un->un_state == SD_STATE_ATTACHING ||
+	    un->un_ncmds_in_driver != 0 ||
 	    un->un_ncmds_in_transport != 0))) {
 		mutex_exit(&sd_detach_mutex);
 		return (DDI_FAILURE);
