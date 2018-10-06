@@ -408,7 +408,7 @@ smb2_dh_import_handle(smb_request_t *sr, smb_node_t *str_node,
 	smb_pathname_t	*pn = &op->fqi.fq_path;
 	cred_t		*kcr = zone_kcred();
 	struct nvlist	*nvl = NULL;
-	char 		*sidstr = NULL;
+	char		*sidstr = NULL;
 	smb_ofile_t	*of = NULL;
 	smb_attr_t	*pa;
 	boolean_t	did_open = B_FALSE;
@@ -418,10 +418,10 @@ smb2_dh_import_handle(smb_request_t *sr, smb_node_t *str_node,
 	uint64_t	u64;
 	uint32_t	u32;
 	uint32_t	status;
-	char 		*s;
+	char		*s;
 	uint8_t		*u8p;
 	uint_t		alen;
-	int 		rc;
+	int		rc;
 
 	/*
 	 * While we're called with arg.tcon, we now want to use
@@ -764,9 +764,8 @@ errout:
 	if (did_open) {
 		smb_ofile_close(of, 0);
 		smb_ofile_release(of);
-	} else if (of != NULL) {
-		/* No other refs possible */
-		smb_ofile_free(of);
+	} else {
+		ASSERT(of == NULL);
 	}
 
 	if (nvl != NULL)
@@ -785,7 +784,7 @@ smb2_dh_read_nvlist(smb_request_t *sr, smb_node_t *node,
 	smb_kshare_t	*shr = sr->arg.tcon.si;
 	cred_t		*kcr = zone_kcred();
 	size_t		flen;
-	int 		rc;
+	int		rc;
 
 	bzero(&attr, sizeof (attr));
 	attr.sa_mask = SMB_AT_SIZE;
@@ -1029,7 +1028,7 @@ smb2_dh_update_nvfile(smb_request_t *sr)
 	char		*buf = NULL;
 	size_t		buflen = 0;
 	uint32_t	wcnt;
-	int 		rc;
+	int		rc;
 
 	if (of == NULL || of->dh_persist == B_FALSE)
 		return;

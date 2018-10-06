@@ -665,6 +665,13 @@ smb_user_delete(void *arg)
 		smb_rwx_rwexit(&session->s_lock);
 	}
 
+	/*
+	 * This user is no longer on s_user_list, however...
+	 *
+	 * This is called via smb_llist_post, which means it may run
+	 * BEFORE smb_user_release drops u_mutex (if another thread
+	 * flushes the delete queue before we do).  Synchronize.
+	 */
 	mutex_enter(&user->u_mutex);
 	mutex_exit(&user->u_mutex);
 

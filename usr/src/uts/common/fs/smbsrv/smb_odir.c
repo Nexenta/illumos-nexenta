@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -283,7 +283,7 @@ smb_odir_openpath(smb_request_t *sr, char *path, uint16_t sattr,
 	smb_tree_t	*tree;
 	smb_node_t	*dnode;
 	char		pattern[MAXNAMELEN];
-	uint16_t 	odid;
+	uint16_t	odid;
 	cred_t		*cr;
 
 	ASSERT(sr);
@@ -1011,6 +1011,13 @@ smb_odir_delete(void *arg)
 	atomic_dec_32(&tree->t_session->s_dir_cnt);
 	smb_llist_exit(&tree->t_odir_list);
 
+	/*
+	 * This ofile is no longer on t_odir_list, however...
+	 *
+	 * This is called via smb_llist_post, which means it may run
+	 * BEFORE smb_odir_release drops d_mutex (if another thread
+	 * flushes the delete queue before we do).  Synchronize.
+	 */
 	mutex_enter(&od->d_mutex);
 	mutex_exit(&od->d_mutex);
 

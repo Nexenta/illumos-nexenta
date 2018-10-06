@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
  */
 
@@ -675,7 +675,7 @@ smb_tree_connect_disk(smb_request_t *sr, smb_arg_tcon_t *tcon)
 	const char		*any = "?????";
 	smb_user_t		*user = sr->uid_user;
 	smb_node_t		*snode = NULL;
-	smb_kshare_t 		*si = tcon->si;
+	smb_kshare_t		*si = tcon->si;
 	char			*service = tcon->service;
 	smb_tree_t		*tree;
 	int			rc;
@@ -804,7 +804,7 @@ smb_tree_connect_printq(smb_request_t *sr, smb_arg_tcon_t *tcon)
 	smb_user_t		*user = sr->uid_user;
 	smb_node_t		*dnode = NULL;
 	smb_node_t		*snode = NULL;
-	smb_kshare_t 		*si = tcon->si;
+	smb_kshare_t		*si = tcon->si;
 	char			*service = tcon->service;
 	char			last_component[MAXNAMELEN];
 	smb_tree_t		*tree;
@@ -1019,6 +1019,13 @@ smb_tree_dealloc(void *arg)
 	atomic_dec_32(&session->s_tree_cnt);
 	smb_llist_exit(&session->s_tree_list);
 
+	/*
+	 * This tree is no longer on s_tree_list, however...
+	 *
+	 * This is called via smb_llist_post, which means it may run
+	 * BEFORE smb_tree_release drops t_mutex (if another thread
+	 * flushes the delete queue before we do).  Synchronize.
+	 */
 	mutex_enter(&tree->t_mutex);
 	mutex_exit(&tree->t_mutex);
 

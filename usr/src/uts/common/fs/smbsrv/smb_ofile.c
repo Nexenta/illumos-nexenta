@@ -1364,6 +1364,17 @@ smb_ofile_save_dh(void *arg)
 	smb_llist_exit(&tree->t_ofile_list);
 
 	/*
+	 * This ofile is no longer on t_ofile_list, however...
+	 *
+	 * This is called via smb_llist_post, which means it may run
+	 * BEFORE smb_ofile_release drops f_mutex (if another thread
+	 * flushes the delete queue before we do).  Synchronize.
+	 */
+	mutex_enter(&of->f_mutex);
+	DTRACE_PROBE1(ofile__exit, smb_ofile_t, of);
+	mutex_exit(&of->f_mutex);
+
+	/*
 	 * Keep f_notify state, lease, and
 	 * keep on node ofile list.
 	 * Keep of->f_cr until reclaim.
@@ -1423,6 +1434,17 @@ smb_ofile_delete(void *arg)
 		smb_llist_exit(&tree->t_ofile_list);
 	}
 
+	/*
+	 * This ofile is no longer on t_ofile_list, however...
+	 *
+	 * This is called via smb_llist_post, which means it may run
+	 * BEFORE smb_ofile_release drops f_mutex (if another thread
+	 * flushes the delete queue before we do).  Synchronize.
+	 */
+	mutex_enter(&of->f_mutex);
+	DTRACE_PROBE1(ofile__exit, smb_ofile_t, of);
+	mutex_exit(&of->f_mutex);
+
 	switch (of->f_ftype) {
 	case SMB_FTYPE_BYTE_PIPE:
 	case SMB_FTYPE_MESG_PIPE:
@@ -1456,6 +1478,16 @@ smb_ofile_delete(void *arg)
 		break;
 	}
 
+	/*
+	 * This ofile is no longer on any lists.  However,
+	 * in case another thread was walking n_ofile_list
+	 * and doing mutex_enter/mutex_exit on f_mutex,
+	 * synchronize before calling smb_ofile_free.
+	 */
+	mutex_enter(&of->f_mutex);
+	of->f_state = SMB_OFILE_STATE_ALLOC;
+	mutex_exit(&of->f_mutex);
+
 	smb_ofile_free(of);
 }
 
@@ -1463,6 +1495,8 @@ void
 smb_ofile_free(smb_ofile_t *of)
 {
 	smb_tree_t	*tree = of->f_tree;
+
+	ASSERT(of->f_state == SMB_OFILE_STATE_ALLOC);
 
 	/* Make sure it's not in the persistid hash. */
 	ASSERT(of->f_persistid == 0);
@@ -1536,19 +1570,21 @@ uint32_t
 smb_ofile_open_check(smb_ofile_t *of, uint32_t desired_access,
     uint32_t share_access)
 {
+	uint32_t ret;
+
 	ASSERT(of->f_magic == SMB_OFILE_MAGIC);
 
 	mutex_enter(&of->f_mutex);
 
 	if (!smb_ofile_is_open_locked(of)) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_INVALID_HANDLE);
+		ret = NT_STATUS_INVALID_HANDLE;
+		goto out;
 	}
 
 	/* if it's just meta data */
 	if ((of->f_granted_access & FILE_DATA_ALL) == 0) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SUCCESS);
+		ret = NT_STATUS_SUCCESS;
+		goto out;
 	}
 
 	/*
@@ -1556,42 +1592,44 @@ smb_ofile_open_check(smb_ofile_t *of, uint32_t desired_access,
 	 * open granted (desired) access
 	 */
 	if (SMB_DENY_DELETE(share_access) && (of->f_granted_access & DELETE)) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
 	if (SMB_DENY_READ(share_access) &&
 	    (of->f_granted_access & (FILE_READ_DATA | FILE_EXECUTE))) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
 	if (SMB_DENY_WRITE(share_access) &&
 	    (of->f_granted_access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
 	/* check requested desired access against the open share access */
 	if (SMB_DENY_DELETE(of->f_share_access) && (desired_access & DELETE)) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
 	if (SMB_DENY_READ(of->f_share_access) &&
 	    (desired_access & (FILE_READ_DATA | FILE_EXECUTE))) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
 	if (SMB_DENY_WRITE(of->f_share_access) &&
 	    (desired_access & (FILE_WRITE_DATA | FILE_APPEND_DATA))) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
+	ret = NT_STATUS_SUCCESS;
+out:
 	mutex_exit(&of->f_mutex);
-	return (NT_STATUS_SUCCESS);
+	return (ret);
 }
 
 /*
@@ -1606,27 +1644,31 @@ smb_ofile_open_check(smb_ofile_t *of, uint32_t desired_access,
 uint32_t
 smb_ofile_rename_check(smb_ofile_t *of)
 {
+	uint32_t ret;
+
 	ASSERT(of->f_magic == SMB_OFILE_MAGIC);
 
 	mutex_enter(&of->f_mutex);
 
 	if (!smb_ofile_is_open_locked(of)) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_INVALID_HANDLE);
+		ret = NT_STATUS_INVALID_HANDLE;
+		goto out;
 	}
 
 	if ((of->f_granted_access & FILE_DATA_ALL) == 0) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SUCCESS);
+		ret = NT_STATUS_SUCCESS;
+		goto out;
 	}
 
 	if ((of->f_share_access & FILE_SHARE_DELETE) == 0) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
+	ret = NT_STATUS_SUCCESS;
+out:
 	mutex_exit(&of->f_mutex);
-	return (NT_STATUS_SUCCESS);
+	return (ret);
 }
 
 /*
@@ -1650,24 +1692,28 @@ smb_ofile_rename_check(smb_ofile_t *of)
 uint32_t
 smb_ofile_delete_check(smb_ofile_t *of)
 {
+	uint32_t ret;
+
 	ASSERT(of->f_magic == SMB_OFILE_MAGIC);
 
 	mutex_enter(&of->f_mutex);
 
 	if (!smb_ofile_is_open_locked(of)) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_INVALID_HANDLE);
+		ret = NT_STATUS_INVALID_HANDLE;
+		goto out;
 	}
 
 	if (of->f_granted_access &
 	    (FILE_READ_DATA | FILE_WRITE_DATA |
 	    FILE_APPEND_DATA | FILE_EXECUTE | DELETE)) {
-		mutex_exit(&of->f_mutex);
-		return (NT_STATUS_SHARING_VIOLATION);
+		ret = NT_STATUS_SHARING_VIOLATION;
+		goto out;
 	}
 
+	ret = NT_STATUS_SUCCESS;
+out:
 	mutex_exit(&of->f_mutex);
-	return (NT_STATUS_SUCCESS);
+	return (ret);
 }
 
 cred_t *
