@@ -148,6 +148,7 @@ int smb2_dh_new_ca_share(smb_server_t *, smb_kshare_t *);
 void smb2_dh_close_persistent(smb_ofile_t *);
 void smb2_dh_close_my_orphans(smb_request_t *, smb_ofile_t *);
 int smb2_dh_make_persistent(smb_request_t *, smb_ofile_t *);
+void smb2_dh_setdoc_persistent(smb_ofile_t *);
 void smb2_dh_update_nvfile(smb_request_t *);
 void smb2_dh_update_oplock(smb_request_t *, smb_ofile_t *);
 void smb2_dh_update_locks(smb_request_t *, smb_ofile_t *);

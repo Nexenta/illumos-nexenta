@@ -1038,7 +1038,6 @@ typedef enum {
 
 typedef enum {
 	SMB2_DH_PRESERVE_NONE = 0,
-	SMB2_DH_PRESERVE_PERSISTENT,
 	SMB2_DH_PRESERVE_SOME,
 	SMB2_DH_PRESERVE_ALL,
 } smb_preserve_type_t;

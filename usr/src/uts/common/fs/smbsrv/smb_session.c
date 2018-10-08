@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/atomic.h>
@@ -226,9 +226,9 @@ smb_netbios_session_request(struct smb_session *session)
 	int			rc;
 	char			*calling_name;
 	char			*called_name;
-	char 			client_name[NETBIOS_NAME_SZ];
-	struct mbuf_chain 	mbc;
-	char 			*names = NULL;
+	char			client_name[NETBIOS_NAME_SZ];
+	struct mbuf_chain	mbc;
+	char			*names = NULL;
 	smb_wchar_t		*wbuf = NULL;
 	smb_xprt_t		hdr;
 	char *p;
@@ -1315,13 +1315,6 @@ smb_session_logoff(smb_session_t *session)
 			// smb_user_hold_internal(user);
 			user->u_refcnt++;
 			mutex_exit(&user->u_mutex);
-			if (user->u_session->s_state ==
-			    SMB_SESSION_STATE_DISCONNECTED)
-				user->preserve_opens = SMB2_DH_PRESERVE_ALL;
-			if (session->s_server->sv_state ==
-			    SMB_SERVER_STATE_STOPPING)
-				user->preserve_opens =
-				    SMB2_DH_PRESERVE_PERSISTENT;
 			smb_user_logoff(user);
 			smb_user_release(user);
 			break;

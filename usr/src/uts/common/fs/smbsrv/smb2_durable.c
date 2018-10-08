@@ -123,6 +123,11 @@ smb2_dh_make_stream_name(char *buf, size_t buflen, uint64_t id)
  *   Open.OplockState == Held, and Open.IsDurable is TRUE.
  *
  * - Open.IsPersistent is TRUE.
+ *
+ * We also deal with some special cases for shutdown of the
+ * server, session, user, tree (in that order). Other than
+ * the cases above, shutdown (or forced termination) should
+ * destroy durable handles.
  */
 boolean_t
 smb_dh_should_save(smb_ofile_t *of)
@@ -130,20 +135,47 @@ smb_dh_should_save(smb_ofile_t *of)
 	ASSERT(MUTEX_HELD(&of->f_mutex));
 	ASSERT(of->dh_vers != SMB2_NOT_DURABLE);
 
-	if (of->f_user->preserve_opens == SMB2_DH_PRESERVE_NONE)
+	/* SMB service shutting down, destroy DH */
+	if (of->f_server->sv_state == SMB_SERVER_STATE_STOPPING)
 		return (B_FALSE);
 
-	if (of->f_user->preserve_opens == SMB2_DH_PRESERVE_ALL)
+	/*
+	 * SMB Session (connection) going away (server up).
+	 * If server initiated disconnect, destroy DH
+	 * If client initiated disconnect, save all DH.
+	 */
+	if (of->f_session->s_state == SMB_SESSION_STATE_TERMINATED)
+		return (B_FALSE);
+	if (of->f_session->s_state == SMB_SESSION_STATE_DISCONNECTED)
 		return (B_TRUE);
 
-	if (of->f_user->preserve_opens == SMB2_DH_PRESERVE_PERSISTENT) {
-		/* Shutting down. Only save persistent handles. */
-		if (of->dh_persist)
-			return (B_TRUE);
-		else
+	/*
+	 * SMB User logoff, session still "up".
+	 * Action depends on why/how this logoff happened,
+	 * determined based on user->preserve_opens
+	 */
+	if (of->f_user->u_state == SMB_USER_STATE_LOGGING_OFF) {
+		switch (of->f_user->preserve_opens) {
+		case SMB2_DH_PRESERVE_NONE:
+			/* Server-initiated */
 			return (B_FALSE);
+		case SMB2_DH_PRESERVE_SOME:
+			/* Previous session logoff. */
+			goto preserve_some;
+		case SMB2_DH_PRESERVE_ALL:
+			/* Protocol logoff request */
+			return (B_TRUE);
+		}
 	}
 
+	/*
+	 * SMB tree disconnecting (user still logged on)
+	 * i.e. when kshare export forces disconnection.
+	 */
+	if (of->f_tree->t_state == SMB_TREE_STATE_DISCONNECTING)
+		return (B_FALSE);
+
+preserve_some:
 	/* preserve_opens == SMB2_DH_PRESERVE_SOME */
 
 	switch (of->dh_vers) {
@@ -884,18 +916,51 @@ smb2_dh_import_cred(smb_ofile_t *of, char *sidstr)
 }
 
 /*
- * During ofile close, remove the persistent handle state file.
+ * Set Delete-on-Close (DoC) on the persistent state file so it will be
+ * removed when the last ref. goes away (in smb2_dh_close_persistent).
+ *
+ * This is called in just two places:
+ * (1) SMB2_close request -- client tells us to destroy the handle.
+ * (2) smb2_dh_expire -- client has forgotten about this handle.
+ * All other (server-initiated) close calls should leave these
+ * persistent state files in the file system.
+ */
+void
+smb2_dh_setdoc_persistent(smb_ofile_t *of)
+{
+	smb_node_t *strnode;
+	uint32_t status;
+
+	mutex_enter(&of->dh_nvlock);
+	if ((strnode = of->dh_nvfile) != NULL)
+		smb_node_ref(strnode);
+	mutex_exit(&of->dh_nvlock);
+
+	if (strnode != NULL) {
+		status = smb_node_set_delete_on_close(strnode,
+		    zone_kcred(), SMB_CASE_SENSITIVE);
+		if (status != 0) {
+			cmn_err(CE_WARN, "Can't set DoC on CA file: %s",
+			    strnode->od_name);
+			DTRACE_PROBE1(rm__ca__err, smb_ofile_t *, of);
+		}
+		smb_node_release(strnode);
+	}
+}
+
+/*
+ * During ofile close, free the persistent handle state nvlist and
+ * drop our reference to the state file node (which may unlink it
+ * if smb2_dh_setdoc_persistent was called).
  */
 void
 smb2_dh_close_persistent(smb_ofile_t *of)
 {
-	smb_node_t	*strnode = NULL;
+	smb_node_t	*strnode;
 	struct nvlist	*nvl;
-	int		rc;
 
 	/*
-	 * Unlink the persistent handle nvlist file.
-	 * First get the CA handle dir, then unlink
+	 * Clear out nvlist and stream linkage
 	 */
 	mutex_enter(&of->dh_nvlock);
 	strnode = of->dh_nvfile;
@@ -907,18 +972,8 @@ smb2_dh_close_persistent(smb_ofile_t *of)
 	if (nvl != NULL)
 		nvlist_free(nvl);
 
-	if (strnode == NULL)
-		return;
-
-	rc = smb_fsop_remove(0, zone_kcred(), strnode->n_dnode,
-	    strnode->od_name, 0);
-	if (rc != 0) {
-		cmn_err(CE_WARN, "Failed to remove CA file: %s",
-		    strnode->od_name);
-		DTRACE_PROBE1(rm__ca__err, smb_ofile_t *, of);
-	}
-
-	smb_node_release(strnode);
+	if (strnode != NULL)
+		smb_node_release(strnode);
 }
 
 /*
@@ -1419,6 +1474,8 @@ smb2_dh_expire(void *arg)
 {
 	smb_ofile_t *of = (smb_ofile_t *)arg;
 
+	if (of->dh_persist)
+		smb2_dh_setdoc_persistent(of);
 	smb_ofile_close(of, 0);
 	smb_ofile_release(of);
 }
