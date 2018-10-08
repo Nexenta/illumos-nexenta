@@ -98,7 +98,8 @@ static boolean_t scan_ds_queue_contains(dsl_scan_t *scn, uint64_t dsobj,
     uint64_t *txg);
 static int scan_ds_queue_insert(dsl_scan_t *scn, uint64_t dsobj, uint64_t txg);
 static void scan_ds_queue_remove(dsl_scan_t *scn, uint64_t dsobj);
-static scan_ds_t *scan_ds_queue_first(dsl_scan_t *scn);
+static boolean_t scan_ds_queue_first(dsl_scan_t *scn, uint64_t *dsobj,
+    uint64_t *txg);
 static void scan_ds_queue_sync(dsl_scan_t *scn, dmu_tx_t *tx);
 
 /*
@@ -321,6 +322,7 @@ dsl_scan_init(dsl_pool_t *dp, uint64_t txg)
 	    SPA_FEATURE_ASYNC_DESTROY);
 
 	bcopy(&scn->scn_phys, &scn->scn_phys_cached, sizeof (scn->scn_phys));
+	mutex_init(&scn->scn_queue_lock, NULL, MUTEX_DEFAULT, NULL);
 	avl_create(&scn->scn_queue, scan_ds_queue_compar, sizeof (scan_ds_t),
 	    offsetof(scan_ds_t, sds_node));
 
@@ -410,6 +412,7 @@ dsl_scan_fini(dsl_pool_t *dp)
 		if (scn->scn_taskq != NULL)
 			taskq_destroy(scn->scn_taskq);
 		scan_ds_queue_empty(scn, B_TRUE);
+		mutex_destroy(&scn->scn_queue_lock);
 
 		kmem_free(dp->dp_scan, sizeof (dsl_scan_t));
 		dp->dp_scan = NULL;
@@ -791,9 +794,12 @@ scan_ds_queue_empty(dsl_scan_t *scn, boolean_t destroy)
 {
 	void *cookie = NULL;
 	scan_ds_t *sds;
-	while ((sds = avl_destroy_nodes(&scn->scn_queue, &cookie)) !=
-	    NULL)
+
+	mutex_enter(&scn->scn_queue_lock);
+	while ((sds = avl_destroy_nodes(&scn->scn_queue, &cookie)) != NULL)
 		kmem_free(sds, sizeof (*sds));
+	mutex_exit(&scn->scn_queue_lock);
+
 	if (destroy)
 		avl_destroy(&scn->scn_queue);
 }
@@ -801,12 +807,15 @@ scan_ds_queue_empty(dsl_scan_t *scn, boolean_t destroy)
 static boolean_t
 scan_ds_queue_contains(dsl_scan_t *scn, uint64_t dsobj, uint64_t *txg)
 {
-	scan_ds_t srch, *sds;
+	scan_ds_t *sds;
+	scan_ds_t srch = { .sds_dsobj = dsobj };
 
-	srch.sds_dsobj = dsobj;
+	mutex_enter(&scn->scn_queue_lock);
 	sds = avl_find(&scn->scn_queue, &srch, NULL);
 	if (sds != NULL && txg != NULL)
 		*txg = sds->sds_txg;
+	mutex_exit(&scn->scn_queue_lock);
+
 	return (sds != NULL);
 }
 
@@ -820,9 +829,13 @@ scan_ds_queue_insert(dsl_scan_t *scn, uint64_t dsobj, uint64_t txg)
 	sds->sds_dsobj = dsobj;
 	sds->sds_txg = txg;
 
-	if (avl_find(&scn->scn_queue, sds, &where) != NULL)
+	mutex_enter(&scn->scn_queue_lock);
+	if (avl_find(&scn->scn_queue, sds, &where) != NULL) {
+		kmem_free(sds, sizeof (*sds));
 		return (EEXIST);
+	}
 	avl_insert(&scn->scn_queue, sds, where);
+	mutex_exit(&scn->scn_queue_lock);
 
 	return (0);
 }
@@ -834,16 +847,29 @@ scan_ds_queue_remove(dsl_scan_t *scn, uint64_t dsobj)
 
 	srch.sds_dsobj = dsobj;
 
+	mutex_enter(&scn->scn_queue_lock);
 	sds = avl_find(&scn->scn_queue, &srch, NULL);
 	VERIFY(sds != NULL);
 	avl_remove(&scn->scn_queue, sds);
+	mutex_exit(&scn->scn_queue_lock);
+
 	kmem_free(sds, sizeof (*sds));
 }
 
-static scan_ds_t *
-scan_ds_queue_first(dsl_scan_t *scn)
+static boolean_t
+scan_ds_queue_first(dsl_scan_t *scn, uint64_t *dsobj, uint64_t *txg)
 {
-	return (avl_first(&scn->scn_queue));
+	scan_ds_t *sds;
+
+	mutex_enter(&scn->scn_queue_lock);
+	sds = avl_first(&scn->scn_queue);
+	if (sds != NULL) {
+		*dsobj = sds->sds_dsobj;
+		*txg = sds->sds_txg;
+	}
+	mutex_exit(&scn->scn_queue_lock);
+
+	return (sds != NULL);
 }
 
 static void
@@ -861,12 +887,15 @@ scan_ds_queue_sync(dsl_scan_t *scn, dmu_tx_t *tx)
 	    scn->scn_phys.scn_queue_obj, tx));
 	scn->scn_phys.scn_queue_obj = zap_create(dp->dp_meta_objset, ot,
 	    DMU_OT_NONE, 0, tx);
+
+	mutex_enter(&scn->scn_queue_lock);
 	for (scan_ds_t *sds = avl_first(&scn->scn_queue);
 	    sds != NULL; sds = AVL_NEXT(&scn->scn_queue, sds)) {
 		VERIFY0(zap_add_int_key(dp->dp_meta_objset,
 		    scn->scn_phys.scn_queue_obj, sds->sds_dsobj,
 		    sds->sds_txg, tx));
 	}
+	mutex_exit(&scn->scn_queue_lock);
 }
 
 /*
@@ -1409,9 +1438,10 @@ dsl_scan_ds_destroyed(dsl_dataset_t *ds, dmu_tx_t *tx)
 
 	if (scan_ds_queue_contains(scn, ds->ds_object, &mintxg)) {
 		scan_ds_queue_remove(scn, ds->ds_object);
-		if (ds->ds_is_snapshot)
+		if (ds->ds_is_snapshot) {
 			VERIFY0(scan_ds_queue_insert(scn,
 			    dsl_dataset_phys(ds)->ds_next_snap_obj, mintxg));
+		}
 	}
 
 	if (zap_lookup_int_key(dp->dp_meta_objset, scn->scn_phys.scn_queue_obj,
@@ -1939,8 +1969,8 @@ dsl_scan_ddt_entry(dsl_scan_t *scn, enum zio_checksum checksum,
 static void
 dsl_scan_visit(dsl_scan_t *scn, dmu_tx_t *tx)
 {
-	scan_ds_t *sds;
 	dsl_pool_t *dp = scn->scn_dp;
+	uint64_t dsobj, txg;
 
 	if (scn->scn_phys.scn_ddt_bookmark.ddb_class <=
 	    scn->scn_phys.scn_ddt_class_max) {
@@ -1991,10 +2021,8 @@ dsl_scan_visit(dsl_scan_t *scn, dmu_tx_t *tx)
 	bzero(&scn->scn_phys.scn_bookmark, sizeof (zbookmark_phys_t));
 
 	/* keep pulling things out of the zap-object-as-queue */
-	while ((sds = scan_ds_queue_first(scn)) != NULL) {
+	while (scan_ds_queue_first(scn, &dsobj, &txg)) {
 		dsl_dataset_t *ds;
-		uint64_t dsobj = sds->sds_dsobj;
-		uint64_t txg = sds->sds_txg;
 
 		scan_ds_queue_remove(scn, dsobj);
 

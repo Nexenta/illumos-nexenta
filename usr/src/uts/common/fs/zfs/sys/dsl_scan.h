@@ -121,6 +121,12 @@ typedef struct dsl_scan {
 
 	dsl_scan_phys_t scn_phys;
 	dsl_scan_phys_t scn_phys_cached;
+
+	/*
+	 * With multi-threaded sync, we need to make sure scn_queue access
+	 * is kept nicely serialized.
+	 */
+	kmutex_t scn_queue_lock;
 	avl_tree_t scn_queue;
 
 	/*
