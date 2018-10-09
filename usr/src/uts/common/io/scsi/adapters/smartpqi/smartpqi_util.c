@@ -143,6 +143,8 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 		    (void *)cmd, cmd_state_str(cmd->pc_cmd_state),
 		    cmd_state_str(new_state));
 	}
+	cmd->pc_last_state = cmd->pc_cmd_state;
+	cmd->pc_cmd_state = new_state;
 	switch (new_state) {
 	case PQI_CMD_UNINIT:
 		break;
@@ -154,7 +156,7 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 		break;
 
 	case PQI_CMD_QUEUED:
-		if (cmd->pc_cmd_state == PQI_CMD_STARTED)
+		if (cmd->pc_last_state == PQI_CMD_STARTED)
 			break;
 		if (grab_lock == B_TRUE)
 			mutex_enter(&devp->pd_mutex);
@@ -212,8 +214,8 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 		break;
 
 	case PQI_CMD_FATAL:
-		if ((cmd->pc_cmd_state == PQI_CMD_QUEUED) ||
-		    (cmd->pc_cmd_state == PQI_CMD_STARTED)) {
+		if ((cmd->pc_last_state == PQI_CMD_QUEUED) ||
+		    (cmd->pc_last_state == PQI_CMD_STARTED)) {
 			if (grab_lock == B_TRUE)
 				mutex_enter(&devp->pd_mutex);
 
@@ -260,8 +262,6 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 		 */
 		break;
 	}
-	cmd->pc_last_state = cmd->pc_cmd_state;
-	cmd->pc_cmd_state = new_state;
 }
 
 
