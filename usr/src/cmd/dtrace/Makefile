@@ -23,14 +23,14 @@
 # Copyright 2007 Sun Microsystems, Inc.  All rights reserved.
 # Use is subject to license terms.
 #
-# ident	"%Z%%M%	%I%	%E% SMI"
+# Copyright 2018 Nexenta Systems, Inc.
 #
 
 PROG= dtrace
 
 include ../Makefile.cmd
 
-SUBDIRS=	$(MACH) demo test
+SUBDIRS=	$(MACH) demo nexenta test
 $(BUILD64)SUBDIRS += $(MACH64)
 
 all	:=	TARGET = all

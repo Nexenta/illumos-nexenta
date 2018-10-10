@@ -1,0 +1,54 @@
+#
+# This file and its contents are supplied under the terms of the
+# Common Development and Distribution License ("CDDL"), version 1.0.
+# You may only use this file in accordance with the terms of version
+# 1.0 of the CDDL.
+#
+# A full copy of the text of the CDDL should have accompanied this
+# source.  A copy is of the CDDL is also available via the Internet
+# at http://www.illumos.org/license/CDDL.
+#
+
+# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+
+set name=pkg.fmri value=pkg:/system/monitoring/dtrace@$(PKGVERS)
+set name=pkg.summary value="DTrace scripts for the system monitoring"
+set name=info.classification \
+    value="org.opensolaris.category.2008:Applications/System Utilities"
+set name=variant.arch value=$(ARCH)
+dir path=usr group=sys
+dir path=usr/nexenta group=sys
+dir path=usr/nexenta/dtrace group=sys
+file path=usr/nexenta/dtrace/capture-flamestacks mode=0555
+file path=usr/nexenta/dtrace/dirtydata-timestamp.d
+file path=usr/nexenta/dtrace/dirtydata.d
+file path=usr/nexenta/dtrace/flamegraph mode=0555
+file path=usr/nexenta/dtrace/iscsirwlat mode=0555
+file path=usr/nexenta/dtrace/iscsisvrtop mode=0555
+file path=usr/nexenta/dtrace/nfsio mode=0555
+file path=usr/nexenta/dtrace/nfsio30sec mode=0555
+file path=usr/nexenta/dtrace/nfssvrtop mode=0555
+file path=usr/nexenta/dtrace/nfsutil mode=0555
+file path=usr/nexenta/dtrace/nfswizard mode=0555
+file path=usr/nexenta/dtrace/stackcollapse mode=0555
+file path=usr/nexenta/dtrace/zfs-prefetch mode=0555
+file path=usr/nexenta/dtrace/zilstat mode=0555
+file path=usr/nexenta/dtrace/ziosnoop mode=0555
+file path=usr/nexenta/dtrace/ziotype mode=0555
+license lic_CDDL license=lic_CDDL
+link path=usr/bin/capture-flamestacks \
+    target=../nexenta/dtrace/capture-flamestacks
+link path=usr/bin/flamegraph target=../nexenta/dtrace/flamegraph
+link path=usr/bin/iscsirwlat target=../nexenta/dtrace/iscsirwlat
+link path=usr/bin/iscsisvrtop target=../nexenta/dtrace/iscsisvrtop
+link path=usr/bin/nfsio target=../nexenta/dtrace/nfsio
+link path=usr/bin/nfsio30sec target=../nexenta/dtrace/nfsio30sec
+link path=usr/bin/nfssvrtop target=../nexenta/dtrace/nfssvrtop
+link path=usr/bin/nfsutil target=../nexenta/dtrace/nfsutil
+link path=usr/bin/nfswizard target=../nexenta/dtrace/nfswizard
+link path=usr/bin/stackcollapse target=../nexenta/dtrace/stackcollapse
+link path=usr/bin/zfs-prefetch target=../nexenta/dtrace/zfs-prefetch
+link path=usr/bin/zilstat target=../nexenta/dtrace/zilstat
+link path=usr/bin/ziosnoop target=../nexenta/dtrace/ziosnoop
+link path=usr/bin/ziotype target=../nexenta/dtrace/ziotype
+

@@ -1,0 +1,11 @@
+#!/usr/bin/bash 
+
+# Copyright 2011 Brendan Gregg.  All rights reserved.
+
+if [ "$#" -ne 1 ]; then
+	echo "capture-flamestacks -f <output-file>"
+	exit 0
+fi
+ofile=$1
+/usr/sbin/dtrace -x stackframes=100 -n 'profile-997 /arg0/ { @[stack()] = count(); } tick-60s { exit(0); }' -o ${ofile}
+

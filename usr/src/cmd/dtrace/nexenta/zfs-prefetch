@@ -1,0 +1,29 @@
+#!/usr/sbin/dtrace -qs 
+
+/*
+ * Copyright (c) 2012, Ben Rockwood (benr@cuddletech.com)
+ */
+
+   /* This should look at the arguments to dmu_zfetch_fetch */
+/*
+fbt:zfs:dmu_zfetch_fetch:entry 
+{ 
+  self->object = args[0]->dn_object;
+  self->blockid = arg1;
+  self->blocks  = arg2;
+  self->start = timestamp;
+  printf("Prefetching object %d from dataset %s : %d blocks for blockid %dn", 
+	 args[0]->dn_objset->os_dsl_dataset->ds_dir->dd_object,
+	 args[0]->dn_objset->os_dsl_dataset->ds_dir->dd_myname, 
+	 arg2, arg1); 
+}
+*/
+
+fbt:zfs:dbuf_prefetch:entry
+{
+  printf("  zfetching object %d block %d (%d bytes) from dataset %s\n", 
+	 args[0]->dn_objset->os_dsl_dataset->ds_dir->dd_object,
+	 arg1,
+	 args[0]->dn_datablksz, 
+	 stringof(args[0]->dn_objset->os_dsl_dataset->ds_dir->dd_myname));
+}
