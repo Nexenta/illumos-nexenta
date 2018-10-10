@@ -120,6 +120,7 @@
 #define	DEBUG_LEVEL	DEBUG_NONE
 #endif
 
+#ifdef DEBUG
 #define	qede_dbg(MASK, ptr, fmt, ...) \
 do { \
 	if (DEBUG_LEVEL & (MASK)) { \
@@ -140,6 +141,11 @@ do { \
 	qede_print_err("!%s(%d):" fmt, __func__, (ptr)->instance, \
 ##__VA_ARGS__); \
 } while (0);
+#else
+#define qede_dbg(MASK, ptr, fmt, ...)
+#define qede_info(ptr, fmt, ...)
+#define	qede_warn(ptr, fmt, ...)
+#endif
 
 #ifdef __sparc
 #define	QEDE_PAGE_ALIGNMENT	0x0000000000002000ull
@@ -217,7 +223,7 @@ do { \
 #define	MAX_MTU		        DEFAULT_JUMBO_MTU	
 #define	DEFAULT_MTU		ETHERMTU
 
-#define DEFAULT_ECORE_DEBUG_LEVEL	ECORE_LEVEL_VERBOSE 
+#define DEFAULT_ECORE_DEBUG_LEVEL	ECORE_LEVEL_ERR 
 
 
 #define	DEFAULT_ECORE_DEBUG_MODULE	ECORE_MSG_DRV 

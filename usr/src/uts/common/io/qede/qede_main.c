@@ -513,7 +513,6 @@ static int
 qede_resume(qede_t *qede)
 {
 	mutex_enter(&qede->drv_lock);
-	cmn_err(CE_NOTE, "%s:%d Enter\n", __func__, qede->instance);
 	qede->qede_state = QEDE_STATE_ATTACHED;
 	mutex_exit(&qede->drv_lock);
 	return (DDI_FAILURE);
@@ -1206,7 +1205,6 @@ qede_config_fm(qede_t * qede)
 {
         ddi_iblock_cookie_t iblk;
 
-        cmn_err(CE_NOTE, "Entered qede_config_fm\n");
         qede_regs_acc_attr.devacc_attr_access = DDI_FLAGERR_ACC;
         qede_desc_acc_attr.devacc_attr_access = DDI_FLAGERR_ACC;
         qede_buf_acc_attr.devacc_attr_access = DDI_FLAGERR_ACC;
@@ -1355,8 +1353,6 @@ qede_vport_stop(qede_t *qede)
 			    "FAILED for hwfn%d ", i);
 			return (DDI_FAILURE);
 		}
-		cmn_err(CE_WARN, "!qede_vport_stop: "
-		    "SUCCESS for hwfn%d ", i);
 
 		qede->vport_state[i] =
 		    QEDE_VPORT_STOPPED;
@@ -1427,14 +1423,6 @@ qede_vport_update(qede_t *qede,
 	int  status = DDI_SUCCESS;
 	bool new_state;
 	uint8_t i;
-
-	cmn_err(CE_NOTE, "qede_vport_update: "
-	    "Enter, state = %s%s%s%s%s",
-	    state == QEDE_VPORT_STARTED ? "QEDE_VPORT_STARTED" : "",
-	    state == QEDE_VPORT_ON ? "QEDE_VPORT_ON" : "",
-	    state == QEDE_VPORT_OFF ? "QEDE_VPORT_OFF" : "",
-	    state == QEDE_VPORT_STOPPED ? "QEDE_VPORT_STOPPED" : "",
-	    state == QEDE_VPORT_UNKNOWN ? "" : "");
 
 	/*
 	 * Update only does on and off.
@@ -1557,10 +1545,6 @@ qede_vport_update(qede_t *qede,
 			    " with ", i);
 			return (DDI_FAILURE);
 		}
-		cmn_err(CE_NOTE, "!ecore_sp_vport_update: "
-		    "SUCCESS for hwfn%d ", i);
-
-					
 	}
 	return (DDI_SUCCESS);
 }
@@ -1601,8 +1585,6 @@ qede_vport_start(qede_t *qede)
 			    "FAILED for hwfn%d", i);
 			return (DDI_FAILURE);
 		}
-		cmn_err(CE_NOTE, "!ecore_sp_vport_start: "
-		    "SUCCESS for hwfn%d ", i);
 
 		ecore_hw_start_fastpath(p_hwfn);
 		qede->vport_state[i] = QEDE_VPORT_STARTED;
@@ -1657,8 +1639,6 @@ qede_fastpath_stop_queues(qede_t *qede)
 		for (j = 0; j < qede->num_tc; j++) {
 			tx_ring = fp->tx_ring[j];
 			if (tx_ring->queue_started == B_TRUE) {
-				cmn_err(CE_WARN, "Stopping tx queue "
-				    "%d:%d. ", i, j);
 				p_tx_cid = tx_ring->p_cid; 
 				status = ecore_eth_tx_queue_stop(p_hwfn,
 					(void *)p_tx_cid);
@@ -1668,14 +1648,10 @@ qede_fastpath_stop_queues(qede_t *qede)
 					return (DDI_FAILURE);
 				}
 				tx_ring->queue_started = B_FALSE;
-				cmn_err(CE_NOTE, "tx_ring %d:%d stopped\n", i, 
-				    j);
 			}
 		}
 
 		if (rx_ring->queue_started == B_TRUE) {
-			cmn_err(CE_WARN, "Stopping rx queue "
-			    "%d. ", i);
 			p_rx_cid = rx_ring->p_cid; 
 			status = ecore_eth_rx_queue_stop(p_hwfn, 
 			    (void *)p_rx_cid, B_TRUE, B_FALSE);
@@ -1687,7 +1663,6 @@ qede_fastpath_stop_queues(qede_t *qede)
 				return (DDI_FAILURE);
 			}
 			rx_ring->queue_started = B_FALSE;
-			cmn_err(CE_NOTE, "rx_ring%d stopped\n", i);
 		}
 	}
 
@@ -1766,7 +1741,6 @@ qede_fastpath_start_queues(qede_t *qede)
 
 		qede_update_rx_q_producer(rx_ring);
 		rx_ring->queue_started = B_TRUE;
-		cmn_err(CE_NOTE, "rx_ring%d started\n", i);
 
 		for (j = 0; j < qede->num_tc; j++) {
 			tx_ring = fp->tx_ring[j];
@@ -1808,7 +1782,6 @@ qede_fastpath_start_queues(qede_t *qede)
 			    ETH_DB_DATA_AGG_VAL_SEL, DQ_XCM_ETH_TX_BD_PROD_CMD);
 			tx_ring->tx_db.data.agg_flags = DQ_XCM_ETH_DQ_CF_CMD;
 			tx_ring->queue_started = B_TRUE;
-			cmn_err(CE_NOTE, "tx_ring %d:%d started\n", i, j);
 		}
 	}
 
@@ -3119,8 +3092,6 @@ qede_stop(qede_t *qede)
 	qede_fastpath_free_phys_mem(qede);
 	
 	qede->qede_state = QEDE_STATE_STOPPED;
-	/* LINTED E_BAD_FORMAT_ARG_TYPE2 */
-	cmn_err(CE_WARN, "qede_stop SUCCESS =%p\n", qede);
 	return (DDI_SUCCESS);
 }
 
@@ -3168,8 +3139,6 @@ qede_start(qede_t *qede)
 		goto err_out1;
 	}
 
-	cmn_err(CE_NOTE, "qede_start fp_start_queues qede=%p\n", qede);
-
 	status = qede_configure_link(qede, 1 /* Set */);
 	if (status) {
 		cmn_err(CE_NOTE, "!%s(%d): Failed to configure link",
@@ -3195,8 +3164,6 @@ qede_start(qede_t *qede)
 		goto err_out2;
 	}
 	qede->qede_state = QEDE_STATE_STARTED;
-	cmn_err(CE_NOTE, "!%s(%d): SUCCESS",
-		    __func__, qede->instance);
 
 	return (status);
 
@@ -3369,8 +3336,6 @@ qede_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	case DDI_ATTACH:
 	{
     		instance = ddi_get_instance(dip);
-	    	cmn_err(CE_NOTE, "qede_attach(%d): Enter",
-		    instance);
 
     		/* Allocate main structure rounded up to cache line size */
     		if ((qede = kmem_zalloc(sizeof (qede_t), KM_SLEEP)) == NULL) {
@@ -3505,9 +3470,6 @@ qede_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 		}
 
 		qede->attach_resources |= QEDE_SP_INTR_ENBL;
-
-		cmn_err(CE_NOTE, "qede->attach_resources = %x\n", 
-		    qede->attach_resources);			
 
 		memset((void *)&hw_init_params, 0, 
 		    sizeof (struct ecore_hw_init_params));

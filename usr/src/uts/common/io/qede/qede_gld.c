@@ -1061,6 +1061,7 @@ qede_multicast(qede_t *qede, boolean_t flag, const uint8_t *ptr_mcaddr)
 	boolean_t mcmac_exists = B_FALSE;
 	enum qede_filter_rx_mode_type mode;
 
+#ifdef DEBUG
 	if (!ptr_mcaddr)  {
 		cmn_err(CE_NOTE, "Removing all multicast");
 	} else  {
@@ -1070,6 +1071,7 @@ qede_multicast(qede_t *qede, boolean_t flag, const uint8_t *ptr_mcaddr)
 		    ptr_mcaddr[1],ptr_mcaddr[2],ptr_mcaddr[3],ptr_mcaddr[4],
 		    ptr_mcaddr[5]);
 	}
+#endif
 
 
 	if (flag && (ptr_mcaddr == NULL)) {
@@ -1542,8 +1544,6 @@ qede_ioctl_rd_wr_nvram(qede_t *qede, mblk_t *mp)
 				return DDI_FAILURE;
 			}
 			qede->nvm_buf_start = buf;
-			cmn_err(CE_NOTE, 
-			    "buf = %p, size = %x\n", qede->nvm_buf_start, size);
 			qede->nvm_buf = buf;
 			qede->copy_len = 0;
 			//tmp_buf = buf + addr;
@@ -1567,8 +1567,6 @@ qede_ioctl_rd_wr_nvram(qede_t *qede, mblk_t *mp)
 				tmp_buf = tmp_buf + buf_size;
 				qede->nvm_buf = tmp_buf;
 				//qede->copy_len = qede->copy_len + buf_size;
-				cmn_err(CE_NOTE, 
-				    "buf_size from app = %x\n", copy_len);
 				ret = 0;
 				break;
 			}

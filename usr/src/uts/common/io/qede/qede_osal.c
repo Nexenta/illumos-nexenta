@@ -650,6 +650,7 @@ qede_osal_pci_read_config_dword(struct ecore_dev *edev, u32 addr, u32 *val)
 	
 }
 
+#ifdef VERBOSE_DEBUG
 void 
 qede_print(char *format, ...)
 {
@@ -669,6 +670,18 @@ qede_print_err(char *format, ...)
 	vcmn_err(CE_WARN, format, ap);
 	va_end(ap);
 }
+#else
+/*ARGSUSED*/
+void
+qede_print(char *format, ...)
+{
+}
+/*ARGSUSED*/
+void
+qede_print_err(char *format, ...)
+{
+}
+#endif
 
 /*
  * Check if any mem/dma entries are left behind
