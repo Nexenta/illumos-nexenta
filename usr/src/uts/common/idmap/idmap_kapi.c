@@ -22,6 +22,8 @@
 /*
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
+ *
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 /*
@@ -1307,6 +1309,12 @@ kidmap_get_mappings(idmap_get_handle_t *get_handle)
 				*result->sid_prefix = sid_prefix;
 				*result->rid = id->idmap_id_u.sid.rid;
 			}
+			if (*result->stat == IDMAP_ERR_NOTFOUND &&
+			    sid_prefix != NULL) {
+				/* IDMAP generated a local SID. Use it. */
+				*result->stat = IDMAP_SUCCESS;
+			}
+
 			if (*result->stat == IDMAP_SUCCESS &&
 			    request->id1.idtype == IDMAP_UID)
 				kidmap_cache_add_sid2uid(
