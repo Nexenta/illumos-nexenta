@@ -328,7 +328,7 @@ pqi_lun_reset(pqi_state_t s, pqi_device_t d)
 
 	r->rc_s = s;
 	r->rc_d = d;
-	(void) ddi_taskq_dispatch(s->s_taskq, lun_reset_worker, r, 0);
+	(void) ddi_taskq_dispatch(s->s_events_taskq, lun_reset_worker, r, 0);
 	return (B_TRUE);
 }
 

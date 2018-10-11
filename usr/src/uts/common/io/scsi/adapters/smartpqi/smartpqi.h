@@ -60,7 +60,7 @@ extern "C" {
 #define	NAME_DISK				"disk"
 #define	NAME_ENCLOSURE				"enclosure"
 
-#define	CMD_TIMEOUT_SCAN_SECS			2
+#define	CMD_TIMEOUT_SCAN_SECS			10
 #define	SYNC_CMDS_TIMEOUT_SECS			5
 #define	IO_SPACE				1
 #define	PQI_MAXTGTS				256
@@ -268,7 +268,8 @@ typedef struct pqi_state {
 				s_offline : 1,
 				s_enable_mpxio : 1;
 	kmem_cache_t		*s_cmd_cache;
-	ddi_taskq_t		*s_taskq;
+	ddi_taskq_t		*s_events_taskq;
+	ddi_taskq_t		*s_complete_taskq;
 	timeout_id_t		s_time_of_day;
 	timeout_id_t		s_rescan;
 	timeout_id_t		s_cmd_timeout;

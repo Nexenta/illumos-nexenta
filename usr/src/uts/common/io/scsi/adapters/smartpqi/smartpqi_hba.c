@@ -127,6 +127,7 @@ smartpqi_register_hba(pqi_state_t s)
 			s->s_enable_mpxio = 0;
 		}
 	}
+
 	s->s_cmd_timeout = timeout(cmd_timeout_scan, s,
 	    CMD_TIMEOUT_SCAN_SECS * drv_usectohz(MICROSEC));
 

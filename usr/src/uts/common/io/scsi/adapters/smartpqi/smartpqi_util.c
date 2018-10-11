@@ -24,6 +24,7 @@ static char *cmd_state_str(pqi_cmd_state_t state);
 static void dump_raid(pqi_state_t s, void *v, pqi_index_t idx);
 static void dump_aio(void *v);
 static void show_error_detail(pqi_state_t s);
+static void cmd_finish_task(void *v);
 
 /*
  * []------------------------------------------------------------------[]
@@ -89,8 +90,8 @@ pqi_free_io(pqi_io_request_t *io)
 	io->io_refcount = 0;
 	reinit_io(io);
 	if (s->s_io_wait_cnt != 0) {
-		s->s_io_wait_cnt = 0;
-		cv_broadcast(&s->s_io_condvar);
+		s->s_io_wait_cnt--;
+		cv_signal(&s->s_io_condvar);
 	}
 	mutex_exit(&s->s_io_mutex);
 }
@@ -136,7 +137,6 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 {
 	pqi_device_t	devp = cmd->pc_device;
 	pqi_state_t	s = cmd->pc_softc;
-	struct scsi_pkt	*pkt;
 
 	if (cmd->pc_softc->s_debug_level & DBG_LVL_STATE) {
 		cmn_err(CE_NOTE, "%s: cmd=%p (%s) -> (%s)\n", __func__,
@@ -185,27 +185,10 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 			devp->pd_active_cmds--;
 			atomic_dec_32(&s->s_cmd_queue_len);
 			pqi_free_io(cmd->pc_io_rqst);
-			pkt = cmd->pc_pkt;
 
-			/*
-			 * Can't hold the lock across pkt_comp() call because
-			 * the SCSA layer will sometimes call back into
-			 * our tran_start() routine which must grab the
-			 * lock to examine pd_flags.
-			 * When called with grab_lock==B_FALSE the callers
-			 * are all looping with calls to list_head to process
-			 * the list and aren't expecting any link list pointers
-			 * to remain intact.
-			 */
 			cmd->pc_flags &= ~PQI_FLAG_FINISHING;
-			mutex_exit(&devp->pd_mutex);
-			if (cmd->pc_poll)
-				sema_v(cmd->pc_poll);
-			if ((pkt->pkt_flags & FLAG_NOINTR) == 0 &&
-			    (pkt->pkt_comp != NULL))
-				(*pkt->pkt_comp)(pkt);
-			/* ---- Don't touch 'cmd' after here ---- */
-			mutex_enter(&devp->pd_mutex);
+			(void) ddi_taskq_dispatch(s->s_events_taskq,
+			    cmd_finish_task, cmd, 0);
 		}
 
 		if (grab_lock == B_TRUE)
@@ -236,21 +219,27 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 			if (cmd->pc_io_rqst)
 				pqi_free_io(cmd->pc_io_rqst);
 
-			pkt = cmd->pc_pkt;
-			mutex_exit(&devp->pd_mutex);
-			if (cmd->pc_poll)
-				sema_v(cmd->pc_poll);
-			if ((pkt->pkt_flags & FLAG_NOINTR) == 0 &&
-			    (pkt->pkt_comp != NULL))
-				(*pkt->pkt_comp)(pkt);
-			/* ---- Don't touch 'cmd' after here ---- */
+			(void) ddi_taskq_dispatch(s->s_events_taskq,
+			    cmd_finish_task, cmd, 0);
 
-			if (grab_lock == B_FALSE)
-				mutex_enter(&devp->pd_mutex);
+			if (grab_lock == B_TRUE)
+				mutex_exit(&devp->pd_mutex);
 		}
 		break;
 
 	case PQI_CMD_DESTRUCT:
+		if (grab_lock == B_TRUE)
+			mutex_enter(&devp->pd_mutex);
+
+		if (list_link_active(&cmd->pc_list)) {
+			list_remove(&devp->pd_cmd_list, cmd);
+			devp->pd_active_cmds--;
+			if (cmd->pc_io_rqst)
+				pqi_free_io(cmd->pc_io_rqst);
+		}
+
+		if (grab_lock == B_TRUE)
+			mutex_exit(&devp->pd_mutex);
 		break;
 
 	default:
@@ -612,6 +601,31 @@ pqi_alloc_mem_len(int len)
  * | Support/utility functions for main functions above			|
  * []------------------------------------------------------------------[]
  */
+
+/*
+ * cmd_finish_task -- taskq to complete command processing
+ *
+ * Under high load the driver will run out of IO slots which causes command
+ * requests to pause until a slot is free. Calls to pkt_comp below can circle
+ * through the SCSI layer and back into the driver to start another command
+ * request and therefore possibly pause. If cmd_finish_task() was called on
+ * the interrupt thread a hang condition could occur because IO slots wouldn't
+ * be processed and then freed. So, this portion of the command completion
+ * is run on a taskq.
+ */
+static void
+cmd_finish_task(void *v)
+{
+	pqi_cmd_t	cmd = v;
+	struct scsi_pkt	*pkt;
+
+	pkt = cmd->pc_pkt;
+	if (cmd->pc_poll)
+		sema_v(cmd->pc_poll);
+	if ((pkt->pkt_flags & FLAG_NOINTR) == 0 &&
+	    (pkt->pkt_comp != NULL))
+		(*pkt->pkt_comp)(pkt);
+}
 
 typedef struct qual {
 	int	q_val;

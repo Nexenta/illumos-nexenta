@@ -444,7 +444,8 @@ process_event_intr(pqi_state_t s)
 	if (num_events != 0) {
 		q->oq_ci_copy = oq_ci;
 		ddi_put32(s->s_datap, q->oq_ci, oq_ci);
-		(void) ddi_taskq_dispatch(s->s_taskq, pqi_event_worker, s, 0);
+		(void) ddi_taskq_dispatch(s->s_events_taskq, pqi_event_worker,
+		    s, 0);
 	}
 	mutex_exit(&s->s_intr_mutex);
 }

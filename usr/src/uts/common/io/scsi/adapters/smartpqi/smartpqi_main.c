@@ -235,8 +235,11 @@ smartpqi_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	s->s_cmd_cache = kmem_cache_create(m.mem, sizeof (struct pqi_cmd), 0,
 	    pqi_cache_constructor, pqi_cache_destructor, NULL, s, NULL, 0);
 
-	(void) snprintf(m.mem, m.len, "smartpqi_taskq%d", instance);
-	s->s_taskq = ddi_taskq_create(s->s_dip, m.mem, 1,
+	(void) snprintf(m.mem, m.len, "pqi_events_taskq%d", instance);
+	s->s_events_taskq = ddi_taskq_create(s->s_dip, m.mem, 1,
+	    TASKQ_DEFAULTPRI, 0);
+	(void) snprintf(m.mem, m.len, "pqi_complete_taskq%d", instance);
+	s->s_complete_taskq = ddi_taskq_create(s->s_dip, m.mem, 4,
 	    TASKQ_DEFAULTPRI, 0);
 	pqi_free_mem_len(&m);
 
@@ -323,10 +326,15 @@ smartpqi_detach(dev_info_t *dip, ddi_detach_cmd_t cmd)
 			s->s_cmd_cache = NULL;
 		}
 
-		if (s->s_taskq != NULL) {
-			ddi_taskq_destroy(s->s_taskq);
-			s->s_taskq = NULL;
+		if (s->s_events_taskq != NULL) {
+			ddi_taskq_destroy(s->s_events_taskq);
+			s->s_events_taskq = NULL;
 		}
+		if (s->s_complete_taskq != NULL) {
+			ddi_taskq_destroy(s->s_complete_taskq);
+			s->s_complete_taskq = NULL;
+		}
+
 		while ((devp = list_head(&s->s_devnodes)) != NULL) {
 			/* ---- Better not be any active commands ---- */
 			ASSERT(list_is_empty(&devp->pd_cmd_list));
