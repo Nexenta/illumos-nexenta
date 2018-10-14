@@ -23,6 +23,7 @@
  * Copyright (c) 2006, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Nexenta Systems, Inc.
  * Copyright 2016 Argo Technologies SA
+ * Copyright (c) 2018, Joyent, Inc.
  */
 
 /*
@@ -1347,7 +1348,8 @@ sata_hba_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	}
 
 	/* read devctl ioctl data */
-	if (cmd != DEVCTL_AP_CONTROL) {
+	if (cmd != DEVCTL_AP_CONTROL && cmd >= DEVCTL_IOC &&
+	    cmd <= DEVCTL_IOC_MAX) {
 		if (ndi_dc_allochdl((void *)arg, &dcp) != NDI_SUCCESS)
 			return (EFAULT);
 
@@ -1675,9 +1677,13 @@ sata_hba_ioctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 	if (dcp) {
 		ndi_dc_freehdl(dcp);
 	}
-	mutex_enter(&SATA_CPORT_INFO(sata_hba_inst, cport)->cport_mutex);
-	cportinfo->cport_event_flags &= ~SATA_APCTL_LOCK_PORT_BUSY;
-	mutex_exit(&SATA_CPORT_INFO(sata_hba_inst, cport)->cport_mutex);
+
+	if (cmd >= DEVCTL_IOC && cmd <= DEVCTL_IOC_MAX) {
+		mutex_enter(&SATA_CPORT_INFO(sata_hba_inst,
+		    cport)->cport_mutex);
+		cportinfo->cport_event_flags &= ~SATA_APCTL_LOCK_PORT_BUSY;
+		mutex_exit(&SATA_CPORT_INFO(sata_hba_inst, cport)->cport_mutex);
+	}
 
 	return (rv);
 }
@@ -9212,7 +9218,7 @@ sata_build_lsense_page_30(
  */
 static	int
 sata_build_lsense_page_0e(sata_drive_info_t *sdinfo, uint8_t *buf,
-	sata_pkt_txlate_t *spx)
+    sata_pkt_txlate_t *spx)
 {
 	struct start_stop_cycle_counter_log *log_page;
 	int i, rval, index;
@@ -10905,7 +10911,7 @@ sata_offline_device(sata_hba_inst_t *sata_hba_inst,
 
 static dev_info_t *
 sata_create_target_node(dev_info_t *dip, sata_hba_inst_t *sata_hba_inst,
-			sata_address_t *sata_addr)
+    sata_address_t *sata_addr)
 {
 	dev_info_t *cdip = NULL;
 	int rval;
@@ -11093,7 +11099,7 @@ fail:
  */
 static void
 sata_remove_target_node(sata_hba_inst_t *sata_hba_inst,
-			sata_address_t *sata_addr)
+    sata_address_t *sata_addr)
 {
 	dev_info_t *tdip;
 	uint8_t cport = sata_addr->cport;
@@ -12235,7 +12241,7 @@ sata_init_write_cache_mode(sata_drive_info_t *sdinfo)
  */
 static int
 sata_validate_sata_address(sata_hba_inst_t *sata_hba_inst, int cport,
-	int pmport, int qual)
+    int pmport, int qual)
 {
 	if (qual == SATA_ADDR_DCPORT && pmport != 0)
 		goto invalid_address;
@@ -12268,7 +12274,7 @@ invalid_address:
  */
 static int
 sata_validate_scsi_address(sata_hba_inst_t *sata_hba_inst,
-	struct scsi_address *ap, sata_device_t *sata_device)
+    struct scsi_address *ap, sata_device_t *sata_device)
 {
 	int cport, pmport, qual, rval;
 
