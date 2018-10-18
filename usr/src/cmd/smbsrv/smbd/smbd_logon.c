@@ -76,7 +76,7 @@ static smb_audit_t *smbd_audit_unlink(uint32_t);
 
 /*
  * Invoked at user logon due to SmbSessionSetupX.  Authenticate the
- * user, start an audit session and audit the event.
+ * user.
  *
  * On error, returns NULL, and status in user_info->lg_status
  */
@@ -84,19 +84,7 @@ smb_token_t *
 smbd_user_auth_logon(smb_logon_t *user_info)
 {
 	smb_token_t *token;
-	smb_audit_t *entry;
-	adt_session_data_t *ah = NULL;
-	adt_event_data_t *event;
 	smb_logon_t tmp_user;
-	au_tid_addr_t termid;
-	char sidbuf[SMB_SID_STRSZ];
-	char *username;
-	char *domain;
-	uid_t uid;
-	gid_t gid;
-	char *sid;
-	int status;
-	int retval;
 	char *p;
 	char *buf = NULL;
 
@@ -139,11 +127,54 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 	if (token == NULL) {
 		if (user_info->lg_status == 0) /* should not happen */
 			user_info->lg_status = NT_STATUS_INTERNAL_ERROR;
+	}
+
+	if (!smbd_logon_audit(token, &user_info->lg_clnt_ipaddr,
+	    tmp_user.lg_e_username, tmp_user.lg_e_domain)) {
+		user_info->lg_status = NT_STATUS_AUDIT_FAILED;
+		goto errout;
+	}
+
+	if (token) {
+		smb_autohome_add(token);
+	}
+
+	if (buf != NULL)
+		free(buf);
+
+	return (token);
+
+errout:
+	if (buf != NULL)
+		free(buf);
+	smb_token_destroy(token);
+	return (NULL);
+}
+
+/* Start an audit session and audit the event. */
+boolean_t
+smbd_logon_audit(smb_token_t *token, smb_inaddr_t *ipaddr, char *username,
+    char *domain)
+{
+	smb_audit_t *entry;
+	adt_session_data_t *ah = NULL;
+	adt_event_data_t *event;
+	au_tid_addr_t termid;
+	char sidbuf[SMB_SID_STRSZ];
+	uid_t uid;
+	gid_t gid;
+	char *sid;
+	int status;
+	int retval;
+
+	if (username == NULL)
+		username = "";
+
+	if (token == NULL) {
 		uid = ADT_NO_ATTRIB;
 		gid = ADT_NO_ATTRIB;
 		sid = NT_NULL_SIDSTR;
-		username = tmp_user.lg_e_username;
-		domain = tmp_user.lg_e_domain;
+		/* use the 'default' username and domain we were given */
 		status = ADT_FAILURE;
 		retval = ADT_FAIL_VALUE_AUTH;
 	} else {
@@ -159,25 +190,23 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 
 	if (adt_start_session(&ah, NULL, 0)) {
 		syslog(LOG_AUTH | LOG_ALERT, "adt_start_session: %m");
-		user_info->lg_status = NT_STATUS_AUDIT_FAILED;
 		goto errout;
 	}
 
 	if ((event = adt_alloc_event(ah, ADT_smbd_session)) == NULL) {
 		syslog(LOG_AUTH | LOG_ALERT,
 		    "adt_alloc_event(ADT_smbd_session): %m");
-		user_info->lg_status = NT_STATUS_AUDIT_FAILED;
 		goto errout;
 	}
 
 	(void) memset(&termid, 0, sizeof (au_tid_addr_t));
-	termid.at_port = user_info->lg_local_port;
+	termid.at_port = 445;
 
-	if (user_info->lg_clnt_ipaddr.a_family == AF_INET) {
-		termid.at_addr[0] = user_info->lg_clnt_ipaddr.a_ipv4;
+	if (ipaddr->a_family == AF_INET) {
+		termid.at_addr[0] = ipaddr->a_ipv4;
 		termid.at_type = AU_IPv4;
 	} else {
-		bcopy(&user_info->lg_clnt_ipaddr.a_ip, termid.at_addr,
+		bcopy(&ipaddr->a_ip, termid.at_addr,
 		    sizeof (in6_addr_t));
 		termid.at_type = AU_IPv6;
 	}
@@ -186,7 +215,6 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 	if (adt_set_user(ah, uid, gid, uid, gid, NULL, ADT_NEW)) {
 		syslog(LOG_AUTH | LOG_ALERT, "adt_set_user: %m");
 		adt_free_event(event);
-		user_info->lg_status = NT_STATUS_AUDIT_FAILED;
 		goto errout;
 	}
 
@@ -202,8 +230,6 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 	if (token) {
 		if ((entry = malloc(sizeof (smb_audit_t))) == NULL) {
 			syslog(LOG_ERR, "smbd_user_auth_logon: %m");
-			user_info->lg_status =
-			    NT_STATUS_INSUFFICIENT_RESOURCES;
 			goto errout;
 		}
 
@@ -213,27 +239,19 @@ smbd_user_auth_logon(smb_logon_t *user_info)
 		entry->sa_username = strdup(username);
 		entry->sa_domain = strdup(domain);
 
-		smb_autohome_add(token);
 		smbd_audit_link(entry);
 		token->tkn_audit_sid = entry->sa_audit_sid;
 		adt_get_auid(ah, &token->tkn_auid);
 		adt_get_mask(ah, &token->tkn_amask);
 		adt_get_asid(ah, &token->tkn_asid);
-		user_info->lg_status = NT_STATUS_SUCCESS;
 	}
 
-	if (buf != NULL)
-		free(buf);
-
-	return (token);
-
+	return (B_TRUE);
 errout:
-	if (buf != NULL)
-		free(buf);
 	if (ah != NULL)
 		(void) adt_end_session(ah);
-	smb_token_destroy(token);
-	return (NULL);
+
+	return (B_FALSE);
 }
 
 /*

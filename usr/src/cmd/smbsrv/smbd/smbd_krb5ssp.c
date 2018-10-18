@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2015 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -119,6 +119,7 @@ smbd_krb5ssp_work(authsvc_context_t *ctx)
 	gss_OID mech_type = GSS_C_NULL_OID;
 	krb5_error_code kerr;
 	uint32_t status;
+	smb_token_t *token = NULL;
 
 	intok.length = ctx->ctx_ibodylen;
 	intok.value  = ctx->ctx_ibodybuf;
@@ -132,6 +133,9 @@ smbd_krb5ssp_work(authsvc_context_t *ctx)
 		    krb5_get_error_message(be->be_kctx, kerr));
 		return (NT_STATUS_INTERNAL_ERROR);
 	}
+
+	free(be->be_username);
+	be->be_username = NULL;
 
 	major = gss_accept_sec_context(&minor, &be->be_gssctx,
 	    GSS_C_NO_CREDENTIAL, &intok,
@@ -158,7 +162,8 @@ smbd_krb5ssp_work(authsvc_context_t *ctx)
 		    (int)mech_type, major, minor);
 		smbd_report(" krb5: %s",
 		    krb5_get_error_message(be->be_kctx, minor));
-		return (NT_STATUS_WRONG_PASSWORD);
+		status = NT_STATUS_WRONG_PASSWORD;
+		goto out;
 	}
 
 	switch (major) {
@@ -170,9 +175,11 @@ smbd_krb5ssp_work(authsvc_context_t *ctx)
 			/* becomes NT_STATUS_MORE_PROCESSING_REQUIRED */
 			return (0);
 		}
-		return (NT_STATUS_WRONG_PASSWORD);
+		status = NT_STATUS_WRONG_PASSWORD;
+		goto out;
 	default:
-		return (NT_STATUS_WRONG_PASSWORD);
+		status = NT_STATUS_WRONG_PASSWORD;
+		goto out;
 	}
 
 	/*
@@ -198,14 +205,15 @@ smbd_krb5ssp_work(authsvc_context_t *ctx)
 	status = get_authz_data_pac(be->be_gssctx,
 	    &be->be_authz_pac);
 	if (status)
-		return (status);
+		goto out;
 
 	kerr = krb5_pac_parse(be->be_kctx, be->be_authz_pac.value,
 	    be->be_authz_pac.length, &be->be_kpac);
 	if (kerr) {
 		smbd_report("krb5ssp, krb5_pac_parse: %s",
 		    krb5_get_error_message(be->be_kctx, kerr));
-		return (NT_STATUS_UNSUCCESSFUL);
+		status = NT_STATUS_UNSUCCESSFUL;
+		goto out;
 	}
 
 	kerr = krb5_pac_get_buffer(be->be_kctx, be->be_kpac,
@@ -213,29 +221,45 @@ smbd_krb5ssp_work(authsvc_context_t *ctx)
 	if (kerr) {
 		smbd_report("krb5ssp, krb5_pac_get_buffer: %s",
 		    krb5_get_error_message(be->be_kctx, kerr));
-		return (NT_STATUS_UNSUCCESSFUL);
+		status = NT_STATUS_UNSUCCESSFUL;
+		goto out;
 	}
 
 	ctx->ctx_token = calloc(1, sizeof (smb_token_t));
-	if (ctx->ctx_token == NULL)
-		return (NT_STATUS_NO_MEMORY);
-
+	if (ctx->ctx_token == NULL) {
+		status = NT_STATUS_NO_MEMORY;
+		goto out;
+	}
 	status = smb_decode_krb5_pac(ctx->ctx_token, be->be_pac.data,
 	    be->be_pac.length);
 	if (status)
-		return (status);
+		goto out;
 
 	status = get_ssnkey(ctx);
 	if (status)
-		return (status);
+		goto out;
 
-	if (!smb_token_setup_common(ctx->ctx_token))
-		return (NT_STATUS_UNSUCCESSFUL);
+	if (!smb_token_setup_common(ctx->ctx_token)) {
+		status = NT_STATUS_UNSUCCESSFUL;
+		goto out;
+	}
 
 	/* Success! */
 	ctx->ctx_orawtype = LSA_MTYPE_ES_DONE;
 
-	return (0);
+	status = 0;
+	token = ctx->ctx_token;
+
+	/*
+	 * Before we return, audit successful and failed logons.
+	 * We only audit logons where we should have a username.
+	 */
+out:
+	if (!smbd_logon_audit(token, &ctx->ctx_clinfo.lci_clnt_ipaddr,
+	    be->be_username, "") && status == 0)
+		return (NT_STATUS_AUDIT_FAILED);
+
+	return (status);
 }
 
 /*
