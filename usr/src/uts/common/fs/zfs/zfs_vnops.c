@@ -1231,6 +1231,7 @@ zfs_write(vnode_t *vp, uio_t *uio, int ioflag, cred_t *cr, caller_context_t *ct)
 	return (0);
 }
 
+/* ARGSUSED */
 void
 zfs_get_done(zgd_t *zgd, int error)
 {
@@ -1247,9 +1248,6 @@ zfs_get_done(zgd_t *zgd, int error)
 	 * txg stopped from syncing.
 	 */
 	VN_RELE_ASYNC(ZTOV(zp), dsl_pool_vnrele_taskq(dmu_objset_pool(os)));
-
-	if (error == 0 && zgd->zgd_bp)
-		zil_lwb_add_block(zgd->zgd_lwb, zgd->zgd_bp);
 
 	kmem_free(zgd, sizeof (zgd_t));
 }
@@ -1370,6 +1368,14 @@ zfs_get_data(void *arg, lr_write_t *lr, char *buf, struct lwb *lwb, zio_t *zio)
 
 			if (error == EALREADY) {
 				lr->lr_common.lrc_txtype = TX_WRITE2;
+				/*
+				 * TX_WRITE2 relies on the data previously
+				 * written by the TX_WRITE that caused
+				 * EALREADY.  We zero out the BP because
+				 * it is the old, currently-on-disk BP.
+				 */
+				zgd->zgd_bp = NULL;
+				BP_ZERO(bp);
 				error = 0;
 			}
 		}
