@@ -187,7 +187,7 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 			pqi_free_io(cmd->pc_io_rqst);
 
 			cmd->pc_flags &= ~PQI_FLAG_FINISHING;
-			(void) ddi_taskq_dispatch(s->s_events_taskq,
+			(void) ddi_taskq_dispatch(s->s_complete_taskq,
 			    cmd_finish_task, cmd, 0);
 		}
 
@@ -219,7 +219,7 @@ pqi_cmd_sm(pqi_cmd_t cmd, pqi_cmd_state_t new_state, boolean_t grab_lock)
 			if (cmd->pc_io_rqst)
 				pqi_free_io(cmd->pc_io_rqst);
 
-			(void) ddi_taskq_dispatch(s->s_events_taskq,
+			(void) ddi_taskq_dispatch(s->s_complete_taskq,
 			    cmd_finish_task, cmd, 0);
 
 			if (grab_lock == B_TRUE)
