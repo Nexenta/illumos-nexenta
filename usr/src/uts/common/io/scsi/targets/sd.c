@@ -90,10 +90,10 @@ int sd_reinstate_resv_delay		= SD_REINSTATE_RESV_DELAY;
 int sd_enable_lun_reset			= FALSE;
 
 /*
- * Default safe I/O delay threshold of 3s for all devices.
+ * Default safe I/O delay threshold of 30s for all devices.
  * Can be overriden for vendor/device id in sd.conf
  */
-hrtime_t sd_slow_io_threshold		= 3LL * NANOSEC;
+hrtime_t sd_slow_io_threshold		= 30LL * NANOSEC;
 
 /*
  * Global data for debug logging. To enable debug printing, sd_component_mask
