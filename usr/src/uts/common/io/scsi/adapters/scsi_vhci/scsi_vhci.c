@@ -136,6 +136,7 @@ static int vhci_scsi_reset(struct scsi_address *, int);
 static int vhci_scsi_reset_target(struct scsi_address *, int level,
     uint8_t select_path);
 static int vhci_scsi_reset_bus(struct scsi_address *);
+static int vhci_scsi_reset_all_paths(struct scsi_address *);
 static int vhci_scsi_getcap(struct scsi_address *, char *, int);
 static int vhci_scsi_setcap(struct scsi_address *, char *, int, int);
 static int vhci_commoncap(struct scsi_address *, char *, int, int, int);
@@ -1712,7 +1713,6 @@ again:
 	return (0);
 }
 
-
 /* ARGSUSED */
 static int
 vhci_scsi_reset_bus(struct scsi_address *ap)
@@ -1720,6 +1720,103 @@ vhci_scsi_reset_bus(struct scsi_address *ap)
 	return (1);
 }
 
+/*
+ * This is a special version of LUN reset routine
+ * which sends a reset down all available paths.
+ */
+static int
+vhci_scsi_reset_all_paths(struct scsi_address *ap)
+{
+	dev_info_t		*vdip, *cdip = NULL;
+	mdi_pathinfo_t		*pip = NULL;
+	mdi_pathinfo_t		*npip = NULL;
+	int			rval = -1;
+	scsi_vhci_priv_t	*svp = NULL;
+	struct scsi_address	*pap = NULL;
+	scsi_hba_tran_t		*hba = NULL;
+	int			sps = MDI_SUCCESS;
+	int			reset_result = 0;
+	struct scsi_vhci	*vhci = NULL;
+
+	/*
+	 * SCSI address should be interpreted according to the pHBA flags.
+	 */
+	if (ap->a_hba_tran->tran_hba_flags & SCSI_HBA_ADDR_COMPLEX)
+		cdip = ADDR2DIP(ap);
+	else if (ap->a_hba_tran->tran_hba_flags & SCSI_HBA_TRAN_CLONE)
+		cdip = ap->a_hba_tran->tran_sd->sd_dev;
+
+	if (cdip == NULL || (vdip = ddi_get_parent(cdip)) == NULL ||
+	    (vhci = ddi_get_soft_state(vhci_softstate,
+		ddi_get_instance(vdip))) == NULL) {
+		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: "
+		    "Child info pointer NULL, cdip 0x%p",
+		    __func__, (void *)cdip));
+		return (0);
+	}
+
+	rval = mdi_select_path(cdip, NULL, MDI_SELECT_ONLINE_PATH, NULL, &pip);
+	if ((rval != MDI_SUCCESS) || (pip == NULL)) {
+		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: "
+		    "Unable to get a path, dip 0x%p",
+		    __func__, (void *)cdip));
+		return (0);
+	}
+again:
+	svp = (scsi_vhci_priv_t *)mdi_pi_get_vhci_private(pip);
+
+	if (svp == NULL || svp->svp_psd == NULL) {
+		VHCI_DEBUG(2, (CE_WARN, NULL, "!%s: "
+		    "private data is NULL, pip 0x%p",
+		    __func__, (void *)pip));
+		mdi_rele_path(pip);
+		return (0);
+	}
+
+	pap = &svp->svp_psd->sd_address;
+	hba = pap->a_hba_tran;
+
+	if (pap != NULL && hba != NULL && hba->tran_reset != NULL) {
+		/*
+		 * The following sends reset down all available paths
+		 */
+		if (sps == MDI_SUCCESS) {
+			reset_result = hba->tran_reset(pap, RESET_LUN);
+
+			VHCI_DEBUG(2, (CE_WARN, vdip, "!%s%d: "
+			    "path %s, reset LUN %s",
+			    ddi_driver_name(cdip), ddi_get_instance(cdip),
+			    mdi_pi_spathname(pip),
+			    (reset_result ? "Success" : "Failed")));
+
+			/*
+			 * Select next path and issue the reset, repeat
+			 * until all paths are exhausted regardless of success
+			 * or failure of the previous reset.
+			 */
+			sps = mdi_select_path(cdip, NULL,
+			    MDI_SELECT_ONLINE_PATH, pip, &npip);
+			if ((sps != MDI_SUCCESS) || (npip == NULL)) {
+				mdi_rele_path(pip);
+				return (0);
+			}
+			mdi_rele_path(pip);
+			pip = npip;
+			goto again;
+		}
+		mdi_rele_path(pip);
+		mutex_enter(&vhci->vhci_mutex);
+		scsi_hba_reset_notify_callback(&vhci->vhci_mutex,
+		    &vhci->vhci_reset_notify_listf);
+		mutex_exit(&vhci->vhci_mutex);
+		VHCI_DEBUG(6, (CE_NOTE, NULL, "!vhci_scsi_reset_target: "
+		    "reset %d sent down pip:%p for cdip:%p\n", RESET_LUN,
+		    (void *)pip, (void *)cdip));
+		return (1);
+	}
+	mdi_rele_path(pip);
+	return (0);
+}
 
 /*
  * called by vhci_getcap and vhci_setcap to get and set (respectively)
@@ -6158,12 +6255,15 @@ vhci_devctl(dev_t dev, int cmd, intptr_t arg, int mode, cred_t *credp,
 			break;
 		}
 		svp = (scsi_vhci_priv_t *)mdi_pi_get_vhci_private(pip);
-		if (vhci_recovery_reset(svp->svp_svl,
-		    &svp->svp_psd->sd_address, TRUE,
-		    VHCI_DEPTH_TARGET) == 0) {
-			VHCI_DEBUG(1, (CE_NOTE, NULL,
-			    "!vhci_ioctl(pip:%p): "
-			    "reset failed\n", (void *)pip));
+
+		VHCI_DEBUG(2, (CE_NOTE, NULL,
+		    "!reset %s@%s on all available paths",
+		    ndi_dc_getname(dcp), ndi_dc_getaddr(dcp)));
+
+		if (vhci_scsi_reset_all_paths(&svp->svp_psd->sd_address) != 0) {
+			VHCI_DEBUG(2, (CE_WARN, NULL,
+			    "!vhci_ioctl(pip:%p): reset failed\n",
+			    (void *)pip));
 			rv = ENXIO;
 		}
 		mdi_rele_path(pip);
