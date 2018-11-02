@@ -221,16 +221,25 @@ static void smb_user_logoff_tq(void *);
 
 /*
  * Create a new user.
+ *
+ * For SMB2 and later, session IDs (u_ssnid) need to be unique among all
+ * current and "recent" sessions.  The session ID is derived from the
+ * address of the smb_user object (obscured by XOR with a constant).
+ * This adds a 3-bit generation number in the low bits, incremented
+ * when we allocate an smb_user_t from its kmem cache, so it can't
+ * be confused with a (recent) previous incarnation of this object.
  */
 smb_user_t *
 smb_user_new(smb_session_t *session)
 {
 	smb_user_t	*user;
+	uint_t		gen;	// generation (low 3 bits of ssnid)
 
 	ASSERT(session);
 	ASSERT(session->s_magic == SMB_SESSION_MAGIC);
 
 	user = kmem_cache_alloc(smb_cache_user, KM_SLEEP);
+	gen = (user->u_ssnid + 1) & 7;
 	bzero(user, sizeof (smb_user_t));
 
 	user->u_refcnt = 1;
@@ -240,7 +249,7 @@ smb_user_new(smb_session_t *session)
 
 	if (smb_idpool_alloc(&session->s_uid_pool, &user->u_uid))
 		goto errout;
-	user->u_ssnid = SMB_USER_SSNID(user);
+	user->u_ssnid = SMB_USER_SSNID(user) + gen;
 
 	mutex_init(&user->u_mutex, NULL, MUTEX_DEFAULT, NULL);
 	user->u_state = SMB_USER_STATE_LOGGING_ON;
