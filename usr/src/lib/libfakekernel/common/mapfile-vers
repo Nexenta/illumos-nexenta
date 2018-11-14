@@ -11,6 +11,8 @@
 
 #
 # Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2017 RackTop Systems.
+# Copyright 2018, Joyent, Inc.
 #
 
 #
@@ -45,6 +47,10 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	copyout;
 	copystr;
 
+	cyclic_add;
+	cyclic_remove;
+	cyclic_reprogram;
+
 	crfree;
 	crgetsid;
 	crgetuid;
@@ -64,6 +70,7 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	cv_signal;
 	cv_timedwait;
 	cv_timedwait_sig;
+	cv_timedwait_hires;
 	cv_wait;
 	cv_wait_sig;
 
@@ -79,6 +86,8 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	debug_enter;
 	delay;
 
+	fm_panic;
+
 	fakekernel_cprintf	{ FLAGS = NODIRECT };
 	fakekernel_init;
 	fakekernel_putlog	{ FLAGS = NODIRECT };
@@ -92,17 +101,23 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	hrt2ts;
 	hz;
 
+	highbit64;
+
+	issig;
+
 	kcred;
 	kiconv;
 	kiconv_close;
 	kiconv_open;
 
 	kmem_alloc;
+	kmem_asprintf;
 	kmem_cache_alloc;
 	kmem_cache_create;
 	kmem_cache_destroy;
 	kmem_cache_free;
-	kmem_cache_reap_now;
+	kmem_cache_reap_active;
+	kmem_cache_reap_soon;
 	kmem_cache_set_move;
 	kmem_debugging;
 	kmem_free;
@@ -110,9 +125,14 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 
 	kmutex_destroy;
 	kmutex_init;
+	kmutex_enter;
+	kmutex_exit;
 
 	ksema_destroy;
 	ksema_init;
+
+	ksid_lookupdomain;
+	ksiddomain_rele;
 
 	ksocket_accept;
 	ksocket_bind;
@@ -143,11 +163,19 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	kstat_named_init;
 	kstat_named_setstr;
 	kstat_rele;
+	kstat_runq_back_to_waitq;
+	kstat_runq_enter;
+	kstat_runq_enter_time;
+	kstat_runq_exit;
+	kstat_runq_exit_time;
+	kstat_waitq_enter;
+	kstat_waitq_enter_time;
+	kstat_waitq_exit;
+	kstat_waitq_exit_time;
+	kstat_waitq_to_runq;
 
 	msec_per_tick;
 
-	mutex_enter;
-	mutex_exit;
 	mutex_owned;
 	mutex_owner;
 	mutex_tryenter;
@@ -191,13 +219,22 @@ SYMBOL_VERSION SUNWprivate_1.1 {
 	system_taskq_init;
 	taskq_create;
 	taskq_create_proc;
+	taskq_create_sysdc;
 	taskq_destroy;
 	taskq_dispatch;
 	taskq_dispatch_ent;
+	taskq_empty;
 	taskq_member;
 	taskq_wait;
 
+	thread_create;
 	thread_join;
+	thread_exit;
+
+	tsd_get;
+	tsd_set;
+	tsd_create;
+	tsd_destroy;
 
 	tick_per_msec;
 	timeout;

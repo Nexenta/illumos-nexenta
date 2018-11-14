@@ -20,8 +20,8 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- *
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright (c) 2017, Joyent, Inc.  All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -124,7 +124,7 @@ static idm_status_t iscsit_init(dev_info_t *dip);
 static idm_status_t iscsit_enable_svc(iscsit_hostinfo_t *hostinfo);
 static void iscsit_disable_svc(void);
 
-static int
+static boolean_t
 iscsit_check_cmdsn_and_queue(idm_pdu_t *rx_pdu);
 
 static void
@@ -1544,8 +1544,9 @@ iscsit_xfer_scsi_data(scsi_task_t *task, stmf_data_buf_t *dbuf,
 	/*
 	 * If it's not immediate data then start the transfer
 	 */
-	ASSERT(ibuf->ibuf_is_immed == B_FALSE);
 	if (dbuf->db_flags & DB_DIRECTION_TO_RPORT) {
+		if (ibuf->ibuf_is_immed)
+			return (iscsit_idm_to_stmf(IDM_STATUS_SUCCESS));
 		/*
 		 * The DB_SEND_STATUS_GOOD flag in the STMF data buffer allows
 		 * the port provider to phase-collapse, i.e. send the status
@@ -1569,6 +1570,7 @@ iscsit_xfer_scsi_data(scsi_task_t *task, stmf_data_buf_t *dbuf,
 
 		return (iscsit_idm_to_stmf(idm_rc));
 	} else if (dbuf->db_flags & DB_DIRECTION_FROM_RPORT) {
+		ASSERT(ibuf->ibuf_is_immed == B_FALSE);
 		/* Grab the SN lock (see comment above) */
 		mutex_enter(&ict_sess->ist_sn_mutex);
 		idm_rc = idm_buf_rx_from_ini(iscsit_task->it_idm_task,
@@ -3130,8 +3132,10 @@ iscsit_cmdsn_in_window(iscsit_conn_t *ict, uint32_t cmdsn)
  * CmdSN order. So out-of-order non-immediate commands are queued up on a
  * session-wide wait queue. Duplicate commands are ignored.
  *
+ * returns B_TRUE for commands which can be executed immediately (are
+ * non-deferred), B_FALSE for cases where a command was deferred or invalid.
  */
-static int
+static boolean_t
 iscsit_check_cmdsn_and_queue(idm_pdu_t *rx_pdu)
 {
 	idm_conn_t		*ic = rx_pdu->isp_ic;
@@ -3145,9 +3149,15 @@ iscsit_check_cmdsn_and_queue(idm_pdu_t *rx_pdu)
 		DTRACE_PROBE2(immediate__cmd, iscsit_sess_t *, ist,
 		    idm_pdu_t *, rx_pdu);
 		mutex_exit(&ist->ist_sn_mutex);
-		return (ISCSIT_CMDSN_EQ_EXPCMDSN);
+		return (B_TRUE);
 	}
-	if (iscsit_sna_lt(ist->ist_expcmdsn, ntohl(hdr->cmdsn))) {
+	/*
+	 * See RFC3270 3.1.1.2: non-immediate commands outside of the
+	 * expected window (from expcmdsn to maxcmdsn, inclusive)
+	 * should be silently ignored.
+	 */
+	if (iscsit_sna_lt(ist->ist_expcmdsn, ntohl(hdr->cmdsn)) &&
+	    iscsit_sna_lt(ntohl(hdr->cmdsn), ist->ist_maxcmdsn)) {
 		/*
 		 * Out-of-order commands (cmdSN higher than ExpCmdSN)
 		 * are staged on a fixed-size circular buffer until
@@ -3159,15 +3169,24 @@ iscsit_check_cmdsn_and_queue(idm_pdu_t *rx_pdu)
 		rx_pdu->isp_queue_time = gethrtime();
 		iscsit_add_pdu_to_queue(ist, rx_pdu);
 		mutex_exit(&ist->ist_sn_mutex);
-		return (ISCSIT_CMDSN_GT_EXPCMDSN);
-	} else if (iscsit_sna_lt(ntohl(hdr->cmdsn), ist->ist_expcmdsn)) {
+		return (B_FALSE);
+	} else if (iscsit_sna_lt(ntohl(hdr->cmdsn), ist->ist_expcmdsn) ||
+	    iscsit_sna_lt(ist->ist_maxcmdsn, ntohl(hdr->cmdsn))) {
+		/*
+		 * See above, this command is outside of our acceptable
+		 * window, we need to discard/complete.
+		 */
 		DTRACE_PROBE3(cmdsn__lt__expcmdsn, iscsit_sess_t *, ist,
 		    iscsit_conn_t *, ict, idm_pdu_t *, rx_pdu);
 		mutex_exit(&ist->ist_sn_mutex);
-		return (ISCSIT_CMDSN_LT_EXPCMDSN);
+		idm_pdu_complete(rx_pdu, IDM_STATUS_SUCCESS);
+		/*
+		 * tell our callers that the PDU "finished."
+		 */
+		return (B_FALSE);
 	} else {
 		mutex_exit(&ist->ist_sn_mutex);
-		return (ISCSIT_CMDSN_EQ_EXPCMDSN);
+		return (B_TRUE);
 	}
 }
 

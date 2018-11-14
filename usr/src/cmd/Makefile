@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 1989, 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2016 Joyent, Inc.
+# Copyright (c) 2017, Joyent, Inc.
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright (c) 2013 DEY Storage Systems, Inc. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
@@ -135,6 +135,7 @@ COMMON_SUBDIRS=		\
 	diskfltinj	\
 	dladm		\
 	dlstat		\
+	dlutil		\
 	dmesg		\
 	dodatadm	\
 	dtrace		\
@@ -144,7 +145,6 @@ COMMON_SUBDIRS=		\
 	echo		\
 	ed		\
 	eeprom		\
-	egrep		\
 	eject		\
 	emul64ioctl	\
 	enhance		\
@@ -162,7 +162,6 @@ COMMON_SUBDIRS=		\
 	fdisk		\
 	ficl		\
 	filesync	\
-	fgrep		\
 	file		\
 	find		\
 	flowadm		\
@@ -190,7 +189,6 @@ COMMON_SUBDIRS=		\
 	gettext		\
 	gettxt		\
 	grep		\
-	grep_xpg4	\
 	groups		\
 	growfs		\
 	grpck		\
@@ -581,7 +579,6 @@ MSGSUBDIRS=		\
 	expand		\
 	expr		\
 	fcinfo		\
-	fgrep		\
 	file		\
 	filesync	\
 	find		\
@@ -598,7 +595,6 @@ MSGSUBDIRS=		\
 	gettext		\
 	gettxt		\
 	grep		\
-	grep_xpg4	\
 	grpck		\
 	gss		\
 	halt		\

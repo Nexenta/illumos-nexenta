@@ -1181,8 +1181,10 @@ spa_start_perfmon_thread(spa_t *spa)
 	if (data->perfmon_thread == NULL) {
 		DTRACE_PROBE1(spa_start_perfmon_act, spa_t *, spa);
 		data->perfmon_thr_exit = B_FALSE;
+#ifdef _KERNEL
 		data->perfmon_thread = thread_create(NULL, 0,
 		    spa_perfmon_thread, spa, 0, &p0, TS_RUN, maxclsyspri);
+#endif
 	}
 
 	mutex_exit(&data->perfmon_lock);
@@ -1199,7 +1201,9 @@ spa_stop_perfmon_thread(spa_t *spa)
 		data->perfmon_thr_exit = B_TRUE;
 		cv_signal(&data->perfmon_cv);
 		mutex_exit(&data->perfmon_lock);
+#ifdef _KERNEL
 		thread_join(data->perfmon_thread->t_did);
+#endif
 		data->perfmon_thread = NULL;
 		return (B_TRUE);
 	}

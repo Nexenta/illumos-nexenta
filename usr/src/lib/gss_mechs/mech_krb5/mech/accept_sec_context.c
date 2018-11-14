@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 /*
  * Copyright 2000, 2004  by the Massachusetts Institute of Technology.
@@ -138,25 +139,7 @@ rd_and_store_for_creds(context, auth_context, inbuf, out_cred)
 	 */
     /* Solaris Kerberos */
     if ((retval = krb5_rd_cred(context, auth_context, inbuf, &creds, NULL))) {
-	krb5_enctype enctype = ENCTYPE_NULL;
-	/*
-	 * If the client is using non-DES enctypes it really ought to
-	 * send encrypted KRB-CREDs...
-	 */
-	if (auth_context->keyblock != NULL)
-	    enctype = auth_context->keyblock->enctype;
-	switch (enctype) {
-	case ENCTYPE_DES_CBC_MD5:
-	case ENCTYPE_DES_CBC_CRC:
-	case ENCTYPE_DES3_CBC_SHA1:
-	    break;
-	default:
-	    KRB5_LOG(KRB5_ERR, "rd_and_store_for_creds() error "
-		    "krb5_rd_cred() retval = %d\n", retval);
-	    goto cleanup;
-	    /* NOTREACHED */
-	    break;
-	}
+	krb5_error_code retval2 = retval;
 
 	/* Try to krb5_rd_cred() likely unencrypted KRB-CRED */
 		if ((retval = krb5_auth_con_init(context, &new_auth_ctx)))
@@ -165,8 +148,9 @@ rd_and_store_for_creds(context, auth_context, inbuf, out_cred)
 		if ((retval = krb5_rd_cred(context, new_auth_ctx, inbuf,
 					   &creds, NULL))) {
 			/* Solaris Kerberos */
-			KRB5_LOG(KRB5_ERR, "rd_and_store_for_creds() error "
-			    "krb5_rd_cred() retval = %d\n", retval);
+			KRB5_LOG1(KRB5_ERR, "rd_and_store_for_creds() error "
+			    "krb5_rd_cred() retval = %d original = %d\n",
+			    retval, retval2);
 			goto cleanup;
 		}
     }

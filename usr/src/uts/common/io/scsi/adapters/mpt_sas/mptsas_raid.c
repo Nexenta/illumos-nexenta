@@ -333,36 +333,36 @@ mptsas_raidvol_page_0_cb(mptsas_t *mpt, caddr_t page_memp,
 	raidvol->m_raidlevel = voltype;
 
 	if (statusflags & MPI2_RAIDVOL0_STATUS_FLAG_QUIESCED) {
-		mptsas_log(mpt, CE_NOTE, "?Volume %d is quiesced\n",
+		mptsas_log(mpt, CE_NOTE, "Volume %d is quiesced",
 		    raidvol->m_raidhandle);
 	}
 
 	if (statusflags &
 	    MPI2_RAIDVOL0_STATUS_FLAG_RESYNC_IN_PROGRESS) {
-		mptsas_log(mpt, CE_NOTE, "?Volume %d is resyncing\n",
+		mptsas_log(mpt, CE_NOTE, "Volume %d is resyncing",
 		    raidvol->m_raidhandle);
 	}
 
 	resync_flag = MPI2_RAIDVOL0_STATUS_FLAG_RESYNC_IN_PROGRESS;
 	switch (volstate) {
 	case MPI2_RAID_VOL_STATE_OPTIMAL:
-		mptsas_log(mpt, CE_NOTE, "?Volume %d is "
-		    "optimal\n", raidvol->m_raidhandle);
+		mptsas_log(mpt, CE_NOTE, "Volume %d is "
+		    "optimal", raidvol->m_raidhandle);
 		break;
 	case MPI2_RAID_VOL_STATE_DEGRADED:
 		if ((statusflags & resync_flag) == 0) {
 			mptsas_log(mpt, CE_WARN, "Volume %d "
-			    "is degraded\n",
+			    "is degraded",
 			    raidvol->m_raidhandle);
 		}
 		break;
 	case MPI2_RAID_VOL_STATE_FAILED:
 		mptsas_log(mpt, CE_WARN, "Volume %d is "
-		    "failed\n", raidvol->m_raidhandle);
+		    "failed", raidvol->m_raidhandle);
 		break;
 	case MPI2_RAID_VOL_STATE_MISSING:
 		mptsas_log(mpt, CE_WARN, "Volume %d is "
-		    "missing\n", raidvol->m_raidhandle);
+		    "missing", raidvol->m_raidhandle);
 		break;
 	default:
 		break;
@@ -607,7 +607,7 @@ mptsas_raid_action_system_shutdown(mptsas_t *mpt)
 	 */
 	if (slots->m_slot[MPTSAS_TM_SLOT(mpt)] != NULL) {
 		mptsas_log(mpt, CE_WARN, "RAID Action slot in use.  Cancelling"
-		    " System Shutdown RAID Action.\n");
+		    " System Shutdown RAID Action.");
 		return;
 	}
 

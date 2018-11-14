@@ -29,8 +29,6 @@
 
 /* Copyright (c) 1981 Regents of the University of California */
 
-#pragma ident	"%Z%%M%	%I%	%E% SMI"
-
 #include "ex.h"
 #include "ex_tty.h"
 #include "ex_vis.h"
@@ -613,11 +611,11 @@ reread:
 #ifdef PRESUNEUC
 				int tmp, length;
 				wchar_t wchar;
+				unsigned char tmp1;
 #else
-				int tmp, len, n;
+				int tmp, len;
 				wchar_t wc;
 #endif /* PRESUNEUC */
-				unsigned char tmp1;
 				setLAST();
 				for (tmp = 0; tmp + 3 < 2048; ) {
 				/*
@@ -635,7 +633,6 @@ reread:
 #ifdef PRESUNEUC
 					if(length > 1) {
 #else
-					n = iswalpha(wc);
 					if(len > 1 && !iswalpha(wc)) {
 #endif /* PRESUNEUC */
 						mbuf[tmp+0] = ' ';
@@ -658,8 +655,8 @@ reread:
 				 * change the case.
 				 */
 
-					tmp1 = mbuf[tmp+1];
 #ifdef PRESUNEUC
+					tmp1 = mbuf[tmp+1];
 					if (isupper((unsigned char)tmp1))
 						mbuf[tmp+1] = tolower((unsigned char)tmp1);
 					else
@@ -701,7 +698,7 @@ reread:
 			operate('$', 1);
 appnd:
 			c = 'a';
-			/* fall into ... */
+			/* FALLTHROUGH */
 
 		/*
 		 * a		Appends text after cursor.  Text can continue
@@ -733,7 +730,7 @@ appnd:
 		case 'I':
 			operate('^', 1);
 			c = 'i';
-			/* fall into ... */
+			/* FALLTHROUGH */
 
 		/*
 		 * R		Replace characters, one for one, by input
@@ -746,7 +743,7 @@ appnd:
 		 *		you can't move around within a R, etc.
 		 */
 		case 'R':
-			/* fall into... */
+			/* FALLTHROUGH */
 
 		/*
 		 * i		Insert text to an escape in the buffer.
@@ -792,7 +789,7 @@ insrt:
 			(void) beep();
 			if (initev || peekkey() != ATTN)
 				continue;
-			/* fall into... */
+			/* FALLTHROUGH */
 
 		/*
 		 * ^\		A quit always gets command mode.
@@ -825,7 +822,7 @@ insrt:
 				continue;
 			}
 #endif
-			/* fall into... */
+			/* FALLTHROUGH */
 
 		/*
 		 * Q		Is like q, but always gets to command mode
@@ -1487,7 +1484,7 @@ vzop(bool hadcnt, int cnt, int c)
 
 	case '+':
 		forbid (addr >= dol);
-		/* fall into ... */
+		/* FALLTHROUGH */
 
 	case CR:
 	case NL:

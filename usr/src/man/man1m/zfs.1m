@@ -28,7 +28,7 @@
 .\" Copyright (c) 2014 Integros [integros.com]
 .\" Copyright 2017 Nexenta Systems, Inc.
 .\"
-.Dd February 01, 2017
+.Dd December 6, 2017
 .Dt ZFS 1M
 .Os
 .Sh NAME
@@ -271,6 +271,7 @@
 .Ar snapshot Ar snapshot Ns | Ns Ar filesystem
 .Nm
 .Cm program
+.Op Fl n
 .Op Fl t Ar timeout
 .Op Fl m Ar memory_limit
 .Ar pool script
@@ -1007,6 +1008,10 @@ Please see
 for more information on these algorithms.
 .Pp
 Changing this property affects only newly-written data.
+.Pp
+Salted checksum algorithms
+.Pq Cm edonr , skein
+are currently not supported for any filesystem on the boot pools.
 .It Xo
 .Sy compression Ns = Ns Sy on Ns | Ns Sy off Ns | Ns Sy gzip Ns | Ns
 .Sy gzip- Ns Em N Ns | Ns Sy lz4 Ns | Ns Sy lzjb Ns | Ns Sy zle
@@ -3497,6 +3502,7 @@ Display the path's inode change time as the first column of output.
 .It Xo
 .Nm
 .Cm program
+.Op Fl n
 .Op Fl t Ar timeout
 .Op Fl m Ar memory_limit
 .Ar pool script
@@ -3516,8 +3522,15 @@ Channel programs may only be run with root privileges.
 .sp
 For full documentation of the ZFS channel program interface, see the manual
 page for
-.Xr zfs-program 1M .
 .Bl -tag -width ""
+.It Fl n
+Executes a read-only channel program, which runs faster.
+The program cannot change on-disk state by calling functions from
+the zfs.sync submodule.
+The program can be used to gather information such as properties and
+determining if changes would succeed (zfs.check.*).
+Without this flag, all pending changes must be synced to disk before
+a channel program can complete.
 .It Fl t Ar timeout
 Execution time limit, in milliseconds.
 If a channel program executes for longer than the provided timeout, it will

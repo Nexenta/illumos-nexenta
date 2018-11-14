@@ -3263,7 +3263,7 @@ xdf_devid_fabricate(xdf_t *vdp)
 	uint_t		*ip, chksum;
 	int		i, devid_size;
 
-	if (cmlb_get_devid_block(vdp->xdf_vd_lbl, &blk, 0) != 0)
+	if (cmlb_get_devid_block(vdp->xdf_vd_lbl, &blk, NULL) != 0)
 		goto err;
 
 	if (devid == NULL && ddi_devid_init(vdp->xdf_dip, DEVID_FAB, 0,
@@ -3325,7 +3325,7 @@ xdf_devid_read(xdf_t *vdp)
 	uint_t		*ip, chksum;
 	int		i;
 
-	if (cmlb_get_devid_block(vdp->xdf_vd_lbl, &blk, 0) != 0)
+	if (cmlb_get_devid_block(vdp->xdf_vd_lbl, &blk, NULL) != 0)
 		return (DDI_FAILURE);
 
 	dkdevidp = kmem_zalloc(NBPSCTR, KM_SLEEP);
@@ -3558,7 +3558,7 @@ xdf_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	 * alternate cylinders so that we have a place to write the
 	 * devid.
 	 */
-	if ((err = cmlb_validate(vdp->xdf_vd_lbl, 0, 0)) != 0) {
+	if ((err = cmlb_validate(vdp->xdf_vd_lbl, 0, NULL)) != 0) {
 		cmn_err(CE_NOTE,
 		    "xdf@%s: cmlb_validate failed: %d",
 		    ddi_get_name_addr(dip), err);

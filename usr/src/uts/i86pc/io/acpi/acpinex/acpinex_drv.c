@@ -408,11 +408,8 @@ acpinex_ctlops(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t op, void *arg,
 		break;
 
 	case DDI_CTLOPS_REPORTDEV: {
-		if (rdip == (dev_info_t *)0)
+		if (rdip == NULL)
 			return (DDI_FAILURE);
-		cmn_err(CE_CONT, "?acpinex: %s@%s, %s%d\n",
-		    ddi_node_name(rdip), ddi_get_name_addr(rdip),
-		    ddi_driver_name(rdip), ddi_get_instance(rdip));
 		break;
 	}
 

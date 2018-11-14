@@ -31,7 +31,7 @@ include ../Makefile.com
 CPPFLAGS += -I../../../../lib/libc/inc
 LDLIBS += -lzfs -ldevid -lcmdutils -lnvpair
 
-C99MODE=	$(C99_ENABLE)
+CSTD=	$(CSTD_GNU99)
 
 CERRWARN += -_gcc=-Wno-uninitialized
 

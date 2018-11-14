@@ -1110,7 +1110,7 @@ mptsas_ioc_task_management(mptsas_t *mpt, int task_type, uint16_t dev_handle,
 	 */
 	if (slots->m_slot[MPTSAS_TM_SLOT(mpt)] != NULL) {
 		mptsas_log(mpt, CE_WARN, "Can only start 1 task management"
-		    " command at a time\n");
+		    " command at a time");
 		return (FALSE);
 	}
 
@@ -1321,14 +1321,14 @@ mptsas_update_flash(mptsas_t *mpt, caddr_t ptrbuffer, uint32_t size,
 		 */
 		mptsas_log(mpt, CE_WARN, "mptsas_update_flash(): "
 		    "Updating firmware through MPI 2.5 has not been "
-		    "tested yet!\n"
-		    "To enable set mptsas_enable_mpi25_flashupdate to 1\n");
+		    "tested yet!  "
+		    "To enable set mptsas_enable_mpi25_flashupdate to 1.");
 		return (-1);
 	} /* Otherwise, you pay your money and you take your chances. */
 
 	if ((rvalue = (mptsas_request_from_pool(mpt, &cmd, &pkt))) == -1) {
 		mptsas_log(mpt, CE_WARN, "mptsas_update_flash(): allocation "
-		    "failed. event ack command pool is full\n");
+		    "failed. event ack command pool is full");
 		return (rvalue);
 	}
 
@@ -2449,8 +2449,8 @@ mptsas_get_manufacture_page5(mptsas_t *mpt)
 		    ddi_driver_name(mpt->m_dip), ddi_get_instance(mpt->m_dip)));
 	}
 
-	mptsas_log(mpt, CE_NOTE, "!mpt%d: Initiator WWNs: 0x%016llx-0x%016llx",
-	    mpt->m_instance, (unsigned long long)mpt->un.m_base_wwid,
+	mptsas_log(mpt, CE_NOTE, "Initiator WWNs: 0x%016llx-0x%016llx",
+	    (unsigned long long)mpt->un.m_base_wwid,
 	    (unsigned long long)mpt->un.m_base_wwid + mpt->m_num_phys - 1);
 
 	if ((mptsas_check_dma_handle(recv_dma_handle) != DDI_SUCCESS) ||

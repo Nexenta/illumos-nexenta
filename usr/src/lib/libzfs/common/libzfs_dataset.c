@@ -2407,7 +2407,7 @@ zcp_check(zfs_handle_t *zhp, zfs_prop_t prop, uint64_t intval,
 	fnvlist_add_string(argnvl, "dataset", zhp->zfs_name);
 	fnvlist_add_string(argnvl, "property", zfs_prop_to_name(prop));
 
-	error = lzc_channel_program(poolname, program,
+	error = lzc_channel_program_nosync(poolname, program,
 	    10 * 1000 * 1000, 10 * 1024 * 1024, argnvl, &outnvl);
 
 	if (error == 0) {
@@ -3558,6 +3558,10 @@ zfs_create(libzfs_handle_t *hdl, const char *path, zfs_type_t type,
 			    "pool must be upgraded to set this "
 			    "property or value"));
 			return (zfs_error(hdl, EZFS_BADVERSION, errbuf));
+		case ERANGE:
+			zfs_error_aux(hdl, dgettext(TEXT_DOMAIN,
+			    "invalid property value(s) specified"));
+			return (zfs_error(hdl, EZFS_BADPROP, errbuf));
 #ifdef _ILP32
 		case EOVERFLOW:
 			/*

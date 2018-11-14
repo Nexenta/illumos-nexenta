@@ -39,7 +39,7 @@ ROOTMANIFESTDIR	= $(ROOTSVCNETWORK)
 POFILE		= $(PROG).po
 POFILES		= $(SRCS:%.c=%.po)
 
-C99MODE		= $(C99_ENABLE)
+CSTD		= $(CSTD_GNU99)
 
 #
 # We need access to the ancillary data features which are only available

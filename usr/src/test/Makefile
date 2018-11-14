@@ -21,11 +21,11 @@ SUBDIRS=	comstar-tests	\
 		crypto-tests	\
 		libc-tests	\
 		lofi-tests	\
-		os-tests	\
 		ndmp-tests	\
 		nfsgen-tests	\
 		nfssharemnt-tests \
 		nfsv4-tests	\
+		os-tests	\
 		sharefs-tests	\
 		smbclient-tests	\
 		smf-tests	\

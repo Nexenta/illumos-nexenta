@@ -382,8 +382,6 @@ pseudonex_ctl(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
 	case DDI_CTLOPS_REPORTDEV:
 		if (rdip == NULL)
 			return (DDI_FAILURE);
-		cmn_err(CE_CONT, "?pseudo-device: %s%d\n",
-		    ddi_driver_name(rdip), ddi_get_instance(rdip));
 		return (DDI_SUCCESS);
 
 	case DDI_CTLOPS_INITCHILD:

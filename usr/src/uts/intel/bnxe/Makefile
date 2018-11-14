@@ -49,7 +49,6 @@ ALL_TARGET	= $(BINARY) $(CONFMOD)
 LINT_TARGET	= $(MODULE).lint
 INSTALL_TARGET	= $(BINARY) $(ROOTMODULE) $(ROOT_CONFFILE)
 
-C99MODE=        -xc99=%all
 C99LMODE=       -Xc99=%all
 
 #
@@ -93,6 +92,7 @@ CERRWARN	+= -_gcc=-Wno-parentheses
 CERRWARN	+= -_gcc=-Wno-unused-function
 CERRWARN	+= -_gcc=-Wno-unused-value
 CERRWARN	+= -_gcc=-Wno-unused-variable
+CERRWARN	+= -_gcc=-Wno-unused-but-set-variable
 CERRWARN	+= -_cc=-erroff=E_STATEMENT_NOT_REACHED
 CERRWARN	+= -_cc=-erroff=E_ARGUEMENT_MISMATCH
 CERRWARN	+= -_cc=-erroff=E_INTEGER_OVERFLOW_DETECTED

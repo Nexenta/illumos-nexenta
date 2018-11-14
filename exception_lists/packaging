@@ -125,7 +125,6 @@ usr/include/libsocket_priv.h
 usr/include/errfp.h
 usr/include/ikedoor.h
 usr/include/ipsec_util.h
-usr/lib/libike.so
 usr/lib/amd64/libike.so			i386
 usr/lib/sparcv9/libike.so		sparc
 usr/lib/libipsecutil.so
@@ -413,13 +412,6 @@ usr/lib/sparcv9/libuutil.so		sparc
 #
 usr/include/sys/multidata_impl.h
 #
-# The following files are used by wanboot.
-# They contain interfaces which are currently private.
-#
-usr/include/sys/wanboot_impl.h
-usr/include/wanboot
-usr/include/wanbootutil.h
-#
 # Even though all the objects built under usr/src/stand are later glommed
 # together into a couple of second-stage boot loaders, we dump the static
 # archives and lint libraries into $(ROOT)/stand for intermediate use
@@ -457,7 +449,6 @@ usr/lib/sparcv9/llib-lcmdutils.ln	sparc
 #
 # USB skeleton driver stays in sync with the rest of USB but doesn't ship.
 #
-kernel/drv/usbskel		i386
 kernel/drv/amd64/usbskel	i386
 kernel/drv/sparcv9/usbskel	sparc
 kernel/drv/usbskel.conf
@@ -713,19 +704,19 @@ usr/include/sys/srn.h
 usr/include/smb
 usr/include/smbsrv
 #
-# Private/Internal libraries for smbsrv in user space
+# Private/Internal files for libfakekernel. Do not ship.
 #
+lib/amd64/libfakekernel.so			i386
+lib/amd64/llib-lfakekernel.ln			i386
+lib/sparcv9/libfakekernel.so			sparc
+lib/sparcv9/llib-lfakekernel.ln			sparc
+lib/libfakekernel.so
+lib/llib-lfakekernel
+lib/llib-lfakekernel.ln
 usr/include/libfakekernel
 usr/lib/libfakekernel.so
-usr/lib/libfakekernel.so.1
-usr/lib/llib-lfakekernel
-usr/lib/llib-lfakekernel.ln
-usr/lib/amd64/llib-lfakekernel.ln		i386
-usr/lib/sparcv9/llib-lfakekernel.ln		sparc
 usr/lib/amd64/libfakekernel.so			i386
-usr/lib/amd64/libfakekernel.so.1		i386
 usr/lib/sparcv9/libfakekernel.so		sparc
-usr/lib/sparcv9/libfakekernel.so.1		sparc
 #
 # Private/Internal libraries of smbsrv. Do not ship.
 #
@@ -837,16 +828,12 @@ usr/lib/smbfs/llib-lfksmbfs
 usr/lib/smbfs/llib-lfksmbfs.ln
 #
 # FC related files
-kernel/kmdb/fcip		i386
 kernel/kmdb/amd64/fcip		i386
 kernel/kmdb/sparcv9/fcip	sparc
-kernel/kmdb/fcp			i386
 kernel/kmdb/amd64/fcp		i386
 kernel/kmdb/sparcv9/fcp		sparc
-kernel/kmdb/fctl		i386
 kernel/kmdb/amd64/fctl		i386
 kernel/kmdb/sparcv9/fctl	sparc
-kernel/kmdb/qlc			i386
 kernel/kmdb/amd64/qlc		i386
 kernel/kmdb/sparcv9/qlc		sparc
 lib/llib-la5k			sparc
@@ -1041,3 +1028,15 @@ usr/lib/sparcv9/libficl-sys.so		sparc
 usr/lib/llib-lficl-sys
 usr/lib/llib-lficl-sys.ln
 usr/lib/libficl-sys.so
+
+#
+# libsff is private
+#
+usr/include/libsff.h
+usr/lib/amd64/libsff.so			i386
+usr/lib/amd64/llib-lsff.ln		i386
+usr/lib/sparcv9/libsff.so		sparc
+usr/lib/sparcv9/llib-lsff.ln		sparc
+usr/lib/libsff.so
+usr/lib/llib-lsff
+usr/lib/llib-lsff.ln

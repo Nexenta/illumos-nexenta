@@ -20,6 +20,7 @@
  */
 /*
  * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2017 RackTop Systems.
  *
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
@@ -80,6 +81,9 @@ extern zoneid_t crgetzoneid(const cred_t *);
 extern struct zone *crgetzone(const cred_t *);
 extern projid_t crgetprojid(const cred_t *);
 extern struct ksid *crgetsid(const cred_t *, int);
+
+extern const gid_t *crgetgroups(const cred_t *);
+extern int crgetngroups(const cred_t *);
 
 #endif	/* _KERNEL */
 

@@ -516,7 +516,9 @@ HBA_LoadLibrary(void) {
     int			ret;
 #endif
     HBA_STATUS		status;
+#ifdef NOTDEF
     HBA_UINT32		libversion;
+#endif
 
     /* Open configuration file from known location */
 #ifdef WIN32
@@ -634,10 +636,10 @@ HBA_LoadLibrary(void) {
 	    /* ???Opportunity to send error msg, library error? */
 	    goto dud_library;
 	}
+#ifdef NOTDEF /* save for a later time... when it matters */
 	/* Check the version of this library before loading */
 	/* Actually... This wrapper is compatible with version 1 */
 	libversion = ((GetVersionFunc)());
-#ifdef NOTDEF /* save for a later time... when it matters */
 	if (libversion < HBA_LIBVERSION) {
 	    goto dud_library;
 	}
@@ -793,17 +795,17 @@ HBA_LoadLibrary(void) {
 	   == NULL) {
 	    continue;
 	}
+#ifdef NOTDEF /* save for a later time... when it matters */
 	libversion = ((GetVersionFunc)());
 	/* Check the version of this library before loading */
 	/* Actually... This wrapper is compatible with version 1 */
-#ifdef NOTDEF /* save for a later time... when it matters */
 	if(libversion < HBA_LIBVERSION) {
 	    printf("Library version mismatch. Got %d expected %d.\n",
 		   libversion, HBA_LIBVERSION);
 	    continue;
 	}
-#endif
 	DEBUG(1, "%s libversion = %d", librarypath, libversion, 0);
+#endif
 	LoadLibraryFunc = lib_infop->functionTable.LoadLibraryHandler;
 	if (LoadLibraryFunc == NULL) {
 	    /* this function is required */
@@ -875,7 +877,6 @@ HBA_LoadLibrary(void) {
 HBA_STATUS
 HBA_FreeLibrary(void) {
     HBAFreeLibraryFunc	FreeLibraryFunc;
-    HBA_STATUS		status;
     HBA_LIBRARY_INFO	*lib_infop;
     HBA_LIBRARY_INFO	*lib_next;
     HBA_ADAPTERCALLBACK_ELEM
@@ -894,7 +895,7 @@ HBA_FreeLibrary(void) {
 	    FreeLibraryFunc = lib_infop->functionTable.FreeLibraryHandler;
 	    if (FreeLibraryFunc != NULL) {
 		/* Free this library */
-		status = ((FreeLibraryFunc)());
+		(void)((FreeLibraryFunc)());
 	    }
 #ifdef WIN32
 	    FreeLibrary(lib_infop->hLibrary);	/* Unload DLL from memory */

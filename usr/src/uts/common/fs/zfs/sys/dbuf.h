@@ -379,6 +379,12 @@ boolean_t dbuf_meta_is_l2cacheable(dmu_buf_impl_t *db);
 	((dbuf_meta_is_l2cacheable(_db) == B_TRUE) &&			\
 	((_db)->db_objset->os_secondary_cache == ZFS_CACHE_DATA)))
 
+#define	DNODE_LEVEL_IS_L2CACHEABLE(_dn, _level)				\
+	((_dn)->dn_objset->os_secondary_cache == ZFS_CACHE_ALL ||	\
+	(((_level) > 0 ||						\
+	DMU_OT_IS_METADATA((_dn)->dn_handle->dnh_dnode->dn_type)) &&	\
+	((_dn)->dn_objset->os_secondary_cache == ZFS_CACHE_METADATA)))
+
 #ifdef ZFS_DEBUG
 
 /*

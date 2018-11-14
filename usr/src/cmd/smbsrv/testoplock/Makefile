@@ -46,7 +46,7 @@ CPPFLAGS.first += -I../../../lib/smbsrv/libfksmbsrv/common
 
 INCS +=	-I../../../uts/common
 
-C99MODE=	-xc99=%all
+CSTD=		$(CSTD_GNU99)
 C99LMODE=	-Xc99=%all
 
 CFLAGS += $(CCVERBOSE)

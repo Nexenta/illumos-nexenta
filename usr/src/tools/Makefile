@@ -29,28 +29,29 @@
 
 include ../Makefile.master
 
-# Bootstrap problem --
-# 'cw' must be built before anything else can be built.
-
+# Bootstrap problem: 'cw' must be built before anything else can be built.
+# 'install.bin' should be built next, being the 'install' target dependency
+# for everything else.
+#
+# Because of somewhat cyclic dependency between them, both cw and install.bin
+# override the way we install binaries in their Makefiles.
 BOOT_SUBDIRS= \
-	cw
+	cw \
+	.WAIT \
+	install.bin
 
 COMMON_SUBDIRS= \
 	codereview \
 	codesign \
 	cscope-fast \
 	ctf \
-	depcheck \
 	env \
 	findunref \
-	gk \
-	install.bin \
 	ips2deb \
 	lintdump \
 	make \
 	ndrgen \
 	onbld \
-	pmodes \
 	protocmp \
 	protolist \
 	scripts
@@ -105,13 +106,11 @@ ROOTDIRS= \
 	$(ROOTONBLD)/lib/python$(PYTHON_VERSION) \
 	$(ROOTONBLD)/lib/python$(PYTHON_VERSION)/onbld \
 	$(ROOTONBLD)/lib/python$(PYTHON_VERSION)/onbld/Checks \
-	$(ROOTONBLD)/lib/python$(PYTHON_VERSION)/onbld/hgext \
 	$(ROOTONBLD)/lib/python$(PYTHON_VERSION)/onbld/Scm \
 	$(ROOTONBLD)/env \
 	$(ROOTONBLD)/etc \
 	$(ROOTONBLD)/etc/exception_lists \
 	$(ROOTONBLD)/share \
-	$(ROOTONBLD)/gk \
 	$(ROOTONBLD)/man \
 	$(ROOTONBLD)/man/man1onbld
 
@@ -154,8 +153,9 @@ $(SUBDIRS) $(CLOSED_SUBDIRS): $(BOOT_SUBDIRS)
 $(BOOT_SUBDIRS) $(SUBDIRS): $$(DOROOTDIRS) $$(DOROOTONBLDLIBPY) FRC
 	@cd $@; pwd; $(MAKE) $(TARGET)
 
+# Assume we don't have the install.bin available yet
 $(ROOTDIRS):
-	$(INS.dir)
+	$(MKDIR) -p -m $(DIRMODE) $@
 
 $(ROOTONBLDLIBPY): $(ROOTDIRS)
 	$(RM) -r $@; $(SYMLINK) python$(PYTHON_VERSION) $@

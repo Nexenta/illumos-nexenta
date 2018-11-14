@@ -33,14 +33,14 @@
 #
 # DESCRIPTION:
 #	Calling 'svcadm restart <service>, where service
-#	has multiple instances	should fail and exit 1.
+#	has multiple instances	should pass and exit 0.
 # STRATEGY:
 #	- Check for test setup.
 #	- Configure a service 'foo$$' using svccfg
 #	- Attempt to put multiple instances to the service.
 #	- Now attempt to put them in restart mode.
-#	- Make sure svcadm for restart <service> fails  with
-#		exit 1 saying	instance specification should be needed.
+#	- Make sure svcadm for restart <service> passes with
+#		exit 0.
 #
 # COMMANDS: svcadm(1)
 #
@@ -195,11 +195,11 @@ echo "--INFO: [${assertion}]
 # Enable the service using svcadm
 /usr/sbin/svcadm restart $test_service >/dev/null 2>&1
 rc=$?
-if [ $rc -ne 1 ]; then
+if [ $rc -ne 0 ]; then
 	RESULT=$(update_result $STF_FAIL $RESULT)
 	echo "--DIAG: [$assertion]
-	svcadm restart $test_service should fail
-	EXPECTED: exit 1
+	svcadm restart $test_service should pass
+	EXPECTED: exit 0
 	RETURNED: exit $rc"
 	print_result $RESULT
 	exit $RESULT

@@ -145,7 +145,7 @@ while read special t1 t2 fstype t3 t4 t5; do
 		# if parts of a particular swap file are added or deleted by
 		# hand between invocations.
 		#
-		swap -l 2>/dev/null | grep '\<'${special}'\>' >/dev/null 2>&1 \
+		swap -l 2>/dev/null | grep -q "^$special " \
 		    || swap -$PASS -a $special >/dev/null
 	fi
 done

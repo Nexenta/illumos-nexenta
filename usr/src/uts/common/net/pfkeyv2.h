@@ -22,6 +22,9 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  */
+/*
+ * Copyright (c) 2018, Joyent, Inc.
+ */
 
 #ifndef	_NET_PFKEYV2_H
 #define	_NET_PFKEYV2_H
@@ -287,7 +290,9 @@ typedef struct sadb_comb {
 	uint16_t sadb_comb_auth_maxbits;
 	uint16_t sadb_comb_encrypt_minbits;	/* Bit strengths for encrypt */
 	uint16_t sadb_comb_encrypt_maxbits;
-	uint32_t sadb_comb_reserved;
+	uint8_t sadb_x_comb_encrypt_saltbits;
+	uint8_t sadb_x_comb_reserved;
+	uint16_t sadb_comb_reserved;
 	uint32_t sadb_comb_soft_allocations;	/* Lifetime proposals for */
 	uint32_t sadb_comb_hard_allocations;	/* this combination. */
 	uint64_t sadb_comb_soft_bytes;
@@ -337,7 +342,7 @@ typedef struct sadb_x_algdesc {
 			uint8_t sadb_x_algdesc_usatype;	/* ESP, AH, etc. */
 			uint8_t sadb_x_algdesc_ualgtype; /* AUTH, CRYPT, COMP */
 			uint8_t sadb_x_algdesc_ualg;	/* 3DES, MD5, etc. */
-			uint8_t sadb_x_algdesc_ureserved;
+			uint8_t sadb_x_algdesc_usaltbits;
 			uint16_t sadb_x_algdesc_uminbits; /* Bit strengths. */
 			uint16_t sadb_x_algdesc_umaxbits;
 		} sadb_x_algdesc_actual;
@@ -349,8 +354,8 @@ typedef struct sadb_x_algdesc {
 	sadb_x_algdesc_u.sadb_x_algdesc_actual.sadb_x_algdesc_ualgtype
 #define	sadb_x_algdesc_alg \
 	sadb_x_algdesc_u.sadb_x_algdesc_actual.sadb_x_algdesc_ualg
-#define	sadb_x_algdesc_reserved \
-	sadb_x_algdesc_u.sadb_x_algdesc_actual.sadb_x_algdesc_ureserved
+#define	sadb_x_algdesc_saltbits \
+	sadb_x_algdesc_u.sadb_x_algdesc_actual.sadb_x_algdesc_usaltbits
 #define	sadb_x_algdesc_minbits \
 	sadb_x_algdesc_u.sadb_x_algdesc_actual.sadb_x_algdesc_uminbits
 #define	sadb_x_algdesc_maxbits \
@@ -477,10 +482,11 @@ typedef struct sadb_x_kmc {
 			uint32_t sadb_x_kmc_ucookie;	/* KMP-specific */
 			uint32_t sadb_x_kmc_ureserved;	/* Must be zero */
 		} sadb_x_kmc_actual;
-		uint64_t sadb_x_kmc_alignment;
+		uint64_t sadb_x_kmc_ucookie64;
 	} sadb_x_kmc_u;
 #define	sadb_x_kmc_cookie sadb_x_kmc_u.sadb_x_kmc_actual.sadb_x_kmc_ucookie
 #define	sadb_x_kmc_reserved sadb_x_kmc_u.sadb_x_kmc_actual.sadb_x_kmc_ureserved
+#define	sadb_x_kmc_cookie64 sadb_x_kmc_u.sadb_x_kmc_ucookie64
 } sadb_x_kmc_t;
 
 typedef struct sadb_x_pair {
@@ -834,11 +840,12 @@ typedef struct sadb_x_edump {
 
 /* Key management protocol for sadb_x_kmc above... */
 
-#define	SADB_X_KMP_MANUAL	0
+#define	SADB_X_KMP_MANUAL	0	/* Cookie is ignored. */
 #define	SADB_X_KMP_IKE		1
 #define	SADB_X_KMP_KINK		2
+#define	SADB_X_KMP_IKEV2	3
 
-#define	SADB_X_KMP_MAX		2
+#define	SADB_X_KMP_MAX		SADB_X_KMP_IKEV2
 
 /*
  * Handy conversion macros.  Not part of the PF_KEY spec...

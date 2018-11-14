@@ -1248,7 +1248,9 @@ logpage_ssm_analyze(ds_scsi_info_t *sip, scsi_log_parameter_header_t *lphp,
 	 * which is strange since we verified that it's there
 	 */
 	dprintf("solid state media logpage analyze failed\n");
-	assert(0);
+#if DEBUG
+	abort();
+#endif
 	return (scsi_set_errno(sip, EDS_NOT_SUPPORTED));
 }
 

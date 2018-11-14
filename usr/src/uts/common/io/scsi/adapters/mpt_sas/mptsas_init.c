@@ -269,7 +269,7 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	    ddi_get8(accessp, &factsreply->FWVersion.Struct.Minor),
 	    ddi_get8(accessp, &factsreply->FWVersion.Struct.Unit),
 	    ddi_get8(accessp, &factsreply->FWVersion.Struct.Dev));
-	mptsas_log(mpt, CE_NOTE, "?MPT Firmware version v%s (%s)\n",
+	mptsas_log(mpt, CE_NOTE, "MPT Firmware version v%s (%s)",
 	    buf, mptsas_devid_type_string(mpt));
 	(void) ddi_prop_update_string(DDI_DEV_T_NONE, mpt->m_dip,
 	    "firmware-version", buf);
@@ -339,13 +339,11 @@ mptsas_ioc_do_get_facts_reply(mptsas_t *mpt, caddr_t memp, int var,
 	 */
 	msgversion = ddi_get16(accessp, &factsreply->MsgVersion);
 	if (msgversion >= MPI2_VERSION_02_05) {
-		mptsas_log(mpt, CE_NOTE, "?mpt_sas%d SAS 3 "
-		    "Supported Version (0x%x)\n",
-		    mpt->m_instance, msgversion);
+		mptsas_log(mpt, CE_NOTE, "SAS 3 supported Version (0x%x)",
+		    msgversion);
 		mpt->m_MPI25 = TRUE;
 	} else {
-		mptsas_log(mpt, CE_NOTE, "?mpt_sas%d MPI Version 0x%x\n",
-		    mpt->m_instance, msgversion);
+		mptsas_log(mpt, CE_NOTE, "MPI Version 0x%x", msgversion);
 	}
 
 	/*
@@ -762,8 +760,7 @@ mptsas_do_ioc_init_reply(mptsas_t *mpt, caddr_t memp, int var,
 
 	if ((ddi_get32(mpt->m_datap, &mpt->m_reg->Doorbell)) &
 	    MPI2_IOC_STATE_OPERATIONAL) {
-		mptsas_log(mpt, CE_NOTE,
-		    "?mpt%d: IOC Operational.\n", mpt->m_instance);
+		mptsas_log(mpt, CE_NOTE, "IOC Operational");
 	} else {
 		return (DDI_FAILURE);
 	}

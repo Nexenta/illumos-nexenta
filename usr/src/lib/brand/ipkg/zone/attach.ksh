@@ -141,6 +141,17 @@ noexecute=0
 unset inst_type
 
 typeset gz_incorporations=""
+
+contains() {
+    string="$1"
+    substring="$2"
+    if test "${string#*$substring}" != "$string"; then
+        return 1    # $substring is in $string
+    else
+        return 0    # $substring is not in $string
+    fi
+}
+
 #
 # $1 is an empty string to be populated with a list of incorporation
 # fmris.
@@ -152,7 +163,9 @@ gather_incorporations() {
 	for p in \
 	    $(LC_ALL=C $PKG search -Hl -o pkg.name \
 	    ':pkg.depend.install-hold:core-os*');do
-		incorporations="$incorporations $(get_pkg_fmri $p)"
+		if contains $(get_pkg_fmri $p) "entire"; then
+		    incorporations="$incorporations $(get_pkg_fmri $p)"
+		fi
 	done
 }
 
@@ -414,8 +427,9 @@ if [[ -z $gz_entire_fmri && -n $ngz_entire_fmri ]]; then
 fi
 
 if [[ $allow_update == 0 ]]; then
-	LC_ALL=C $PKG install --accept --no-refresh -n $incorp_list
-	if [[ $? == 4 ]]; then
+	LC_ALL=C $PKG info -q $incorp_list
+	ret=$?
+	if [[ $ret == 0 ]]; then
 		log "\n$m_complete"
 		EXIT_CODE=$ZONE_SUBPROC_OK
 		exit $EXIT_CODE

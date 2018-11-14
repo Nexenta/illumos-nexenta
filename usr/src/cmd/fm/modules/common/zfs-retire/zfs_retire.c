@@ -725,6 +725,14 @@ zfs_retire_recv(fmd_hdl_t *hdl, fmd_event_t *ep, nvlist_t *nvl,
 			continue;
 		}
 
+		if (fmd_nvl_class_match(hdl, fault,
+		    "fault.io.disk.ssm-wearout") &&
+		    fmd_prop_get_int32(hdl, "ssm_wearout_skip_retire") ==
+		    FMD_B_TRUE) {
+			fmd_hdl_debug(hdl, "zfs-retire: ignoring SSM fault");
+			continue;
+		}
+
 		/*
 		 * While we subscribe to fault.fs.zfs.*, we only take action
 		 * for faults targeting a specific vdev (open failure or SERD

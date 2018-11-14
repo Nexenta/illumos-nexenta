@@ -45,7 +45,7 @@ POFILES= $(OBJS:%.o=%.po)
 CLEANFILES +=  srvsvc1_ndr.c
 CLOBBERFILES+=  $(POFILE) $(POFILES)
 
-C99MODE= $(C99_ENABLE)
+CSTD= $(CSTD_GNU99)
 
 LDLIBS += -lmlrpc -lsmbfs -lnsl
 

@@ -25,6 +25,7 @@
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2013 Nexenta Systems, Inc. All rights reserved.
 # Copyright 2017 Joyent, Inc.
+# Copyright 2017 RackTop Systems.
 #
 
 PROG:sh=	cd ..; basename `pwd`
@@ -39,13 +40,14 @@ INCS += -I../../../lib/libzpool/common
 INCS +=	-I../../../uts/common/fs/zfs
 INCS +=	-I../../../common/zfs
 
-LDLIBS += -lzpool -lumem -lnvpair -lzfs -lavl -lcmdutils
+LDLIBS += -lzpool -lumem -lnvpair -lzfs -lavl -lcmdutils -lfakekernel
 
-C99MODE=	-xc99=%all
+CSTD=	$(CSTD_GNU99)
 C99LMODE=	-Xc99=%all
 
 CFLAGS += $(CCVERBOSE)
 CFLAGS64 += $(CCVERBOSE)
+CPPFLAGS.first = -I$(SRC)/lib/libfakekernel/common -D_FAKE_KERNEL
 CPPFLAGS += -D_LARGEFILE64_SOURCE=1 -D_REENTRANT $(INCS) -DDEBUG
 
 # re-enable warnings that we can tolerate, which are disabled by default

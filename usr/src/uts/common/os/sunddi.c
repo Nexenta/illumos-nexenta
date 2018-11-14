@@ -4757,22 +4757,7 @@ ddi_root_node(void)
 void
 ddi_report_dev(dev_info_t *d)
 {
-	char *b;
-
 	(void) ddi_ctlops(d, d, DDI_CTLOPS_REPORTDEV, (void *)0, (void *)0);
-
-	/*
-	 * If this devinfo node has cb_ops, it's implicitly accessible from
-	 * userland, so we print its full name together with the instance
-	 * number 'abbreviation' that the driver may use internally.
-	 */
-	if (DEVI(d)->devi_ops->devo_cb_ops != (struct cb_ops *)0 &&
-	    (b = kmem_zalloc(MAXPATHLEN, KM_NOSLEEP))) {
-		cmn_err(CE_CONT, "?%s%d is %s\n",
-		    ddi_driver_name(d), ddi_get_instance(d),
-		    ddi_pathname(d, b));
-		kmem_free(b, MAXPATHLEN);
-	}
 }
 
 /*

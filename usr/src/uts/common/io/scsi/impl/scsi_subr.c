@@ -471,12 +471,11 @@ scsi_mname(uchar_t msg)
 }
 
 char *
-scsi_cname(uchar_t cmd, register char **cmdvec)
+scsi_cname(uchar_t cmd, char **cmdvec)
 {
-	while (*cmdvec != (char *)0) {
-		if (cmd == **cmdvec) {
-			return ((char *)((long)(*cmdvec)+1));
-		}
+	while (*cmdvec != NULL) {
+		if (cmd == **cmdvec)
+			return ((char *)(uintptr_t)(*cmdvec + 1));
 		cmdvec++;
 	}
 	return (sprintf(scsi_tmpname, "<undecoded cmd 0x%x>", cmd));
@@ -1025,29 +1024,6 @@ scsi_sname(uchar_t sense_key)
 	}
 }
 
-
-/*
- * Print a piece of inquiry data- cleaned up for non-printable characters.
- */
-static void
-inq_fill(char *p, int l, char *s)
-{
-	register unsigned i = 0;
-	char c;
-
-	if (!p)
-		return;
-
-	while (i++ < l) {
-		/* clean string of non-printing chars */
-		if ((c = *p++) < ' ' || c >= 0177) {
-			c = ' ';
-		}
-		*s++ = c;
-	}
-	*s++ = 0;
-}
-
 static char *
 scsi_asc_search(uint_t asc, uint_t ascq,
     struct scsi_asq_key_strings *list)
@@ -1067,7 +1043,7 @@ scsi_asc_search(uint_t asc, uint_t ascq,
 
 static char *
 scsi_asc_ascq_name(uint_t asc, uint_t ascq, char *tmpstr,
-	struct scsi_asq_key_strings *list)
+    struct scsi_asq_key_strings *list)
 {
 	char *message;
 
@@ -1083,12 +1059,7 @@ scsi_asc_ascq_name(uint_t asc, uint_t ascq, char *tmpstr,
 	return (sprintf(tmpstr, "<vendor unique code 0x%x>", asc));
 }
 
-/*
- * The first part/column of the error message will be at least this length.
- * This number has been calculated so that each line fits in 80 chars.
- */
-#define	SCSI_ERRMSG_COLUMN_LEN	42
-#define	SCSI_ERRMSG_BUF_LEN	256
+#define	SCSI_LOGBUF_LEN	512
 
 void
 scsi_generic_errmsg(struct scsi_device *devp, char *label, int severity,
@@ -1097,126 +1068,59 @@ scsi_generic_errmsg(struct scsi_device *devp, char *label, int severity,
     uint8_t *sensep, struct scsi_asq_key_strings *asc_list,
     char *(*decode_fru)(struct scsi_device *, char *, int, uchar_t))
 {
-	uchar_t com;
-	static char buf[SCSI_ERRMSG_BUF_LEN];
-	static char buf1[SCSI_ERRMSG_BUF_LEN];
-	static char tmpbuf[64];
-	static char pad[SCSI_ERRMSG_COLUMN_LEN];
-	dev_info_t *dev = devp->sd_dev;
+	char cmdbuf[SCSI_LOGBUF_LEN];
+	char blkbuf[SCSI_LOGBUF_LEN];
+	char sensebuf[SCSI_LOGBUF_LEN];
+	char frubuf[SCSI_LOGBUF_LEN];
+	char tmpbuf[SCSI_LOGBUF_LEN];
 	static char *error_classes[] = {
 		"All", "Unknown", "Informational",
 		"Recovered", "Retryable", "Fatal"
 	};
-	uchar_t sense_key, asc, ascq, fru_code;
-	uchar_t *fru_code_ptr;
-	int i, buflen;
 
 	mutex_enter(&scsi_log_mutex);
 
-	/*
-	 * We need to put our space padding code because kernel version
-	 * of sprintf(9F) doesn't support %-<number>s type of left alignment.
-	 */
-	for (i = 0; i < SCSI_ERRMSG_COLUMN_LEN; i++) {
-		pad[i] = ' ';
+	(void) snprintf(cmdbuf, sizeof (cmdbuf), "%s: cmd=%s",
+	    error_classes[severity], scsi_cmd_name(cmd_name, cmdlist, tmpbuf));
+
+	blkbuf[0] = '\0';
+	if ((blkno != -1 || err_blkno != -1) &&
+	    ((cmd_name & 0xf) == SCMD_READ || (cmd_name & 0xf) == SCMD_WRITE)) {
+		(void) snprintf(blkbuf, sizeof (blkbuf),
+		    " (reqblk=%ld errblk=%ld)", blkno, err_blkno);
 	}
 
-	bzero(buf, SCSI_ERRMSG_BUF_LEN);
-	com = cmd_name;
-	(void) sprintf(buf, "Error for Command: %s",
-	    scsi_cmd_name(com, cmdlist, tmpbuf));
-	buflen = strlen(buf);
-	if (buflen < SCSI_ERRMSG_COLUMN_LEN) {
-		pad[SCSI_ERRMSG_COLUMN_LEN - buflen] = '\0';
-		(void) sprintf(&buf[buflen], "%s Error Level: %s",
-		    pad, error_classes[severity]);
-		pad[SCSI_ERRMSG_COLUMN_LEN - buflen] = ' ';
-	} else {
-		(void) sprintf(&buf[buflen], " Error Level: %s",
-		    error_classes[severity]);
-	}
-	impl_scsi_log(dev, label, CE_WARN, buf);
+	sensebuf[0] = '\0';
+	frubuf[0] = '\0';
+	if (sensep != NULL) {
+		uchar_t sense_key, asc, ascq, fru_code;
+		uchar_t *fru_code_ptr;
 
-	if (blkno != -1 || err_blkno != -1 &&
-	    ((com & 0xf) == SCMD_READ) || ((com & 0xf) == SCMD_WRITE)) {
-		bzero(buf, SCSI_ERRMSG_BUF_LEN);
-		(void) sprintf(buf, "Requested Block: %ld", blkno);
-		buflen = strlen(buf);
-		if (buflen < SCSI_ERRMSG_COLUMN_LEN) {
-			pad[SCSI_ERRMSG_COLUMN_LEN - buflen] = '\0';
-			(void) sprintf(&buf[buflen], "%s Error Block: %ld\n",
-			    pad, err_blkno);
-			pad[SCSI_ERRMSG_COLUMN_LEN - buflen] = ' ';
-		} else {
-			(void) sprintf(&buf[buflen], " Error Block: %ld\n",
-			    err_blkno);
-		}
-		impl_scsi_log(dev, label, CE_CONT, buf);
-	}
-
-	bzero(buf, SCSI_ERRMSG_BUF_LEN);
-	(void) strcpy(buf, "Vendor: ");
-	inq_fill(devp->sd_inq->inq_vid, 8, &buf[strlen(buf)]);
-	buflen = strlen(buf);
-	if (buflen < SCSI_ERRMSG_COLUMN_LEN) {
-		pad[SCSI_ERRMSG_COLUMN_LEN - buflen] = '\0';
-		(void) sprintf(&buf[strlen(buf)], "%s Serial Number: ", pad);
-		pad[SCSI_ERRMSG_COLUMN_LEN - buflen] = ' ';
-	} else {
-		(void) sprintf(&buf[strlen(buf)], " Serial Number: ");
-	}
-	inq_fill(devp->sd_inq->inq_serial, 12, &buf[strlen(buf)]);
-	impl_scsi_log(dev, label, CE_CONT, "%s\n", buf);
-
-	if (sensep) {
 		sense_key = scsi_sense_key(sensep);
 		asc = scsi_sense_asc(sensep);
 		ascq = scsi_sense_ascq(sensep);
 		scsi_ext_sense_fields(sensep, SENSE_LENGTH,
 		    NULL, NULL, &fru_code_ptr, NULL, NULL);
-		fru_code = (fru_code_ptr ? *fru_code_ptr : 0);
 
-		bzero(buf, SCSI_ERRMSG_BUF_LEN);
-		(void) sprintf(buf, "Sense Key: %s\n",
-		    sense_keys[sense_key]);
-		impl_scsi_log(dev, label, CE_CONT, buf);
+		(void) snprintf(sensebuf, sizeof (sensebuf),
+		    " key=%s asc/ascq=0x%x/0x%x (\"%s\")",
+		    sense_keys[sense_key], asc, ascq,
+		    scsi_asc_ascq_name(asc, ascq, tmpbuf, asc_list));
 
-		bzero(buf, SCSI_ERRMSG_BUF_LEN);
-		if ((fru_code != 0) &&
-		    (decode_fru != NULL)) {
-			(*decode_fru)(devp, buf, SCSI_ERRMSG_BUF_LEN,
-			    fru_code);
-			if (buf[0] != NULL) {
-				bzero(buf1, SCSI_ERRMSG_BUF_LEN);
-				(void) sprintf(&buf1[strlen(buf1)],
-				    "ASC: 0x%x (%s)", asc,
-				    scsi_asc_ascq_name(asc, ascq,
-				    tmpbuf, asc_list));
-				buflen = strlen(buf1);
-				if (buflen < SCSI_ERRMSG_COLUMN_LEN) {
-					pad[SCSI_ERRMSG_COLUMN_LEN - buflen] =
-					    '\0';
-					(void) sprintf(&buf1[buflen],
-					    "%s ASCQ: 0x%x", pad, ascq);
-				} else {
-					(void) sprintf(&buf1[buflen],
-					    " ASCQ: 0x%x", ascq);
-				}
-				impl_scsi_log(dev,
-				    label, CE_CONT, "%s\n", buf1);
-				impl_scsi_log(dev,
-				    label, CE_CONT, "FRU: 0x%x (%s)\n",
-				    fru_code, buf);
-				mutex_exit(&scsi_log_mutex);
-				return;
+		fru_code = (fru_code_ptr != NULL ? *fru_code_ptr : 0);
+		if (fru_code != 0 &&
+		    decode_fru != NULL) {
+			(*decode_fru)(devp, tmpbuf, sizeof (tmpbuf), fru_code);
+			if (tmpbuf[0] != '\0') {
+				(void) snprintf(frubuf, sizeof (frubuf),
+				    " fru=0x%x (\"%s\")", fru_code, tmpbuf);
 			}
 		}
-		(void) sprintf(&buf[strlen(buf)],
-		    "ASC: 0x%x (%s), ASCQ: 0x%x, FRU: 0x%x",
-		    asc, scsi_asc_ascq_name(asc, ascq, tmpbuf, asc_list),
-		    ascq, fru_code);
-		impl_scsi_log(dev, label, CE_CONT, "%s\n", buf);
 	}
+
+	impl_scsi_log(devp->sd_dev, label, CE_WARN, "!%s%s%s%s",
+	    cmdbuf, blkbuf, sensebuf, frubuf);
+
 	mutex_exit(&scsi_log_mutex);
 }
 
@@ -1233,8 +1137,6 @@ scsi_vu_errmsg(struct scsi_device *devp, struct scsi_pkt *pkt, char *label,
 
 	scsi_generic_errmsg(devp, label, severity, blkno, err_blkno,
 	    com, cmdlist, (uint8_t *)sensep, asc_list, decode_fru);
-
-
 }
 
 void
@@ -1274,9 +1176,6 @@ impl_scsi_log(dev_info_t *dev, char *label, uint_t level,
 	va_end(ap);
 }
 
-
-char *ddi_pathname(dev_info_t *dip, char *path);
-
 /*PRINTFLIKE4*/
 static void
 v_scsi_log(dev_info_t *dev, char *label, uint_t level,
@@ -1289,20 +1188,16 @@ v_scsi_log(dev_info_t *dev, char *label, uint_t level,
 
 	ASSERT(mutex_owned(&scsi_log_mutex));
 
-	if (dev) {
+	if (dev != NULL) {
 		if (level == CE_PANIC || level == CE_WARN ||
-		    level == CE_NOTE) {
-			(void) sprintf(name, "%s (%s%d):\n",
-			    ddi_pathname(dev, scsi_log_buffer),
-			    label, ddi_get_instance(dev));
-		} else if (level >= (uint_t)SCSI_DEBUG) {
-			(void) sprintf(name,
-			    "%s%d:", label, ddi_get_instance(dev));
+		    level == CE_NOTE || level >= (uint_t)SCSI_DEBUG) {
+			(void) snprintf(name, sizeof (name), "%s%d: ",
+			    ddi_driver_name(dev), ddi_get_instance(dev));
 		} else {
 			name[0] = '\0';
 		}
 	} else {
-		(void) sprintf(name, "%s:", label);
+		(void) sprintf(name, "%s: ", label);
 	}
 
 	(void) vsprintf(scsi_log_buffer, fmt, ap);
@@ -1327,18 +1222,18 @@ v_scsi_log(dev_info_t *dev, char *label, uint_t level,
 	case CE_WARN:
 	case CE_PANIC:
 		if (boot_only) {
-			cmn_err(level, "?%s\t%s", name, &scsi_log_buffer[1]);
+			cmn_err(level, "?%s%s", name, &scsi_log_buffer[1]);
 		} else if (console_only) {
-			cmn_err(level, "^%s\t%s", name, &scsi_log_buffer[1]);
+			cmn_err(level, "^%s%s", name, &scsi_log_buffer[1]);
 		} else if (log_only) {
-			cmn_err(level, "!%s\t%s", name, &scsi_log_buffer[1]);
+			cmn_err(level, "!%s%s", name, &scsi_log_buffer[1]);
 		} else {
-			cmn_err(level, "%s\t%s", name, scsi_log_buffer);
+			cmn_err(level, "%s%s", name, scsi_log_buffer);
 		}
 		break;
 	case (uint_t)SCSI_DEBUG:
 	default:
-		cmn_err(CE_CONT, "^DEBUG: %s\t%s", name, scsi_log_buffer);
+		cmn_err(CE_CONT, "?DEBUG: %s%s", name, scsi_log_buffer);
 		break;
 	}
 }

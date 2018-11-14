@@ -18,11 +18,13 @@
  *
  * CDDL HEADER END
  */
+
 /*
  * Copyright (c) 1992, 2010, Oracle and/or its affiliates. All rights reserved.
  */
+
 /*
- * Copyright 2011 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright 2012 Garrett D'Amore <garrett@damore.org>.  All rights reserved.
  * Copyright 2017 Joyent, Inc.
@@ -732,75 +734,10 @@ rootnex_ctlops(dev_info_t *dip, dev_info_t *rdip, ddi_ctl_enum_t ctlop,
 	return (DDI_SUCCESS);
 }
 
-
-/*
- * rootnex_ctl_reportdev()
- *
- */
+/*ARGSUSED*/
 static int
 rootnex_ctl_reportdev(dev_info_t *dev)
 {
-	int i, n, len, f_len = 0;
-	char *buf;
-
-	buf = kmem_alloc(REPORTDEV_BUFSIZE, KM_SLEEP);
-	f_len += snprintf(buf, REPORTDEV_BUFSIZE,
-	    "%s%d at root", ddi_driver_name(dev), ddi_get_instance(dev));
-	len = strlen(buf);
-
-	for (i = 0; i < sparc_pd_getnreg(dev); i++) {
-
-		struct regspec *rp = sparc_pd_getreg(dev, i);
-
-		if (i == 0)
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    ": ");
-		else
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    " and ");
-		len = strlen(buf);
-
-		switch (rp->regspec_bustype) {
-
-		case BTEISA:
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "%s 0x%x", DEVI_EISA_NEXNAME, rp->regspec_addr);
-			break;
-
-		case BTISA:
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "%s 0x%x", DEVI_ISA_NEXNAME, rp->regspec_addr);
-			break;
-
-		default:
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    "space %x offset %x",
-			    rp->regspec_bustype, rp->regspec_addr);
-			break;
-		}
-		len = strlen(buf);
-	}
-	for (i = 0, n = sparc_pd_getnintr(dev); i < n; i++) {
-		int pri;
-
-		if (i != 0) {
-			f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-			    ",");
-			len = strlen(buf);
-		}
-		pri = INT_IPL(sparc_pd_getintr(dev, i)->intrspec_pri);
-		f_len += snprintf(buf + len, REPORTDEV_BUFSIZE - len,
-		    " sparc ipl %d", pri);
-		len = strlen(buf);
-	}
-#ifdef DEBUG
-	if (f_len + 1 >= REPORTDEV_BUFSIZE) {
-		cmn_err(CE_NOTE, "next message is truncated: "
-		    "printed length 1024, real length %d", f_len);
-	}
-#endif /* DEBUG */
-	cmn_err(CE_CONT, "?%s\n", buf);
-	kmem_free(buf, REPORTDEV_BUFSIZE);
 	return (DDI_SUCCESS);
 }
 

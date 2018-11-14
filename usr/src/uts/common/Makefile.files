@@ -24,7 +24,7 @@
 # Copyright (c) 2011, 2014 by Delphix. All rights reserved.
 # Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
 # Copyright 2016 Garrett D'Amore <garrett@damore.org>
-# Copyright 2016 Joyent, Inc.
+# Copyright (c) 2017, Joyent, Inc.
 # Copyright 2016 OmniTI Computer Consulting, Inc.  All rights reserved.
 # Copyright 2016 Hans Rosenfeld <rosenfeld@grumpf.hope-2000.org>
 # Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
@@ -1489,10 +1489,12 @@ ZFS_COMMON_OBJS +=		\
 	zio_compress.o		\
 	zio_inject.o		\
 	zle.o			\
-	zrlock.o		\
-	special.o		\
+	zrlock.o
+
+ZFS_COMMON_OBJS +=		\
 	cos.o			\
 	spa_vdev_props.o	\
+	special.o		\
 	wbc.o
 
 ZFS_SHARED_OBJS +=		\
@@ -2079,7 +2081,8 @@ IPRB_OBJS =	iprb.o
 
 # illumos-written source files
 IXGBE_OBJS =    ixgbe_buf.o ixgbe_debug.o ixgbe_gld.o ixgbe_log.o ixgbe_main.o \
-		ixgbe_osdep.o ixgbe_rx.o ixgbe_stat.o ixgbe_tx.o
+		ixgbe_osdep.o ixgbe_rx.o ixgbe_stat.o ixgbe_transceiver.o \
+		ixgbe_tx.o
 
 # Intel-written source files
 IXGBE_INTC_OBJS	=	ixgbe_82598.o ixgbe_82599.o ixgbe_api.o ixgbe_common.o \
@@ -2264,6 +2267,7 @@ BNXE_OBJS +=	bnxe_cfg.o		\
 		bnxe_tx.o		\
 		bnxe_workq.o		\
 		bnxe_clc.o		\
+		bnxe_illumos.o		\
 		ecore_sp_verbs.o	\
 		bnxe_context.o		\
 		57710_init_values.o	\

@@ -332,6 +332,7 @@ MANFILES=	ASSERT.9f				\
 		mac_prop_info.9f			\
 		mac_register.9f				\
 		mac_rx.9f				\
+		mac_transceiver_info.9f			\
 		mac_tx_update.9f			\
 		makecom.9f				\
 		makedevice.9f				\
@@ -441,7 +442,10 @@ MANFILES=	ASSERT.9f				\
 		rmvb.9f					\
 		rmvq.9f					\
 		rwlock.9f				\
+		sas_phymap_create.9f			\
+		sas_phymap_lookup_ua.9f			\
 		scsi_abort.9f				\
+		scsi_address_device.9f			\
 		scsi_alloc_consistent_buf.9f		\
 		scsi_cname.9f				\
 		scsi_destroy_pkt.9f			\
@@ -454,10 +458,15 @@ MANFILES=	ASSERT.9f				\
 		scsi_get_device_type_string.9f		\
 		scsi_hba_attach_setup.9f		\
 		scsi_hba_init.9f			\
+		scsi_hba_iport_exist.9f			\
+		scsi_hba_iport_register.9f		\
+		scsi_hba_iport_unit_address.9f		\
+		scsi_hba_iportmap_create.9f		\
 		scsi_hba_lookup_capstr.9f		\
 		scsi_hba_pkt_alloc.9f			\
 		scsi_hba_pkt_comp.9f			\
 		scsi_hba_probe.9f			\
+		scsi_hba_tgtmap_create.9f		\
 		scsi_hba_tran_alloc.9f			\
 		scsi_ifgetcap.9f			\
 		scsi_init_pkt.9f			\
@@ -475,6 +484,7 @@ MANFILES=	ASSERT.9f				\
 		scsi_unprobe.9f				\
 		scsi_validate_sense.9f			\
 		scsi_vu_errmsg.9f			\
+		scsi_wwnstr_to_wwn.9f			\
 		semaphore.9f				\
 		sprintf.9f				\
 		stoi.9f					\
@@ -999,6 +1009,8 @@ MANLINKS=	AVL_NEXT.9f					\
 		mac_prop_info_set_default_uint8.9f		\
 		mac_prop_info_set_perm.9f			\
 		mac_prop_info_set_range_uint32.9f		\
+		mac_transceiver_info_set_present.9f		\
+		mac_transceiver_info_set_usable.9f		\
 		mac_unregister.9f				\
 		makecom_g0.9f					\
 		makecom_g0_s.9f					\
@@ -1163,11 +1175,34 @@ MANLINKS=	AVL_NEXT.9f					\
 		rw_tryenter.9f					\
 		rw_tryupgrade.9f				\
 		samestr.9f					\
+		sas_phymap_destroy.9f				\
+		sas_phymap_lookup_uapriv.9f			\
+		sas_phymap_phy_add.9f				\
+		sas_phymap_phy_rem.9f				\
+		sas_phymap_phy2ua.9f				\
+		sas_phymap_phys_free.9f				\
+		sas_phymap_phys_next.9f				\
+		sas_phymap_ua_free.9f				\
+		sas_phymap_ua2phys.9f				\
+		sas_phymap_uahasphys.9f				\
+		scsi_device_unit_address.9f			\
+		scsi_device_hba_private_get.9f			\
+		scsi_device_hba_private_set.9f			\
 		scsi_dmafree.9f					\
 		scsi_dname.9f					\
 		scsi_hba_detach.9f				\
 		scsi_hba_fini.9f				\
+		scsi_hba_iport_find.9f				\
+		scsi_hba_iportmap_destroy.9f			\
+		scsi_hba_iportmap_iport_add.9f			\
+		scsi_hba_iportmap_iport_remove.9f		\
 		scsi_hba_pkt_free.9f				\
+		scsi_hba_tgtmap_set_begin.9f 			\
+		scsi_hba_tgtmap_set_add.9f 			\
+		scsi_hba_tgtmap_set_end.9f 			\
+		scsi_hba_tgtmap_set_flush.9f 			\
+		scsi_hba_tgtmap_tgt_add.9f 			\
+		scsi_hba_tgtmap_tgt_remove.9f 			\
 		scsi_hba_tran_free.9f				\
 		scsi_ifsetcap.9f				\
 		scsi_mname.9f					\
@@ -1181,6 +1216,8 @@ MANLINKS=	AVL_NEXT.9f					\
 		scsi_sense_info_uint64.9f			\
 		scsi_sname.9f					\
 		scsi_unslave.9f					\
+		scsi_wwn_to_wwnstr.9f				\
+		scsi_free_wwnstr.9f				\
 		sema_destroy.9f					\
 		sema_init.9f					\
 		sema_p.9f					\
@@ -1828,6 +1865,10 @@ mac_prop_info_set_default_uint32.9f	:= LINKSRC = mac_prop_info.9f
 mac_prop_info_set_default_uint64.9f	:= LINKSRC = mac_prop_info.9f
 mac_prop_info_set_perm.9f		:= LINKSRC = mac_prop_info.9f
 mac_prop_info_set_range_uint32.9f	:= LINKSRC = mac_prop_info.9f
+
+mac_transceiver_info_set_present.9f	:= LINKSRC = mac_transceiver_info.9f
+mac_transceiver_info_set_usable.9f	:= LINKSRC = mac_transceiver_info.9f
+
 mac_unregister.9f			:= LINKSRC = mac_register.9f
 
 makecom_g0.9f				:= LINKSRC = makecom.9f
@@ -2015,6 +2056,22 @@ rw_read_locked.9f			:= LINKSRC = rwlock.9f
 rw_tryenter.9f				:= LINKSRC = rwlock.9f
 rw_tryupgrade.9f			:= LINKSRC = rwlock.9f
 
+sas_phymap_destroy.9f			:= LINKSRC = sas_phymap_create.9f
+sas_phymap_phy_add.9f			:= LINKSRC = sas_phymap_create.9f
+sas_phymap_phy_rem.9f			:= LINKSRC = sas_phymap_create.9f
+
+sas_phymap_lookup_uapriv.9f		:= LINKSRC = sas_phymap_lookup_ua.9f
+sas_phymap_phy2ua.9f			:= LINKSRC = sas_phymap_lookup_ua.9f
+sas_phymap_ua_free.9f			:= LINKSRC = sas_phymap_lookup_ua.9f
+sas_phymap_uahasphys.9f			:= LINKSRC = sas_phymap_lookup_ua.9f
+sas_phymap_ua2phys.9f			:= LINKSRC = sas_phymap_lookup_ua.9f
+sas_phymap_phys_next.9f			:= LINKSRC = sas_phymap_lookup_ua.9f
+sas_phymap_phys_free.9f			:= LINKSRC = sas_phymap_lookup_ua.9f
+
+scsi_device_unit_address.9f		:= LINKSRC = scsi_address_device.9f
+scsi_device_hba_private_get.9f		:= LINKSRC = scsi_address_device.9f
+scsi_device_hba_private_set.9f		:= LINKSRC = scsi_address_device.9f
+
 scsi_dname.9f				:= LINKSRC = scsi_cname.9f
 scsi_mname.9f				:= LINKSRC = scsi_cname.9f
 scsi_rname.9f				:= LINKSRC = scsi_cname.9f
@@ -2029,7 +2086,20 @@ scsi_hba_detach.9f			:= LINKSRC = scsi_hba_attach_setup.9f
 
 scsi_hba_fini.9f			:= LINKSRC = scsi_hba_init.9f
 
+scsi_hba_iportmap_destroy.9f		:= LINKSRC = scsi_hba_iportmap_create.9f
+scsi_hba_iportmap_iport_add.9f		:= LINKSRC = scsi_hba_iportmap_create.9f
+scsi_hba_iportmap_iport_remove.9f	:= LINKSRC = scsi_hba_iportmap_create.9f
+
+scsi_hba_iport_find.9f			:= LINKSRC = scsi_hba_iport_exist.9f
+
 scsi_hba_pkt_free.9f			:= LINKSRC = scsi_hba_pkt_alloc.9f
+
+scsi_hba_tgtmap_set_begin.9f 		:= LINKSRC = scsi_hba_tgtmap_create.9f
+scsi_hba_tgtmap_set_add.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
+scsi_hba_tgtmap_set_end.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
+scsi_hba_tgtmap_set_flush.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
+scsi_hba_tgtmap_tgt_add.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
+scsi_hba_tgtmap_tgt_remove.9f		:= LINKSRC = scsi_hba_tgtmap_create.9f
 
 scsi_hba_tran_free.9f			:= LINKSRC = scsi_hba_tran_alloc.9f
 
@@ -2043,6 +2113,9 @@ scsi_sense_asc.9f			:= LINKSRC = scsi_sense_key.9f
 scsi_sense_ascq.9f			:= LINKSRC = scsi_sense_key.9f
 
 scsi_unslave.9f				:= LINKSRC = scsi_unprobe.9f
+
+scsi_wwn_to_wwnstr.9f			:= LINKSRC = scsi_wwnstr_to_wwn.9f
+scsi_free_wwnstr.9f			:= LINKSRC = scsi_wwnstr_to_wwn.9f
 
 sema_destroy.9f				:= LINKSRC = semaphore.9f
 sema_init.9f				:= LINKSRC = semaphore.9f

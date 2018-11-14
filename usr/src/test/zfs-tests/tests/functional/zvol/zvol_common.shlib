@@ -133,6 +133,6 @@ function is_swap_inuse
 		return 1
 	fi
 
-	swap -l | grep -w $device > /dev/null 2>&1
+	swap -l | nawk 'BEGIN {rc=1} {if ($1 == "'$device'") { rc=0}} END {exit rc}' 
 	return $?
 }

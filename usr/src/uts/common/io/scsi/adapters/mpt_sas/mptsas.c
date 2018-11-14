@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2017, Joyent, Inc.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
@@ -1209,16 +1209,14 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	 * Allocate softc information.
 	 */
 	if (ddi_soft_state_zalloc(mptsas_state, instance) != DDI_SUCCESS) {
-		mptsas_log(NULL, CE_WARN,
-		    "mptsas%d: cannot allocate soft state", instance);
+		mptsas_log(NULL, CE_WARN, "cannot allocate soft state");
 		goto fail;
 	}
 
 	mpt = ddi_get_soft_state(mptsas_state, instance);
 
 	if (mpt == NULL) {
-		mptsas_log(NULL, CE_WARN,
-		    "mptsas%d: cannot get soft state", instance);
+		mptsas_log(NULL, CE_WARN, "cannot get soft state");
 		goto fail;
 	}
 
@@ -1458,7 +1456,7 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	if (mpt->m_scsi_reset_delay == 0) {
 		mptsas_log(mpt, CE_NOTE,
 		    "scsi_reset_delay of 0 is not recommended,"
-		    " resetting to SCSI_DEFAULT_RESET_DELAY\n");
+		    " resetting to SCSI_DEFAULT_RESET_DELAY");
 		mpt->m_scsi_reset_delay = SCSI_DEFAULT_RESET_DELAY;
 	}
 
@@ -1934,8 +1932,7 @@ mptsas_do_detach(dev_info_t *dip)
 			if (pm_raise_power(dip, 0, PM_LEVEL_D0) !=
 			    DDI_SUCCESS) {
 				mptsas_log(mpt, CE_WARN,
-				    "mptsas%d: Raise power request failed.",
-				    mpt->m_instance);
+				    "raise power request failed");
 				(void) pm_idle_component(dip, 0);
 				return (DDI_FAILURE);
 			}
@@ -2061,9 +2058,8 @@ mptsas_do_detach(dev_info_t *dip)
 	if (mpt->m_options & MPTSAS_OPT_PM) {
 		if (pm_lower_power(dip, 0, PM_LEVEL_D3) != DDI_SUCCESS)
 			mptsas_log(mpt, CE_WARN,
-			    "!mptsas%d: Lower power request failed "
-			    "during detach, ignoring.",
-			    mpt->m_instance);
+			    "lower power request failed during detach, "
+			    "ignoring");
 	}
 
 	mutex_destroy(&mpt->m_tx_waitq_mutex);
@@ -2485,8 +2481,7 @@ mptsas_power(dev_info_t *dip, int component, int level)
 		MPTSAS_POWER_OFF(mpt);
 		break;
 	default:
-		mptsas_log(mpt, CE_WARN, "mptsas%d: unknown power level <%x>.",
-		    mpt->m_instance, level);
+		mptsas_log(mpt, CE_WARN, "unknown power level <%x>", level);
 		rval = DDI_FAILURE;
 		break;
 	}
@@ -3059,7 +3054,7 @@ mptsas_name_child(dev_info_t *lun_dip, char *name, int len)
 
 	ASSERT(reallen < len);
 	if (reallen >= len) {
-		mptsas_log(0, CE_WARN, "!mptsas_get_name: name parameter "
+		mptsas_log(0, CE_WARN, "mptsas_get_name: name parameter "
 		    "length too small, it needs to be %d bytes", reallen + 1);
 	}
 	return (DDI_SUCCESS);
@@ -3122,7 +3117,7 @@ mptsas_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 
 		if (mdi_prop_lookup_int(pip, LUN_PROP, &lun) !=
 		    DDI_PROP_SUCCESS) {
-			mptsas_log(mpt, CE_WARN, "Get lun property failed\n");
+			mptsas_log(mpt, CE_WARN, "Get lun property failed");
 			return (DDI_FAILURE);
 		}
 
@@ -3155,7 +3150,7 @@ mptsas_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 	ptgt = refhash_lookup(mpt->m_targets, &addr);
 	mutex_exit(&mpt->m_mutex);
 	if (ptgt == NULL) {
-		mptsas_log(mpt, CE_WARN, "!tgt_init: target doesn't exist or "
+		mptsas_log(mpt, CE_WARN, "tgt_init: target doesn't exist or "
 		    "gone already! phymask:%x, saswwn %"PRIx64, phymask,
 		    sas_wwn);
 		return (DDI_FAILURE);
@@ -3200,7 +3195,7 @@ mptsas_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 				kmem_free(inq89, inq89_len);
 			}
 
-			mptsas_log(mpt, CE_WARN, "!mptsas request inquiry page "
+			mptsas_log(mpt, CE_WARN, "mptsas request inquiry page "
 			    "0x89 for SATA target:%x failed!", ptgt->m_devhdl);
 			return (DDI_SUCCESS);
 		}
@@ -4044,7 +4039,7 @@ get_dma_cookies:
 		ASSERT(cmd->cmd_cookiec > 0);
 
 		if (cmd->cmd_cookiec > MPTSAS_MAX_CMD_SEGS) {
-			mptsas_log(mpt, CE_NOTE, "large cookiec received %d\n",
+			mptsas_log(mpt, CE_NOTE, "large cookiec received %d",
 			    cmd->cmd_cookiec);
 			bioerror(bp, EINVAL);
 			if (new_cmd) {
@@ -5381,8 +5376,7 @@ mptsas_handle_scsi_io_success(mptsas_t *mpt,
 	 * would not come into this reply handler.
 	 */
 	if ((SMID == 0) || (SMID > slots->m_n_normal)) {
-		mptsas_log(mpt, CE_WARN, "?Received invalid SMID of %d\n",
-		    SMID);
+		mptsas_log(mpt, CE_WARN, "received invalid SMID of %d", SMID);
 		ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_UNAFFECTED);
 		return;
 	}
@@ -5393,7 +5387,7 @@ mptsas_handle_scsi_io_success(mptsas_t *mpt,
 	 * print warning and return if the slot is empty
 	 */
 	if (cmd == NULL) {
-		mptsas_log(mpt, CE_WARN, "?NULL command for successful SCSI IO "
+		mptsas_log(mpt, CE_WARN, "NULL command for successful SCSI IO "
 		    "in slot %d", SMID);
 		return;
 	}
@@ -5464,8 +5458,8 @@ mptsas_handle_address_reply(mptsas_t *mpt,
 	    (mpt->m_reply_frame_size * mpt->m_max_replies))) ||
 	    ((reply_addr - reply_frame_dma_baseaddr) %
 	    mpt->m_reply_frame_size != 0)) {
-		mptsas_log(mpt, CE_WARN, "?Received invalid reply frame "
-		    "address 0x%x\n", reply_addr);
+		mptsas_log(mpt, CE_WARN, "received invalid reply frame "
+		    "address 0x%x", reply_addr);
 		ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_UNAFFECTED);
 		return;
 	}
@@ -5490,8 +5484,8 @@ mptsas_handle_address_reply(mptsas_t *mpt,
 		 * so allow for that.
 		 */
 		if ((SMID == 0) || (SMID > (slots->m_n_normal + 1))) {
-			mptsas_log(mpt, CE_WARN, "?Received invalid SMID of "
-			    "%d\n", SMID);
+			mptsas_log(mpt, CE_WARN, "received invalid SMID of "
+			    "%d", SMID);
 			ddi_fm_service_impact(mpt->m_dip,
 			    DDI_SERVICE_UNAFFECTED);
 			return;
@@ -5503,7 +5497,7 @@ mptsas_handle_address_reply(mptsas_t *mpt,
 		 * print warning and return if the slot is empty
 		 */
 		if (cmd == NULL) {
-			mptsas_log(mpt, CE_WARN, "?NULL command for address "
+			mptsas_log(mpt, CE_WARN, "NULL command for address "
 			    "reply in slot %d", SMID);
 			return;
 		}
@@ -5616,7 +5610,7 @@ mptsas_handle_address_reply(mptsas_t *mpt,
 			 * print warning and return if the slot is empty
 			 */
 			if (cmd == NULL) {
-				mptsas_log(mpt, CE_WARN, "?NULL command for "
+				mptsas_log(mpt, CE_WARN, "NULL command for "
 				    "address reply in slot %d", SMID);
 				return;
 			}
@@ -5701,8 +5695,8 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 		loginfo = ddi_get32(mpt->m_acc_reply_frame_hdl,
 		    &reply->IOCLogInfo);
 		mptsas_log(mpt, CE_NOTE,
-		    "?Log info 0x%x received for target %d %s.\n"
-		    "\tscsi_status=0x%x, ioc_status=0x%x, scsi_state=0x%x",
+		    "log info 0x%x received for target %d %s, "
+		    "scsi_status=0x%x, ioc_status=0x%x, scsi_state=0x%x",
 		    loginfo, Tgt(cmd), wwn_str, scsi_status, ioc_status,
 		    scsi_state);
 	}
@@ -5740,7 +5734,7 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 	if (scsi_state & MPI2_SCSI_STATE_RESPONSE_INFO_VALID) {
 		responsedata &= 0x000000FF;
 		if (responsedata & MPTSAS_SCSI_RESPONSE_CODE_TLR_OFF) {
-			mptsas_log(mpt, CE_NOTE, "Do not support the TLR\n");
+			mptsas_log(mpt, CE_NOTE, "TLR not supported");
 			pkt->pkt_reason = CMD_TLR_OFF;
 			return;
 		}
@@ -5816,7 +5810,7 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 			if (topo_node == NULL) {
 				mptsas_log(mpt, CE_NOTE, "No memory"
 				    "resource for handle SAS dynamic"
-				    "reconfigure.\n");
+				    "reconfigure");
 				break;
 			}
 			topo_node->mpt = mpt;
@@ -5834,7 +5828,7 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 				    sizeof (mptsas_topo_change_list_t));
 				mptsas_log(mpt, CE_NOTE, "mptsas start taskq"
 				    "for handle SAS dynamic reconfigure"
-				    "failed. \n");
+				    "failed");
 			}
 		}
 		break;
@@ -5914,7 +5908,7 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 			break;
 		default:
 			mptsas_log(mpt, CE_WARN,
-			    "unknown ioc_status = %x\n", ioc_status);
+			    "unknown ioc_status = %x", ioc_status);
 			mptsas_log(mpt, CE_CONT, "scsi_state = %x, transfer "
 			    "count = %x, scsi_status = %x", scsi_state,
 			    xferred, scsi_status);
@@ -5931,10 +5925,10 @@ mptsas_check_scsi_io_error(mptsas_t *mpt, pMpi2SCSIIOReply_t reply,
 		NDBG31(("scsi_status reservation conflict received"));
 		break;
 	default:
-		mptsas_log(mpt, CE_WARN, "scsi_status=%x, ioc_status=%x\n",
+		mptsas_log(mpt, CE_WARN, "scsi_status=%x, ioc_status=%x",
 		    scsi_status, ioc_status);
 		mptsas_log(mpt, CE_WARN,
-		    "mptsas_process_intr: invalid scsi status\n");
+		    "mptsas_process_intr: invalid scsi status");
 		break;
 	}
 }
@@ -5956,7 +5950,7 @@ mptsas_check_task_mgt(mptsas_t *mpt, pMpi2SCSIManagementReply_t reply,
 
 	if (ioc_status != MPI2_IOCSTATUS_SUCCESS) {
 		mptsas_log(mpt, CE_WARN, "mptsas_check_task_mgt: Task 0x%x "
-		    "failed. IOCStatus=0x%x IOCLogInfo=0x%x target=%d\n",
+		    "failed. IOCStatus=0x%x IOCLogInfo=0x%x target=%d",
 		    task_type, ioc_status, log_info, dev_handle);
 		pkt->pkt_reason = CMD_INCOMPLETE;
 		return;
@@ -5978,7 +5972,7 @@ mptsas_check_task_mgt(mptsas_t *mpt, pMpi2SCSIManagementReply_t reply,
 		 * sends bad command.  DevHandle of 0 could cause problems.
 		 */
 		if (dev_handle == 0) {
-			mptsas_log(mpt, CE_WARN, "!Can't flush target with"
+			mptsas_log(mpt, CE_WARN, "Can't flush target with"
 			    " DevHandle of 0.");
 		} else {
 			mptsas_flush_target(mpt, dev_handle, Lun(cmd),
@@ -6165,7 +6159,7 @@ mptsas_process_intr(mptsas_t *mpt,
 	} else if (reply_type == MPI2_RPY_DESCRIPT_FLAGS_ADDRESS_REPLY) {
 		mptsas_handle_address_reply(mpt, reply_desc_union);
 	} else {
-		mptsas_log(mpt, CE_WARN, "?Bad reply type %x", reply_type);
+		mptsas_log(mpt, CE_WARN, "bad reply type %x", reply_type);
 		ddi_fm_service_impact(mpt->m_dip, DDI_SERVICE_UNAFFECTED);
 	}
 
@@ -6699,16 +6693,16 @@ mptsas_handle_topo_change(mptsas_topo_change_list_t *topo_node,
 			if (rval == DEV_INFO_WRONG_DEVICE_TYPE) {
 				mptsas_log(mpt, CE_NOTE,
 				    "mptsas_handle_topo_change: target %d is "
-				    "not a SAS/SATA device. \n",
+				    "not a SAS/SATA device",
 				    topo_node->devhdl);
 			} else if (rval == DEV_INFO_FAIL_ALLOC) {
 				mptsas_log(mpt, CE_NOTE,
 				    "mptsas_handle_topo_change: could not "
-				    "allocate memory. \n");
+				    "allocate memory");
 			} else if (rval == DEV_INFO_FAIL_GUID) {
 				mptsas_log(mpt, CE_NOTE,
 				    "mptsas_handle_topo_change: could not "
-				    "get SATA GUID for target %d. \n",
+				    "get SATA GUID for target %d",
 				    topo_node->devhdl);
 			}
 			/*
@@ -7215,7 +7209,7 @@ mptsas_handle_event_sync(void *args)
 	    &eventreply->IOCStatus)) != 0) {
 		if (iocstatus == MPI2_IOCSTATUS_FLAG_LOG_INFO_AVAILABLE) {
 			mptsas_log(mpt, CE_WARN,
-			    "!mptsas_handle_event_sync: event 0x%x, "
+			    "mptsas_handle_event_sync: event 0x%x, "
 			    "IOCStatus=0x%x, "
 			    "IOCLogInfo=0x%x", event, iocstatus,
 			    ddi_get32(mpt->m_acc_reply_frame_hdl,
@@ -7687,7 +7681,7 @@ mptsas_handle_event_sync(void *args)
 					    sizeof (mptsas_topo_change_list_t));
 				}
 				mptsas_log(mpt, CE_NOTE, "mptsas start taskq "
-				    "for handle SAS DR event failed. \n");
+				    "for handle SAS DR event failed");
 			}
 		}
 		break;
@@ -7871,7 +7865,7 @@ mptsas_handle_event_sync(void *args)
 					    sizeof (mptsas_topo_change_list_t));
 				}
 				mptsas_log(mpt, CE_NOTE, "mptsas start taskq "
-				    "for handle SAS DR event failed. \n");
+				    "for handle SAS DR event failed");
 			}
 		}
 		break;
@@ -7920,7 +7914,7 @@ mptsas_handle_event(void *args)
 	    &eventreply->IOCStatus)) != 0) {
 		if (iocstatus == MPI2_IOCSTATUS_FLAG_LOG_INFO_AVAILABLE) {
 			mptsas_log(mpt, CE_WARN,
-			    "!mptsas_handle_event: IOCStatus=0x%x, "
+			    "mptsas_handle_event: IOCStatus=0x%x, "
 			    "IOCLogInfo=0x%x", iocstatus,
 			    ddi_get32(mpt->m_acc_reply_frame_hdl,
 			    &eventreply->IOCLogInfo));
@@ -8298,7 +8292,7 @@ mptsas_handle_event(void *args)
 			mptsas_log(mpt, CE_NOTE, " Volume %d settings changed"
 			    ", auto-config of hot-swap drives is %s"
 			    ", write caching is %s"
-			    ", hot-spare pool mask is %02x\n",
+			    ", hot-spare pool mask is %02x",
 			    vol, state &
 			    MPI2_RAIDVOL0_SETTING_AUTO_CONFIG_HSWAP_DISABLE
 			    ? "disabled" : "enabled",
@@ -8318,7 +8312,7 @@ mptsas_handle_event(void *args)
 			    (uint8_t)state;
 
 			mptsas_log(mpt, CE_NOTE,
-			    "Volume %d is now %s\n", vol,
+			    "Volume %d is now %s", vol,
 			    state == MPI2_RAID_VOL_STATE_OPTIMAL
 			    ? "optimal" :
 			    state == MPI2_RAID_VOL_STATE_DEGRADED
@@ -8340,7 +8334,7 @@ mptsas_handle_event(void *args)
 			    m_statusflags = state;
 
 			mptsas_log(mpt, CE_NOTE,
-			    " Volume %d is now %s%s%s%s%s%s%s%s%s\n",
+			    " Volume %d is now %s%s%s%s%s%s%s%s%s",
 			    vol,
 			    state & MPI2_RAIDVOL0_STATUS_FLAG_ENABLED
 			    ? ", enabled" : ", disabled",
@@ -8410,7 +8404,7 @@ mptsas_handle_event(void *args)
 			mptsas_log(mpt, CE_NOTE,
 			    " PhysDiskNum %d with DevHandle 0x%x in slot %d "
 			    "for enclosure with handle 0x%x is now "
-			    "%s%s%s%s%s\n", physdisknum, devhandle, slot,
+			    "%s%s%s%s%s", physdisknum, devhandle, slot,
 			    enchandle,
 			    status & MPI2_PHYSDISK0_STATUS_FLAG_INACTIVE_VOLUME
 			    ? ", inactive" : ", active",
@@ -8428,7 +8422,7 @@ mptsas_handle_event(void *args)
 		case MPI2_EVENT_IR_PHYSDISK_RC_STATE_CHANGED:
 			mptsas_log(mpt, CE_NOTE,
 			    " PhysDiskNum %d with DevHandle 0x%x in slot %d "
-			    "for enclosure with handle 0x%x is now %s\n",
+			    "for enclosure with handle 0x%x is now %s",
 			    physdisknum, devhandle, slot, enchandle,
 			    state == MPI2_RAID_PD_STATE_OPTIMAL
 			    ? "optimal" :
@@ -8752,7 +8746,7 @@ mptsas_accept_tx_waitq(mptsas_t *mpt)
 		mutex_exit(&mpt->m_tx_waitq_mutex);
 		if (mptsas_accept_pkt(mpt, cmd) != TRAN_ACCEPT)
 			cmn_err(CE_WARN, "mpt: mptsas_accept_tx_waitq: failed "
-			    "to accept cmd on queue\n");
+			    "to accept cmd on queue");
 		mutex_enter(&mpt->m_tx_waitq_mutex);
 	}
 }
@@ -8838,7 +8832,7 @@ mptsas_start_cmd(mptsas_t *mpt, mptsas_cmd_t *cmd)
 			control |= MPI2_SCSIIO_CONTROL_ORDEREDQ;
 			break;
 		default:
-			mptsas_log(mpt, CE_WARN, "mpt: Invalid tag type\n");
+			mptsas_log(mpt, CE_WARN, "invalid tag type");
 			break;
 		}
 	} else {
@@ -10203,10 +10197,10 @@ mptsas_log(mptsas_t *mpt, int level, char *fmt, ...)
 	(void) vsprintf(mptsas_log_buf, fmt, ap);
 	va_end(ap);
 
-	if (level == CE_CONT) {
-		scsi_log(dev, mptsas_label, level, "%s\n", mptsas_log_buf);
+	if (level == CE_CONT || level == CE_NOTE) {
+		scsi_log(dev, mptsas_label, level, "!%s\n", mptsas_log_buf);
 	} else {
-		scsi_log(dev, mptsas_label, level, "%s", mptsas_log_buf);
+		scsi_log(dev, mptsas_label, level, "!%s", mptsas_log_buf);
 	}
 
 	mutex_exit(&mptsas_log_mutex);
@@ -11395,7 +11389,7 @@ mptsas_do_passthru(mptsas_t *mpt, uint8_t *request, uint8_t *reply,
 	pkt->pkt_ha_private	= (opaque_t)&pt;
 	pkt->pkt_flags		= FLAG_HEAD;
 	pkt->pkt_time		= timeout;
-	pkt->pkt_start          = gethrtime();
+	pkt->pkt_start		= gethrtime();
 	cmd->cmd_pkt		= pkt;
 	cmd->cmd_flags		= CFLAG_CMDIOC | CFLAG_PASSTHRU;
 
@@ -13031,8 +13025,7 @@ mptsas_ioctl(dev_t dev, int cmd, intptr_t data, int mode, cred_t *credp,
 			if (pm_raise_power(mpt->m_dip, 0, PM_LEVEL_D0) !=
 			    DDI_SUCCESS) {
 				mptsas_log(mpt, CE_WARN,
-				    "mptsas%d: mptsas_ioctl: Raise power "
-				    "request failed.", mpt->m_instance);
+				    "raise power request failed");
 				(void) pm_idle_component(mpt->m_dip, 0);
 				return (ENXIO);
 			}
@@ -13552,12 +13545,12 @@ mptsas_get_pci_cap(mptsas_t *mpt)
 		 */
 		if (++cap_count > 48) {
 			mptsas_log(mpt, CE_WARN,
-			    "too many device capabilities.\n");
+			    "too many device capabilities");
 			break;
 		}
 		if (caps_ptr < 64) {
 			mptsas_log(mpt, CE_WARN,
-			    "capabilities pointer 0x%x out of range.\n",
+			    "capabilities pointer 0x%x out of range",
 			    caps_ptr);
 			break;
 		}
@@ -13570,8 +13563,7 @@ mptsas_get_pci_cap(mptsas_t *mpt)
 		switch (cap) {
 			case PCI_CAP_ID_PM:
 				mptsas_log(mpt, CE_NOTE,
-				    "?mptsas%d supports power management.\n",
-				    mpt->m_instance);
+				    "power management supported");
 				mpt->m_options |= MPTSAS_OPT_PM;
 
 				/* Save PMCSR offset */
@@ -13589,8 +13581,7 @@ mptsas_get_pci_cap(mptsas_t *mpt)
 				break;
 			default:
 				mptsas_log(mpt, CE_NOTE,
-				    "?mptsas%d unrecognized capability "
-				    "0x%x.\n", mpt->m_instance, cap);
+				    "unrecognized capability 0x%x", cap);
 				break;
 		}
 
@@ -13628,14 +13619,13 @@ mptsas_init_pm(mptsas_t *mpt)
 	 * If power management is supported by this chip, create
 	 * pm-components property for the power management framework
 	 */
-	(void) sprintf(pmc_name, "NAME=mptsas%d", mpt->m_instance);
+	(void) sprintf(pmc_name, "NAME=mpt_sas%d", mpt->m_instance);
 	pmc[0] = pmc_name;
 	if (ddi_prop_update_string_array(DDI_DEV_T_NONE, mpt->m_dip,
 	    "pm-components", pmc, 3) != DDI_PROP_SUCCESS) {
 		mpt->m_options &= ~MPTSAS_OPT_PM;
 		mptsas_log(mpt, CE_WARN,
-		    "mptsas%d: pm-component property creation failed.",
-		    mpt->m_instance);
+		    "pm-component property creation failed");
 		return (DDI_FAILURE);
 	}
 
@@ -13646,8 +13636,7 @@ mptsas_init_pm(mptsas_t *mpt)
 	pmcsr_stat = pci_config_get16(mpt->m_config_handle,
 	    mpt->m_pmcsr_offset);
 	if ((pmcsr_stat & PCI_PMCSR_STATE_MASK) != PCI_PMCSR_D0) {
-		mptsas_log(mpt, CE_WARN, "mptsas%d: Power up the device",
-		    mpt->m_instance);
+		mptsas_log(mpt, CE_WARN, "power up the device");
 		pci_config_put16(mpt->m_config_handle, mpt->m_pmcsr_offset,
 		    PCI_PMCSR_D0);
 	}
@@ -13676,7 +13665,7 @@ mptsas_register_intrs(mptsas_t *mpt)
 	/* Get supported interrupt types */
 	if (ddi_intr_get_supported_types(dip, &intr_types) != DDI_SUCCESS) {
 		mptsas_log(mpt, CE_WARN, "ddi_intr_get_supported_types "
-		    "failed\n");
+		    "failed");
 		return (FALSE);
 	}
 
@@ -13730,7 +13719,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 	ret = ddi_intr_get_nintrs(dip, intr_type, &count);
 	if ((ret != DDI_SUCCESS) || (count <= 0)) {
 		mptsas_log(mpt, CE_WARN, "ddi_intr_get_nintrs() failed, "
-		    "ret %d count %d\n", ret, count);
+		    "ret %d count %d", ret, count);
 
 		return (DDI_FAILURE);
 	}
@@ -13739,7 +13728,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 	ret = ddi_intr_get_navail(dip, intr_type, &avail);
 	if ((ret != DDI_SUCCESS) || (avail == 0)) {
 		mptsas_log(mpt, CE_WARN, "ddi_intr_get_navail() failed, "
-		    "ret %d avail %d\n", ret, avail);
+		    "ret %d avail %d", ret, avail);
 
 		return (DDI_FAILURE);
 	}
@@ -13765,7 +13754,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 	    count, &actual, flag);
 
 	if ((ret != DDI_SUCCESS) || (actual == 0)) {
-		mptsas_log(mpt, CE_WARN, "ddi_intr_alloc() failed, ret %d\n",
+		mptsas_log(mpt, CE_WARN, "ddi_intr_alloc() failed, ret %d",
 		    ret);
 		kmem_free(mpt->m_htable, mpt->m_intr_size);
 		return (DDI_FAILURE);
@@ -13773,7 +13762,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 
 	/* use interrupt count returned or abort? */
 	if (actual < count) {
-		mptsas_log(mpt, CE_NOTE, "Requested: %d, Received: %d\n",
+		mptsas_log(mpt, CE_NOTE, "Requested: %d, Received: %d",
 		    count, actual);
 	}
 
@@ -13784,7 +13773,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 	 */
 	if ((ret = ddi_intr_get_pri(mpt->m_htable[0],
 	    &mpt->m_intr_pri)) != DDI_SUCCESS) {
-		mptsas_log(mpt, CE_WARN, "ddi_intr_get_pri() failed %d\n", ret);
+		mptsas_log(mpt, CE_WARN, "ddi_intr_get_pri() failed %d", ret);
 
 		/* Free already allocated intr */
 		for (i = 0; i < actual; i++) {
@@ -13798,7 +13787,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 	/* Test for high level mutex */
 	if (mpt->m_intr_pri >= ddi_intr_get_hilevel_pri()) {
 		mptsas_log(mpt, CE_WARN, "mptsas_add_intrs: "
-		    "Hi level interrupt not supported\n");
+		    "Hi level interrupt not supported");
 
 		/* Free already allocated intr */
 		for (i = 0; i < actual; i++) {
@@ -13814,7 +13803,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 		if ((ret = ddi_intr_add_handler(mpt->m_htable[i], mptsas_intr,
 		    (caddr_t)mpt, (caddr_t)(uintptr_t)i)) != DDI_SUCCESS) {
 			mptsas_log(mpt, CE_WARN, "ddi_intr_add_handler() "
-			    "failed %d\n", ret);
+			    "failed %d", ret);
 
 			/* Free already allocated intr */
 			for (i = 0; i < actual; i++) {
@@ -13828,7 +13817,7 @@ mptsas_add_intrs(mptsas_t *mpt, int intr_type)
 
 	if ((ret = ddi_intr_get_cap(mpt->m_htable[0], &mpt->m_intr_cap))
 	    != DDI_SUCCESS) {
-		mptsas_log(mpt, CE_WARN, "ddi_intr_get_cap() failed %d\n", ret);
+		mptsas_log(mpt, CE_WARN, "ddi_intr_get_cap() failed %d", ret);
 
 		/* Free already allocated intr */
 		for (i = 0; i < actual; i++) {
@@ -14129,7 +14118,7 @@ inq83_retry:
 	rval = mptsas_inquiry(mpt, ptgt, lun, 0x83, inq83,
 	    inq83_len, NULL, 1);
 	if (rval != DDI_SUCCESS) {
-		mptsas_log(mpt, CE_WARN, "!mptsas request inquiry page "
+		mptsas_log(mpt, CE_WARN, "mptsas request inquiry page "
 		    "0x83 for target:%x, lun:%x failed!", target, lun);
 		sata_guid = -1;
 		goto out;
@@ -14137,7 +14126,7 @@ inq83_retry:
 	/* According to SAT2, the first descriptor is logic unit name */
 	dblk = &inq83[4];
 	if ((dblk[1] & 0x30) != 0) {
-		mptsas_log(mpt, CE_WARN, "!Descriptor is not lun associated.");
+		mptsas_log(mpt, CE_WARN, "Descriptor is not lun associated.");
 		goto out;
 	}
 	pwwn = (uint64_t *)(void *)(&dblk[4]);
@@ -15403,7 +15392,7 @@ mptsas_create_lun(dev_info_t *pdip, struct scsi_inquiry *sd_inq,
 		rval = mptsas_inquiry(mpt, ptgt, lun, 0x83, inq83,
 		    inq83_len1, &inq83_len, 1);
 		if (rval != 0) {
-			mptsas_log(mpt, CE_WARN, "!mptsas request inquiry page "
+			mptsas_log(mpt, CE_WARN, "mptsas request inquiry page "
 			    "0x83 for target:%x, lun:%x failed!", target, lun);
 			if (mptsas_physical_bind_failed_page_83 != B_FALSE)
 				goto create_lun;
@@ -15430,7 +15419,7 @@ mptsas_create_lun(dev_info_t *pdip, struct scsi_inquiry *sd_inq,
 				ddi_devid_free_guid(guid);
 				guid = NULL;
 				if (mpt->m_mpxio_enable == TRUE) {
-					mptsas_log(mpt, CE_NOTE, "!Target:%x, "
+					mptsas_log(mpt, CE_NOTE, "Target:%x, "
 					    "lun:%x doesn't have a valid GUID, "
 					    "multipathing for this drive is "
 					    "not enabled", target, lun);
@@ -15452,7 +15441,7 @@ mptsas_create_lun(dev_info_t *pdip, struct scsi_inquiry *sd_inq,
 			delay(1 * drv_usectohz(1000000));
 			continue;
 		} else {
-			mptsas_log(mpt, CE_WARN, "!Encode devid failed for "
+			mptsas_log(mpt, CE_WARN, "Encode devid failed for "
 			    "path target:%x, lun:%x", target, lun);
 			rval = DDI_FAILURE;
 			goto create_lun;
@@ -15460,7 +15449,7 @@ mptsas_create_lun(dev_info_t *pdip, struct scsi_inquiry *sd_inq,
 	}
 
 	if (i == mptsas_inq83_retry_timeout) {
-		mptsas_log(mpt, CE_WARN, "!Repeated page83 requests timeout "
+		mptsas_log(mpt, CE_WARN, "Repeated page83 requests timeout "
 		    "for path target:%x, lun:%x", target, lun);
 	}
 

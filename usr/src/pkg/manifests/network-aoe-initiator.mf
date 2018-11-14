@@ -32,7 +32,6 @@ dir path=usr group=sys
 dir path=usr/share/man/man7d
 driver name=aoeblk perms="* 0600 root sys"
 file path=kernel/drv/$(ARCH64)/aoeblk group=sys
-$(i386_ONLY)file path=kernel/drv/aoeblk group=sys
 file path=kernel/drv/aoeblk.conf group=sys
 file path=lib/svc/manifest/network/aoe-initiator.xml group=sys mode=0444 \
     variant.opensolaris.zone=global

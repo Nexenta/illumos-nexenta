@@ -44,7 +44,6 @@ driver name=smartpqi class=scsi-self-identifying \
     alias=pci9005,28f \
     alias=pciex9005,28f
 file path=kernel/drv/$(ARCH64)/smartpqi group=sys
-$(i386_ONLY)file path=kernel/drv/smartpqi group=sys
 file path=kernel/drv/smartpqi.conf group=sys \
     original_name=SUNWsmartpqi:kernel/drv/smartpqi.conf preserve=true
 file path=usr/share/man/man7d/smartpqi.7d
