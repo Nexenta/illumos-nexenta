@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/param.h>
@@ -333,8 +333,22 @@ smb_idpool_alloc(
 			pool->id_pool[pool->id_idx] |= bit;
 			*id = (uint16_t)(pool->id_idx * 8 + (uint32_t)bit_idx);
 			pool->id_free_counter--;
-			pool->id_bit = bit;
-			pool->id_bit_idx = bit_idx;
+			/*
+			 * Leave position at next bit to allocate,
+			 * so we don't keep re-using the last in an
+			 * alloc/free/alloc/free sequence.  Doing
+			 * that can confuse some SMB clients.
+			 */
+			if (bit & 0x80) {
+				pool->id_bit = 1;
+				pool->id_bit_idx = 0;
+				pool->id_idx++;
+				pool->id_idx &= pool->id_idx_msk;
+			} else {
+				pool->id_bit = (bit << 1);
+				pool->id_bit_idx = bit_idx + 1;
+				/* keep id_idx */
+			}
 			mutex_exit(&pool->id_mutex);
 			return (0);
 		}
@@ -1250,8 +1264,8 @@ smb_avl_destroy(smb_avl_t *avl)
  *
  * Returns:
  *
- * 	ENOTACTIVE	AVL is not in READY state
- * 	EEXIST		The item is already in AVL
+ *	ENOTACTIVE	AVL is not in READY state
+ *	EEXIST		The item is already in AVL
  */
 int
 smb_avl_add(smb_avl_t *avl, void *item)
