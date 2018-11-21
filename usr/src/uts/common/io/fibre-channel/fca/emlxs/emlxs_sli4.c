@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004-2012 Emulex. All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #include <emlxs.h>
@@ -136,7 +137,7 @@ static uint32_t	emlxs_sli4_fix_gpio_mbcmpl(emlxs_hba_t *hba, MAILBOXQ *mbq);
 
 static void		emlxs_sli4_poll_erratt(emlxs_hba_t *hba);
 
-extern XRIobj_t 	*emlxs_sli4_reserve_xri(emlxs_port_t *port,
+extern XRIobj_t		*emlxs_sli4_reserve_xri(emlxs_port_t *port,
 				RPIobj_t *rpip, uint32_t type, uint16_t rx_id);
 static int		emlxs_check_hdw_ready(emlxs_hba_t *);
 
@@ -2611,7 +2612,7 @@ emlxs_sli4_bde_setup(emlxs_port_t *port, emlxs_buf_t *sbp)
 	wqe = &iocbq->wqe;
 	pkt = PRIV2PKT(sbp);
 	xrip = sbp->xrip;
-	sge = xrip->SGList.virt;
+	sge = xrip->SGList->virt;
 
 #if (EMLXS_MODREV >= EMLXS_MODREV3)
 	cp_cmd = pkt->pkt_cmd_cookie;
@@ -2761,7 +2762,7 @@ emlxs_sli4_fct_bde_setup(emlxs_port_t *port, emlxs_buf_t *sbp)
 		return (1);
 	}
 
-	sge = xrip->SGList.virt;
+	sge = xrip->SGList->virt;
 
 	if (iocb->ULPCOMMAND == CMD_FCP_TRECEIVE64_CX) {
 
@@ -4044,7 +4045,7 @@ emlxs_sli4_prep_fct_iocb(emlxs_port_t *port, emlxs_buf_t *cmd_sbp, int channel)
 			sge_size = (sge_size + 3) & 0xfffffffc;
 		}
 		sge_addr = cp_cmd->dmac_laddress;
-		sge = xrip->SGList.virt;
+		sge = xrip->SGList->virt;
 
 		stage_sge.addrHigh = PADDR_HI(sge_addr);
 		stage_sge.addrLow = PADDR_LO(sge_addr);
@@ -4236,7 +4237,6 @@ emlxs_sli4_prep_fcp_iocb(emlxs_port_t *port, emlxs_buf_t *sbp, int channel)
 	NODELIST *node;
 	uint16_t iotag;
 	uint32_t did;
-	off_t offset;
 
 	pkt = PRIV2PKT(sbp);
 	did = LE_SWAP24_LO(pkt->pkt_cmd_fhdr.d_id);
@@ -4298,22 +4298,18 @@ emlxs_sli4_prep_fcp_iocb(emlxs_port_t *port, emlxs_buf_t *sbp, int channel)
 	/* DEBUG */
 #ifdef DEBUG_FCP
 	EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_sli_detail_msg,
-	    "FCP: SGLaddr virt %p phys %p size %d", xrip->SGList.virt,
-	    xrip->SGList.phys, pkt->pkt_datalen);
-	emlxs_data_dump(port, "FCP: SGL", (uint32_t *)xrip->SGList.virt, 20, 0);
+	    "FCP: SGLaddr virt %p phys %p size %d", xrip->SGList->virt,
+	    xrip->SGList->phys, pkt->pkt_datalen);
+	emlxs_data_dump(port, "FCP: SGL",
+	    (uint32_t *)xrip->SGList->virt, 20, 0);
 	EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_sli_detail_msg,
 	    "FCP: CMD virt %p len %d:%d:%d",
 	    pkt->pkt_cmd, pkt->pkt_cmdlen, pkt->pkt_rsplen, pkt->pkt_datalen);
 	emlxs_data_dump(port, "FCP: CMD", (uint32_t *)pkt->pkt_cmd, 10, 0);
 #endif /* DEBUG_FCP */
 
-	offset = (off_t)((uint64_t)((unsigned long)
-	    xrip->SGList.virt) -
-	    (uint64_t)((unsigned long)
-	    hba->sli.sli4.slim2.virt));
-
-	EMLXS_MPDATA_SYNC(xrip->SGList.dma_handle, offset,
-	    xrip->SGList.size, DDI_DMA_SYNC_FORDEV);
+	EMLXS_MPDATA_SYNC(xrip->SGList->dma_handle, 0,
+	    xrip->SGList->size, DDI_DMA_SYNC_FORDEV);
 
 	/* if device is FCP-2 device, set the following bit */
 	/* that says to run the FC-TAPE protocol. */
@@ -4398,7 +4394,6 @@ emlxs_sli4_prep_els_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 	ddi_dma_cookie_t *cp_cmd;
 	ddi_dma_cookie_t *cp_resp;
 	emlxs_node_t *node;
-	off_t offset;
 
 	pkt = PRIV2PKT(sbp);
 	did = LE_SWAP24_LO(pkt->pkt_cmd_fhdr.d_id);
@@ -4492,7 +4487,7 @@ emlxs_sli4_prep_els_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 		sge->last = 1;
 		/* Now sge is fully staged */
 
-		sge = xrip->SGList.virt;
+		sge = xrip->SGList->virt;
 		BE_SWAP32_BCOPY((uint8_t *)&stage_sge, (uint8_t *)sge,
 		    sizeof (ULP_SGE64));
 
@@ -4557,7 +4552,7 @@ emlxs_sli4_prep_els_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 
 		sge->last = 0;
 
-		sge = xrip->SGList.virt;
+		sge = xrip->SGList->virt;
 		BE_SWAP32_BCOPY((uint8_t *)&stage_sge, (uint8_t *)sge,
 		    sizeof (ULP_SGE64));
 
@@ -4573,19 +4568,19 @@ emlxs_sli4_prep_els_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 		sge->last = 1;
 		/* Now sge is fully staged */
 
-		sge = xrip->SGList.virt;
+		sge = xrip->SGList->virt;
 		sge++;
 		BE_SWAP32_BCOPY((uint8_t *)&stage_sge, (uint8_t *)sge,
 		    sizeof (ULP_SGE64));
 #ifdef DEBUG_ELS
 		EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_sli_detail_msg,
 		    "ELS: SGLaddr virt %p phys %p",
-		    xrip->SGList.virt, xrip->SGList.phys);
+		    xrip->SGList->virt, xrip->SGList->phys);
 		EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_sli_detail_msg,
 		    "ELS: PAYLOAD virt %p phys %p",
 		    pkt->pkt_cmd, cp_cmd->dmac_laddress);
-		emlxs_data_dump(port, "ELS: SGL", (uint32_t *)xrip->SGList.virt,
-		    12, 0);
+		emlxs_data_dump(port, "ELS: SGL",
+		    (uint32_t *)xrip->SGList->virt, 12, 0);
 #endif /* DEBUG_ELS */
 
 		switch (cmd) {
@@ -4691,13 +4686,8 @@ emlxs_sli4_prep_els_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 		}
 	}
 
-	offset = (off_t)((uint64_t)((unsigned long)
-	    xrip->SGList.virt) -
-	    (uint64_t)((unsigned long)
-	    hba->sli.sli4.slim2.virt));
-
-	EMLXS_MPDATA_SYNC(xrip->SGList.dma_handle, offset,
-	    xrip->SGList.size, DDI_DMA_SYNC_FORDEV);
+	EMLXS_MPDATA_SYNC(xrip->SGList->dma_handle, 0,
+	    xrip->SGList->size, DDI_DMA_SYNC_FORDEV);
 
 	if (pkt->pkt_cmd_fhdr.f_ctl & F_CTL_CHAINED_SEQ) {
 		wqe->CCPE = 1;
@@ -4736,7 +4726,6 @@ emlxs_sli4_prep_ct_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 	RPIobj_t *rpip;
 	XRIobj_t *xrip;
 	uint32_t did;
-	off_t offset;
 
 	pkt = PRIV2PKT(sbp);
 	did = LE_SWAP24_LO(pkt->pkt_cmd_fhdr.d_id);
@@ -4888,9 +4877,9 @@ emlxs_sli4_prep_ct_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 
 #ifdef DEBUG_CT
 		EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_sli_detail_msg,
-		    "CT: SGLaddr virt %p phys %p", xrip->SGList.virt,
-		    xrip->SGList.phys);
-		emlxs_data_dump(port, "CT: SGL", (uint32_t *)xrip->SGList.virt,
+		    "CT: SGLaddr virt %p phys %p", xrip->SGList->virt,
+		    xrip->SGList->phys);
+		emlxs_data_dump(port, "CT: SGL", (uint32_t *)xrip->SGList->virt,
 		    12, 0);
 		EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_sli_detail_msg,
 		    "CT: CMD virt %p len %d:%d",
@@ -4914,13 +4903,8 @@ emlxs_sli4_prep_ct_iocb(emlxs_port_t *port, emlxs_buf_t *sbp)
 	iocb->un.genreq64.w5.hcsw.Dfctl  = pkt->pkt_cmd_fhdr.df_ctl;
 	iocb->ULPPU = 1;	/* Wd4 is relative offset */
 
-	offset = (off_t)((uint64_t)((unsigned long)
-	    xrip->SGList.virt) -
-	    (uint64_t)((unsigned long)
-	    hba->sli.sli4.slim2.virt));
-
-	EMLXS_MPDATA_SYNC(xrip->SGList.dma_handle, offset,
-	    xrip->SGList.size, DDI_DMA_SYNC_FORDEV);
+	EMLXS_MPDATA_SYNC(xrip->SGList->dma_handle, 0,
+	    xrip->SGList->size, DDI_DMA_SYNC_FORDEV);
 
 	wqe->ContextTag = rpip->RPI;
 	wqe->ContextType = WQE_RPI_CONTEXT;
@@ -7283,6 +7267,8 @@ emlxs_sli4_resource_free(emlxs_hba_t *hba)
 	}
 
 	if (hba->sli.sli4.XRIp) {
+		XRIobj_t	*xrip;
+
 		if ((hba->sli.sli4.XRIinuse_f !=
 		    (XRIobj_t *)&hba->sli.sli4.XRIinuse_f) ||
 		    (hba->sli.sli4.XRIinuse_b !=
@@ -7293,6 +7279,17 @@ emlxs_sli4_resource_free(emlxs_hba_t *hba)
 			    hba->sli.sli4.XRIinuse_b,
 			    &hba->sli.sli4.XRIinuse_f);
 		}
+
+		xrip = hba->sli.sli4.XRIp;
+		for (i = 0; i < hba->sli.sli4.XRICount; i++) {
+			xrip->XRI = emlxs_sli4_index_to_xri(hba, i);
+
+			if (xrip->XRI != 0)
+				emlxs_mem_put(hba, xrip->SGSeg, xrip->SGList);
+
+			xrip++;
+		}
+
 		kmem_free(hba->sli.sli4.XRIp,
 		    (sizeof (XRIobj_t) * hba->sli.sli4.XRICount));
 		hba->sli.sli4.XRIp = NULL;
@@ -7420,10 +7417,6 @@ emlxs_sli4_resource_alloc(emlxs_hba_t *hba)
 	count += RQB_COUNT * (RQB_DATA_SIZE + RQB_HEADER_SIZE);
 	count += (4096 - (count%4096)); /* Ensure 4K alignment */
 
-	/* SGL */
-	count += hba->sli.sli4.XRIExtSize * hba->sli.sli4.mem_sgl_size;
-	count += (4096 - (count%4096)); /* Ensure 4K alignment */
-
 	/* RPI Header Templates */
 	if (hba->sli.sli4.param.HDRR) {
 		/* Bytes per extent */
@@ -7444,6 +7437,9 @@ emlxs_sli4_resource_alloc(emlxs_hba_t *hba)
 	buf_info->flags = FC_MBUF_DMA | FC_MBUF_SNGLSG | FC_MBUF_DMA32;
 	buf_info->align = ddi_ptob(hba->dip, 1L);
 
+	EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_init_debug_msg,
+	    "Allocating memory for slim2: %d", count);
+
 	(void) emlxs_mem_alloc(hba, buf_info);
 
 	if (buf_info->virt == NULL) {
@@ -7457,7 +7453,7 @@ emlxs_sli4_resource_alloc(emlxs_hba_t *hba)
 	EMLXS_MPDATA_SYNC(buf_info->dma_handle, 0,
 	    buf_info->size, DDI_DMA_SYNC_FORDEV);
 
-	/* Assign memory to SGL, Head Template, EQ, CQ, WQ, RQ and MQ */
+	/* Assign memory to Head Template, EQ, CQ, WQ, RQ and MQ */
 	data_handle = buf_info->data_handle;
 	dma_handle = buf_info->dma_handle;
 	phys = buf_info->phys;
@@ -7647,7 +7643,25 @@ emlxs_sli4_resource_alloc(emlxs_hba_t *hba)
 	phys += align;
 	virt += align;
 
+	/* RPI Header Templates */
+	if (hba->sli.sli4.param.HDRR) {
+		buf_info = &hba->sli.sli4.HeaderTmplate;
+		bzero(buf_info, sizeof (MBUF_INFO));
+		buf_info->size = hddr_size;
+		buf_info->flags = FC_MBUF_DMA | FC_MBUF_DMA32;
+		buf_info->align = ddi_ptob(hba->dip, 1L);
+		buf_info->phys = phys;
+		buf_info->virt = (void *)virt;
+		buf_info->data_handle = data_handle;
+		buf_info->dma_handle = dma_handle;
+	}
+
 	/* SGL */
+
+	EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_init_debug_msg,
+	    "Allocating memory for %d SGLs: %d/%d",
+	    hba->sli.sli4.XRICount, sizeof (XRIobj_t), size);
+
 	/* Initialize double linked lists */
 	hba->sli.sli4.XRIinuse_f =
 	    (XRIobj_t *)&hba->sli.sli4.XRIinuse_f;
@@ -7659,14 +7673,33 @@ emlxs_sli4_resource_alloc(emlxs_hba_t *hba)
 	    (XRIobj_t *)&hba->sli.sli4.XRIfree_f;
 	hba->sli.sli4.XRIfree_b =
 	    (XRIobj_t *)&hba->sli.sli4.XRIfree_f;
-	hba->sli.sli4.xria_count = 0;
+	hba->sli.sli4.xrif_count = 0;
+
+	uint32_t mseg;
+
+	switch (hba->sli.sli4.mem_sgl_size) {
+	case 1024:
+		mseg = MEM_SGL1K;
+		break;
+	case 2048:
+		mseg = MEM_SGL2K;
+		break;
+	case 4096:
+		mseg = MEM_SGL4K;
+		break;
+	default:
+		EMLXS_MSGF(EMLXS_CONTEXT,
+		    &emlxs_init_failed_msg,
+		    "Unsupported SGL Size: %d", hba->sli.sli4.mem_sgl_size);
+		goto failed;
+	}
 
 	hba->sli.sli4.XRIp = (XRIobj_t *)kmem_zalloc(
 	    (sizeof (XRIobj_t) * hba->sli.sli4.XRICount), KM_SLEEP);
 
 	xrip = hba->sli.sli4.XRIp;
-	size = hba->sli.sli4.mem_sgl_size;
 	iotag = 1;
+
 	for (i = 0; i < hba->sli.sli4.XRICount; i++) {
 		xrip->XRI = emlxs_sli4_index_to_xri(hba, i);
 
@@ -7689,38 +7722,19 @@ emlxs_sli4_resource_alloc(emlxs_hba_t *hba)
 		hba->sli.sli4.xrif_count++;
 
 		/* Allocate SGL for this xrip */
-		buf_info = &xrip->SGList;
-		buf_info->size = size;
-		buf_info->flags =
-		    FC_MBUF_DMA | FC_MBUF_SNGLSG | FC_MBUF_DMA32;
-		buf_info->align = size;
-		buf_info->phys = phys;
-		buf_info->virt = (void *)virt;
-		buf_info->data_handle = data_handle;
-		buf_info->dma_handle = dma_handle;
+		xrip->SGSeg = mseg;
+		xrip->SGList = emlxs_mem_get(hba, xrip->SGSeg);
 
-		phys += size;
-		virt += size;
+		if (xrip->SGList == NULL) {
+			EMLXS_MSGF(EMLXS_CONTEXT, &emlxs_init_failed_msg,
+			    "Unable to allocate memory for SGL %d", i);
+			goto failed;
+		}
+
+		EMLXS_MPDATA_SYNC(xrip->SGList->dma_handle, 0,
+		    xrip->SGList->size, DDI_DMA_SYNC_FORDEV);
 
 		xrip++;
-	}
-
-	/* 4K Alignment */
-	align = (4096 - (phys%4096));
-	phys += align;
-	virt += align;
-
-	/* RPI Header Templates */
-	if (hba->sli.sli4.param.HDRR) {
-		buf_info = &hba->sli.sli4.HeaderTmplate;
-		bzero(buf_info, sizeof (MBUF_INFO));
-		buf_info->size = hddr_size;
-		buf_info->flags = FC_MBUF_DMA | FC_MBUF_DMA32;
-		buf_info->align = ddi_ptob(hba->dip, 1L);
-		buf_info->phys = phys;
-		buf_info->virt = (void *)virt;
-		buf_info->data_handle = data_handle;
-		buf_info->dma_handle = dma_handle;
 	}
 
 	/* GPIO lock */
@@ -8252,7 +8266,7 @@ emlxs_sli4_post_sgl_pages(emlxs_hba_t *hba, MAILBOXQ *mbq)
 	emlxs_port_t	*port = &PPORT;
 	XRIobj_t	*xrip;
 	MATCHMAP	*mp;
-	mbox_req_hdr_t 	*hdr_req;
+	mbox_req_hdr_t	*hdr_req;
 	uint32_t	i;
 	uint32_t	cnt;
 	uint32_t	xri_cnt;
@@ -8323,10 +8337,10 @@ emlxs_sli4_post_sgl_pages(emlxs_hba_t *hba, MAILBOXQ *mbq)
 				post_sgl->params.request.xri_count++;
 				post_sgl->params.request.pages[i].\
 				    sgl_page0.addrLow =
-				    PADDR_LO(xrip->SGList.phys);
+				    PADDR_LO(xrip->SGList->phys);
 				post_sgl->params.request.pages[i].\
 				    sgl_page0.addrHigh =
-				    PADDR_HI(xrip->SGList.phys);
+				    PADDR_HI(xrip->SGList->phys);
 
 				cnt--;
 				xrip++;
@@ -8359,8 +8373,8 @@ emlxs_sli4_post_hdr_tmplates(emlxs_hba_t *hba, MAILBOXQ *mbq)
 {
 	MAILBOX4	*mb = (MAILBOX4 *)mbq;
 	emlxs_port_t	*port = &PPORT;
-	uint32_t 	j;
-	uint32_t 	k;
+	uint32_t	j;
+	uint32_t	k;
 	uint64_t	addr;
 	IOCTL_FCOE_POST_HDR_TEMPLATES *post_hdr;
 	uint16_t	num_pages;
@@ -9237,7 +9251,7 @@ emlxs_sli4_unreg_all_nodes(emlxs_port_t *port)
 {
 	NODELIST	*nlp;
 	int		i;
-	uint32_t 	found;
+	uint32_t	found;
 
 	/* Set the node tags */
 	/* We will process all nodes with this tag */

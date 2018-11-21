@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004-2012 Emulex. All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #ifndef _EMLXS_ADAPTERS_H
@@ -100,7 +101,7 @@ typedef enum emlxs_adapter
 	OCe11101,	/* Generic Single Channel */
 	OCe11102,	/* Generic Dual Channel */
 
-	/* Lancer FC (45) */
+	/* Lancer FC Gen5 HBAs (45) */
 	LPe16000,	/* Generic Single Channel FC */
 	LPe1600X,	/* Generic Multi Channel FC */
 	LPem16002_FC_O,	/* Oracle branded */
@@ -108,18 +109,23 @@ typedef enum emlxs_adapter
 	LPe16002_FC_SP1, /* Oracle excluded - Spare */
 	LPe16002_FC_SP2, /* Oracle excluded - Spare */
 
+	/* Lancer FC Gen6 HBAs */
+	LPe31000_M6_L,	/* Single port 16Gb, Lenovo-branded */
+	LPe32000,	/* Generic Single Channel FC */
+	LPe3200X,	/* Generic Multi Channel FC */
+
 	/* Celerity 16 FC Gen5 */
 	CelerityFC161E,
 	CelerityFC162E,
 	CelerityFC164E,
 
-	/* Celerity 16 FC Gen6 (94) */
+	/* Celerity 16 FC Gen6 */
 	CelerityFC162P,
 	CelerityFC164P,
 	CelerityFC321E,
 	CelerityFC322E,
 
-	/* Lancer FCoE (51) */
+	/* Lancer FCoE */
 	OCe15100,	/* Generic Single Channel FCOE */
 	OCe1510X,	/* Generic Multi Channel FCOE */
 	LPem16002_FE_O,	/* Oracle branded */
@@ -269,7 +275,7 @@ typedef enum emlxs_adapter
 #define	PCI_DEVICE_ID_BE4		0x0724
 #define	PCI_SSDID_OCe12104		0xEF81
 
-/* E200: Lancer FC */
+/* E200: Lancer FC Gen5 */
 #define	PCI_DEVICE_ID_LANCER_FC		0xE200
 #define	PCI_SSDID_LPe16000		0xE200
 #define	PCI_SSDID_LPe1600X		0xE200 /* Identified by cache_line */
@@ -277,6 +283,12 @@ typedef enum emlxs_adapter
 #define	PCI_SSDID_LPe16002_FC_O		0xE20E
 #define	PCI_SSDID_LPe16002_FC_SP1	0xE217
 #define	PCI_SSDID_LPe16002_FC_SP2	0xE219
+
+/* E300: Lancer FC Gen6 */
+#define	PCI_DEVICE_ID_LANCER_G6_FC	0xE300
+#define	PCI_SSDID_LPe31000_M6_L		0xE333
+#define	PCI_SSDID_LPe32000		0xE300
+#define	PCI_SSDID_LPe3200X		0xE300
 
 /* E260: Lancer FCoE */
 #define	PCI_DEVICE_ID_LANCER_FE		0xE260
@@ -1662,6 +1674,64 @@ emlxs_model_t   emlxs_pci_model[] =
 		EMLXS_ORACLE_EXCLUDED | EMLXS_INTX_SUPPORTED |
 			EMLXS_MSI_SUPPORTED | EMLXS_MSIX_SUPPORTED |
 			EMLXS_E2E_SUPPORTED,
+		EMLXS_LANCER_CHIP,
+		FW_NOT_PROVIDED,
+		EMLXS_INTR_NO_LIMIT,
+		EMLXS_SLI4_MASK,
+		EMLXS_MULTI_CHANNEL,
+		NULL_PROG_TYPES,
+	},
+
+	/* Lancer Gen6 16Gb FC Single-port, Lenovo-branded */
+	{
+		LPe31000_M6_L,
+		PCI_DEVICE_ID_LANCER_G6_FC,
+		PCI_SSDID_LPe31000_M6_L,
+		"LPe31000",
+		"PCI_SSDID_LPe31000_M6_L",
+		"Emulex",
+		EMLXS_INTX_SUPPORTED |
+			EMLXS_MSI_SUPPORTED | EMLXS_MSIX_SUPPORTED |
+			EMLXS_E2E_SUPPORTED | EMLXS_FC_GEN6,
+		EMLXS_LANCER_CHIP,
+		FW_NOT_PROVIDED,
+		EMLXS_INTR_NO_LIMIT,
+		EMLXS_SLI4_MASK,
+		EMLXS_SINGLE_CHANNEL,
+		NULL_PROG_TYPES,
+	},
+
+	/* Lancer Gen6 FC (Generic) */
+	{
+		LPe32000,
+		PCI_DEVICE_ID_LANCER_G6_FC,
+		PCI_SSDID_LPe32000,
+		"LPe32000",
+		"Emulex LightPulse LPe32000 32Gb 1-port FC HBA",
+		"Emulex",
+		EMLXS_INTX_SUPPORTED |
+			EMLXS_MSI_SUPPORTED | EMLXS_MSIX_SUPPORTED |
+			EMLXS_E2E_SUPPORTED | EMLXS_FC_GEN6,
+		EMLXS_LANCER_CHIP,
+		FW_NOT_PROVIDED,
+		EMLXS_INTR_NO_LIMIT,
+		EMLXS_SLI4_MASK,
+		EMLXS_SINGLE_CHANNEL,
+		NULL_PROG_TYPES,
+	},
+
+	/* Lancer Gen6 FC (Generic Multi-Channel) */
+	/* !! Must always follow the single channel entry in list */
+	{
+		LPe3200X,
+		PCI_DEVICE_ID_LANCER_G6_FC,
+		PCI_SSDID_LPe3200X,
+		"LPe32000",
+		"Emulex LightPulse LPe32000 32Gb Multi-port FC HBA",
+		"Emulex",
+		EMLXS_INTX_SUPPORTED |
+			EMLXS_MSI_SUPPORTED | EMLXS_MSIX_SUPPORTED |
+			EMLXS_E2E_SUPPORTED | EMLXS_FC_GEN6,
 		EMLXS_LANCER_CHIP,
 		FW_NOT_PROVIDED,
 		EMLXS_INTR_NO_LIMIT,

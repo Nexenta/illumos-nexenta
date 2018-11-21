@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004-2012 Emulex. All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #ifndef _EMLXS_FC_H
@@ -494,12 +495,15 @@ typedef emlxs_fcip_nethdr_t NETHDR;
 #define	MEM_IPBUF	5	/* memory segment to hold IP buffer data */
 #define	MEM_CTBUF	6	/* memory segment to hold CT buffer data */
 #define	MEM_FCTBUF	7	/* memory segment to hold FCT buffer data */
+#define MEM_SGL1K	8	/* memory segment to hold 1K SGL entries */
+#define MEM_SGL2K	9	/* memory segment to hold 2K SGL entries */
+#define MEM_SGL4K	10	/* memory segment to hold 4K SGL entries */
 
 #ifdef SFCT_SUPPORT
-#define	FC_MAX_SEG	8
-#define	MEM_FCTSEG	10 /* must be greater than FC_MAX_SEG */
+#define	FC_MAX_SEG	11
+#define	MEM_FCTSEG	13 /* must be greater than FC_MAX_SEG */
 #else
-#define	FC_MAX_SEG	7
+#define	FC_MAX_SEG	10
 #endif /* SFCT_SUPPORT */
 
 

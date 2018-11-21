@@ -22,6 +22,7 @@
 /*
  * Copyright (c) 2004-2012 Emulex. All rights reserved.
  * Use is subject to license terms.
+ * Copyright 2018 OmniOS Community Edition (OmniOSce) Association.
  */
 
 #define	EMLXS_FW_TABLE_DEF
@@ -2009,6 +2010,10 @@ emlxs_init_adapter_info(emlxs_hba_t *hba)
 		cache_line =
 		    ddi_get32(hba->pci_acc_handle,
 		    (uint32_t *)(hba->pci_addr + PCI_CACHE_LINE_REGISTER));
+
+		EMLXS_MSGF(EMLXS_CONTEXT,
+		    &emlxs_init_debug_msg, "Device IDs: %x/%x/%x",
+		    device_id, ssdid, cache_line);
 
 		/* Check for the multifunction bit being set */
 		if ((cache_line & 0x00ff0000) == 0x00800000) {
