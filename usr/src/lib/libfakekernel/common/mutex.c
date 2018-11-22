@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2017 RackTop Systems.
  */
 
@@ -31,8 +31,9 @@ int	_lwp_mutex_trylock(lwp_mutex_t *);
 
 extern clock_t ddi_get_lbolt(void);
 
+/* See: head/synch.h ERRORCHECKMUTEX */
 static const lwp_mutex_t default_mutex =
-	{{0, 0, 0, {USYNC_THREAD}, _MUTEX_MAGIC},
+	{{0, 0, 0, {USYNC_THREAD|LOCK_ERRORCHECK}, _MUTEX_MAGIC},
 	{{{0, 0, 0, 0, 0, 0, 0, 0}}}, 0};
 
 /* ARGSUSED */
