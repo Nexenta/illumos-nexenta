@@ -39,7 +39,6 @@
 #include <smbsrv/smbinfo.h>
 #include <smbsrv/smb2_kproto.h>
 
-int smb_disable_streams_on_share_root = 0;
 int smb_session_ofile_max = 32768;
 
 extern uint32_t smb_is_executable(char *);
@@ -395,42 +394,12 @@ smb_common_open(smb_request_t *sr)
 	cur_node = op->fqi.fq_dnode ?
 	    op->fqi.fq_dnode : sr->tid_tree->t_snode;
 
-	/*
-	 * if no path or filename are specified the stream should be
-	 * created on cur_node
-	 */
-	if (!is_dir && !pn->pn_pname && !pn->pn_fname && pn->pn_sname) {
-		/*
-		 * There were historically some problems with allowing
-		 * NT named streams at the root of a share, but all the
-		 * details about such problem are long gone.  Windows
-		 * allows these; the Mac expects them to work.  Let's
-		 * allow this but provide a way to disable it in case
-		 * someone rediscovers the historical problem.
-		 */
-		if (smb_disable_streams_on_share_root != 0 &&
-		    cur_node == sr->tid_tree->t_snode) {
-			if (op->create_disposition == FILE_OPEN)
-				status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
-			else
-				status = NT_STATUS_ACCESS_DENIED;
-			goto errout;
-		}
-
-		(void) snprintf(op->fqi.fq_last_comp,
-		    sizeof (op->fqi.fq_last_comp),
-		    "%s%s", cur_node->od_name, pn->pn_sname);
-
-		op->fqi.fq_dnode = cur_node->n_dnode;
-		smb_node_ref(op->fqi.fq_dnode);
-	} else {
-		rc = smb_pathname_reduce(sr, sr->user_cr, pn->pn_path,
-		    sr->tid_tree->t_snode, cur_node, &op->fqi.fq_dnode,
-		    op->fqi.fq_last_comp);
-		if (rc != 0) {
-			status = smb_errno2status(rc);
-			goto errout;
-		}
+	rc = smb_pathname_reduce(sr, sr->user_cr, pn->pn_path,
+	    sr->tid_tree->t_snode, cur_node, &op->fqi.fq_dnode,
+	    op->fqi.fq_last_comp);
+	if (rc != 0) {
+		status = smb_errno2status(rc);
+		goto errout;
 	}
 	dnode = op->fqi.fq_dnode;
 	dnode_held = B_TRUE;
@@ -505,8 +474,9 @@ smb_common_open(smb_request_t *sr)
 		 *   it must NOT be (required by Lotus Notes)
 		 * - the target is NOT a directory and client requires that
 		 *   it MUST be.
+		 * Streams are never directories.
 		 */
-		if (smb_node_is_dir(fnode)) {
+		if (smb_node_is_dir(fnode) && sname == NULL) {
 			if (op->create_options & FILE_NON_DIRECTORY_FILE) {
 				status = NT_STATUS_FILE_IS_A_DIRECTORY;
 				goto errout;
@@ -654,6 +624,7 @@ smb_common_open(smb_request_t *sr)
 		if (!stream_found) {
 			smb_node_t *tmp_node = fnode;
 
+			bzero(&new_attr, sizeof (new_attr));
 			new_attr.sa_vattr.va_type = VREG;
 			new_attr.sa_vattr.va_mode = S_IRUSR;
 			new_attr.sa_mask |= SMB_AT_TYPE | SMB_AT_MODE;
