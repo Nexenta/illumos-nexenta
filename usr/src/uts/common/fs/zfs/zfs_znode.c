@@ -1749,6 +1749,7 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	nvpair_t	*elem;
 	int		error;
 	int		i;
+	int size = spa_get_obj_mtx_sz(dmu_objset_spa(os));
 	znode_t		*rootzp = NULL;
 	zfsvfs_t	*zfsvfs;
 	vnode_t		*vp;
@@ -1861,7 +1862,9 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 	list_create(&zfsvfs->z_all_znodes, sizeof (znode_t),
 	    offsetof(znode_t, z_link_node));
 
-	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+	zfsvfs->z_hold_mtx_sz = size;
+	zfsvfs->z_hold_mtx = kmem_zalloc(sizeof (kmutex_t) * size, KM_SLEEP);
+	for (i = 0; i != size; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
 
 	rootzp->z_zfsvfs = zfsvfs;
@@ -1887,8 +1890,10 @@ zfs_create_fs(objset_t *os, cred_t *cr, nvlist_t *zplprops, dmu_tx_t *tx)
 
 	ASSERT(error == 0);
 
-	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+	for (i = 0; i != size; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
+
+	kmem_free(zfsvfs->z_hold_mtx, sizeof (kmutex_t) * size);
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
 }
 

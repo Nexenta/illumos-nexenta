@@ -256,6 +256,9 @@ int zfs_flags = ~(ZFS_DEBUG_DPRINTF | ZFS_DEBUG_SPA);
 int zfs_flags = 0;
 #endif
 
+#define	ZFS_OBJ_MTX_DEFAULT_SZ	64
+uint64_t spa_obj_mtx_sz = ZFS_OBJ_MTX_DEFAULT_SZ;
+
 /*
  * zfs_recover can be set to nonzero to attempt to recover from
  * otherwise-fatal errors, typically caused by on-disk corruption.  When
@@ -616,6 +619,10 @@ spa_add(const char *name, nvlist_t *config, const char *altroot)
 	spa->spa_load_max_txg = UINT64_MAX;
 	spa->spa_proc = &p0;
 	spa->spa_proc_state = SPA_PROC_NONE;
+	if (spa_obj_mtx_sz < 1 || spa_obj_mtx_sz > INT_MAX)
+		spa->spa_obj_mtx_sz = ZFS_OBJ_MTX_DEFAULT_SZ;
+	else
+		spa->spa_obj_mtx_sz = spa_obj_mtx_sz;
 
 	/*
 	 * Grabbing the guid here is just so that spa_config_guid_exists can
@@ -1893,6 +1900,12 @@ uint64_t
 spa_version(spa_t *spa)
 {
 	return (spa->spa_ubsync.ub_version);
+}
+
+int
+spa_get_obj_mtx_sz(spa_t *spa)
+{
+	return (spa->spa_obj_mtx_sz);
 }
 
 boolean_t

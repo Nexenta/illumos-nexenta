@@ -110,8 +110,8 @@ struct zfsvfs {
 	boolean_t	z_isworm;	/* true if this is a WORM FS */
 	/* true if suspend-resume cycle is in progress */
 	boolean_t	z_busy;
-#define	ZFS_OBJ_MTX_SZ	64
-	kmutex_t	z_hold_mtx[ZFS_OBJ_MTX_SZ];	/* znode hold locks */
+	int	z_hold_mtx_sz; /* the size of z_hold_mtx array */
+	kmutex_t	*z_hold_mtx;	/* znode hold locks */
 	/* for controlling async zfs_unlinked_drain */
 	kmutex_t	z_drain_lock;
 	kcondvar_t	z_drain_cv;

@@ -462,6 +462,8 @@ struct spa {
 	zfs_autosnap_t spa_autosnap;
 
 	zbookmark_phys_t spa_lszb;
+
+	int spa_obj_mtx_sz;
 };
 
 /* possible in core size of all DDTs  */

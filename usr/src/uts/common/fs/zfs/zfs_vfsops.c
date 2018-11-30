@@ -1007,6 +1007,7 @@ int
 zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os)
 {
 	int error;
+	int size = spa_get_obj_mtx_sz(dmu_objset_spa(os));
 
 	zfsvfs->z_vfs = NULL;
 	zfsvfs->z_parent = zfsvfs;
@@ -1018,7 +1019,9 @@ zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os)
 	rrm_init(&zfsvfs->z_teardown_lock, B_FALSE);
 	rw_init(&zfsvfs->z_teardown_inactive_lock, NULL, RW_DEFAULT, NULL);
 	rw_init(&zfsvfs->z_fuid_lock, NULL, RW_DEFAULT, NULL);
-	for (int i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+	zfsvfs->z_hold_mtx_sz = size;
+	zfsvfs->z_hold_mtx = kmem_zalloc(sizeof (kmutex_t) * size, KM_SLEEP);
+	for (int i = 0; i != size; i++)
 		mutex_init(&zfsvfs->z_hold_mtx[i], NULL, MUTEX_DEFAULT, NULL);
 	mutex_init(&zfsvfs->z_drain_lock, NULL, MUTEX_DEFAULT, NULL);
 	cv_init(&zfsvfs->z_drain_cv, NULL, CV_DEFAULT, NULL);
@@ -1026,6 +1029,7 @@ zfsvfs_create_impl(zfsvfs_t **zfvp, zfsvfs_t *zfsvfs, objset_t *os)
 	error = zfsvfs_init(zfsvfs, os);
 	if (error != 0) {
 		*zfvp = NULL;
+		kmem_free(zfsvfs->z_hold_mtx, sizeof (kmutex_t) * size);
 		kmem_free(zfsvfs, sizeof (zfsvfs_t));
 		return (error);
 	}
@@ -1144,8 +1148,11 @@ zfsvfs_free(zfsvfs_t *zfsvfs)
 	rrm_destroy(&zfsvfs->z_teardown_lock);
 	rw_destroy(&zfsvfs->z_teardown_inactive_lock);
 	rw_destroy(&zfsvfs->z_fuid_lock);
-	for (i = 0; i != ZFS_OBJ_MTX_SZ; i++)
+	for (i = 0; i != zfsvfs->z_hold_mtx_sz; i++)
 		mutex_destroy(&zfsvfs->z_hold_mtx[i]);
+
+	kmem_free(zfsvfs->z_hold_mtx,
+	    sizeof (kmutex_t) * zfsvfs->z_hold_mtx_sz);
 	kmem_free(zfsvfs, sizeof (zfsvfs_t));
 }
 
