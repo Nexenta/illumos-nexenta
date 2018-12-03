@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  */
 
 #include <fm/fmd_api.h>
@@ -27,16 +27,14 @@ typedef struct disk_sense_stat {
 
 disk_sense_stat_t disk_sense_stats = {
 	{ "bad_FMRI", FMD_TYPE_UINT64,
-		"event FMRI is missing or invalid" },
+	    "event FMRI is missing or invalid" },
 	{ "bad_scheme", FMD_TYPE_UINT64,
-		"event does not contain a valid detector"},
+	    "event does not contain a valid detector"},
 };
 
 static const fmd_prop_t fmd_props [] = {
 	{ "io_N", FMD_TYPE_INT32, "10" },
 	{ "io_T", FMD_TYPE_TIME, "10min"},
-	{ "ignore-illegal-request", FMD_TYPE_BOOL, "true"},
-	{ "ignore-locked-device", FMD_TYPE_BOOL, "true"},
 	{ NULL, 0, NULL }
 };
 
@@ -104,13 +102,6 @@ disk_sense_recv(fmd_hdl_t *hdl, fmd_event_t *event, nvlist_t *nvl,
 		return;
 	}
 
-	/*
-	 * Ignore illegal requests (key=0x5), none of the related asc/ascq
-	 * show an error condition which should lead to device retire.
-	 */
-	if (key == 0x5)
-		return;
-
 	(void) nvlist_lookup_uint8(nvl, "asc", &asc);
 	(void) nvlist_lookup_uint8(nvl, "ascq", &ascq);
 
@@ -123,29 +114,6 @@ disk_sense_recv(fmd_hdl_t *hdl, fmd_event_t *event, nvlist_t *nvl,
 		fmd_hdl_debug(hdl, "Disk sense data reports drive over-temp");
 		return;
 	}
-
-	if (key == 0x7 && asc == 0x20 && ascq == 0x2 &&
-	    (fmd_prop_get_int32(hdl, "ignore-locked-device") == FMD_B_TRUE)) {
-		fmd_hdl_debug(hdl, "Locked device, ignoring");
-		return;
-	}
-
-	fmd_hdl_debug(hdl, "Recording event in SERD %s: key: %x, asc: %x "
-	    "ascq: %x", devid, key, asc, ascq);
-
-	if (fmd_serd_exists(hdl, devid) == 0) {
-		fmd_serd_create(hdl, devid, fmd_prop_get_int32(hdl, "io_N"),
-		    fmd_prop_get_int64(hdl, "io_T"));
-		(void) fmd_serd_record(hdl, devid, event);
-		return;
-	}
-
-	if (fmd_serd_record(hdl, devid, event) == FMD_B_TRUE) {
-		fmd_case_t *c = fmd_case_open(hdl, NULL);
-		fmd_case_add_serd(hdl, c, devid);
-		disk_sense_case_solve(hdl, "device-errors-exceeded", c,
-		    devid, detector);
-	}
 }
 
 static const fmd_hdl_ops_t fmd_ops = {
@@ -157,7 +125,7 @@ static const fmd_hdl_ops_t fmd_ops = {
 };
 
 static const fmd_hdl_info_t fmd_info = {
-	"disk-sense-de", "0.4", &fmd_ops, fmd_props
+	"disk-sense-de", "0.5", &fmd_ops, fmd_props
 };
 
 void
