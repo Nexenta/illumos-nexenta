@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -545,10 +545,14 @@ smb2_create(smb_request_t *sr)
 			 * the default timeout (in mSec.)
 			 */
 			msto = op->dh_timeout;
-			if (msto == 0)
-				msto = smb2_dh_def_timeout;
+			if (msto == 0) {
+				msto = (of->dh_persist) ?
+				    smb2_persist_timeout :
+				    smb2_dh_def_timeout;
+			}
 			if (msto > smb2_dh_max_timeout)
 				msto = smb2_dh_max_timeout;
+			op->dh_timeout = msto;
 			of->dh_timeout_offset = MSEC2NSEC(msto);
 		}
 	} else {
@@ -1151,7 +1155,7 @@ smb2_encode_create_ctx_elem(mbuf_chain_t *out_mbc,
 	 * layout the data part as [name, payload] and
 	 * name is a fixed length, so this easy.
 	 * The final layout looks like this:
-	 * 	a: this header (16 bytes)
+	 *	a: this header (16 bytes)
 	 *	b: the name (4 bytes, 4 pad)
 	 *	c: the payload (variable)
 	 *	d: padding (to align 8)

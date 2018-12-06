@@ -32,6 +32,7 @@ extern uint32_t smb2_dh_def_timeout;
 extern uint32_t smb2_dh_max_timeout;
 extern uint32_t smb2_res_def_timeout;
 extern uint32_t smb2_res_max_timeout;
+extern uint32_t smb2_persist_timeout;
 extern int smb2_enable_dh;
 
 #define	SMB2_KEYLEN	16
