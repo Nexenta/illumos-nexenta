@@ -225,6 +225,7 @@ static enum {
 	STMF_WORKERS_ENABLING,
 	STMF_WORKERS_ENABLED
 } stmf_workers_state = STMF_WORKERS_DISABLED;
+static kmutex_t	stmf_worker_sel_mx;
 volatile uint32_t stmf_nworkers_cur = 0; /* # of workers currently running */
 static int stmf_worker_sel_counter = 0;
 static uint32_t stmf_cur_ntasks = 0;
@@ -302,6 +303,7 @@ _init(void)
 	trace_buf_size = stmf_trace_buf_size;
 	trace_buf_curndx = 0;
 	mutex_init(&trace_buf_lock, NULL, MUTEX_DRIVER, 0);
+	mutex_init(&stmf_worker_sel_mx, NULL, MUTEX_ADAPTIVE, 0);
 	bzero(&stmf_state, sizeof (stmf_state_t));
 	/* STMF service is off by default */
 	stmf_state.stmf_service_running = 0;
@@ -372,6 +374,7 @@ _fini(void)
 	kmem_free(stmf_trace_buf, stmf_trace_buf_size);
 	mutex_destroy(&trace_buf_lock);
 	mutex_destroy(&stmf_state.stmf_lock);
+	mutex_destroy(&stmf_worker_sel_mx);
 	cv_destroy(&stmf_state.stmf_cv);
 	return (ret);
 }
@@ -4859,18 +4862,20 @@ stmf_post_task(scsi_task_t *task, stmf_data_buf_t *dbuf)
 	ct = atomic_inc_32_nv(&stmf_cur_ntasks);
 
 	/* Select the next worker using round robin */
-	atomic_inc_32((uint32_t *)&stmf_worker_sel_counter);
-	(void) atomic_cas_32((uint32_t *)&stmf_worker_sel_counter,
-	    stmf_nworkers, 0);
+	mutex_enter(&stmf_worker_sel_mx);
+	stmf_worker_sel_counter++;
+	if (stmf_worker_sel_counter >= stmf_nworkers)
+		stmf_worker_sel_counter = 0;
 	nv = stmf_worker_sel_counter;
 
 	/* if the selected worker is not idle then bump to the next worker */
 	if (stmf_workers[nv].worker_queue_depth > 0) {
-		atomic_inc_32((uint32_t *)&stmf_worker_sel_counter);
-		(void) atomic_cas_32((uint32_t *)&stmf_worker_sel_counter,
-		    stmf_nworkers, 0);
+		stmf_worker_sel_counter++;
+		if (stmf_worker_sel_counter >= stmf_nworkers)
+			stmf_worker_sel_counter = 0;
 		nv = stmf_worker_sel_counter;
 	}
+	mutex_exit(&stmf_worker_sel_mx);
 
 	w = &stmf_workers[nv];
 
