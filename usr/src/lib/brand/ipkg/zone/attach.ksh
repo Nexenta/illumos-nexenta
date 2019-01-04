@@ -23,14 +23,14 @@
 #
 # Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
 # Copyright 2015, OmniTI Computer Consulting, Inc. All rights reserved.
-# Copyright 2018 Nexenta Systems, Inc. All rights reserved.
+# Copyright 2019 Nexenta Systems, Inc. All rights reserved.
 #
 
 . /usr/lib/brand/ipkg/common.ksh
 
 m_attach_log=$(gettext "Log File: %s")
 m_zfs=$(gettext "A ZFS file system was created for the zone.")
-m_usage=$(gettext  "attach [-a archive] [-d dataset] [-n] [-r zfs-recv] [-u]\n\tThe -a archive option specifies a tar file or cpio archive.\n\tThe -d dataset option specifies an existing dataset.\n\tThe -r zfs-recv option receives the output of a 'zfs send' command\n\tof an existing zone root dataset.\n\tThe -u option indicates that the software should be updated to match\n\tthe current host.")
+m_usage=$(gettext  "attach [-a archive] [-d dataset] [-n] [-p] [-r zfs-recv] [-u]\n\tThe -a archive option specifies a tar file or cpio archive.\n\tThe -d dataset option specifies an existing dataset.\n\tThe -p option disables the copying publishers from the global zone.\n\tThe -r zfs-recv option receives the output of a 'zfs send' command\n\tof an existing zone root dataset.\n\tThe -u option indicates that the software should be updated to match\n\tthe current host.")
 m_attach_root=$(gettext "               Attach Path: %s")
 m_attach_ds=$(gettext   "        Attach ZFS Dataset: %s")
 m_gzinc=$(gettext       "       Global zone version: %s")
@@ -48,6 +48,7 @@ m_failed=$(gettext      "                    Result: Attach Failed.")
 #
 installing=$(gettext    "                Installing: This may take several minutes...")
 no_installing=$(gettext "                Installing: Using pre-existing data in zonepath")
+copy_publishers=$(gettext "                Copying publishers from the global zone")
 
 f_sanity_variant=$(gettext "  Sanity Check: FAILED, couldn't determine %s from image.")
 f_sanity_global=$(gettext  "  Sanity Check: FAILED, appears to be a global zone (%s=%s).")
@@ -137,6 +138,7 @@ export PKG_IMAGE
 
 allow_update=0
 noexecute=0
+preserve_publishers=0
 
 unset inst_type
 
@@ -170,7 +172,7 @@ gather_incorporations() {
 }
 
 # Other brand attach options are invalid for this brand.
-while getopts "a:d:nr:u" opt; do
+while getopts "a:d:npr:u" opt; do
 	case $opt in
 		a)
 			if [[ -n "$inst_type" ]]; then
@@ -187,6 +189,7 @@ while getopts "a:d:nr:u" opt; do
 			install_media="$OPTARG"
 			;;
 		n)	noexecute=1 ;;
+		p)	preserve_publishers=1 ;;
 		r)
 			if [[ -n "$inst_type" ]]; then
 				fatal "$incompat_options" "$m_usage"
@@ -403,7 +406,10 @@ if [[ -f /var/pkg/pkg5.image && -d /var/pkg/publisher ]]; then
 	log "$m_cache" "$PKG_CACHEROOT"
 fi
 
-LC_ALL=C $PKG copy-publishers-from $GZ_IMAGE
+if [[ $preserve_publishers == 0 ]]; then
+	log "$copy_publishers"
+	LC_ALL=C $PKG copy-publishers-from $GZ_IMAGE
+fi
 
 #
 # Bring the ngz entire incorporation into sync with the gz as follows:
