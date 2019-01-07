@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -663,9 +663,23 @@ smb_common_open(smb_request_t *sr)
 		smb_node_inc_opening_count(fnode);
 		opening_incr = B_TRUE;
 
-		/* No Share Access checks on newly created Streams */
-		if (!stream_found)
-			goto skip_share_checks;
+		if (!stream_found) {
+			/*
+			 * Stake our Share Access claim.
+			 */
+			smb_node_wrlock(fnode);
+			fnode_wlock = B_TRUE;
+
+			status = smb_fsop_shrlock(sr->user_cr, fnode, uniq_fid,
+			    op->desired_access, op->share_access);
+			if (status != 0)
+				goto errout;
+
+			fnode_shrlk = B_TRUE;
+			smb_node_unlock(fnode);
+			fnode_wlock = B_FALSE;
+			goto stream_created;
+		}
 
 		/*
 		 * XXX Supposed to do share access checks next.
@@ -1065,7 +1079,7 @@ create:
 		(void) smb_oplock_break_PARENT(dnode, of);
 	}
 
-skip_share_checks:
+stream_created:
 	/*
 	 * We might have blocked in smb_oplock_break_OPEN long enough
 	 * so a tree disconnect might have happened.  In that case,
