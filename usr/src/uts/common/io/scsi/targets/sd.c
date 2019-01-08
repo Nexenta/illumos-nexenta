@@ -28,7 +28,7 @@
  * Copyright (c) 2011 Bayard G. Bell.  All rights reserved.
  * Copyright (c) 2012, 2016 by Delphix. All rights reserved.
  * Copyright 2012 DEY Storage Systems, Inc.  All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 /*
@@ -9772,15 +9772,6 @@ sdopen(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
 		    (un->un_state == SD_STATE_ATTACHING)) {
 			cv_wait(&un->un_suspend_cv, SD_MUTEX(un));
 		}
-
-		if (un->un_state == SD_STATE_ATTACH_FAILED) {
-			mutex_exit(SD_MUTEX(un));
-			rval = EIO;
-			SD_ERROR(SD_LOG_OPEN_CLOSE, un,
-			    "sdopen: attach failed, can't open\n");
-			goto open_failed_not_attached;
-		}
-
 		mutex_exit(SD_MUTEX(un));
 		if (sd_pm_entry(un) != DDI_SUCCESS) {
 			rval = EIO;
@@ -9947,6 +9938,12 @@ sdopen(dev_t *dev_p, int flag, int otyp, cred_t *cred_p)
 
 	SD_TRACE(SD_LOG_OPEN_CLOSE, un, "sdopen: "
 	    "open of part %d type %d\n", part, otyp);
+
+	/*
+	 * If we made it here, the disk is alive.
+	 * Make sure it is set to normal state.
+	 */
+	New_state(un, SD_STATE_NORMAL);
 
 	mutex_exit(SD_MUTEX(un));
 	if (!nodelay) {
