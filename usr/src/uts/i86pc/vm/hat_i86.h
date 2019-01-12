@@ -24,6 +24,7 @@
  */
 /*
  * Copyright (c) 2014 by Delphix. All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 #ifndef	_VM_HAT_I86_H
@@ -87,6 +88,7 @@ struct hat {
 	pgcnt_t		hat_ism_pgcnt;
 	cpuset_t	hat_cpus;
 	uint16_t	hat_flags;
+	uint16_t	hat_unmaps;	/* stop hat being free'd during unmap */
 	htable_t	*hat_htable;	/* top level htable */
 	struct hat	*hat_next;
 	struct hat	*hat_prev;

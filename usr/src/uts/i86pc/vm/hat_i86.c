@@ -26,7 +26,7 @@
  * All rights reserved.
  */
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2018 Joyent, Inc.  All rights reserved.
  * Copyright (c) 2014, 2015 by Delphix. All rights reserved.
  */
@@ -266,6 +266,7 @@ hat_alloc(struct as *as)
 	hat->hat_as = as;
 	mutex_init(&hat->hat_mutex, NULL, MUTEX_DEFAULT, NULL);
 	ASSERT(hat->hat_flags == 0);
+	hat->hat_unmaps = 0;
 
 #if defined(__xpv)
 	/*
@@ -402,7 +403,7 @@ hat_free_start(hat_t *hat)
 	 * won't look at its pagetables anymore.
 	 */
 	mutex_enter(&hat_list_lock);
-	while (hat->hat_flags & HAT_VICTIM)
+	while ((hat->hat_flags & HAT_VICTIM) || (hat->hat_unmaps > 0))
 		cv_wait(&hat_list_cv, &hat_list_lock);
 	hat->hat_flags |= HAT_FREEING;
 	mutex_exit(&hat_list_lock);
@@ -3307,7 +3308,6 @@ hat_page_getattr(struct page *pp, uint_t flag)
 	return (PP_GETRM(pp, flag));
 }
 
-
 /*
  * common code used by hat_pageunload() and hment_steal()
  */
@@ -3355,11 +3355,35 @@ hati_page_unmap(page_t *pp, htable_t *ht, uint_t entry)
 	hm = hment_remove(pp, ht, entry);
 
 	/*
-	 * drop the mapping list lock so that we might free the
-	 * hment and htable.
+	 * To avoid deadlock with HTABLE_ENTER we must call x86_hm_exit before
+	 * calling htable_release.
+	 * However, if the process to which the htable belongs is exiting,
+	 * there is a timing window between x86_hm_exit() and htable_release()
+	 * where the process exit thread's htable_purge_hat() can free the
+	 * htable, which it does regardless of the htable's reference count.
+	 * Thus:
+	 * - if the hat is in HAT_FREEING state do not do the htable_release();
+	 *   the htable will be destroyed by process exit code.
+	 * - otherwise increment hat_unmaps to block hat from entering
+	 *   HAT_FREEING state until after the htable_release.
 	 */
+	mutex_enter(&hat_list_lock);
+	if (ht->ht_hat->hat_flags & HAT_FREEING) {
+		mutex_exit(&hat_list_lock);
+		x86_hm_exit(pp);
+		return (hm);
+	}
+
+	++(ht->ht_hat->hat_unmaps);
+	mutex_exit(&hat_list_lock);
+
 	x86_hm_exit(pp);
 	htable_release(ht);
+
+	mutex_enter(&hat_list_lock);
+	--(ht->ht_hat->hat_unmaps);
+	cv_broadcast(&hat_list_cv);
+	mutex_exit(&hat_list_lock);
 	return (hm);
 }
 
