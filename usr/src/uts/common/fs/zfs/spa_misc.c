@@ -308,12 +308,12 @@ int64_t zfs_root_latency_alpha = 10;
 /*
  * Expiration time in milliseconds. This value has two meanings. First it is
  * used to determine when the spa_deadman() logic should fire. By default the
- * spa_deadman() will fire if spa_sync() has not completed in 1000 seconds.
+ * spa_deadman() will fire if spa_sync() has not completed in 250 seconds.
  * Secondly, the value determines if an I/O is considered "hung". Any I/O that
  * has not completed in zfs_deadman_synctime_ms is considered "hung" resulting
  * in a system panic.
  */
-uint64_t zfs_deadman_synctime_ms = 1000000ULL;
+uint64_t zfs_deadman_synctime_ms = 250000ULL;
 
 /*
  * Check time in milliseconds. This defines the frequency at which we check
