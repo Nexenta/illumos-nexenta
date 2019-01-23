@@ -22,7 +22,7 @@
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Syneto S.R.L. All rights reserved.
  * Copyright (c) 2016 by Delphix. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -532,9 +532,23 @@ smb_ofile_close(smb_ofile_t *of, int32_t mtime_sec)
 				smb_odir_close(of->f_odir);
 			/*
 			 * Cancel any notify change requests that
-			 * might be using this open file (dir).
+			 * might be watching this open file (dir),
+			 * and unsubscribe it from node events.
+			 *
+			 * Can't hold f_mutex when calling smb_notify_ofile.
+			 * Don't really need it when unsubscribing, but
+			 * harmless, and consistent with subscribing.
 			 */
-			smb_notify_ofile(of, FILE_ACTION_HANDLE_CLOSED, NULL);
+			if (of->f_notify.nc_subscribed)
+				smb_notify_ofile(of,
+				    FILE_ACTION_HANDLE_CLOSED, NULL);
+			mutex_enter(&of->f_mutex);
+			if (of->f_notify.nc_subscribed) {
+				of->f_notify.nc_subscribed = B_FALSE;
+				smb_node_fcn_unsubscribe(of->f_node);
+				of->f_notify.nc_filter = 0;
+			}
+			mutex_exit(&of->f_mutex);
 		}
 		if (smb_node_dec_open_ofiles(of->f_node) == 0) {
 			/*
@@ -1435,13 +1449,29 @@ smb_ofile_delete(void *arg)
 	}
 
 	/*
-	 * This ofile is no longer on t_ofile_list, however...
+	 * Remove this ofile from the node's n_ofile_list so it
+	 * can't be found by list walkers like notify or oplock.
+	 * Keep the node ref. until later in this function so
+	 * of->f_node remains valid while we destroy the ofile.
+	 */
+	if (of->f_ftype == SMB_FTYPE_DISK ||
+	    of->f_ftype == SMB_FTYPE_PRINTER) {
+		ASSERT(of->f_node != NULL);
+		/*
+		 * Note smb_ofile_close did smb_node_dec_open_ofiles()
+		 */
+		smb_node_rem_ofile(of->f_node, of);
+	}
+
+	/*
+	 * This ofile is no longer on any lists, however...
 	 *
 	 * This is called via smb_llist_post, which means it may run
 	 * BEFORE smb_ofile_release drops f_mutex (if another thread
 	 * flushes the delete queue before we do).  Synchronize.
 	 */
 	mutex_enter(&of->f_mutex);
+	of->f_state = SMB_OFILE_STATE_ALLOC;
 	DTRACE_PROBE1(ofile__exit, smb_ofile_t, of);
 	mutex_exit(&of->f_mutex);
 
@@ -1452,10 +1482,7 @@ smb_ofile_delete(void *arg)
 		of->f_pipe = NULL;
 		break;
 	case SMB_FTYPE_DISK:
-		if (of->f_notify.nc_subscribed) {
-			of->f_notify.nc_subscribed = B_FALSE;
-			smb_node_fcn_unsubscribe(of->f_node);
-		}
+		ASSERT(of->f_notify.nc_subscribed == B_FALSE);
 		MBC_FLUSH(&of->f_notify.nc_buffer);
 		if (of->f_odir != NULL)
 			smb_odir_release(of->f_odir);
@@ -1466,27 +1493,15 @@ smb_ofile_delete(void *arg)
 		/* FALLTHROUGH */
 	case SMB_FTYPE_PRINTER:
 		/*
-		 * Note smb_ofile_close did
-		 * smb_node_dec_open_ofiles(node)
+		 * Did smb_node_rem_ofile above.
 		 */
 		ASSERT(of->f_node != NULL);
-		smb_node_rem_ofile(of->f_node, of);
 		smb_node_release(of->f_node);
 		break;
 	default:
 		ASSERT(!"f_ftype");
 		break;
 	}
-
-	/*
-	 * This ofile is no longer on any lists.  However,
-	 * in case another thread was walking n_ofile_list
-	 * and doing mutex_enter/mutex_exit on f_mutex,
-	 * synchronize before calling smb_ofile_free.
-	 */
-	mutex_enter(&of->f_mutex);
-	of->f_state = SMB_OFILE_STATE_ALLOC;
-	mutex_exit(&of->f_mutex);
 
 	smb_ofile_free(of);
 }
