@@ -25,6 +25,10 @@
 # Use is subject to license terms.
 #
 
+#
+# Copyright 2019 Nexenta Systems, Inc.
+#
+
 . ${STF_SUITE}/include/libtest.shlib
 . ${STF_SUITE}/tests/stress/include/stress.kshlib
 
@@ -34,7 +38,7 @@ ln=0
 for pool in $(get_pools); do
 	mkfile 64m /var/tmp/slog.002.${ln}
 
-	zpool add -f $pool /var/tmp/slog.002.${ln}
+	zpool add -f $pool log /var/tmp/slog.002.${ln}
 	(( ln = ln + 1 ))
 done
 
