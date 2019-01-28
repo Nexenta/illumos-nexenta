@@ -106,7 +106,8 @@ smb_mbstowcs(smb_wchar_t *wcs, const char *mbs, size_t nwchars)
  * states.  Otherwise it should be return 0.
  *
  * If mbchar is non-null, returns the number of bytes processed in
- * mbchar.  If mbchar is invalid, returns -1.
+ * mbchar.  If mbchar is null, convert the null (wcharp=0) but
+ * return length zero.  If mbchar is invalid, returns -1.
  */
 int /*ARGSUSED*/
 smb_mbtowc(uint32_t *wcharp, const char *mbchar, size_t nbytes)
@@ -132,6 +133,10 @@ smb_mbtowc(uint32_t *wcharp, const char *mbchar, size_t nbytes)
 	    &wide_char, &wclen, UCONV_OUT_SYSTEM_ENDIAN);
 	if (err != 0)
 		return (-1);
+	if (wclen == 0) {
+		wide_char = 0;
+		count = 0;
+	}
 
 	if (wcharp)
 		*wcharp = wide_char;
@@ -148,6 +153,7 @@ smb_mbtowc(uint32_t *wcharp, const char *mbchar, size_t nbytes)
  * mbchar must be large enough to accommodate the multibyte character.
  *
  * Returns the numberof bytes written to mbchar.
+ * Note: handles null like any 1-byte char.
  */
 int
 smb_wctomb(char *mbchar, uint32_t wchar)
@@ -163,7 +169,7 @@ smb_wctomb(char *mbchar, uint32_t wchar)
 	mblen = MTS_MB_CUR_MAX;
 	wclen = 1;
 	err = uconv_u32tou8(&wchar, &wclen, (uchar_t *)mbchar, &mblen,
-	    UCONV_IN_SYSTEM_ENDIAN);
+	    UCONV_IN_SYSTEM_ENDIAN | UCONV_IGNORE_NULL);
 	if (err != 0)
 		return (-1);
 

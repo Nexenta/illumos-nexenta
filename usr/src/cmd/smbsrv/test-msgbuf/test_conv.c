@@ -72,6 +72,18 @@ conv_wctomb()
 		return;
 	}
 
+	/* null wc to mbs should return 1 and put a null */
+	len = smb_wctomb(mbs, 0);
+	if (len != 1) {
+		printf("Fail: conv_wctomb null ret=%d\n", len);
+		return;
+	}
+	if (mbs[0] != '\0') {
+		printf("Fail: conv_wctomb null cmp:\n");
+		hexdump((uchar_t *)mbs, len+1);
+		return;
+	}
+
 	printf("Pass: conv_wctomb\n");
 }
 
@@ -106,6 +118,17 @@ conv_mbtowc()
 		return;
 	}
 
+	/* null mbs to wc should return 0 (and set wch=0) */
+	len = smb_mbtowc((void *)&wch, "", 4);
+	if (len != 0) {
+		printf("Fail: conv_mbtowc null ret=%d\n", len);
+		return;
+	}
+	if (wch != 0) {
+		printf("Fail: conv_mbtowc null cmp: 0x%x\n", wch);
+		return;
+	}
+
 	printf("Pass: conv_mbtowc\n");
 }
 
@@ -128,11 +151,11 @@ conv_wcstombs()
 
 	len = smb_wcstombs(tmbs, wcsp, sizeof (tmbs));
 	if (len != 6) {
-		printf("Fail: conv_wctomb f ret=%d\n", len);
+		printf("Fail: conv_wcstombs f ret=%d\n", len);
 		return;
 	}
 	if (strcmp(tmbs, mbsp)) {
-		printf("Fail: conv_wctomb f cmp:\n");
+		printf("Fail: conv_wcstombs f cmp:\n");
 		hexdump((uchar_t *)tmbs, len+2);
 		return;
 	}
