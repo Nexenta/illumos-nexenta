@@ -184,8 +184,10 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 		uint_t nnvl;
 
 		/* Lookup statuses early so we could skip resolved problems */
-		(void) nvlist_lookup_uint8_array(acp->aci_event,
-		    FM_SUSPECT_FAULT_STATUS, &statuses, &nelem);
+		if (nvlist_lookup_uint8_array(acp->aci_event,
+		    FM_SUSPECT_FAULT_STATUS, &statuses, &nelem) != 0)
+			return (0);
+
 		for (i = 0; i < nelem; i++) {
 			if (statuses[i] & FM_SUSPECT_SKIP)
 				cr++;
@@ -277,8 +279,9 @@ problem_update_one(const fmd_adm_caseinfo_t *acp, void *arg)
 		DEBUGMSGTL((MODNAME_STR, "completed new problem %s@%p\n",
 		    data->d_aci_uuid, data));
 	} else {
-		(void) nvlist_lookup_uint8_array(acp->aci_event,
-		    FM_SUSPECT_FAULT_STATUS, &statuses, &nelem);
+		if (nvlist_lookup_uint8_array(acp->aci_event,
+		    FM_SUSPECT_FAULT_STATUS, &statuses, &nelem) != 0)
+			return (0);
 
 		if (nelem != data->d_nsuspects) {
 			DEBUGMSGTL((MODNAME_STR,
