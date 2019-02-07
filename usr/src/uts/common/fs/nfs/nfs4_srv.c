@@ -4705,7 +4705,8 @@ rfs4_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 				if ((srcvp == targvp) || (tvp != targvp)) {
 					cmn_err(CE_WARN, "rfs4_op_rename: "
 					    "srcvp %p, targvp: %p, tvp: %p",
-					    srcvp, targvp, tvp);
+					    (void *)srcvp, (void *)targvp,
+					    (void *)tvp);
 				}
 			} else {
 				VN_RELE(tvp);
@@ -4731,7 +4732,7 @@ rfs4_op_rename(nfs_argop4 *argop, nfs_resop4 *resop, struct svc_req *req,
 		/* DEBUG data */
 		if (RW_READ_HELD(&tvp->v_nbllock)) {
 			cmn_err(CE_WARN, "rfs4_op_rename: "
-			    "RW_READ_HELD(%p)", tvp);
+			    "RW_READ_HELD(%p)", (void *)tvp);
 		}
 
 		/* The file is gone and so should the state */
