@@ -23,7 +23,7 @@
  * Copyright (c) 2018, Joyent, Inc.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 by Saso Kiselkov. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -3626,15 +3626,24 @@ arc_hdr_destroy(arc_buf_hdr_t *hdr)
 	ASSERT(!HDR_IO_IN_PROGRESS(hdr));
 	ASSERT(!HDR_IN_HASH_TABLE(hdr));
 
-	if (!HDR_EMPTY(hdr))
-		buf_discard_identity(hdr);
-
 	if (HDR_HAS_L2HDR(hdr)) {
 		l2arc_dev_t *dev = hdr->b_l2hdr.b_dev;
 		boolean_t buflist_held = MUTEX_HELD(&dev->l2ad_mtx);
 
+		/* To avoid racing with L2ARC the header needs to be locked */
+		ASSERT(MUTEX_HELD(HDR_LOCK(hdr)));
+
 		if (!buflist_held)
 			mutex_enter(&dev->l2ad_mtx);
+
+		/*
+		 * L2ARC buflist has been held, so we can safety discard
+		 * identity, otherwise L2ARC can lock incorrect mutex
+		 * for the hdr, that will cause a panic. That is possible,
+		 * because a mutex is selected according to identity.
+		 */
+		if (!HDR_EMPTY(hdr))
+			buf_discard_identity(hdr);
 
 		/*
 		 * Even though we checked this conditional above, we
@@ -3651,6 +3660,9 @@ arc_hdr_destroy(arc_buf_hdr_t *hdr)
 		if (!buflist_held)
 			mutex_exit(&dev->l2ad_mtx);
 	}
+
+	if (!HDR_EMPTY(hdr))
+		buf_discard_identity(hdr);
 
 	if (HDR_HAS_L1HDR(hdr)) {
 		arc_cksum_free(hdr);
@@ -5775,9 +5787,8 @@ top:
 			}
 			if (exists != NULL) {
 				/* somebody beat us to the hash insert */
-				mutex_exit(hash_lock);
-				buf_discard_identity(hdr);
 				arc_hdr_destroy(hdr);
+				mutex_exit(hash_lock);
 				goto top; /* restart the IO request */
 			}
 		} else {
@@ -6422,8 +6433,8 @@ arc_write_done(zio_t *zio)
 				    &exists->b_l1hdr.b_refcnt));
 				arc_change_state(arc_anon, exists, hash_lock);
 				arc_wait_for_krrp(exists);
-				mutex_exit(hash_lock);
 				arc_hdr_destroy(exists);
+				mutex_exit(hash_lock);
 				exists = buf_hash_insert(hdr, &hash_lock);
 				ASSERT3P(exists, ==, NULL);
 			} else if (zio->io_flags & ZIO_FLAG_NOPWRITE) {
@@ -8943,8 +8954,8 @@ l2arc_hdr_restore(const l2arc_log_ent_phys_t *le, l2arc_dev_t *dev,
 	exists = buf_hash_insert(hdr, &hash_lock);
 	if (exists) {
 		/* Buffer was already cached, no need to restore it. */
-		mutex_exit(hash_lock);
 		arc_hdr_destroy(hdr);
+		mutex_exit(hash_lock);
 		ARCSTAT_BUMP(arcstat_l2_rebuild_bufs_precached);
 		return;
 	}
