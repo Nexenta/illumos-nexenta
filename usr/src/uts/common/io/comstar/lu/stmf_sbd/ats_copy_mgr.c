@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/conf.h>
@@ -41,13 +41,19 @@
 #include "stmf_sbd.h"
 #include "sbd_impl.h"
 
-/* ATS routines. */
-#define	SBD_ATS_MAX_NBLKS	32
+/* ATS tuning parameters */
+#define	OVERLAP_OFF 0
+#define	OVERLAP_LOW 1
+#define	OVERLAP_MEDIUM 2
+#define	OVERLAP_HIGH 3
+uint8_t ats_overlap_check = OVERLAP_LOW; /* check for rw overlap with ATS */
+
 uint8_t HardwareAcceleratedLocking = 1; /* 0 for disabled */
 uint8_t HardwareAcceleratedMove = 1;
-uint8_t ats_overlap_check = 0;		/* check for rw overlap with ATS */
 uint64_t sbd_list_length = 0;
 
+#define	SBD_ATS_MAX_NBLKS	32
+/* ATS routines. */
 uint8_t
 sbd_ats_max_nblks(void)
 {
@@ -70,9 +76,11 @@ sbd_ats_do_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
 	sbd_cmd_t *scmd = (sbd_cmd_t *)task->task_lu_private;
 	uint8_t cdb0 = task->task_cdb[0];
 
-	if (HardwareAcceleratedLocking == 0)
+	if (scmd == NULL)
 		return (SBD_SUCCESS);
 
+	if (HardwareAcceleratedLocking == 0)
+		return (SBD_SUCCESS);
 	/*
 	 * if ATS overlap checking is disabled just return.  The check
 	 * is not done in the function to remove items from the list which
@@ -80,11 +88,20 @@ sbd_ats_do_handling_before_io(scsi_task_t *task, struct sbd_lu *sl,
 	 * at runtime the remove will just start taking items off the list.
 	 * If it is turned off at runtime the list is still cleaned up.
 	 */
-	if (ats_overlap_check == 0)
+	if (ats_overlap_check == OVERLAP_OFF)
 		return (SBD_SUCCESS);
 
-	if (scmd == NULL)
-		return (ret);
+	/* overlap checking for compare and write only */
+	if (ats_overlap_check == OVERLAP_LOW) {
+		if (cdb0 != SCMD_COMPARE_AND_WRITE)
+			return (SBD_SUCCESS);
+	}
+
+	/* overlap checking for compare and write and write only */
+	if (ats_overlap_check == OVERLAP_MEDIUM) {
+		if ((cdb0 != SCMD_COMPARE_AND_WRITE) && (cdb0 != SCMD_WRITE))
+			return (SBD_SUCCESS);
+	}
 
 	mutex_enter(&sl->sl_lock);
 	/*
