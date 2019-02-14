@@ -22,7 +22,7 @@
  * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2011, 2017 by Delphix. All rights reserved.
  * Copyright (c) 2014 Spectra Logic Corporation, All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  * Copyright 2013 Saso Kiselkov. All rights reserved.
  * Copyright (c) 2014 Integros [integros.com]
  * Copyright (c) 2017 Datto Inc.
@@ -1008,10 +1008,10 @@ spa_aux_activate(vdev_t *vd, avl_tree_t *avl)
 /*
  * Spares are tracked globally due to the following constraints:
  *
- * 	- A spare may be part of multiple pools.
- * 	- A spare may be added to a pool even if it's actively in use within
+ *	- A spare may be part of multiple pools.
+ *	- A spare may be added to a pool even if it's actively in use within
  *	  another pool.
- * 	- A spare in use in any pool can only be the source of a replacement if
+ *	- A spare in use in any pool can only be the source of a replacement if
  *	  the target is a spare in the same pool.
  *
  * We keep track of all spares on the system through the use of a reference
@@ -1863,13 +1863,6 @@ spa_update_latency(spa_t *spa)
 			 * divide our alpha by number of children of the root
 			 * vdev to account for that.
 			 */
-			zfs_dbgmsg("RLO %llu d %lld t %d t_d %llu",
-			    rvs->vs_latency[t], ((((int64_t)cvs->vs_latency[t] -
-			    (int64_t)rvs->vs_latency[t]) *
-			    (int64_t)zfs_root_latency_alpha) / 100) /
-			    (int64_t)rvd->vdev_children, t, cvs->vs_latency[t]);
-
-
 			rvs->vs_latency[t] += ((((int64_t)cvs->vs_latency[t] -
 			    (int64_t)rvs->vs_latency[t]) *
 			    (int64_t)zfs_root_latency_alpha) / 100) /
