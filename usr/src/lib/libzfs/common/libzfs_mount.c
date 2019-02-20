@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2019 Nexenta Systems, Inc.
+ * Copyright 2018 Nexenta Systems, Inc.
  * Copyright (c) 2014, 2016 by Delphix. All rights reserved.
  * Copyright 2016 Igor Kozhukhov <ikozhukhov@gmail.com>
  * Copyright 2017 Joyent, Inc.
@@ -847,26 +847,27 @@ zfs_share_proto(zfs_handle_t *zhp, zfs_share_proto_t *proto)
 			return (-1);
 		}
 
-		/*
-		 * This may be a newly mounted filesystem and the share may not
-		 * yet be in the internal cache. It is also possible that the
-		 * share is in the internal cache  but not yet initialized for
-		 * this protocol.  We can assume ZFS has done the validation and
-		 * it is safe to process the share.
-		 * If the share has already been processed for this protocol,
-		 * sa_zfs_process_share() is effectively a no-op.
-		 */
 		share = zfs_sa_find_share(hdl->libzfs_sharehdl, mountpoint);
-		if (_sa_zfs_process_share(hdl->libzfs_sharehdl, NULL, share,
-		    mountpoint, proto_table[*curr_proto].p_name, sourcetype,
-		    shareopts, sourcestr, zhp->zfs_name) != SA_OK) {
-			(void) zfs_error_fmt(hdl,
-			    proto_table[*curr_proto].p_share_err,
-			    dgettext(TEXT_DOMAIN, "cannot share '%s'"),
-			    zfs_get_name(zhp));
-			return (-1);
-		}
 		if (share == NULL) {
+			/*
+			 * This may be a new file system that was just
+			 * created so isn't in the internal cache
+			 * (second time through). Rather than
+			 * reloading the entire configuration, we can
+			 * assume ZFS has done the checking and it is
+			 * safe to add this to the internal
+			 * configuration.
+			 */
+			if (_sa_zfs_process_share(hdl->libzfs_sharehdl,
+			    NULL, NULL, mountpoint,
+			    proto_table[*curr_proto].p_name, sourcetype,
+			    shareopts, sourcestr, zhp->zfs_name) != SA_OK) {
+				(void) zfs_error_fmt(hdl,
+				    proto_table[*curr_proto].p_share_err,
+				    dgettext(TEXT_DOMAIN, "cannot share '%s'"),
+				    zfs_get_name(zhp));
+				return (-1);
+			}
 			share = zfs_sa_find_share(hdl->libzfs_sharehdl,
 			    mountpoint);
 		}
