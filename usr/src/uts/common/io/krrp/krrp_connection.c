@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/socket.h>
@@ -161,8 +161,10 @@ krrp_conn_destroy(krrp_conn_t *conn)
 	 *  - TX and RX threads do ksocket_rele() before exit thread
 	 *  - ksocket_close() is blocked while the given ksocket is held
 	 */
-	if (conn->ks != NULL)
+	if (conn->ks != NULL) {
+		(void) ksocket_shutdown(conn->ks, SHUT_RDWR, CRED());
 		(void) ksocket_close(conn->ks, CRED());
+	}
 
 	mutex_enter(&conn->mtx);
 	conn->state = KRRP_CS_DISCONNECTED;
@@ -217,10 +219,12 @@ krrp_conn_run(krrp_conn_t *conn, krrp_queue_t *ctrl_tx_queue,
 
 	krrp_conn_throttle_enable(&conn->throttle);
 
+	ksocket_hold(conn->ks);
 	/* thread_create never fails */
 	(void) thread_create(NULL, 0, &krrp_conn_tx_handler,
 	    conn, 0, &p0, TS_RUN, minclsyspri);
 
+	ksocket_hold(conn->ks);
 	/* thread_create never fails */
 	(void) thread_create(NULL, 0, &krrp_conn_rx_handler,
 	    conn, 0, &p0, TS_RUN, minclsyspri);
@@ -705,7 +709,6 @@ krrp_conn_tx_handler(void *void_conn)
 	krrp_error_init(&error);
 
 	mutex_enter(&conn->mtx);
-	ksocket_hold(conn->ks);
 
 	while (conn->tx_running) {
 		mutex_exit(&conn->mtx);
@@ -919,7 +922,6 @@ krrp_conn_rx_handler(void *void_conn)
 	krrp_error_init(&error);
 
 	mutex_enter(&conn->mtx);
-	ksocket_hold(conn->ks);
 
 	while (conn->rx_running) {
 		mutex_exit(&conn->mtx);
