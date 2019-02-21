@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2009, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  * Copyright (c) 2017, Joyent, Inc.
  * Copyright 2014 OmniTI Computer Consulting, Inc. All rights reserved.
  * Copyright (c) 2014, Tegile Systems Inc. All rights reserved.
@@ -3102,11 +3102,18 @@ mptsas_scsi_tgt_init(dev_info_t *hba_dip, dev_info_t *tgt_dip,
 		ddi_set_name_addr(tgt_dip, NULL);
 		return (DDI_FAILURE);
 	}
+
 	/*
-	 * phymask is 0 means the virtual port for RAID
+	 * The phymask exists if the port is active, otherwise
+	 * nothing to do.
 	 */
+	if (ddi_prop_exists(DDI_DEV_T_ANY, hba_dip,
+	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, "phymask") == 0)
+		return (DDI_FAILURE);
+
 	phymask = (mptsas_phymask_t)ddi_prop_get_int(DDI_DEV_T_ANY, hba_dip, 0,
 	    "phymask", 0);
+
 	if (mdi_component_is_client(tgt_dip, NULL) == MDI_SUCCESS) {
 		if ((pip = (void *)(sd->sd_private)) == NULL) {
 			/*
@@ -3617,9 +3624,13 @@ mptsas_accept_pkt(mptsas_t *mpt, mptsas_cmd_t *cmd)
 		NDBG20(("rejecting command, invalid devhdl because "
 		    "device gone."));
 		mptsas_set_pkt_reason(mpt, cmd, CMD_DEV_GONE, STAT_TERMINATED);
-		mptsas_doneq_add(mpt, cmd);
-		mptsas_doneq_empty(mpt);
-		return (rval);
+		if (cmd->cmd_flags & CFLAG_TXQ) {
+			mptsas_doneq_add(mpt, cmd);
+			mptsas_doneq_empty(mpt);
+			return (rval);
+		} else {
+			return (TRAN_FATAL_ERROR);
+		}
 	}
 
 	/*
@@ -14494,6 +14505,14 @@ mptsas_config_one_addr(dev_info_t *pdip, uint64_t sasaddr, int lun,
 	mptsas_target_t	*ptgt = NULL;
 
 	/*
+	 * The phymask exists if the port is active, otherwise
+	 * nothing to do.
+	 */
+	if (ddi_prop_exists(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, "phymask") == 0)
+		return (DDI_FAILURE);
+
+	/*
 	 * Get the physical port associated to the iport
 	 */
 	phymask = ddi_prop_get_int(DDI_DEV_T_ANY, pdip, 0,
@@ -14533,7 +14552,10 @@ mptsas_config_one_addr(dev_info_t *pdip, uint64_t sasaddr, int lun,
 		return (DDI_SUCCESS);
 	}
 
-	if (phymask == 0) {
+	/*
+	 * If this is a RAID, configure the volumes
+	 */
+	if (mpt->m_num_raid_configs > 0) {
 		/*
 		 * Configure IR volume
 		 */
@@ -14554,6 +14576,13 @@ mptsas_config_one_phy(dev_info_t *pdip, uint8_t phy, int lun,
 	mptsas_phymask_t phymask;
 	mptsas_target_t	*ptgt = NULL;
 
+	/*
+	 * The phymask exists if the port is active, otherwise
+	 * nothing to do.
+	 */
+	if (ddi_prop_exists(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, "phymask") == 0)
+		return (DDI_FAILURE);
 	/*
 	 * Get the physical port associated to the iport
 	 */
@@ -15106,15 +15135,20 @@ mptsas_config_all(dev_info_t *pdip)
 	mptsas_smp_t	*psmp;
 
 	/*
-	 * Get the phymask associated to the iport
+	 * The phymask exists if the port is active, otherwise
+	 * nothing to do.
 	 */
+	if (ddi_prop_exists(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, "phymask") == 0)
+		return;
+
 	phymask = ddi_prop_get_int(DDI_DEV_T_ANY, pdip, 0,
 	    "phymask", 0);
 
 	/*
-	 * Enumerate RAID volumes here (phymask == 0).
+	 * If this is a RAID, enumerate the volumes
 	 */
-	if (phymask == 0) {
+	if (mpt->m_num_raid_configs > 0) {
 		mptsas_config_all_viport(pdip);
 		return;
 	}
@@ -16279,9 +16313,13 @@ mptsas_config_smp(dev_info_t *pdip, uint64_t sas_wwn, dev_info_t **smp_dip)
 	int		phymask;
 
 	/*
-	 * Get the physical port associated to the iport
-	 * PHYMASK TODO
+	 * The phymask exists if the port is active, otherwise
+	 * nothing to do.
 	 */
+	if (ddi_prop_exists(DDI_DEV_T_ANY, pdip,
+	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, "phymask") == 0)
+		return (DDI_FAILURE);
+
 	phymask = ddi_prop_get_int(DDI_DEV_T_ANY, pdip, 0,
 	    "phymask", 0);
 	/*
@@ -16914,11 +16952,24 @@ mptsas_get_dip_from_dev(dev_t dev, mptsas_phymask_t *phymask)
 {
 	dev_info_t	*dip;
 	int		prop;
+
 	dip = e_ddi_hold_devi_by_dev(dev, 0);
 	if (dip == NULL)
 		return (dip);
+
+	/*
+	 * The phymask exists if the port is active, otherwise
+	 * nothing to do.
+	 */
+	if (ddi_prop_exists(DDI_DEV_T_ANY, dip,
+	    DDI_PROP_DONTPASS | DDI_PROP_NOTPROM, "phymask") == 0) {
+		ddi_release_devi(dip);
+		return ((dev_info_t *)NULL);
+	}
+
 	prop = ddi_prop_get_int(DDI_DEV_T_ANY, dip, 0,
 	    "phymask", 0);
+
 	*phymask = (mptsas_phymask_t)prop;
 	ddi_release_devi(dip);
 	return (dip);
