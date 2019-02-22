@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 #include <sys/fm/protocol.h>
@@ -65,6 +65,7 @@ static uu_avl_t		*problem_uuid_avl = NULL;
 
 static int		valid_stamp;
 static pthread_mutex_t	update_lock;
+static pthread_cond_t	update_cv;
 static fmev_shdl_t	evhdl;
 
 static Netsnmp_Node_Handler	sunFmProblemTable_handler;
@@ -316,46 +317,61 @@ delete:
 	return (0);
 }
 
-static void
-request_update(void)
+static void *
+update_thread(void *arg)
 {
 	fmd_adm_t *adm;
+	static struct timespec tv;
 
-	ASSERT(VALID_AVL_STATE);
+	/* Do a 1-minute checks for changes */
+	tv.tv_sec = 60;
+	tv.tv_nsec = 0;
 
-	(void) pthread_mutex_lock(&update_lock);
-	if ((adm = fmd_adm_open(NULL, FMD_ADM_PROGRAM,
-	    FMD_ADM_VERSION)) == NULL) {
-		(void) pthread_mutex_unlock(&update_lock);
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": communication with fmd failed: %s\n", strerror(errno));
-		return;
-	}
+	for (;;) {
+		ASSERT(VALID_AVL_STATE);
 
-	valid_stamp++;
+		(void) pthread_mutex_lock(&update_lock);
+		/* We don't care if we were awaken explicitly or by timeout */
+		(void) pthread_cond_reltimedwait_np(&update_cv, &update_lock,
+		    &tv);
+		if ((adm = fmd_adm_open(NULL, FMD_ADM_PROGRAM,
+		    FMD_ADM_VERSION)) == NULL) {
+			(void) pthread_mutex_unlock(&update_lock);
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": communication with fmd failed: %s\n",
+			    strerror(errno));
+			continue;
+		}
 
-	DEBUGMSGTL((MODNAME_STR, "case iteration started\n"));
-	if (fmd_adm_case_iter(adm, SNMP_URL_MSG, problem_update_one, NULL)
-	    != 0) {
-		(void) pthread_mutex_unlock(&update_lock);
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": fmd case information update failed: %s\n",
-		    fmd_adm_errmsg(adm));
+		valid_stamp++;
+
+		DEBUGMSGTL((MODNAME_STR, "case iteration started\n"));
+		if (fmd_adm_case_iter(adm, SNMP_URL_MSG, problem_update_one,
+		    NULL) != 0) {
+			(void) pthread_mutex_unlock(&update_lock);
+			(void) snmp_log(LOG_ERR, MODNAME_STR
+			    ": fmd case information update failed: %s\n",
+			    fmd_adm_errmsg(adm));
+			fmd_adm_close(adm);
+			continue;
+		}
+
 		fmd_adm_close(adm);
-		return;
+		(void) pthread_mutex_unlock(&update_lock);
+
+		DEBUGMSGTL((MODNAME_STR, "case iteration completed\n"));
 	}
 
-	fmd_adm_close(adm);
-	(void) pthread_mutex_unlock(&update_lock);
-
-	DEBUGMSGTL((MODNAME_STR, "case iteration completed\n"));
+	return (NULL);
 }
 
 /*ARGSUSED*/
 static void
 event_cb(fmev_t ev, const char *class, nvlist_t *nvl, void *arg)
 {
-	request_update();
+	(void) pthread_mutex_lock(&update_lock);
+	(void) pthread_cond_signal(&update_cv);
+	(void) pthread_mutex_unlock(&update_lock);
 }
 
 /*ARGSUSED*/
@@ -411,14 +427,9 @@ sunFmProblemTable_init(void)
 	static oid sunFmProblemTable_oid[] = { SUNFMPROBLEMTABLE_OID };
 	netsnmp_table_registration_info *ptinfo = NULL;
 	netsnmp_handler_registration *phandler = NULL;
-	pthread_t tid;
+	pthread_t ptid;
+	pthread_t utid;
 	int ret = MIB_REGISTRATION_FAILED;
-
-	if ((ret = pthread_mutex_init(&update_lock, NULL)) != 0) {
-		(void) snmp_log(LOG_ERR, MODNAME_STR
-		    ": mutex_init failure: %s\n", strerror(ret));
-		goto fail;
-	}
 
 	/* Create fault event table and handler */
 	if ((ftinfo =
@@ -463,10 +474,20 @@ sunFmProblemTable_init(void)
 		goto fail;
 
 	/* Create PID change waiter thread */
-	(void) pthread_create(&tid, NULL, pid_thread, 0);
+	if (pthread_create(&ptid, NULL, pid_thread, 0) != 0) {
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": failed to create pid thread: %s\n", strerror(ret));
+		goto fail;
+	}
 
-	/* Get the initial problem data from fmd */
-	request_update();
+	/* Create update thread */
+	if ((ret = pthread_mutex_init(&update_lock, NULL)) != 0 ||
+	    (ret = pthread_cond_init(&update_cv, NULL)) != 0 ||
+	    (ret = pthread_create(&utid, NULL, update_thread, 0)) != 0) {
+		(void) snmp_log(LOG_ERR, MODNAME_STR
+		    ": failed to create update thread: %s\n", strerror(ret));
+		goto fail;
+	}
 
 	return (MIB_REGISTERED_OK);
 
