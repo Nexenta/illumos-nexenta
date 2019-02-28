@@ -208,6 +208,10 @@ static taskq_t	*sd_tq = NULL;
 static int	sd_taskq_minalloc = SD_TASKQ_MINALLOC;
 static int	sd_taskq_maxalloc = SD_TASKQ_MAXALLOC;
 
+#define SD_BAIL_CHECK(a) if ((a)->un_detach_count != 0) { \
+	mutex_exit(SD_MUTEX((a))); \
+	return (ENXIO); \
+	}
 /*
  * The following task queue is being created for the write part of
  * read-modify-write of non-512 block size devices.
@@ -7116,6 +7120,10 @@ sdattach(dev_info_t *devi, ddi_attach_cmd_t cmd)
 		un->un_f_use_adaptive_throttle = FALSE;
 	}
 
+	/* Unit detach has to pause until outstanding commands abort */
+	un->un_f_detach_waiting = 0;
+	cv_init(&un->un_detach_cv, NULL, CV_DRIVER, NULL);
+
 	/* Removable media support. */
 	cv_init(&un->un_state_cv, NULL, CV_DRIVER, NULL);
 	un->un_mediastate		= DKIO_NONE;
@@ -7621,7 +7629,7 @@ create_errstats_failed:
 	ddi_prop_remove_all(devi);
 	sema_destroy(&un->un_semoclose);
 	cv_destroy(&un->un_state_cv);
-
+	cv_destroy(&un->un_detach_cv);
 	sd_free_rqs(un);
 
 alloc_rqs_failed:
@@ -8589,6 +8597,24 @@ sd_unit_detach(dev_info_t *devi)
 	sd_sync_with_callback(un);
 
 no_attach_cleanup:
+	/*
+	 * The driver must wait, at least attempt to wait, for any commands
+	 * still in the driver.
+	 */
+	mutex_enter(SD_MUTEX(un));
+
+	while (un->un_ncmds_in_driver != 0) {
+		clock_t max_delay = ddi_get_lbolt() + SEC_TO_TICK(30);
+		un->un_f_detach_waiting = 1;
+		if (cv_timedwait(&un->un_detach_cv, SD_MUTEX(un),
+		    max_delay) == -1) {
+			break;
+		}
+	}
+
+	un->un_f_detach_waiting = 0;
+	mutex_exit(SD_MUTEX(un));
+
 	cmlb_detach(un->un_cmlbhandle, (void *)SD_PATH_DIRECT);
 	cmlb_free_handle(&un->un_cmlbhandle);
 
@@ -8684,6 +8710,9 @@ no_attach_cleanup:
 
 	/* Open/close semaphore */
 	sema_destroy(&un->un_semoclose);
+
+	/* Used to wait for outstanding commands */
+	cv_destroy(&un->un_detach_cv);
 
 	/* Removable media condvar. */
 	cv_destroy(&un->un_state_cv);
@@ -10526,6 +10555,7 @@ sdread(dev_t dev, struct uio *uio, cred_t *cred_p)
 			cv_wait(&un->un_suspend_cv, SD_MUTEX(un));
 		}
 
+		SD_BAIL_CHECK(un);
 		un->un_ncmds_in_driver++;
 		mutex_exit(SD_MUTEX(un));
 
@@ -10540,6 +10570,8 @@ sdread(dev_t dev, struct uio *uio, cred_t *cred_p)
 
 		mutex_enter(SD_MUTEX(un));
 		un->un_ncmds_in_driver--;
+		if (un->un_f_detach_waiting)
+			cv_signal(&un->un_detach_cv);
 		ASSERT(un->un_ncmds_in_driver >= 0);
 		mutex_exit(SD_MUTEX(un));
 		if (err != 0)
@@ -10628,6 +10660,7 @@ sdwrite(dev_t dev, struct uio *uio, cred_t *cred_p)
 			cv_wait(&un->un_suspend_cv, SD_MUTEX(un));
 		}
 
+		SD_BAIL_CHECK(un);
 		un->un_ncmds_in_driver++;
 		mutex_exit(SD_MUTEX(un));
 
@@ -10643,6 +10676,8 @@ sdwrite(dev_t dev, struct uio *uio, cred_t *cred_p)
 		mutex_enter(SD_MUTEX(un));
 		un->un_ncmds_in_driver--;
 		ASSERT(un->un_ncmds_in_driver >= 0);
+		if (un->un_f_detach_waiting)
+			cv_signal(&un->un_detach_cv);
 		mutex_exit(SD_MUTEX(un));
 		if (err != 0)
 			return (err);
@@ -10730,6 +10765,7 @@ sdaread(dev_t dev, struct aio_req *aio, cred_t *cred_p)
 			cv_wait(&un->un_suspend_cv, SD_MUTEX(un));
 		}
 
+		SD_BAIL_CHECK(un);
 		un->un_ncmds_in_driver++;
 		mutex_exit(SD_MUTEX(un));
 
@@ -10745,6 +10781,8 @@ sdaread(dev_t dev, struct aio_req *aio, cred_t *cred_p)
 		mutex_enter(SD_MUTEX(un));
 		un->un_ncmds_in_driver--;
 		ASSERT(un->un_ncmds_in_driver >= 0);
+		if (un->un_f_detach_waiting)
+			cv_signal(&un->un_detach_cv);
 		mutex_exit(SD_MUTEX(un));
 		if (err != 0)
 			return (err);
@@ -10833,6 +10871,7 @@ sdawrite(dev_t dev, struct aio_req *aio, cred_t *cred_p)
 			cv_wait(&un->un_suspend_cv, SD_MUTEX(un));
 		}
 
+		SD_BAIL_CHECK(un);
 		un->un_ncmds_in_driver++;
 		mutex_exit(SD_MUTEX(un));
 
@@ -10848,6 +10887,8 @@ sdawrite(dev_t dev, struct aio_req *aio, cred_t *cred_p)
 		mutex_enter(SD_MUTEX(un));
 		un->un_ncmds_in_driver--;
 		ASSERT(un->un_ncmds_in_driver >= 0);
+		if (un->un_f_detach_waiting)
+			cv_signal(&un->un_detach_cv);
 		mutex_exit(SD_MUTEX(un));
 		if (err != 0)
 			return (err);
@@ -11090,6 +11131,10 @@ sdstrategy(struct buf *bp)
 		mutex_exit(SD_MUTEX(un));
 		SD_ERROR(SD_LOG_READ_WRITE, un,
 		    "sdstrategy: attach failed\n");
+		goto fail;
+	}
+	if (un->un_detach_count != 0) {
+		mutex_exit(SD_MUTEX(un));
 		goto fail;
 	}
 
@@ -11598,6 +11643,7 @@ sd_ssc_send(sd_ssc_t *ssc, struct uscsi_cmd *incmd, int flag,
 	struct uscsi_cmd	*uscmd;
 	struct sd_lun		*un;
 	dev_t			dev;
+	dev_info_t		*dip = SD_DEVINFO(ssc->ssc_un);
 
 	int	format = 0;
 	int	rval;
@@ -11641,6 +11687,7 @@ sd_ssc_send(sd_ssc_t *ssc, struct uscsi_cmd *incmd, int flag,
 	 */
 	mutex_enter(SD_MUTEX(un));
 	mutex_enter(&un->un_pm_mutex);
+
 	if ((uscmd->uscsi_flags & USCSI_PMFAILFAST) &&
 	    SD_DEVICE_IS_IN_LOW_POWER(un)) {
 		SD_TRACE(SD_LOG_IO, un, "sd_ssc_send:"
@@ -11709,6 +11756,10 @@ sd_ssc_send(sd_ssc_t *ssc, struct uscsi_cmd *incmd, int flag,
 	dev = SD_GET_DEV(un);
 	rval = scsi_uscsi_handle_cmd(dev, dataspace, uscmd,
 	    sd_uscsi_strategy, NULL, uip);
+	if (DEVI_IS_GONE(dip)) {
+		cmn_err(CE_WARN, "%s-%d: device is gone!", __func__, __LINE__);
+		return (ENXIO);
+	}
 
 	/*
 	 * mark ssc_flags right after handle_cmd to make sure
@@ -12077,6 +12128,8 @@ sd_buf_iodone(int index, struct sd_lun *un, struct buf *bp)
 
 		un->un_ncmds_in_driver--;
 		ASSERT(un->un_ncmds_in_driver >= 0);
+		if (un->un_f_detach_waiting)
+			cv_signal(&un->un_detach_cv);
 		SD_INFO(SD_LOG_IO, un,
 		    "sd_buf_iodone: un_ncmds_in_driver = %ld\n",
 		    un->un_ncmds_in_driver);
@@ -12127,6 +12180,8 @@ sd_uscsi_iodone(int index, struct sd_lun *un, struct buf *bp)
 
 	un->un_ncmds_in_driver--;
 	ASSERT(un->un_ncmds_in_driver >= 0);
+	if (un->un_f_detach_waiting)
+		cv_signal(&un->un_detach_cv);
 	SD_INFO(SD_LOG_IO, un, "sd_uscsi_iodone: un_ncmds_in_driver = %ld\n",
 	    un->un_ncmds_in_driver);
 
@@ -22214,6 +22269,8 @@ sdioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cred_p, int *rval_p)
 			if (!ISCD(un)) {
 				un->un_ncmds_in_driver--;
 				ASSERT(un->un_ncmds_in_driver >= 0);
+				if (un->un_f_detach_waiting)
+					cv_signal(&un->un_detach_cv);
 				mutex_exit(SD_MUTEX(un));
 				err = ENOTTY;
 				goto done_without_assess;
@@ -22225,6 +22282,8 @@ sdioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cred_p, int *rval_p)
 			if (!un->un_f_eject_media_supported) {
 				un->un_ncmds_in_driver--;
 				ASSERT(un->un_ncmds_in_driver >= 0);
+				if (un->un_f_detach_waiting)
+					cv_signal(&un->un_detach_cv);
 				mutex_exit(SD_MUTEX(un));
 				err = ENOTTY;
 				goto done_without_assess;
@@ -22237,6 +22296,8 @@ sdioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cred_p, int *rval_p)
 				mutex_enter(SD_MUTEX(un));
 				un->un_ncmds_in_driver--;
 				ASSERT(un->un_ncmds_in_driver >= 0);
+				if (un->un_f_detach_waiting)
+					cv_signal(&un->un_detach_cv);
 				mutex_exit(SD_MUTEX(un));
 				err = EIO;
 				goto done_quick_assess;
@@ -22295,6 +22356,8 @@ sdioctl(dev_t dev, int cmd, intptr_t arg, int flag, cred_t *cred_p, int *rval_p)
 				}
 				un->un_ncmds_in_driver--;
 				ASSERT(un->un_ncmds_in_driver >= 0);
+				if (un->un_f_detach_waiting)
+					cv_signal(&un->un_detach_cv);
 				mutex_exit(SD_MUTEX(un));
 
 				goto done_without_assess;
@@ -23215,6 +23278,8 @@ skip_ready_valid:
 	mutex_enter(SD_MUTEX(un));
 	un->un_ncmds_in_driver--;
 	ASSERT(un->un_ncmds_in_driver >= 0);
+	if (un->un_f_detach_waiting)
+		cv_signal(&un->un_detach_cv);
 	mutex_exit(SD_MUTEX(un));
 
 
@@ -23228,6 +23293,8 @@ done_with_assess:
 	mutex_enter(SD_MUTEX(un));
 	un->un_ncmds_in_driver--;
 	ASSERT(un->un_ncmds_in_driver >= 0);
+	if (un->un_f_detach_waiting)
+		cv_signal(&un->un_detach_cv);
 	mutex_exit(SD_MUTEX(un));
 
 done_quick_assess:
@@ -23713,6 +23780,8 @@ sd_check_media(dev_t dev, enum dkio_state state)
 		 */
 		un->un_ncmds_in_driver--;
 		ASSERT(un->un_ncmds_in_driver >= 0);
+		if (un->un_f_detach_waiting)
+			cv_signal(&un->un_detach_cv);
 
 		/*
 		 * if a prior request had been made, this will be the same

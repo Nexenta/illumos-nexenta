@@ -25,7 +25,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 /*
@@ -271,6 +271,38 @@ iscsi_lun_rele(iscsi_lun_t *ilp)
 }
 
 /*
+ * iscsi_lun_cmd_cancel -- as the name implies, cancel all commands for the lun
+ *
+ * This code is similar to the timeout function with a lot less checking of
+ * state before sending the ABORT event for commands on the pending queue.
+ *
+ * This function is only used by iscsi_lun_destroy().
+ */
+static void
+iscsi_lun_cmd_cancel(iscsi_lun_t *ilp)
+{
+	iscsi_sess_t	*isp;
+	iscsi_cmd_t	*icmdp, *nicmdp;
+
+	isp = ilp->lun_sess;
+	rw_enter(&isp->sess_state_rwlock, RW_READER);
+	mutex_enter(&isp->sess_queue_pending.mutex);
+	for (icmdp = isp->sess_queue_pending.head;
+	     icmdp; icmdp = nicmdp) {
+		nicmdp = icmdp->cmd_next;
+
+		/*
+		 * For commands on the pending queue we can go straight
+		 * to and abort request which will free the command
+		 * and call back to the complete function.
+		 */
+		iscsi_cmd_state_machine(icmdp, ISCSI_CMD_EVENT_E4, isp);
+	}
+	mutex_exit(&isp->sess_queue_pending.mutex);
+	rw_exit(&isp->sess_state_rwlock);
+}
+
+/*
  * iscsi_lun_destroy - offline and remove lun
  *
  * This interface is called when a name service change has
@@ -294,6 +326,9 @@ iscsi_lun_destroy(iscsi_hba_t *ihp, iscsi_lun_t *ilp)
 	ASSERT(ilp != NULL);
 	isp = ilp->lun_sess;
 	ASSERT(isp != NULL);
+
+	/* flush all outstanding commands first */
+	iscsi_lun_cmd_cancel(ilp);
 
 	/* attempt to offline and free solaris node */
 	status = iscsi_lun_offline(ihp, ilp, B_TRUE);
