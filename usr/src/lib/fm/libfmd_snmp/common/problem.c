@@ -317,6 +317,7 @@ delete:
 	return (0);
 }
 
+/*ARGSUSED*/
 static void *
 update_thread(void *arg)
 {
@@ -362,6 +363,7 @@ update_thread(void *arg)
 		DEBUGMSGTL((MODNAME_STR, "case iteration completed\n"));
 	}
 
+	/*NOTREACHED*/
 	return (NULL);
 }
 
