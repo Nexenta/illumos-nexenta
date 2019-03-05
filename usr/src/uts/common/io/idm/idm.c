@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc. All rights reserved.
  */
 
 #include <sys/cpuvar.h>
@@ -2158,7 +2158,9 @@ idm_refcnt_unref_task(void *refcnt_void)
 {
 	idm_refcnt_t *refcnt = refcnt_void;
 
+	mutex_enter(&refcnt->ir_mutex);
 	REFCNT_AUDIT(refcnt);
+	mutex_exit(&refcnt->ir_mutex);
 	(*refcnt->ir_cb)(refcnt->ir_referenced_obj);
 }
 
