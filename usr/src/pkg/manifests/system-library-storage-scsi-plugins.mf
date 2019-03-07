@@ -59,6 +59,8 @@ legacy pkg=SUNWscsip desc="Vendor specific SCSI and SES plugins" \
     name="SCSI/SES plugins"
 license cr_Sun license=cr_Sun
 license lic_CDDL license=lic_CDDL
+link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/DellEMC-Array584EMM.so \
+    target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson-KDU-137-976-1.so \
     target=Ericsson-SRU-0101.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson.so \
@@ -85,6 +87,8 @@ link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SANDISK-SDIFHS02.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/SUN-Storage-J4200.so \
     target=SUN-Storage-J4400.so
+link path=usr/lib/scsi/plugins/ses/vendor/DellEMC-Array584EMM.so \
+    target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/Ericsson-KDU-137-976-1.so \
     target=Ericsson-SRU-0101.so
 link path=usr/lib/scsi/plugins/ses/vendor/Ericsson.so \

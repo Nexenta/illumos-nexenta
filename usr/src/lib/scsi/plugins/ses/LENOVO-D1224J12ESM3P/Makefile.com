@@ -18,6 +18,7 @@ SRCS =		lenovo.c
 SRCDIR =	../common
 PLUGINTYPE =	vendor
 ALIASES =			\
+	DellEMC-Array584EMM	\
 	Ericsson		\
 	HGST-ScaleApex-4U60	\
 	HGST-2U24_STOR_ENCL	\
