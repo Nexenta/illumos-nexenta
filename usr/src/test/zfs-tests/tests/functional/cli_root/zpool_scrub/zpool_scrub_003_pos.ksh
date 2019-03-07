@@ -28,6 +28,7 @@
 #
 # Copyright (c) 2016 by Delphix. All rights reserved.
 # Copyright (c) 2017 by Datto Inc.
+# Copyright 2019 Nexenta Systems, Inc.
 #
 
 . $STF_SUITE/include/libtest.shlib
@@ -47,18 +48,24 @@
 #	scrub does not complete before it has a chance to be restarted.
 #	This can occur when testing with small pools or very fast hardware.
 #
+#	In some situations this delay can slow things so much that it causes
+#	a zfs deadman panic, so zfs deadman is disabled throughout this test.
+#
 
 verify_runnable "global"
 
 function cleanup
 {
-	        log_must zinject -c all
+	log_must zinject -c all
+	mdb -kwe "zfs_deadman_enabled/W $ORIG_ENABLED"
 }
 
+ORIG_ENABLED=$(mdb -ke "zfs_deadman_enabled/X" | tail -1 | awk '{print $NF}')
 log_onexit cleanup
 
 log_assert "Scrub command fails when there is already a scrub in progress"
 
+log_must mdb -kwe "zfs_deadman_enabled/W 0"
 log_must zinject -d $DISK1 -D10:1 $TESTPOOL
 log_must zpool scrub $TESTPOOL
 log_must is_pool_scrubbing $TESTPOOL true
