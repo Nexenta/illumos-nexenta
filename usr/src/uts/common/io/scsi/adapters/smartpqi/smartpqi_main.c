@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 /*
@@ -89,18 +89,18 @@ int pqi_do_offline = 0;
  * physical addresses are supported.)
  */
 ddi_dma_attr_t smartpqi_dma_attrs = {
-	DMA_ATTR_V0,	/* attribute layout version		*/
-	0x0ull,		/* address low - should be 0 (longlong)	*/
+	DMA_ATTR_V0,		/* attribute layout version		*/
+	0x0ull,			/* address low - should be 0 (longlong)	*/
 	0xffffffffffffffffull, /* address high - 64-bit max	*/
-	0x00ffffffull,	/* count max - max DMA object size	*/
-	4096,		/* allocation alignment requirements	*/
-	0x78,		/* burstsizes - binary encoded values	*/
-	1,		/* minxfer - gran. of DMA engine	*/
-	0x00ffffffull,	/* maxxfer - gran. of DMA engine	*/
-	0xffffffffull,	/* max segment size (DMA boundary)	*/
-	0x400,		/* scatter/gather list length		*/
-	512,		/* granularity - device transfer size	*/
-	0		/* flags, set to 0			*/
+	0x00666600ull,		/* count max - max DMA object size	*/
+	4096,			/* allocation alignment requirements	*/
+	0x78,			/* burstsizes - binary encoded values	*/
+	1,			/* minxfer - gran. of DMA engine	*/
+	0x00666600ull,		/* maxxfer - gran. of DMA engine	*/
+	0x00666600ull,		/* max segment size (DMA boundary)	*/
+	PQI_MAX_SCATTER_GATHER,	/* scatter/gather list length		*/
+	512,			/* granularity - device transfer size	*/
+	0			/* flags, set to 0			*/
 };
 
 ddi_device_acc_attr_t smartpqi_dev_attr = {

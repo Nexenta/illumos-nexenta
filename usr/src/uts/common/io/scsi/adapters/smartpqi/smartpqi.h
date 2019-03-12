@@ -10,7 +10,7 @@
  */
 
 /*
- * Copyright 2018 Nexenta Systems, Inc.
+ * Copyright 2019 Nexenta Systems, Inc.
  */
 
 #ifndef _SMARTPQI_H
@@ -95,6 +95,7 @@ extern "C" {
 #define	PQI_RESERVED_IO_SLOTS \
 	(PQI_RESERVED_IO_SLOTS_LUN_RESET + PQI_RESERVED_IO_SLOTS_EVENT_ACK + \
 	PQI_RESERVED_IO_SLOTS_SYNCHRONOUS_REQUESTS)
+#define	PQI_MAX_SCATTER_GATHER			0x200
 
 /* ---- SIS constants ---- */
 #define	SIS_BASE_STRUCT_ALIGNMENT		16
@@ -489,7 +490,7 @@ typedef struct pqi_cmd {
 	ddi_dma_cookie_t	pc_dmac;
 	uint_t			pc_dmaccount;	/* cookie count */
 	struct scsi_pkt		pc_cached_pkt;
-	ddi_dma_cookie_t	pc_cached_cookies[0x100];
+	ddi_dma_cookie_t	pc_cached_cookies[PQI_MAX_SCATTER_GATHER];
 } *pqi_cmd_t;
 
 /* ---- configuration table section IDs ---- */
