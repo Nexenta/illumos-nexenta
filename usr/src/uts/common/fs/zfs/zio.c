@@ -2435,7 +2435,8 @@ zio_write_gang_block(zio_t *pio)
 		    abd_get_offset(pio->io_abd, pio->io_size - resid), lsize,
 		    lsize, &zp, zio_write_gang_member_ready, NULL, NULL,
 		    zio_write_gang_done, &gn->gn_child[g], pio->io_priority,
-		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark, &pio->io_smartcomp);
+		    ZIO_GANG_CHILD_FLAGS(pio), &pio->io_bookmark,
+		    &pio->io_smartcomp);
 
 		cio->io_mc = mc;
 
