@@ -213,10 +213,10 @@ pseudo_exportfs(nfs_export_t *ne, vnode_t *vp, fid_t *fid, struct exp_visible *v
 	/*
 	 * Initialize exi_id and exi_kstats
 	 */
-	rw_enter(&nfs_exi_id_lock, RW_WRITER);
+	mutex_enter(&nfs_exi_id_lock);
 	exi->exi_id = exi_id_get_next();
 	avl_add(&exi_id_tree, exi);
-	rw_exit(&nfs_exi_id_lock);
+	mutex_exit(&nfs_exi_id_lock);
 	exi->exi_kstats = exp_kstats_init(getzoneid(), exi->exi_id,
 	    kex->ex_path, vpathlen, TRUE);
 
@@ -804,9 +804,9 @@ treeclimb_export(struct exportinfo *exip)
 			/* exip will be freed in exportfs() */
 			if (e && e != exip) {
 				exp_kstats_delete(e->exi_kstats);
-				rw_enter(&nfs_exi_id_lock, RW_WRITER);
+				mutex_enter(&nfs_exi_id_lock);
 				avl_remove(&exi_id_tree, e);
-				rw_exit(&nfs_exi_id_lock);
+				mutex_exit(&nfs_exi_id_lock);
 				export_unlink(ne, e);
 				exi_rele(&e);
 			}
@@ -859,9 +859,9 @@ treeclimb_unexport(nfs_export_t *ne, struct exportinfo *exip)
 		if (TREE_ROOT(tnode) && !TREE_EXPORTED(tnode) &&
 		    tnode->tree_child_first == NULL) {
 			exp_kstats_delete(tnode->tree_exi->exi_kstats);
-			rw_enter(&nfs_exi_id_lock, RW_WRITER);
+			mutex_enter(&nfs_exi_id_lock);
 			avl_remove(&exi_id_tree, tnode->tree_exi);
-			rw_exit(&nfs_exi_id_lock);
+			mutex_exit(&nfs_exi_id_lock);
 			export_unlink(ne, tnode->tree_exi);
 			exi_rele(&tnode->tree_exi);
 		}
