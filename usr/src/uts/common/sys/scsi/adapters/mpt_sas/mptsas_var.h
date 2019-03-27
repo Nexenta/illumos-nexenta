@@ -787,6 +787,11 @@ typedef struct mptsas {
 	 */
 	uint_t		m_scsi_reset_delay;
 
+	/*
+	 *  Tuneable for the throttle control
+	 */
+	uint_t		m_max_tune_throttle;
+
 	int		m_pm_idle_delay;
 
 	uchar_t		m_polled_intr;	/* intr was polled. */
@@ -1264,7 +1269,10 @@ _NOTE(DATA_READABLE_WITHOUT_LOCK(mptsas::m_instance))
 /*
  * throttle support.
  */
-#define	MAX_THROTTLE	32
+
+#define	THROTTLE_HI	4096
+#define	THROTTLE_LO	32
+#define	MAX_THROTTLE THROTTLE_LO
 #define	HOLD_THROTTLE	0
 #define	DRAIN_THROTTLE	-1
 #define	QFULL_THROTTLE	-2

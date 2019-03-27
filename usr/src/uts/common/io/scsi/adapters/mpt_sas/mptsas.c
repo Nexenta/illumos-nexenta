@@ -1290,6 +1290,18 @@ mptsas_attach(dev_info_t *dip, ddi_attach_cmd_t cmd)
 	    0, "mptsas_doneq_length_threshold_prop", 8);
 	mpt->m_doneq_thread_n = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
 	    0, "mptsas_doneq_thread_n_prop", 8);
+	mpt->m_max_tune_throttle = ddi_prop_get_int(DDI_DEV_T_ANY, dip,
+	    0, "mptsas_max_throttle", MAX_THROTTLE);
+
+	/*
+	 *  Error check to make sure value is withing range. If nothing
+	 *  is set default to original design value.
+	 */
+	if (mpt->m_max_tune_throttle < THROTTLE_LO) {
+		mpt->m_max_tune_throttle = MAX_THROTTLE;
+	} else if (mpt->m_max_tune_throttle > THROTTLE_HI) {
+		mpt->m_max_tune_throttle = THROTTLE_HI;
+	}
 
 	if (mpt->m_doneq_thread_n) {
 		cv_init(&mpt->m_doneq_thread_cv, NULL, CV_DRIVER, NULL);
@@ -9460,9 +9472,12 @@ mptsas_set_throttle(mptsas_t *mpt, mptsas_target_t *ptgt, int what)
 	}
 
 	if (what == HOLD_THROTTLE) {
-		ptgt->m_t_throttle = HOLD_THROTTLE;
-	} else if (ptgt->m_reset_delay == 0) {
 		ptgt->m_t_throttle = what;
+	} else if (ptgt->m_reset_delay == 0) {
+		if (what == MAX_THROTTLE)
+			ptgt->m_t_throttle = mpt->m_max_tune_throttle;
+		else
+			ptgt->m_t_throttle = what;
 	}
 }
 
