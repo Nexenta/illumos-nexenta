@@ -26,7 +26,6 @@ file path=usr/nexenta/dtrace/flamegraph mode=0555
 file path=usr/nexenta/dtrace/iscsirwlat mode=0555
 file path=usr/nexenta/dtrace/iscsisvrtop mode=0555
 file path=usr/nexenta/dtrace/nfsio mode=0555
-file path=usr/nexenta/dtrace/nfsio30sec mode=0555
 file path=usr/nexenta/dtrace/nfssvrtop mode=0555
 file path=usr/nexenta/dtrace/nfsutil mode=0555
 file path=usr/nexenta/dtrace/nfswizard mode=0555
@@ -42,7 +41,6 @@ link path=usr/bin/flamegraph target=../nexenta/dtrace/flamegraph
 link path=usr/bin/iscsirwlat target=../nexenta/dtrace/iscsirwlat
 link path=usr/bin/iscsisvrtop target=../nexenta/dtrace/iscsisvrtop
 link path=usr/bin/nfsio target=../nexenta/dtrace/nfsio
-link path=usr/bin/nfsio30sec target=../nexenta/dtrace/nfsio30sec
 link path=usr/bin/nfssvrtop target=../nexenta/dtrace/nfssvrtop
 link path=usr/bin/nfsutil target=../nexenta/dtrace/nfsutil
 link path=usr/bin/nfswizard target=../nexenta/dtrace/nfswizard

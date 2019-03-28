@@ -12,46 +12,85 @@
  */
 
 /*
- * Copyright 2018, Nexenta Systems, Inc. All rights reserved.
+ * Copyright 2019, Nexenta Systems, Inc. All rights reserved.
  */
 
+#pragma D option defaultargs
 #pragma D option quiet
 
 dtrace:::BEGIN
+/ $1 == 0 /
 {
-        trace("Tracing... Hit Ctrl-C to end.\n");
+	printf("Tracing... Hit Ctrl-C to end.\n");
+	timeout = $1;
+}
+dtrace:::BEGIN
+/ $1 != 0 /
+{
+	printf("Tracing... for %d seconds\n", $1);
+	timeout = $1;
 }
 
 nfsv3:::op-read-done
 {
-        @readbytes[args[1]->noi_curpath] = sum(args[2]->res_u.ok.data.data_len);
-        @readiops[args[1]->noi_curpath] = count();
-        @readbs[args[1]->noi_curpath] = avg(args[2]->res_u.ok.data.data_len);
+	@readbytes[args[1]->noi_curpath] = sum(args[2]->res_u.ok.data.data_len);
+	@readiops[args[1]->noi_curpath] = count();
+	@readbs[args[1]->noi_curpath] = avg(args[2]->res_u.ok.data.data_len);
 }
 
 nfsv4:::op-read-done
 {
-        @readbytes[args[1]->noi_curpath] = sum(args[2]->data_len);
-        @readiops[args[1]->noi_curpath] = count();
-        @readbs[args[1]->noi_curpath] = avg(args[2]->data_len);
+	@readbytes[args[1]->noi_curpath] = sum(args[2]->data_len);
+	@readiops[args[1]->noi_curpath] = count();
+	@readbs[args[1]->noi_curpath] = avg(args[2]->data_len);
 }
 
+/* sync writes, committed != 0 */
 nfsv3:::op-write-done
+/ args[2]->status == 0 && args[2]->res_u.ok.committed != 0 /
 {
-        @writebytes[args[1]->noi_curpath] = sum(args[2]->res_u.ok.count);
-        @writeiops[args[1]->noi_curpath] = count();
-        @writebs[args[1]->noi_curpath] = avg(args[2]->res_u.ok.count);
+	@swritebytes[args[1]->noi_curpath] = sum(args[2]->res_u.ok.count);
+	@swriteiops[args[1]->noi_curpath] = count();
+	@swritebs[args[1]->noi_curpath] = avg(args[2]->res_u.ok.count);
 }
 
-nfsv4:::op-write-done
+/* async writes, committed == 0 */
+nfsv3:::op-write-done
+/ args[2]->status == 0 && args[2]->res_u.ok.committed == 0 /
 {
-        @writebytes[args[1]->noi_curpath] = sum(args[2]->count);
-        @writeiops[args[1]->noi_curpath] = count();
-        @writebs[args[1]->noi_curpath] = avg(args[2]->count);
+	@awritebytes[args[1]->noi_curpath] = sum(args[2]->res_u.ok.count);
+	@awriteiops[args[1]->noi_curpath] = count();
+	@awritebs[args[1]->noi_curpath] = avg(args[2]->res_u.ok.count);
+}
+
+/* sync writes, committed != 0 */
+nfsv4:::op-write-done
+/ args[2]->status == 0 && args[2]->committed != 0 /
+{
+	@swritebytes[args[1]->noi_curpath] = sum(args[2]->count);
+	@swriteiops[args[1]->noi_curpath] = count();
+	@swritebs[args[1]->noi_curpath] = avg(args[2]->count);
+}
+
+/* async writes, committed == 0 */
+nfsv4:::op-write-done
+/ args[2]->status == 0 && args[2]->committed == 0 /
+{
+	@awritebytes[args[1]->noi_curpath] = sum(args[2]->count);
+	@awriteiops[args[1]->noi_curpath] = count();
+	@awritebs[args[1]->noi_curpath] = avg(args[2]->count);
+}
+
+tick-1s
+/ $1 != 0 && (--timeout == 0) /
+{
+	exit(0);
 }
 
 dtrace:::END
 {
-        printf("\n%12s %12s %12s %12s %12s %12s %s\n", "Rbytes", "Rops", "Rbs", "Wbytes", "WOps", "Wbs", "Pathname");
-        printa("%@12d %@12d %@12d %@12d %@12d %@12d %s\n", @readbytes, @readiops, @readbs, @writebytes, @writeiops, @writebs);
+	printf("\n%12s %12s %12s %12s %12s %12s%12s %12s %12s %s\n",
+	    "Rbytes", "Rops", "Rbs", "SWbytes", "SWOps", "SWbs", "AWbytes", "AWOps", "AWbs", "Pathname");
+	printa("%@12d %@12d %@12d %@12d %@12d %@12d %@12d %@12d %@12d %s\n",
+	    @readbytes, @readiops, @readbs, @swritebytes, @swriteiops, @swritebs, @awritebytes, @awriteiops, @awritebs );
 }

@@ -25,7 +25,6 @@ BINFILES = \
 	iscsirwlat \
 	iscsisvrtop \
 	nfsio \
-	nfsio30sec \
 	nfssvrtop \
 	nfsutil \
 	nfswizard \
