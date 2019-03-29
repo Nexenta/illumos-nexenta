@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 #include <sys/atomic.h>
@@ -629,8 +629,7 @@ smb_session_reader(smb_session_t *session)
 			break;
 		}
 
-		/* accounting: requests, received bytes */
-		smb_server_inc_req(sv);
+		/* accounting: received bytes */
 		smb_server_add_rxb(sv,
 		    (int64_t)(hdr.xh_length + NETBIOS_HDR_SZ));
 

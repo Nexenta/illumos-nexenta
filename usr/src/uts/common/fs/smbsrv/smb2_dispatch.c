@@ -423,6 +423,7 @@ smb2_record_stats(smb_request_t *sr, smb_disp_stats_t *sds, boolean_t tx_only)
 	txb = (int64_t)(sr->reply.chain_offset - sr->smb2_reply_hdr);
 
 	if (!tx_only) {
+		smb_server_inc_req(sr->sr_server);
 		smb_latency_add_sample(&sds->sdt_lat, dt);
 		atomic_add_64(&sds->sdt_rxb, rxb);
 	}

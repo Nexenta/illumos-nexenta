@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  */
 
 /*
@@ -864,6 +864,7 @@ andx_more:
 		rxb = (int64_t)rxbytes;
 		txb = (int64_t)(sr->reply.chain_offset - txbase);
 
+		smb_server_inc_req(server);
 		smb_latency_add_sample(&sds->sdt_lat, dt);
 		atomic_add_64(&sds->sdt_rxb, rxb);
 		atomic_add_64(&sds->sdt_txb, txb);
