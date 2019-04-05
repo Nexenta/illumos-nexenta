@@ -10,13 +10,15 @@
 #
 
 #
-# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
 #
 
 MODULE =	HP
 SRCS =		hp.c
 SRCDIR =	../common
 PLUGINTYPE =	vendor
-ALIASES =	HGST-1ES0034
+ALIASES =			\
+	Ericsson-KDU1370064-1	\
+	HGST-1ES0034
 
 include ../../Makefile.lib

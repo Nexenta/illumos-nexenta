@@ -21,7 +21,7 @@
 
 #
 # Copyright (c) 2010, Oracle and/or its affiliates. All rights reserved.
-# Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
 #
 
 set name=pkg.fmri value=pkg:/system/library/storage/scsi-plugins@$(PKGVERS)
@@ -63,6 +63,8 @@ link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/DellEMC-Array584EMM.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson-KDU-137-976-1.so \
     target=Ericsson-SRU-0101.so
+link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson-KDU1370064-1.so \
+    target=HP.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/Ericsson.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/$(ARCH64)/HGST-1ES0034.so \
@@ -91,6 +93,8 @@ link path=usr/lib/scsi/plugins/ses/vendor/DellEMC-Array584EMM.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/Ericsson-KDU-137-976-1.so \
     target=Ericsson-SRU-0101.so
+link path=usr/lib/scsi/plugins/ses/vendor/Ericsson-KDU1370064-1.so \
+    target=HP.so
 link path=usr/lib/scsi/plugins/ses/vendor/Ericsson.so \
     target=LENOVO-D1224J12ESM3P.so
 link path=usr/lib/scsi/plugins/ses/vendor/HGST-1ES0034.so target=HP.so
