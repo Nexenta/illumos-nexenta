@@ -23,7 +23,7 @@
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
  */
 /*
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
  * Copyright (c) 2013 by Delphix. All rights reserved.
  * Copyright (c) 2013 by Saso Kiselkov. All rights reserved.
  */
@@ -3846,14 +3846,8 @@ stmf_add_rport_info(stmf_scsi_session_t *ss,
 	}
 
 	if (i == STMF_KSTAT_RPORT_DATAMAX) {
-		stmf_kstat_rport_info_t *ks_info;
-
 		mutex_exit(irport->irport_kstat_info->ks_lock);
 		kmem_free(s, strlen(s) + 1);
-		ks_info = (stmf_kstat_rport_info_t *)KSTAT_NAMED_PTR(
-		    irport->irport_kstat_info);
-		cmn_err(CE_WARN, "STMF: info limit is reached for rport %s",
-		    KSTAT_NAMED_STR_PTR(&ks_info->i_rport_name));
 		return (STMF_FAILURE);
 	}
 
@@ -5938,7 +5932,7 @@ stmf_prepare_tpgs_data(uint8_t ilu_alua)
 
 	mutex_enter(&stmf_state.stmf_lock);
 	/* check if any ports are standby and create second group */
-	for (ilport = stmf_state.stmf_ilportlist; ilport;
+	for (ilport = stmf_state.stmf_ilportlist; ilport != NULL;
 	    ilport = ilport->ilport_next) {
 		if (ilport->ilport_standby == 1) {
 			nports_standby++;
@@ -5947,14 +5941,38 @@ stmf_prepare_tpgs_data(uint8_t ilu_alua)
 		}
 	}
 
-	/* The spec only allows for 255 ports to be reported per group */
+	/*
+	 * Section 6.25 REPORT TARGET PORT GROUPS
+	 * The reply can contain many group replies. Each group is limited
+	 * to 255 port identifiers so we'll need to limit the amount of
+	 * data returned. For FC ports there's a physical limitation in
+	 * machines that make reaching 255 ports very, very unlikely. For
+	 * iSCSI on the other hand recent changes mean the port count could
+	 * be as high as 4096 (current limit). Limiting the data returned
+	 * for iSCSI isn't as bad as it sounds. This information is only
+	 * important for ALUA, which isn't supported for iSCSI. iSCSI uses
+	 * virtual IP addresses to deal with node fail over in a cluster.
+	 */
 	nports = min(nports, 255);
 	nports_standby = min(nports_standby, 255);
+
+	/*
+	 * The first 4 bytes of the returned data is the length. The
+	 * size of the Target Port Group header is 8 bytes. So, that's where
+	 * the 12 comes from. Each port entry is 4 bytes in size.
+	 */
 	sz = (nports * 4) + 12;
-	if (nports_standby && ilu_alua) {
+	if (nports_standby != 0 && ilu_alua != 0) {
+		/* --- Only add 8 bytes since it's just the Group header ----*/
 		sz += (nports_standby * 4) + 8;
 	}
-	asz = sz + sizeof (*xd) - 4;
+
+	/*
+	 * The stmf_xfer_data structure contains 4 bytes that will be
+	 * part of the data buffer. So, subtract the 4 bytes from the space
+	 * needed.
+	 */
+	asz = sizeof (*xd) + sz - 4;
 	xd = (stmf_xfer_data_t *)kmem_zalloc(asz, KM_NOSLEEP);
 	if (xd == NULL) {
 		mutex_exit(&stmf_state.stmf_lock);
@@ -5965,8 +5983,11 @@ stmf_prepare_tpgs_data(uint8_t ilu_alua)
 
 	p = xd->buf;
 
+	/* ---- length values never include the field that holds the size ----*/
 	*((uint32_t *)p) = BE_32(sz - 4);
 	p += 4;
+
+	/* ---- Now fill out the first Target Group header ---- */
 	p[0] = 0x80;	/* PREF */
 	p[1] = 5;	/* AO_SUP, S_SUP */
 	if (stmf_state.stmf_alua_node == 1) {
@@ -5976,15 +5997,16 @@ stmf_prepare_tpgs_data(uint8_t ilu_alua)
 	}
 	p[7] = nports & 0xff;
 	p += 8;
-	for (ilport = stmf_state.stmf_ilportlist; ilport;
+	for (ilport = stmf_state.stmf_ilportlist; ilport != NULL && nports != 0;
 	    ilport = ilport->ilport_next) {
 		if (ilport->ilport_standby == 1) {
 			continue;
 		}
 		((uint16_t *)p)[1] = BE_16(ilport->ilport_rtpid);
 		p += 4;
+		nports--;
 	}
-	if (nports_standby && ilu_alua) {
+	if (nports_standby != 0 && ilu_alua != 0) {
 		p[0] = 0x02;	/* Non PREF, Standby */
 		p[1] = 5;	/* AO_SUP, S_SUP */
 		if (stmf_state.stmf_alua_node == 1) {
@@ -5994,13 +6016,14 @@ stmf_prepare_tpgs_data(uint8_t ilu_alua)
 		}
 		p[7] = nports_standby & 0xff;
 		p += 8;
-		for (ilport = stmf_state.stmf_ilportlist; ilport;
-		    ilport = ilport->ilport_next) {
+		for (ilport = stmf_state.stmf_ilportlist; ilport != NULL &&
+		    nports_standby != 0; ilport = ilport->ilport_next) {
 			if (ilport->ilport_standby == 0) {
 				continue;
 			}
 			((uint16_t *)p)[1] = BE_16(ilport->ilport_rtpid);
 			p += 4;
+			nports_standby--;
 		}
 	}
 
