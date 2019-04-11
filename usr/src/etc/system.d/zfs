@@ -1,1 +1,2 @@
 set zfs:zio_dva_throttle_enabled = 0x0
+set zfs:zfs_scan_direct = 1
