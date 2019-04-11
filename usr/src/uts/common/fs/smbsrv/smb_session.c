@@ -1299,6 +1299,7 @@ smb_session_logoff(smb_session_t *session)
 
 	SMB_SESSION_VALID(session);
 
+top:
 	ulist = &session->s_user_list;
 	smb_llist_enter(ulist, RW_READER);
 
@@ -1341,13 +1342,16 @@ smb_session_logoff(smb_session_t *session)
 	 * It's possible for user objects to remain due to references
 	 * obtained via smb_server_lookup_ssnid(), when an SMB2
 	 * session setup is destroying a previous session.
-	 * If that has happened, wait here for that to finish.
-	 * When the last user object is deleted, smb_user_delete
-	 * signals this wait via smb_rwx_scbcast().  Otherwise,
-	 * (and more commonly) the user list is already empty,
-	 * and we can make the state transition now.  In case we
-	 * might have missed the wakeup, wait with a timeout.
-	 * The logoff work we're waiting for should be fast.
+	 *
+	 * Wait for user objects to clear out (last refs. go away,
+	 * then smb_user_delete takes them out of the list).  When
+	 * the last user object is removed, the session state is
+	 * set to SHUTDOWN and s_lock is signaled.
+	 *
+	 * Not all places that call smb_user_release necessarily
+	 * flush the delete queue, so after we wait for the list
+	 * to empty out, go back to the top and recheck the list
+	 * delete queue to make sure smb_user_delete happens.
 	 */
 	if (user == NULL) {
 		/* User list is empty. */
@@ -1356,12 +1360,15 @@ smb_session_logoff(smb_session_t *session)
 		smb_rwx_rwexit(&session->s_lock);
 	} else {
 		smb_rwx_rwenter(&session->s_lock, RW_READER);
-		while (session->s_state != SMB_SESSION_STATE_SHUTDOWN) {
+		if (session->s_state != SMB_SESSION_STATE_SHUTDOWN) {
 			(void) smb_rwx_cvwait(&session->s_lock,
 			    MSEC_TO_TICK(200));
+			smb_rwx_rwexit(&session->s_lock);
+			goto top;
 		}
 		smb_rwx_rwexit(&session->s_lock);
 	}
+	ASSERT(session->s_state == SMB_SESSION_STATE_SHUTDOWN);
 
 	/*
 	 * User list should be empty now.
