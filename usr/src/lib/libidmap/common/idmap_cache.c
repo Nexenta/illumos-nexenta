@@ -25,6 +25,10 @@
  */
 
 /*
+ * Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+ */
+
+/*
  * Windows to Solaris Identity Mapping
  * This module provides the libidmap idmap_cache.
  */
@@ -1121,6 +1125,7 @@ exit_sid2uid_gid:
 				new->sid_ttl = ttl;
 				new->winname = NULL;
 				new->windomain = NULL;
+				new->winname_ttl = 0;
 				idmap_cache.uid2sid_winname.sid_num++;
 
 				list_insert(&idmap_cache.uid2sid_winname.head,
@@ -1167,6 +1172,7 @@ exit_uid2sid_winname:
 				new->sid_ttl = ttl;
 				new->winname = NULL;
 				new->windomain = NULL;
+				new->winname_ttl = 0;
 				idmap_cache.gid2sid_winname.sid_num++;
 
 				list_insert(&idmap_cache.gid2sid_winname.head,
