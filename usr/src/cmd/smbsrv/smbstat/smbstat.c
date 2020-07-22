@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Nexenta by DDN, Inc.  All rights reserved.
  */
 
 /*
@@ -1231,7 +1231,9 @@ smbstat_srv_process_requests(
 
 	for (i = 0; i < SMBSRV_KS_NREQS1; i++) {
 		info = &smbstat_srv_info.si_reqs1[i];
-		idx = info[i].ri_opcode & 0xFF;
+		idx = info->ri_opcode;
+		if (idx >= SMBSRV_KS_NREQS1)
+			continue;
 		curr_req = &curr->ss_data.ks_reqs1[idx];
 		prev_req = &prev->ss_data.ks_reqs1[idx];
 		smbstat_srv_process_one_req(
@@ -1240,8 +1242,11 @@ smbstat_srv_process_requests(
 
 	for (i = 0; i < SMBSRV_KS_NREQS2; i++) {
 		info = &smbstat_srv_info.si_reqs2[i];
-		curr_req = &curr->ss_data.ks_reqs2[i];
-		prev_req = &prev->ss_data.ks_reqs2[i];
+		idx = info->ri_opcode;
+		if (idx >= SMBSRV_KS_NREQS2)
+			continue;
+		curr_req = &curr->ss_data.ks_reqs2[idx];
+		prev_req = &prev->ss_data.ks_reqs2[idx];
 		smbstat_srv_process_one_req(
 		    info, curr_req, prev_req, firstcall);
 	}
