@@ -22,7 +22,7 @@
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2016 Syneto S.R.L.  All rights reserved.
- * Copyright 2019 Nexenta by DDN, Inc. All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -573,7 +573,7 @@ void smb_nt_transact_notify_finish(void *);
 void smb2_change_notify_finish(void *);
 
 int smb_fem_fcn_install(smb_node_t *);
-void smb_fem_fcn_uninstall(smb_node_t *);
+int smb_fem_fcn_uninstall(smb_node_t *);
 int smb_fem_oplock_install(smb_node_t *);
 void smb_fem_oplock_uninstall(smb_node_t *);
 
