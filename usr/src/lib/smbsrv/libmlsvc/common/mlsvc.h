@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2018 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SMBSRV_MLSVC_H
@@ -57,8 +57,9 @@ void netdfs_finalize(void);
 
 /* netr_auth.c */
 DWORD netr_open(char *, char *, mlsvc_handle_t *);
+DWORD netr_open_secure(char *, char *, mlsvc_handle_t *);
 int netr_close(mlsvc_handle_t *);
-DWORD netlogon_auth(char *, mlsvc_handle_t *, DWORD);
+DWORD netlogon_auth(char *, char *, DWORD);
 int netr_setup_authenticator(struct netr_info *, struct netr_authenticator *,
     struct netr_authenticator *);
 DWORD netr_validate_chain(struct netr_info *, struct netr_authenticator *);

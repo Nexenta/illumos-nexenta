@@ -22,7 +22,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 #ifndef _SMBSRV_NDR_H
@@ -145,6 +145,7 @@ extern "C" {
 #define	NDR_F_INTERFACE		0x0700	/* type is a union, special */
 #define	NDR_F_CONFORMANT	0x1000	/* struct conforming (var-size tail) */
 #define	NDR_F_VARYING		0x2000	/* not implemented */
+#define	NDR_F_FAKE		0x4000	/* not a real struct */
 
 struct ndr_heap;
 struct ndr_stream;
@@ -235,6 +236,9 @@ typedef struct ndr_stream {
 	unsigned long		pdu_max_size;
 	unsigned long		pdu_base_offset;
 	unsigned long		pdu_scan_offset;
+	unsigned long		pdu_body_offset;
+	unsigned long		pdu_body_size;
+	unsigned long		pdu_hdr_size;
 	unsigned char		*pdu_base_addr;
 
 	ndr_stream_ops_t	*ndo;
@@ -325,6 +329,22 @@ typedef struct ndr_stream {
 #define	NDR_DIR_IS_IN  (encl_ref->stream->dir == NDR_DIR_IN)
 #define	NDR_DIR_IS_OUT (encl_ref->stream->dir == NDR_DIR_OUT)
 
+#define	NDR_MEMBER_PTR_WITH_ARG(TYPE, MEMBER, OFFSET, \
+		ARGFLAGS, ARGMEM, ARGVAL) { \
+		myref.pdu_offset = encl_ref->pdu_offset + (OFFSET);	\
+		myref.name = MEMBER_STR(MEMBER);			\
+		myref.datum = (char *)val->MEMBER;			\
+		myref.inner_flags = ARGFLAGS;				\
+		myref.ti = &ndt_##TYPE;					\
+		myref.ARGMEM = ARGVAL;					\
+		if (!ndr_inner(&myref))					\
+			return (0);					\
+	}
+
+#define	NDR_MEMBER_PTR_WITH_DIMENSION(TYPE, MEMBER, OFFSET, SIZE_IS)	\
+	NDR_MEMBER_PTR_WITH_ARG(TYPE, MEMBER, OFFSET, \
+		NDR_F_DIMENSION_IS, dimension_is, SIZE_IS)
+
 #define	NDR_MEMBER_WITH_ARG(TYPE, MEMBER, OFFSET, \
 		ARGFLAGS, ARGMEM, ARGVAL) { \
 		myref.pdu_offset = encl_ref->pdu_offset + (OFFSET);	\
@@ -374,16 +394,16 @@ typedef struct ndr_stream {
 			return (0);					\
 	}
 
-#define	NDR_TOPMOST_MEMBER(TYPE, MEMBER)	   			\
+#define	NDR_TOPMOST_MEMBER(TYPE, MEMBER)				\
 	NDR_TOPMOST_MEMBER_WITH_ARG(TYPE, MEMBER,			\
 		NDR_F_NONE, size_is, 0)
 
 #define	NDR_TOPMOST_MEMBER_ARR_WITH_SIZE_IS(TYPE, MEMBER, SIZE_IS)	\
-	NDR_TOPMOST_MEMBER_WITH_ARG(TYPE, MEMBER,		    	\
+	NDR_TOPMOST_MEMBER_WITH_ARG(TYPE, MEMBER,			\
 		NDR_F_SIZE_IS, size_is, SIZE_IS)
 
 #define	NDR_TOPMOST_MEMBER_ARR_WITH_DIMENSION(TYPE, MEMBER, SIZE_IS)	\
-	NDR_TOPMOST_MEMBER_WITH_ARG(TYPE, MEMBER,		      	\
+	NDR_TOPMOST_MEMBER_WITH_ARG(TYPE, MEMBER,			\
 		NDR_F_DIMENSION_IS, dimension_is, SIZE_IS)
 
 #define	NDR_TOPMOST_MEMBER_PTR_WITH_SIZE_IS(TYPE, MEMBER, SIZE_IS)	\

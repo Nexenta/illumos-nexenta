@@ -21,7 +21,7 @@
 
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2017 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -74,7 +74,7 @@
  *	NT_STATUS_NO_MEMORY
  */
 DWORD
-ndr_rpc_bind(mlsvc_handle_t *handle, char *server, char *domain,
+ndr_rpc_bind_common(mlsvc_handle_t *handle, char *server, char *domain,
     char *username, const char *service)
 {
 	struct smb_ctx		*ctx = NULL;
@@ -168,6 +168,22 @@ ndr_rpc_bind(mlsvc_handle_t *handle, char *server, char *domain,
 	}
 
 	return (status);
+}
+
+DWORD
+ndr_rpc_bind(mlsvc_handle_t *handle, char *server, char *domain,
+    char *username, const char *service)
+{
+	handle->auth_ctx = NULL;
+	return (ndr_rpc_bind_common(handle, server, domain, username, service));
+}
+
+DWORD
+ndr_rpc_bind_secure(mlsvc_handle_t *handle, char *server, char *domain,
+    char *username, const char *service, ndr_auth_ctx_t *auth_ctx)
+{
+	handle->auth_ctx = auth_ctx;
+	return (ndr_rpc_bind_common(handle, server, domain, username, service));
 }
 
 /*

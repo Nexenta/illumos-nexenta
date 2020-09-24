@@ -23,7 +23,7 @@
  * Copyright 2009 Sun Microsystems, Inc.  All rights reserved.
  * Use is subject to license terms.
  *
- * Copyright 2013 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -71,9 +71,8 @@ mlrpc_clh_create(mlrpc_handle_t *handle, void *ctx)
 	/*
 	 * Allocate...
 	 */
-	if ((clnt = malloc(sizeof (*clnt))) == NULL)
+	if ((clnt = calloc(1, sizeof (*clnt))) == NULL)
 		return (ENOMEM);
-	bzero(clnt, sizeof (*clnt));
 
 	clnt->xa_fd = -1;
 
@@ -91,6 +90,10 @@ mlrpc_clh_create(mlrpc_handle_t *handle, void *ctx)
 
 	/* See _is_bind_handle */
 	clnt->handle = &handle->handle;
+
+	/* struct copy */
+	if (handle->auth_ctx != NULL)
+		clnt->auth_ctx = *handle->auth_ctx;
 
 	ndr_svc_binding_pool_init(&clnt->binding_list,
 	    clnt->binding_pool, NDR_N_BINDING_POOL);
