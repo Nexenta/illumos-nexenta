@@ -12,7 +12,7 @@
 #
 # Copyright (c) 2012 by Delphix. All rights reserved.
 # Copyright 2014 Garrett D'Amore <garrett@damore.org>
-# Copyright 2016 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2020 Tintri by DDN, Inc. All rights reserved.
 #
 
 .PARALLEL:	$(SUBDIRS)
@@ -20,6 +20,7 @@
 SUBDIRS=	comstar-tests	\
 		crypto-tests	\
 		libc-tests	\
+		libmlrpc-tests \
 		lofi-tests	\
 		ndmp-tests	\
 		nfsgen-tests	\

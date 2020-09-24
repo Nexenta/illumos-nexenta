@@ -11,7 +11,7 @@
 #
 
 #
-# Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
+# Copyright 2020 Tintri by DDN, Inc. All rights reserved.
 #
 
 # Use normal make (not dmake) by default.
@@ -160,6 +160,7 @@ for lib in \
   libgss \
   libkrb5 \
   libcmdutils \
+  libmd5 \
   libsqlite \
   libuutil
 do

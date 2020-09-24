@@ -20,7 +20,7 @@
  */
 /*
  * Copyright (c) 2007, 2010, Oracle and/or its affiliates. All rights reserved.
- * Copyright 2019 Nexenta Systems, Inc.  All rights reserved.
+ * Copyright 2020 Tintri by DDN, Inc. All rights reserved.
  */
 
 /*
@@ -150,6 +150,7 @@ static smb_cfg_param_t smb_cfg_table[] =
 	{SMB_CI_MIN_PROTOCOL, "min_protocol", SCF_TYPE_ASTRING, 0},
 	{SMB_CI_BYPASS_TRAVERSE_CHECKING,
 	    "bypass_traverse_checking", SCF_TYPE_BOOLEAN, 0},
+	{SMB_CI_NETLOGON_FLAGS, "netlogon_flags", SCF_TYPE_INTEGER, 0},
 
 	/* SMB_CI_MAX */
 };
